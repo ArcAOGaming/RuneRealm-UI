@@ -1,0 +1,43 @@
+{
+  "name": "sprite-map-creator",
+  "private": true,
+  "version": "0.0.1",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "deploy": "npm run build && permaweb-deploy --deploy-folder ./dist --ant-process $DEPLOY_ANT_PROCESS --undername=premium",
+    "lint": "eslint src --ext ts,tsx --report-unused-disable-directives --max-warnings 0",
+    "preview": "vite preview"
+  },
+  "dependencies": {
+    "@ardrive/turbo-sdk": "^1.21.0",
+    "@permaweb/aoconnect": "^0.0.62",
+    "arweave": "^1.15.5",
+    "chart.js": "^4.4.7",
+    "crypto-browserify": "^3.12.1",
+    "permaweb-deploy": "^1.1.10",
+    "phaser": "^3.70.0",
+    "react": "^18.2.0",
+    "react-chartjs-2": "^5.3.0",
+    "react-confetti": "^6.2.2",
+    "react-dom": "^18.2.0",
+    "react-router-dom": "^6.21.1",
+    "vite-plugin-node-polyfills": "^0.22.0",
+    "web-streams-polyfill": "^4.0.0"
+  },
+  "devDependencies": {
+    "@types/react": "^18.3.18",
+    "@types/react-dom": "^18.3.5",
+    "@typescript-eslint/eslint-plugin": "^6.14.0",
+    "@typescript-eslint/parser": "^6.14.0",
+    "@vitejs/plugin-react": "^4.2.1",
+    "autoprefixer": "^10.4.16",
+    "cross-env": "^7.0.3",
+    "postcss": "^8.4.32",
+    "tailwindcss": "^3.4.0",
+    "typescript": "^5.3.3",
+    "vite": "^5.0.8",
+    "vite-plugin-html": "^3.2.2"
+  }
+}

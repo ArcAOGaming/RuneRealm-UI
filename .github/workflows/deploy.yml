@@ -1,0 +1,26 @@
+name: Arweave Deploy
+
+on:
+  push:
+    branches:
+      - master
+
+jobs:
+  Arweave-build-and-deploy:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v2
+
+      - name: Setup Node.js environment
+        uses: actions/setup-node@v2
+        with:
+          node-version: "20"
+
+      - name: Run deployment script
+        env:
+          DEPLOY_KEY: ${{ secrets.DEPLOY_KEY }}
+          DEPLOY_ANT_PROCESS: ${{ secrets.DEPLOY_ANT_PROCESS}}
+        run: |
+          npm install
+          npm run deploy
