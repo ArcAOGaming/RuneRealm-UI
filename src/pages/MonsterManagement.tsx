@@ -5,6 +5,7 @@ import { message, createDataItemSigner } from '../config/aoConnection';
 import { currentTheme } from '../constants/theme';
 import { Gateway } from '../constants/Constants';
 import PurchaseModal from '../components/PurchaseModal';
+import Inventory from '../components/Inventory';
 import StatAllocationModal from '../components/StatAllocationModal';
 import Header from '../components/Header';
 import Confetti from 'react-confetti';
@@ -360,29 +361,6 @@ const MonsterManagement: React.FC = () => {
       console.error('Purchase failed:', error);
       throw error;
     }
-  };
-
-  const renderAssetInventory = () => {
-    return (
-      <div className={`fixed right-4 top-32 w-64 p-4 rounded-xl ${theme.container} border ${theme.border} backdrop-blur-md`}>
-        <h2 className={`text-xl font-bold mb-4 ${theme.text}`}>Inventory</h2>
-        <div className="space-y-3">
-          {assetBalances.map((asset) => (
-            <div key={asset.info.processId} className={`flex justify-between items-center ${theme.text}`}>
-              <div className="flex items-center gap-2">
-                <img 
-                  src={`${Gateway}${asset.info.logo}`}
-                  alt={asset.info.name}
-                  className="w-6 h-6 object-cover rounded-full"
-                />
-                <span>{asset.info.ticker}:</span>
-              </div>
-              <span className="font-bold">{asset.balance}</span>
-            </div>
-          ))}
-        </div>
-      </div>
-    );
   };
 
   const renderMonsterCard = () => {
@@ -806,7 +784,7 @@ const MonsterManagement: React.FC = () => {
             )}
           </div>
         </div>
-        {wallet?.address && renderAssetInventory()}
+        {wallet?.address && <Inventory />}
       </div>
     </div>
   );

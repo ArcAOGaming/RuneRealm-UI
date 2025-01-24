@@ -14,8 +14,7 @@ import logoPath from './assets/rune-realm-transparent.png'
 import { checkWalletStatus, TokenOption, purchaseAccess } from './utils/aoHelpers'
 import Confetti from 'react-confetti'
 import { AdminSkinChanger } from './constants/Constants'
-import { AdminBulkImport } from './components/AdminBulkImport'
-import { AdminBulkUnlock } from './components/AdminBulkUnlock'
+import AdminBulkUnlock from './components/AdminBulkUnlock'
 import AdminRemoveUser from './components/AdminRemoveUser'
 import TestButton from './components/TestButton'
 import CacheDebugger from './components/CacheDebugger'
@@ -475,7 +474,6 @@ const SpriteCustomizer: React.FC<SpriteCustomizerProps> = ({ wallet, onEnter, da
               Random Layers
             </button>
             <ExportAndUploadButton
-              id="export-upload-button"
               layers={layers} 
               darkMode={darkMode} 
               mode="arweave"
@@ -534,10 +532,10 @@ const SpriteCustomizer: React.FC<SpriteCustomizerProps> = ({ wallet, onEnter, da
           </div>
 
           {/* Admin Tools - Comment out when not needed DO NOT REMOVE*/}
-          {/* <div className={`flex flex-col gap-4 p-4 ${theme.container} border-t ${theme.border}`}>
+          <div className={`flex flex-col gap-4 p-4 ${theme.container} border-t ${theme.border}`}>
             <AdminBulkUnlock />
             <AdminRemoveUser />
-          </div> */}
+          </div>
         </div>
 
         {showCelebration && (

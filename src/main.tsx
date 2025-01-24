@@ -4,10 +4,11 @@ import { BrowserRouter as Router, Routes, Route } from 'react-router-dom'
 import SpriteCustomizer from './SpriteCustomizer'
 import PurchaseInfo from './pages/PurchaseInfo'
 import {MonsterManagement} from './pages/MonsterManagement'
-import AdminMonster from './pages/AdminMonster'
+import Admin from './pages/Admin'
 import { WalletProvider } from './context/WalletContext'
 import './index.css'
 import { FactionPage } from './pages/FactionPage'
+import DailyCheckin from './pages/DailyCheckin'
 
 const App = () => {
   return (
@@ -18,7 +19,8 @@ const App = () => {
           <Route path="/customize" element={<SpriteCustomizer />} />
           <Route path="/factions" element={<FactionPage />} />
           <Route path="/monsters" element={<MonsterManagement />} />
-          <Route path="/adminmonster" element={<AdminMonster />} />
+          <Route path="/admin" element={<Admin />} />
+          <Route path="/daily-checkin" element={<DailyCheckin />} />
         </Routes>
       </WalletProvider>
     </Router>

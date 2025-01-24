@@ -1,72 +1,46 @@
 import React, { useState } from 'react';
-import { removeUser } from '../utils/aoHelpers';
+import { currentTheme } from '../constants/theme';
+import { useWallet } from '../hooks/useWallet';
 
-interface AdminRemoveUserProps {
-  isAdmin?: boolean;
-}
-
-const AdminRemoveUser: React.FC<AdminRemoveUserProps> = ({ isAdmin }) => {
-  const [userAddress, setUserAddress] = useState('');
-  const [loading, setLoading] = useState(false);
-  const [message, setMessage] = useState<{ type: 'success' | 'error', text: string } | null>(null);
+const AdminRemoveUser: React.FC = () => {
+  const { darkMode } = useWallet();
+  const [address, setAddress] = useState('');
+  const [isProcessing, setIsProcessing] = useState(false);
+  const theme = currentTheme(darkMode);
 
   const handleRemoveUser = async () => {
-    if (!userAddress) {
-      setMessage({ type: 'error', text: 'Please enter a user address' });
-      return;
-    }
-
-    setLoading(true);
+    if (!address.trim()) return;
+    
+    setIsProcessing(true);
     try {
-      const response = await removeUser(userAddress);
-      if (response.type === "error") {
-        setMessage({ type: 'error', text: response.error });
-      } else {
-        setMessage({ type: 'success', text: 'User successfully removed' });
-        setUserAddress('');
-      }
+      // TODO: Implement user removal logic
+      console.log('Processing user removal for:', address);
     } catch (error) {
-      setMessage({ type: 'error', text: `Failed to remove user: ${(error as Error).message}` });
+      console.error('Error removing user:', error);
     } finally {
-      setLoading(false);
+      setIsProcessing(false);
     }
   };
 
-  if (!isAdmin) {
-    return null;
-  }
-
   return (
-    <div className="mt-5 p-5 border border-gray-300 rounded-lg">
-      <h3 className="text-lg font-semibold mb-4">Admin: Remove User Access</h3>
+    <div className={`p-4 rounded-lg ${theme.container} border ${theme.border}`}>
+      <h3 className={`text-lg font-bold mb-4 ${theme.text}`}>Remove User</h3>
       <div className="flex gap-4">
         <input
           type="text"
-          placeholder="Enter user address"
-          value={userAddress}
-          onChange={(e) => setUserAddress(e.target.value)}
-          className="flex-1 max-w-lg px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-          disabled={loading}
+          value={address}
+          onChange={(e) => setAddress(e.target.value)}
+          placeholder="Enter wallet address"
+          className={`flex-1 px-4 py-2 rounded-lg border ${theme.border} ${theme.container} ${theme.text}`}
         />
         <button
           onClick={handleRemoveUser}
-          disabled={loading}
-          className={`px-4 py-2 rounded-md text-white ${
-            loading 
-              ? 'bg-gray-400 cursor-not-allowed' 
-              : 'bg-red-500 hover:bg-red-600 focus:outline-none focus:ring-2 focus:ring-red-500'
-          }`}
+          disabled={isProcessing || !address.trim()}
+          className={`px-6 py-2 rounded-lg font-bold transition-all duration-300 ${theme.buttonBg} ${theme.buttonHover} ${theme.text} ${(isProcessing || !address.trim()) ? 'opacity-50 cursor-not-allowed' : ''}`}
         >
-          {loading ? 'Removing...' : 'Remove User'}
+          {isProcessing ? 'Processing...' : 'Remove User'}
         </button>
       </div>
-      {message && (
-        <div className={`mt-3 p-3 rounded ${
-          message.type === 'success' ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'
-        }`}>
-          {message.text}
-        </div>
-      )}
     </div>
   );
 };

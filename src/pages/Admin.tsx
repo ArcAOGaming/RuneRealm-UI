@@ -4,8 +4,10 @@ import { currentTheme } from '../constants/theme';
 import { useWallet } from '../hooks/useWallet';
 import Header from '../components/Header';
 import { Gateway } from '../constants/Constants';
+import AdminBulkUnlock from '../components/AdminBulkUnlock';
+import AdminRemoveUser from '../components/AdminRemoveUser';
 
-const AdminMonster: React.FC = () => {
+const Admin: React.FC = () => {
   const { darkMode, setDarkMode } = useWallet();
   const [walletAddress, setWalletAddress] = useState('');
   const [userInfo, setUserInfo] = useState<UserInfo | null>(null);
@@ -96,7 +98,7 @@ const AdminMonster: React.FC = () => {
               <div className="w-full bg-gray-200 rounded-full h-2.5">
                 <div 
                   className="bg-purple-600 h-2.5 rounded-full" 
-                  style={{ width: `${Math.min(100, (monster.exp / maxStatValue) * 100)}%` }}
+                  style={{ width: `${Math.min((monster.exp / maxStatValue) * 100, 100)}%` }}
                 ></div>
               </div>
             </div>
@@ -151,23 +153,32 @@ const AdminMonster: React.FC = () => {
         
         <div className={`container mx-auto px-6 py-8 flex-1 ${theme.text}`}>
           <div className="max-w-4xl mx-auto">
-            <h1 className={`text-3xl font-bold mb-8 ${theme.text}`}>Monster Admin Panel</h1>
+            <h1 className={`text-3xl font-bold mb-8 ${theme.text}`}>Admin Panel</h1>
             
-            <div className="flex gap-4 mb-8">
-              <input
-                type="text"
-                value={walletAddress}
-                onChange={(e) => setWalletAddress(e.target.value)}
-                placeholder="Enter wallet address"
-                className={`flex-1 px-4 py-2 rounded-lg border ${theme.border} ${theme.container} ${theme.text}`}
-              />
-              <button
-                onClick={handleSearch}
-                disabled={isLoading || !walletAddress}
-                className={`px-6 py-2 rounded-lg font-bold transition-all duration-300 ${theme.buttonBg} ${theme.buttonHover} ${theme.text} ${(isLoading || !walletAddress) ? 'opacity-50 cursor-not-allowed' : ''}`}
-              >
-                {isLoading ? 'Searching...' : 'Search'}
-              </button>
+            {/* Admin Tools Section */}
+            <div className={`flex flex-col gap-4 p-4 ${theme.container} border ${theme.border}`}>
+              <AdminBulkUnlock />
+              <AdminRemoveUser />
+            </div>
+
+            <div className="mt-8">
+              <h2 className={`text-2xl font-bold mb-4 ${theme.text}`}>User Management</h2>
+              <div className="flex gap-4 mb-8">
+                <input
+                  type="text"
+                  value={walletAddress}
+                  onChange={(e) => setWalletAddress(e.target.value)}
+                  placeholder="Enter wallet address"
+                  className={`flex-1 px-4 py-2 rounded-lg border ${theme.border} ${theme.container} ${theme.text}`}
+                />
+                <button
+                  onClick={handleSearch}
+                  disabled={isLoading || !walletAddress}
+                  className={`px-6 py-2 rounded-lg font-bold transition-all duration-300 ${theme.buttonBg} ${theme.buttonHover} ${theme.text} ${(isLoading || !walletAddress) ? 'opacity-50 cursor-not-allowed' : ''}`}
+                >
+                  {isLoading ? 'Searching...' : 'Search'}
+                </button>
+              </div>
             </div>
 
             {userInfo && (
@@ -201,7 +212,7 @@ const AdminMonster: React.FC = () => {
                             setEditedStats({
                               ...editedStats,
                               faction: e.target.value,
-                              image: selectedFaction?.mascot // Auto-update image when faction changes
+                              image: selectedFaction?.mascot
                             });
                           }}
                           className={`w-full px-4 py-2 rounded-lg border ${theme.border} ${theme.container} ${theme.text}`}
@@ -436,4 +447,4 @@ const AdminMonster: React.FC = () => {
   );
 };
 
-export default AdminMonster;
+export default Admin;
