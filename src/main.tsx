@@ -1,7 +1,7 @@
 import React from 'react'
 import ReactDOM from 'react-dom/client'
 import { BrowserRouter as Router, Routes, Route } from 'react-router-dom'
-import SpriteCustomizer from './SpriteCustomizer'
+import SpriteCustomizer from './pages/SpriteCustomizer'
 import PurchaseInfo from './pages/PurchaseInfo'
 import {MonsterManagement} from './pages/MonsterManagement'
 import Admin from './pages/Admin'

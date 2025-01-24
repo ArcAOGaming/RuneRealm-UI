@@ -1,28 +1,28 @@
 import { useState, useEffect } from 'react'
-import PreviewCanvas from './components/PreviewCanvas'
-import ExportButton from './components/ExportButton'
-import LayerSelector from './components/LayerSelector'
-import ExportAndUploadButton from './services/testupload'
-import WalkingPreview from './components/WalkingPreview'
-import FourDirectionView from './components/FourDirectionView'
-import WarpTransition from './components/WarpTransition'
-import PurchaseModal from './components/PurchaseModal'
-import { currentTheme } from './constants/theme'
-import { SPRITE_CATEGORIES } from './constants/Constants'
+import PreviewCanvas from '../components/PreviewCanvas'
+import ExportButton from '../components/ExportButton'
+import LayerSelector from '../components/LayerSelector'
+import ExportAndUploadButton from '../services/testupload'
+import WalkingPreview from '../components/WalkingPreview'
+import FourDirectionView from '../components/FourDirectionView'
+import WarpTransition from '../components/WarpTransition'
+import PurchaseModal from '../components/PurchaseModal'
+import { currentTheme } from '../constants/theme'
+import { SPRITE_CATEGORIES } from '../constants/Constants'
 import { ArconnectSigner } from '@ardrive/turbo-sdk/web'
 import logoPath from './assets/rune-realm-transparent.png'
-import { checkWalletStatus, TokenOption, purchaseAccess } from './utils/aoHelpers'
+import { checkWalletStatus, TokenOption, purchaseAccess } from '../utils/aoHelpers'
 import Confetti from 'react-confetti'
-import { AdminSkinChanger } from './constants/Constants'
-import AdminBulkUnlock from './components/AdminBulkUnlock'
-import AdminRemoveUser from './components/AdminRemoveUser'
-import TestButton from './components/TestButton'
-import CacheDebugger from './components/CacheDebugger'
+import { AdminSkinChanger } from '../constants/Constants'
+import AdminBulkUnlock from '../components/AdminBulkUnlock'
+import AdminRemoveUser from '../components/AdminRemoveUser'
+import TestButton from '../components/TestButton'
+import CacheDebugger from '../components/CacheDebugger'
 // Uncomment when deploying in Reality, comment out SimpleHeader import
 // import Header from './components/Header'
 // Comment out when deploying in Reality
-import SimpleHeader from './components/SimpleHeader'
-import Header from './components/Header'
+import SimpleHeader from '../components/SimpleHeader'
+import Header from '../components/Header'
 
 interface LayerState {
   style: string;
@@ -33,7 +33,7 @@ interface Layers {
   [key: string]: LayerState;
 }
 
-import { ArweaveWallet, REQUIRED_PERMISSIONS } from './types/arweave';
+import { ArweaveWallet, REQUIRED_PERMISSIONS } from '../types/arweave';
 
 interface SpriteCustomizerProps {
   wallet?: ArweaveWallet;
