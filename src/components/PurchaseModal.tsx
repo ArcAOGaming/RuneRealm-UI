@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { getPurchaseOptions, TokenOption, formatTokenAmount } from '../utils/aoHelpers';
-import { Gateway } from '../constants/spriteAssets';
+import { Gateway } from '../constants/Constants';
 import accessTicketImg from '../assets/access-ticket.png';
 
 interface PurchaseModalProps {

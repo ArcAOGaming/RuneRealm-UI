@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { message, createDataItemSigner } from '../config/aoConnection';
-import { AdminSkinChanger } from '../constants/spriteAssets';
+import { AdminSkinChanger } from '../constants/Constants';
 import { TurboFactory } from '@ardrive/turbo-sdk/web';
 
 interface ExportAndUploadButtonProps {

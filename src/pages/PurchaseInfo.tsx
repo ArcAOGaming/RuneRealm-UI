@@ -1,72 +1,41 @@
 import React, { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
-import { checkWalletStatus, purchaseAccess, TokenOption } from './utils/aoHelpers';
-import { currentTheme } from './constants/theme';
-import accessTicketImg from './assets/access-ticket.png';
-import PurchaseModal from './components/PurchaseModal';
+import { purchaseAccess, TokenOption } from '../utils/aoHelpers';
+import { useWallet } from '../hooks/useWallet';
+import { currentTheme } from '../constants/theme';
+import accessTicketImg from '../assets/access-ticket.png';
+import PurchaseModal from '../components/PurchaseModal';
 import Confetti from 'react-confetti';
-import Header from './components/Header';
+import Header from '../components/Header';
 
-interface PurchaseInfoProps {
-  darkMode?: boolean;
-  onThemeChange?: (isDark: boolean) => void;
-}
-
-const PurchaseInfo: React.FC<PurchaseInfoProps> = ({ darkMode = false, onThemeChange }) => {
-  const [isConnected, setIsConnected] = useState(false);
-  const [walletAddress, setWalletAddress] = useState<string | null>(null);
-  const [isUnlocked, setIsUnlocked] = useState(false);
-  const [theme, setTheme] = useState(currentTheme(darkMode));
+const PurchaseInfo: React.FC = () => {
+  const { wallet, walletStatus, darkMode, connectWallet, setDarkMode } = useWallet();
+  const theme = currentTheme(darkMode);
   const [showPurchaseModal, setShowPurchaseModal] = useState(false);
   const [showConfetti, setShowConfetti] = useState(false);
 
+  // Initial load of wallet status
   useEffect(() => {
-    setTheme(currentTheme(darkMode));
-  }, [darkMode]);
-
-  useEffect(() => {
-    checkWalletConnection();
+    if (wallet?.address) {
+      connectWallet(true); // Force check on initial load
+    }
   }, []);
 
-  const handleDarkModeToggle = () => {
-    onThemeChange?.(!darkMode);
-  };
-
-  const checkWalletConnection = async () => {
-    try {
-      const permissions = await window.arweaveWallet.getPermissions();
-      if (permissions.length > 0) {
-        const address = await window.arweaveWallet.getActiveAddress();
-        setWalletAddress(address);
-        setIsConnected(true);
-        const status = await checkWalletStatus({ address });
-        setIsUnlocked(status.isUnlocked);
-      }
-    } catch (error) {
-      console.error('Error checking wallet connection:', error);
+  // Regular updates without forcing
+  useEffect(() => {
+    if (wallet?.address) {
+      connectWallet(); // Use cached status for updates
     }
-  };
-
-  const connectWallet = async () => {
-    try {
-      await window.arweaveWallet.connect(['ACCESS_ADDRESS', 'SIGN_TRANSACTION']);
-      const address = await window.arweaveWallet.getActiveAddress();
-      setWalletAddress(address);
-      setIsConnected(true);
-      const status = await checkWalletStatus({ address });
-      setIsUnlocked(status.isUnlocked);
-    } catch (error) {
-      console.error('Error connecting wallet:', error);
-    }
-  };
+  }, [wallet?.address]);
 
   const handlePurchase = async (selectedToken: TokenOption) => {
     try {
       await purchaseAccess(selectedToken);
       setShowConfetti(true);
+      setShowPurchaseModal(false);
       setTimeout(() => {
         setShowConfetti(false);
-        checkWalletConnection();
+        connectWallet(true); // Force check after purchase
       }, 5000);
     } catch (error) {
       console.error('Purchase failed:', error);
@@ -79,7 +48,7 @@ const PurchaseInfo: React.FC<PurchaseInfoProps> = ({ darkMode = false, onThemeCh
       <Header
         theme={theme}
         darkMode={darkMode}
-        onDarkModeToggle={handleDarkModeToggle}
+        onDarkModeToggle={() => setDarkMode(!darkMode)}
         showBackButton={false}
       />
       {showConfetti && (
@@ -112,9 +81,9 @@ const PurchaseInfo: React.FC<PurchaseInfoProps> = ({ darkMode = false, onThemeCh
 
           {/* Purchase Section */}
           <div className="mt-8">
-            {isConnected ? (
+            {wallet?.address ? (
               <>
-                {!isUnlocked && (
+                {!walletStatus?.isUnlocked && (
                   <div className="flex justify-center mt-8">
                     <button
                       onClick={() => setShowPurchaseModal(true)}
@@ -184,7 +153,7 @@ const PurchaseInfo: React.FC<PurchaseInfoProps> = ({ darkMode = false, onThemeCh
                       ${theme.buttonBg} ${theme.buttonHover} ${theme.text} 
                       backdrop-blur-md shadow-lg hover:shadow-xl border ${theme.border}`}
                   >
-                    {isUnlocked ? 'Set Up Your Sprite' : 'View Sprite Creator'}
+                    {walletStatus?.isUnlocked ? 'Set Up Your Sprite' : 'View Sprite Creator'}
                   </Link>
                   <Link
                     to="/factions"
@@ -192,7 +161,7 @@ const PurchaseInfo: React.FC<PurchaseInfoProps> = ({ darkMode = false, onThemeCh
                       ${theme.buttonBg} ${theme.buttonHover} ${theme.text} 
                       backdrop-blur-md shadow-lg hover:shadow-xl border ${theme.border}`}
                   >
-                    {isUnlocked ? 'Choose Your Faction' : 'View Factions'}
+                    {walletStatus?.isUnlocked ? 'Choose Your Faction' : 'View Factions'}
                   </Link>
                   <Link
                     to="/monsters"
@@ -200,7 +169,7 @@ const PurchaseInfo: React.FC<PurchaseInfoProps> = ({ darkMode = false, onThemeCh
                       ${theme.buttonBg} ${theme.buttonHover} ${theme.text} 
                       backdrop-blur-md shadow-lg hover:shadow-xl border ${theme.border}`}
                   >
-                    {isUnlocked ? 'Manage Your Monster' : 'View Monsters'}
+                    {walletStatus?.isUnlocked ? 'Manage Your Monster' : 'View Monsters'}
                   </Link>
                 </div>
               </>

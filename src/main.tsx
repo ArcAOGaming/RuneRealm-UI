@@ -1,23 +1,26 @@
-import React, { useState } from 'react'
+import React from 'react'
 import ReactDOM from 'react-dom/client'
 import { BrowserRouter as Router, Routes, Route } from 'react-router-dom'
 import SpriteCustomizer from './SpriteCustomizer'
-import PurchaseInfo from './PurchaseInfo'
-import FactionPage from './pages/FactionPage'
-import { MonsterManagement } from './pages/MonsterManagement'
+import PurchaseInfo from './pages/PurchaseInfo'
+import {MonsterManagement} from './pages/MonsterManagement'
+import AdminMonster from './pages/AdminMonster'
+import { WalletProvider } from './context/WalletContext'
 import './index.css'
+import { FactionPage } from './pages/FactionPage'
 
 const App = () => {
-  const [darkMode, setDarkMode] = useState(false);
-
   return (
     <Router>
-      <Routes>
-        <Route path="/" element={<PurchaseInfo darkMode={darkMode} onThemeChange={setDarkMode} />} />
-        <Route path="/customize" element={<SpriteCustomizer darkMode={darkMode} />} />
-        <Route path="/factions" element={<FactionPage />} />
-        <Route path="/monsters" element={<MonsterManagement />} />
-      </Routes>
+      <WalletProvider>
+        <Routes>
+          <Route path="/" element={<PurchaseInfo />} />
+          <Route path="/customize" element={<SpriteCustomizer />} />
+          <Route path="/factions" element={<FactionPage />} />
+          <Route path="/monsters" element={<MonsterManagement />} />
+          <Route path="/adminmonster" element={<AdminMonster />} />
+        </Routes>
+      </WalletProvider>
     </Router>
   );
 }

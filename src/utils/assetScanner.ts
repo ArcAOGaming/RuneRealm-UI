@@ -1,4 +1,4 @@
-import { SPRITE_CATEGORIES, PUBLIC_ASSETS_PATH, type SpriteCategory } from '../constants/spriteAssets';
+import { SPRITE_CATEGORIES, PUBLIC_ASSETS_PATH, type SpriteCategory } from '../constants/Constants';
 
 export async function scanAssets(): Promise<SpriteCategory[]> {
   const categories = [...SPRITE_CATEGORIES];

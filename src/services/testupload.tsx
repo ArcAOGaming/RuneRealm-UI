@@ -1,7 +1,7 @@
 import React, { useCallback, useState, useEffect, useMemo } from 'react';
 import { TurboFactory } from '@ardrive/turbo-sdk/web';
 import { message, createDataItemSigner } from '../config/aoConnection';
-import { AdminSkinChanger, DefaultAtlasTxID } from '../constants/spriteAssets';
+import { AdminSkinChanger, DefaultAtlasTxID } from '../constants/Constants';
 import { checkWalletStatus } from '../utils/aoHelpers';
 import { SpriteColorizer } from '../utils/spriteColorizer';
 

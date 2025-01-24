@@ -24,7 +24,7 @@ export interface AssetBalance {
 }
 
 export interface MonsterStatus {
-  type: 'Home' | 'Playing' | 'Mission';
+  type: 'Home' | 'Play' | 'Mission';
   since: number;  // timestamp
   until_time: number;  // timestamp
 }
@@ -92,6 +92,17 @@ export const SUPPORTED_ASSETS = [
     "wOrb8b_V8QixWyXZub48Ki5B6OIDyf_p1ngoonsaRpQ",  // TRUNK token
     "OsK9Vgjxo0ypX_HLz2iJJuh4hp3I80yA9KArsJjIloU"   // NAB token
 ] as const;
+
+export interface UserInfo {
+    isUnlocked: boolean;
+    skin: string | null;
+    faction: string | null;
+    monster: MonsterStats | null;
+    activityStatus: {
+        isPlayComplete: boolean;
+        isMissionComplete: boolean;
+    };
+}
 
 export interface WalletStatus {
     isUnlocked: boolean;
@@ -738,6 +749,77 @@ export const getAssetBalances = async (wallet: any): Promise<AssetBalance[]> => 
     }
 };
 
+export interface MonsterStatsUpdate {
+  level?: number;
+  exp?: number;
+  attack?: number;
+  defense?: number;
+  speed?: number;
+  health?: number;
+  energy?: number;
+  happiness?: number;
+  faction?: string;
+  image?: string;
+  name?: string;
+  status?: {
+    type: 'Home' | 'Play' | 'Mission';
+    since: number;
+    until_time: number;
+  };
+}
+
+export const setUserStats = async (targetWallet: string, stats: MonsterStatsUpdate): Promise<boolean> => {
+  try {
+    const signer = createDataItemSigner(window.arweaveWallet);
+    const messageResult = await message({
+      process: AdminSkinChanger,
+      tags: [
+        { name: "Action", value: "SetUserStats" },
+        { name: "Wallet", value: targetWallet }
+      ],
+      data: JSON.stringify(stats),
+      signer
+    });
+
+    const transferResult = await result({
+      message: messageResult,
+      process: AdminSkinChanger
+    }) as ResultType;
+
+    if (!transferResult.Messages || transferResult.Messages.length === 0) {
+      throw new Error("No response from SetUserStats");
+    }
+
+    const response = JSON.parse(transferResult.Messages[0].Data);
+    return response.status === "success";
+  } catch (error) {
+    console.error("Error setting user stats:", error);
+    throw error;
+  }
+};
+
+export const getUserInfo = async (walletAddress: string): Promise<UserInfo | null> => {
+    try {
+        const dryRunResult = await dryrun({
+            process: AdminSkinChanger,
+            tags: [
+                { name: "Action", value: "GetUserInfo" },
+                { name: "Wallet", value: walletAddress }
+            ],
+            data: ""
+        }) as ResultType;
+
+        if (!dryRunResult.Messages || dryRunResult.Messages.length === 0) {
+            return null;
+        }
+
+        return JSON.parse(dryRunResult.Messages[0].Data);
+    } catch (error) {
+        console.error("Error getting user info:", error);
+        return null;
+    }
+};
+
 export const removeUser = async (userId: string) => {
     try {
         const signer = createDataItemSigner(window.arweaveWallet);
@@ -767,4 +849,4 @@ export const removeUser = async (userId: string) => {
     }
 };
 
-import { AdminSkinChanger, DefaultAtlasTxID } from "../constants/spriteAssets";
+import { AdminSkinChanger, DefaultAtlasTxID } from "../constants/Constants";

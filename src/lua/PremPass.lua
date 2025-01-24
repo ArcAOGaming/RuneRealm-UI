@@ -1,4 +1,4 @@
--- Name: AdminSkinChanger
+-- Name: PremiumPass
 -- ProcessId: j7NcraZUL6GZlgdPEoph12Q5rk_dydvQDecLNxYi8rI
 
 local json = require("json")
@@ -264,70 +264,6 @@ function CreateDefaultMonster(factionName, mascotTxId, timestamp)
 end
 
 
--- Handler for playing with monster
-Handlers.add(
-  "PlayMonster",
-  Handlers.utils.hasMatchingTag("Action", "Play"),
-  function(msg)
-    print("Playing with monster")
-    local userId = msg.From
-    
-    local monster = UserMonsters[userId]
-    if not monster then
-      print("No monster found for user:", userId)
-      ao.send({
-        Target = msg.From,
-        Data = json.encode({
-          status = "error",
-          message = "No monster found"
-        })
-      })
-      return
-    end
-
-  if monster.status.type ~= "Home" then
-      print("Monster is not at home:", monster.status.type)
-      ao.send({
-        Target = msg.From,
-        Data = json.encode({
-          status = "error",
-          message = "Monster must be at home to play"
-        })
-      })
-      return
-    end
-
-    if monster.energy < monster.activities.play.energyCost then
-      print("Not enough energy to play")
-      ao.send({
-        Target = msg.From,
-        Data = json.encode({
-          status = "error",
-          message = "Need at least " .. monster.activities.play.energyCost .. " energy to play"
-        })
-      })
-      return
-    end
-
-    monster.status = {
-      type = "Playing",
-      since = msg.Timestamp,
-      until_time = msg.Timestamp + monster.activities.play.duration
-    }
-    monster.energy = monster.energy - monster.activities.play.energyCost
-
-    ao.send({
-      Target = msg.From,
-      Data = json.encode({
-        status = "success",
-        message = "Monster is now playing",
-        monster = monster
-      })
-    })
-  end
-)
-
-
 -- Handler for returning from mission
 Handlers.add(
   "ReturnFromMission",
@@ -413,7 +349,7 @@ Handlers.add(
       return
     end
 
-    if monster.status.type ~= "Playing" then
+    if monster.status.type ~= "Play" then
       print("Monster is not playing:", monster.status.type)
       ao.send({
         Target = msg.From,
@@ -679,6 +615,54 @@ Handlers.add(
       })
       return
     end
+
+        -- Check if this is a feeding action
+        if msg.Tags["X-Action"] == "Play" then
+          print("Handling playing:", userId)
+          
+          local monster = UserMonsters[userId]
+          if not monster then
+            print("No monster found for user:", userId)
+            return
+          end
+    
+          print("Monster state:", json.encode(monster))
+          print("Received berry:", token)
+    
+          if monster.berryType ~= token then
+            print("Wrong berry process. Expected:", monster.berryType, "Got:", token)
+            return
+          end
+
+          if monster.status.type ~= "Home" then
+            print("Monster is not at home:", monster.status.type)
+            return
+          end
+
+          if monster.energy < monster.activities.play.energyCost  then
+            print("Monster doesn't have enough energy")
+            return
+          end
+          monster.energy = monster.energy - monster.activities.play.energyCost
+    
+
+                -- Set monster to playing status
+          monster.status = {
+            type = "Play",
+            since = msg.Timestamp,
+            until_time = msg.Timestamp + monster.activities.play.duration
+          }
+          -- Send confirmation back to the user
+          ao.send({
+            Target = userId,
+            Data = json.encode({
+              status = "success",
+              message = "Monster sent to play successfully",
+              monster = monster
+            })
+          })
+          return
+        end
 
     -- If not feeding or mission, handle as purchase
     if msg.Tags["X-Action"] == "Mission" then
@@ -1140,5 +1124,145 @@ Handlers.add(
 )
 
 
-UserMonsters = {}  -- Reset user monsters on reload
+-- Helper function to check if an activity is complete
+function isActivityComplete(status, currentTime)
+  if not status or not status.until_time then
+    return false
+  end
+  return currentTime >= status.until_time
+end
+
+-- Handler to get all user information
+Handlers.add(
+  'GetUserInfo',
+  Handlers.utils.hasMatchingTag('Action', 'GetUserInfo'),
+  function(msg)
+    local targetWallet = msg.Tags.Wallet or msg.From
+    local currentTime = msg.Timestamp
+    
+    -- Get monster info and check activity status
+    local monster = UserMonsters[targetWallet]
+    local activityStatus = {
+      isPlayComplete = false,
+      isMissionComplete = false
+    }
+    
+    if monster then
+      if monster.status.type == "Play" then
+        activityStatus.isPlayComplete = isActivityComplete(monster.status, currentTime)
+      elseif monster.status.type == "Mission" then
+        activityStatus.isMissionComplete = isActivityComplete(monster.status, currentTime)
+      end
+    end
+    
+    -- Collect all user information
+    local userInfo = {
+      isUnlocked = UnlockedSkin(targetWallet),
+      skin = UserSkins[targetWallet] and UserSkins[targetWallet].txId or nil,
+      faction = UserFactions[targetWallet] and UserFactions[targetWallet].faction or nil,
+      monster = monster,
+      activityStatus = activityStatus
+    }
+    
+    ao.send({
+      Target = msg.From,
+      Action = 'GetUserInfo-Response',
+      Tags = {
+        UserId = targetWallet
+      },
+      Data = json.encode(userInfo)
+    })
+  end
+)
+
+-- Handler for admin to set user stats
+Handlers.add(
+  'SetUserStats',
+  Handlers.utils.hasMatchingTag('Action', 'SetUserStats'),
+  function(msg)
+    -- Check if sender is admin
+    if not IsAdmin(msg.From) then
+      ao.send({
+        Target = msg.From,
+        Data = json.encode({
+          status = "error",
+          message = "Unauthorized access - Admin only"
+        })
+      })
+      return
+    end
+
+    local targetWallet = msg.Tags.Wallet
+    if not targetWallet then
+      ao.send({
+        Target = msg.From,
+        Data = json.encode({
+          status = "error",
+          message = "No target wallet specified"
+        })
+      })
+      return
+    end
+
+    local monster = UserMonsters[targetWallet]
+    if not monster then
+      ao.send({
+        Target = msg.From,
+        Data = json.encode({
+          status = "error",
+          message = "No monster found for this user"
+        })
+      })
+      return
+    end
+
+    -- Parse the new stats from the message data
+    local newStats = json.decode(msg.Data)
+    if not newStats then
+      ao.send({
+        Target = msg.From,
+        Data = json.encode({
+          status = "error",
+          message = "Invalid stats data format"
+        })
+      })
+      return
+    end
+
+    -- Update monster stats
+    if newStats.level ~= nil then monster.level = newStats.level end
+    if newStats.exp ~= nil then monster.exp = newStats.exp end
+    if newStats.attack ~= nil then monster.attack = newStats.attack end
+    if newStats.defense ~= nil then monster.defense = newStats.defense end
+    if newStats.speed ~= nil then monster.speed = newStats.speed end
+    if newStats.health ~= nil then monster.health = newStats.health end
+    if newStats.energy ~= nil then monster.energy = math.min(100, newStats.energy) end
+    if newStats.happiness ~= nil then monster.happiness = math.min(100, newStats.happiness) end
+    
+    -- Update identity and status
+    if newStats.faction ~= nil then 
+      UserFactions[targetWallet] = { faction = newStats.faction }
+    end
+    if newStats.image ~= nil then monster.image = newStats.image end
+    if newStats.name ~= nil then monster.name = newStats.name end
+    if newStats.status ~= nil then
+      monster.status = {
+        type = newStats.status.type,
+        since = newStats.status.since,
+        until_time = newStats.status.until_time
+      }
+    end
+
+    -- Send confirmation back to the admin
+    ao.send({
+      Target = msg.From,
+      Data = json.encode({
+        status = "success",
+        message = "Monster stats updated successfully",
+        monster = monster
+      })
+    })
+  end
+)
+
 print("Loaded NEW PremPass.lua")

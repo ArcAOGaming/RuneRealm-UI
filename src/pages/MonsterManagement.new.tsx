@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { useWallet } from '../hooks/useWallet';
-import { getFactionOptions, purchaseAccess, TokenOption, adoptMonster, getAssetBalances, AssetBalance, SUPPORTED_ASSETS, MonsterStats, MonsterStatus, MonsterMove } from '../utils/aoHelpers';
+import { getFactionOptions, purchaseAccess, TokenOption, adoptMonster, getAssetBalances, AssetBalance, SUPPORTED_ASSETS, MonsterStats } from '../utils/aoHelpers';
 import { message, createDataItemSigner } from '../config/aoConnection';
 import { currentTheme } from '../constants/theme';
 import { Gateway } from '../constants/Constants';
@@ -38,7 +38,7 @@ interface Wallet {
   address: string;
 }
 
-const MonsterManagement: React.FC = () => {
+export const MonsterManagement: React.FC = () => {
   const { wallet, walletStatus, darkMode, connectWallet, setDarkMode } = useWallet();
   const [isPurchaseModalOpen, setIsPurchaseModalOpen] = useState(false);
   const [showConfetti, setShowConfetti] = useState(false);
@@ -416,6 +416,7 @@ const MonsterManagement: React.FC = () => {
 
     // Get berry balance for play action
     const berryBalance = assetBalances.find(a => a.info.processId === monster.activities?.play?.cost?.token)?.balance || 0;
+    const missionFuelBalance = assetBalances.find(a => a.info.processId === monster.activities?.mission?.cost?.token)?.balance || 0;
 
     return (
       <div className={`p-6 rounded-xl ${theme.container} border ${theme.border} backdrop-blur-md w-[95%] mx-auto`}>
@@ -525,7 +526,7 @@ const MonsterManagement: React.FC = () => {
               <div className="w-full bg-gray-200 rounded-full h-2.5">
                 <div 
                   className="bg-purple-600 h-2.5 rounded-full" 
-                  style={{ width: `${Math.min((monster.exp / getFibonacciExp(monster.level)) * 100, 100)}%` }}
+                  style={{ width: `${Math.min(100, (monster.exp / getFibonacciExp(monster.level)) * 100)}%` }}
                 ></div>
               </div>
             </div>
@@ -658,158 +659,9 @@ const MonsterManagement: React.FC = () => {
                       <div className="absolute top-0 right-0 w-px h-[calc(100%-48px)] bg-gray-300"></div>
                       <div className="text-sm font-bold mb-3 text-gray-400">COSTS</div>
                       <div className="flex flex-wrap gap-2 max-h-[210px] overflow-y-auto">
-                        <div className={`px-3 py-1 rounded-full flex items-center gap-2 ${berryBalance >= activities.play.cost.amount ? 'bg-gray-700/50 text-black font-medium' : 'bg-gray-800/50 text-gray-500'}`}>
+                        <div className={`px-3 py-1 rounded-full flex items-center gap-2 ${berryBalance >= activities.play.cost.amount ? 'bg-gray-700/50 text-black font-medium' : 'bg-gray-800/50 text-gray-400 border-2 border-red-500/70 shadow-[0_0_10px_-3px_rgba(239,68,68,0.6)]'}`}>
                           <img src={`${Gateway}${assetBalances.find(a => a.info.processId === activities.play.cost.token)?.info.logo}`} 
                                alt="Berry" className="w-4 h-4 rounded-full" />
                           <span>-{activities.play.cost.amount}</span>
                         </div>
-                        <div className={`px-3 py-1.5 rounded-full ${monster.energy >= activities.play.energyCost ? 'bg-blue-500/30 text-black font-medium' : 'bg-gray-800/50 text-gray-400 border-2 border-red-500/70 shadow-[0_0_10px_-3px_rgba(239,68,68,0.6)]'}`}>
-                          -{activities.play.energyCost} Energy
-                        </div>
-                      </div>
-                    </div>
-                    <div className="w-1/2 pl-4">
-                      <div className="text-sm font-bold mb-3 text-gray-400">REWARDS</div>
-                      <div className="flex flex-wrap gap-2">
-                        <div className="px-3 py-1 rounded-full bg-yellow-500/30 text-black font-medium">
-                          +{activities.play.happinessGain} Happy
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-                  <button
-                    onClick={handlePlayMonster}
-                    disabled={isPlaying || (monster.status.type !== 'Home' && !timeUp) || (monster.status.type === 'Home' && (berryBalance < activities.play.cost.amount || monster.energy < activities.play.energyCost))}
-                    className={`w-full px-4 py-2 rounded-lg font-bold text-lg transition-all duration-300 bg-gradient-to-br from-yellow-500 to-yellow-700 hover:from-yellow-400 hover:to-yellow-600 text-white ${(isPlaying || (monster.status.type !== 'Home' && !timeUp) || (monster.status.type === 'Home' && (berryBalance < activities.play.cost.amount || monster.energy < activities.play.energyCost))) ? 'opacity-50 cursor-not-allowed' : ''}`}
-                  >
-                    {isPlaying ? 'Playing...' : timeUp ? 'Return from Play' : 'Play'}
-                  </button>
-                </div>
-              </div>
-
-              {/* Mission Button */}
-              <div className={`rounded-lg overflow-hidden ${theme.container} border ${theme.border}`}>
-                <div className="bg-black text-white px-4 py-2 text-center font-bold">
-                  {activities.mission.duration / 3600000} HOUR
-                </div>
-                <div className="p-6 flex flex-col h-[300px] relative">
-                  <div className="flex-1 flex justify-between items-start">
-                    <div className="w-1/2 pr-4 relative">
-                      <div className="absolute top-0 right-0 w-px h-[calc(100%-48px)] bg-gray-300"></div>
-                      <div className="text-sm font-bold mb-3 text-gray-400">COSTS</div>
-                      <div className="flex flex-wrap gap-2 max-h-[210px] overflow-y-auto">
-                        <div className={`px-3 py-1 rounded-full flex items-center gap-2 ${assetBalances.find(a => a.info.processId === activities.mission.cost.token)?.balance >= activities.mission.cost.amount ? 'bg-gray-700/50 text-black font-medium' : 'bg-gray-800/50 text-gray-500'}`}>
-                          <img src={`${Gateway}${assetBalances.find(a => a.info.processId === activities.mission.cost.token)?.info.logo}`} 
-                               alt="TRUNK" className="w-4 h-4 rounded-full" />
-                          <span>-{activities.mission.cost.amount}</span>
-                        </div>
-                        <div className={`px-3 py-1 rounded-full ${monster.energy >= activities.mission.energyCost ? 'bg-blue-500/30 text-black font-medium' : 'bg-gray-800/50 text-gray-500'}`}>
-                          -{activities.mission.energyCost} Energy
-                        </div>
-                        <div className={`px-3 py-1.5 rounded-full ${monster.happiness >= activities.mission.happinessCost ? 'bg-yellow-500/30 text-black font-medium' : 'bg-gray-800/50 text-gray-400 border-2 border-red-500/70 shadow-[0_0_10px_-3px_rgba(239,68,68,0.6)]'}`}>
-                          -{activities.mission.happinessCost} Happy
-                        </div>
-                      </div>
-                    </div>
-                    <div className="w-1/2 pl-4">
-                      <div className="text-sm font-bold mb-3 text-gray-400">REWARDS</div>
-                      <div className="flex flex-wrap gap-2">
-                        <div className="px-3 py-1 rounded-full bg-emerald-500/30 text-black font-medium">
-                          +1 EXP
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-                  <button
-                    onClick={handleMission}
-                    disabled={
-                      isOnMission || 
-                      (monster.status.type !== 'Home' && monster.status.type !== 'Mission') || 
-                      (monster.status.type === 'Home' && (monster.energy < activities.mission.energyCost || monster.happiness < activities.mission.happinessCost))
-                    }
-                    className={`w-full px-4 py-2 rounded-lg font-bold text-lg transition-all duration-300 bg-gradient-to-br from-emerald-500 to-emerald-700 hover:from-emerald-400 hover:to-emerald-600 text-white ${
-                      (isOnMission || 
-                       (monster.status.type !== 'Home' && monster.status.type !== 'Mission') || 
-                       (monster.status.type === 'Home' && (monster.energy < activities.mission.energyCost || monster.happiness < activities.mission.happinessCost))) 
-                      ? 'opacity-50 cursor-not-allowed' : ''}`}
-                  >
-                    {isOnMission ? 'On Mission...' : 
-                     monster.status.type === 'Mission' && Date.now() > monster.status.until_time ? 'Return from Mission' : 'Start Mission'}
-                  </button>
-                </div>
-              </div>
-            </div>
-          </div>
-        </div>
-      </div>
-    );
-  };
-
-  return (
-    <div className="min-h-screen flex flex-col overflow-hidden relative">
-      <div className={`min-h-screen flex flex-col ${theme.bg}`}>
-        <Header
-          theme={theme}
-          darkMode={darkMode}
-          onDarkModeToggle={() => setDarkMode(!darkMode)}
-        />
-        
-        {showConfetti && (
-          <Confetti
-            width={window.innerWidth}
-            height={window.innerHeight}
-            recycle={false}
-            numberOfPieces={500}
-            gravity={0.3}
-          />
-        )}
-
-        <StatAllocationModal
-          isOpen={showStatModal}
-          onClose={() => setShowStatModal(false)}
-          onConfirm={handleStatConfirm}
-          darkMode={darkMode}
-        />
-        <PurchaseModal
-          isOpen={isPurchaseModalOpen}
-          onClose={() => setIsPurchaseModalOpen(false)}
-          onPurchase={handlePurchase}
-          contractName="Eternal Pass"
-        />
-
-        <div className={`container mx-auto px-6 py-8 flex-1 overflow-y-auto ${theme.text} pr-72 md:pr-80`}>
-          <div className="max-w-6xl mx-auto mb-8">
-            <h1 className={`text-3xl font-bold mb-4 ${theme.text}`}>Monster Management</h1>
-            
-            {!walletStatus?.isUnlocked ? (
-              <div className={`p-6 rounded-xl ${theme.container} border ${theme.border} backdrop-blur-md text-center`}>
-                <h2 className={`text-xl font-bold mb-4 ${theme.text}`}>Unlock Access to Manage Monsters</h2>
-                <button
-                  onClick={() => setIsPurchaseModalOpen(true)}
-                  className={`px-6 py-3 rounded-lg font-bold transition-all duration-300 ${theme.buttonBg} ${theme.buttonHover} ${theme.text}`}
-                >
-                  Purchase Access
-                </button>
-              </div>
-            ) : !walletStatus?.faction ? (
-              <div className={`p-6 rounded-xl ${theme.container} border ${theme.border} backdrop-blur-md text-center`}>
-                <h2 className={`text-xl font-bold mb-4 ${theme.text}`}>Join a Faction First</h2>
-                <a
-                  href="/faction"
-                  className={`px-6 py-3 rounded-lg font-bold transition-all duration-300 ${theme.buttonBg} ${theme.buttonHover} ${theme.text}`}
-                >
-                  Choose Your Faction
-                </a>
-              </div>
-            ) : (
-              renderMonsterCard()
-            )}
-          </div>
-        </div>
-        {wallet?.address && renderAssetInventory()}
-      </div>
-    </div>
-  );
-};
-
-export { MonsterManagement };
+                        <div className

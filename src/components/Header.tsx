@@ -19,7 +19,15 @@ const Header: React.FC<HeaderProps> = ({
   const navigate = useNavigate();
   const { wallet, walletStatus, isCheckingStatus, connectWallet } = useWallet();
 
-  const isConnected = !!wallet;
+  // Use cached wallet status
+  const isConnected = !!wallet?.address;
+  const handleConnect = async () => {
+    if (!isConnected) {
+      await connectWallet(true); // Force check on initial connect
+    } else {
+      await connectWallet(); // Use cached status if already connected
+    }
+  };
   
   return (
     <div className={`flex items-center px-4 py-4 ${theme.container} border-b ${theme.border} relative flex-shrink-0`}>
@@ -47,15 +55,17 @@ const Header: React.FC<HeaderProps> = ({
       {/* Right side */}
       <div className="flex-1 flex items-center justify-end gap-3">
         <button
-          onClick={connectWallet}
+          onClick={handleConnect}
           className={`px-6 py-3 ${theme.buttonBg} ${theme.buttonHover} ${theme.text} rounded-xl border ${theme.border} transition-all duration-300 hover:scale-105`}
         >
           {!isConnected ? (
             'Connect Wallet'
           ) : isCheckingStatus ? (
             <span>Connected (Loading...)</span>
+          ) : walletStatus?.isUnlocked ? (
+            <span>Connected (Premium User)</span>
           ) : (
-            <span>Connected {walletStatus?.isUnlocked ? '(Premium User)' : '(Basic User)'}</span>
+            <span>Connected (Basic User)</span>
           )}
         </button>
         <button

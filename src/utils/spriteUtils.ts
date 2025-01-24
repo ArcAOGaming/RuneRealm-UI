@@ -1,4 +1,4 @@
-import { Gateway } from '../constants/spriteAssets';
+import { Gateway } from '../constants/Constants';
 
 interface LayerState {
   style: string;

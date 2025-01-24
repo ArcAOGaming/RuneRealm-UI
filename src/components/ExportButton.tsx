@@ -1,6 +1,6 @@
 import { useCallback } from 'react';
 import { message, createDataItemSigner } from '../config/aoConnection';
-import { AdminSkinChanger, DefaultAtlasTxID } from '../constants/spriteAssets';
+import { AdminSkinChanger, DefaultAtlasTxID } from '../constants/Constants';
 
 interface ExportButtonProps {
   layers: {
