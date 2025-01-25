@@ -1,6 +1,6 @@
 import React, { useEffect, useState, useCallback } from 'react';
 import { useWallet } from '../hooks/useWallet';
-import { getFactionOptions, FactionOptions, setFaction, purchaseAccess, TokenOption, getTotalOfferings, OfferingStats } from '../utils/aoHelpers';
+import { getFactionOptions, FactionOptions, setFaction, purchaseAccess, TokenOption, getTotalOfferings, OfferingStats, getUserOfferings } from '../utils/aoHelpers';
 import { currentTheme } from '../constants/theme';
 import { Gateway } from '../constants/Constants';
 import PurchaseModal from '../components/PurchaseModal';
@@ -20,6 +20,7 @@ export const FactionPage: React.FC = () => {
   const [isLoadingFactions, setIsLoadingFactions] = useState(false);
   const [showConfetti, setShowConfetti] = useState(false);
   const [offeringStats, setOfferingStats] = useState<OfferingStats | null>(null);
+  const [userOfferings, setUserOfferings] = useState<number>(0);
   const theme = currentTheme(darkMode);
 
   useEffect(() => {
@@ -32,8 +33,21 @@ export const FactionPage: React.FC = () => {
       }
     };
 
-    loadOfferingStats();
-  }, []);
+    const loadStats = async () => {
+      try {
+        const [totalStats, userStats] = await Promise.all([
+          getTotalOfferings(),
+          wallet?.address ? getUserOfferings(wallet.address) : Promise.resolve(0)
+        ]);
+        setOfferingStats(totalStats);
+        setUserOfferings(userStats);
+      } catch (error) {
+        console.error('Error loading stats:', error);
+      }
+    };
+
+    loadStats();
+  }, [wallet?.address]);
 
   const loadFactions = useCallback(async (isInitial = false) => {
     try {
@@ -120,25 +134,76 @@ export const FactionPage: React.FC = () => {
           {/* Header Section */}
           <div className="max-w-6xl mx-auto mb-8">
             <h1 className={`text-3xl font-bold mb-4 ${theme.text}`}>Factions</h1>
+            {!walletStatus?.faction && walletStatus?.isUnlocked && (
+              <div className={`p-6 rounded-xl ${theme.container} border ${theme.border} mb-8 backdrop-blur-md`}>
+                <h2 className={`text-2xl font-bold mb-4 ${theme.text}`}>Picking Your Faction</h2>
+                <div className={`space-y-3 ${theme.text}`}>
+                  <p className="text-lg font-semibold text-red-500">
+                    Important: Faction selection is final - Team players only, no team quitting!
+                  </p>
+                  <div className="space-y-2">
+                    <p>
+                      <span className="font-semibold">Rewards Distribution:</span> Faction rewards are split among all faction members - being in the biggest faction may not be the best strategy.
+                    </p>
+                    <p>
+                      <span className="font-semibold">Activity Matters:</span> The most active members will receive additional rewards, while non-active members will receive no rewards.
+                    </p>
+                    <p>
+                      <span className="font-semibold">Reward Sources:</span> Rewards come from multiple sources:
+                    </p>
+                    <ul className="list-disc pl-6 space-y-1">
+                      <li>Partnerships</li>
+                      <li>Premium pass sales revenue</li>
+                      <li>In-game revenue</li>
+                      <li>Funds raised</li>
+                      <li>Profits from staking</li>
+                    </ul>
+                  </div>
+                </div>
+              </div>
+            )}
             {walletStatus?.faction && currentFaction && (
-              <div className={`p-4 rounded-xl ${theme.container} border ${theme.border} mb-8 backdrop-blur-md`}>
-                <div className="flex items-center gap-4">
-                  {currentFaction.mascot && (
-                    <img 
-                      src={`${Gateway}${currentFaction.mascot}`}
-                      alt={`${currentFaction.name} Mascot`}
-                      className="w-24 h-24 object-cover rounded-lg"
-                    />
-                  )}
-                  <div>
-                    <h2 className={`text-2xl font-bold mb-2 ${theme.text}`}>Your Faction</h2>
-                    <p className={`text-xl ${theme.text}`}>{currentFaction.name}</p>
-                    {currentFaction.perks && (
-                      <div className="mt-2">
-                        <p className={`text-sm ${theme.text} opacity-75`}>{currentFaction.perks[0]}</p>
-                      </div>
+              <div className={`p-6 rounded-xl ${theme.container} border ${theme.border} mb-8 backdrop-blur-md`}>
+                <div className="flex flex-col md:flex-row gap-6">
+                  <div className="flex items-start gap-4">
+                    {currentFaction.mascot && (
+                      <img 
+                        src={`${Gateway}${currentFaction.mascot}`}
+                        alt={`${currentFaction.name} Mascot`}
+                        className="w-24 h-24 object-cover rounded-lg"
+                      />
                     )}
-                    <div className="mt-4">
+                    <div>
+                      <h2 className={`text-2xl font-bold mb-2 ${theme.text}`}>Your Faction</h2>
+                      <p className={`text-xl ${theme.text} mb-2`}>{currentFaction.name}</p>
+                      {currentFaction.perks && (
+                        <div className="mb-4">
+                          <p className={`text-sm ${theme.text} opacity-75`}>{currentFaction.perks[0]}</p>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                  
+                  <div className="flex-1 border-t md:border-l md:border-t-0 pt-4 md:pt-0 md:pl-6">
+                    <div className="mb-4">
+                      <h3 className={`text-lg font-semibold mb-2 ${theme.text}`}>Daily Offerings</h3>
+                      <p className={`text-sm ${theme.text} opacity-80 mb-2`}>
+                        Offer praise to the altar of your team once daily. Build streaks to earn RUNE rewards - consistency is key!
+                      </p>
+                      <div className={`grid grid-cols-2 gap-4 p-3 rounded-lg ${theme.container} bg-opacity-50 mb-4`}>
+                        <div className={`text-sm ${theme.text}`}>
+                          <span className="opacity-70">Total Offerings:</span>
+                          <span className="float-right font-semibold">
+                            {offeringStats?.[currentFaction.name as keyof OfferingStats] || 0}
+                          </span>
+                        </div>
+                        <div className={`text-sm ${theme.text}`}>
+                          <span className="opacity-70">Your Offerings:</span>
+                          <span className="float-right font-semibold">
+                            {userOfferings}
+                          </span>
+                        </div>
+                      </div>
                       <CheckInButton />
                     </div>
                   </div>
@@ -170,7 +235,7 @@ export const FactionPage: React.FC = () => {
               {factions.map((faction) => (
                 <div
                   key={faction.name}
-                  className={`flex flex-col h-full p-2.5 rounded-xl ${theme.container} border ${theme.border} backdrop-blur-md transform transition-all duration-300 hover:scale-[1.02] hover:shadow-xl min-h-[560px]`}
+                  className={`flex flex-col h-full p-2.5 rounded-xl ${theme.container} border ${theme.border} backdrop-blur-md transform transition-all duration-300 hover:scale-[1.02] hover:shadow-xl min-h-[480px]`}
                 >
                   <div className="relative rounded-lg overflow-hidden bg-black/5">
                     {faction.mascot && (
@@ -182,24 +247,39 @@ export const FactionPage: React.FC = () => {
                     )}
                   </div>
                   <div className="flex-grow mt-2.5 px-1.5">
-                    <div className="flex justify-between items-center mb-2">
-                      <h3 className={`text-xl font-bold ${theme.text}`}>{faction.name}</h3>
-                      {offeringStats && (
-                        <div className={`text-sm ${theme.text} opacity-80`}>
-                          {offeringStats[faction.name as keyof OfferingStats]} offerings
+                    <h3 className={`text-xl font-bold ${theme.text} mb-3`}>{faction.name}</h3>
+                    <div className="grid grid-cols-2 gap-4">
+                      <div>
+                        {faction.perks && (
+                          <ul className="space-y-1.5">
+                            {faction.perks.map((perk, index) => (
+                              <li key={index} className={`text-sm ${theme.text} opacity-80 flex items-start leading-tight`}>
+                                <span className="mr-1.5 text-blue-400 flex-shrink-0">•</span>
+                                <span>{perk}</span>
+                              </li>
+                            ))}
+                          </ul>
+                        )}
+                      </div>
+                      <div className={`grid grid-cols-1 gap-2 p-2 rounded-lg ${theme.container} bg-opacity-50`}>
+                        <div className={`text-sm ${theme.text}`}>
+                          <span className="opacity-70">Current members:</span>
+                          <span className="float-right font-semibold">{faction.memberCount}</span>
                         </div>
-                      )}
+                        <div className={`text-sm ${theme.text}`}>
+                          <span className="opacity-70">Total monsters adopted:</span>
+                          <span className="float-right font-semibold">{faction.monsterCount}</span>
+                        </div>
+                        {offeringStats && (
+                          <div className={`text-sm ${theme.text}`}>
+                            <span className="opacity-70">Total offerings given:</span>
+                            <span className="float-right font-semibold">
+                              {offeringStats[faction.name as keyof OfferingStats]}
+                            </span>
+                          </div>
+                        )}
+                      </div>
                     </div>
-                    {faction.perks && (
-                      <ul className="space-y-1.5">
-                        {faction.perks.map((perk, index) => (
-                          <li key={index} className={`text-sm ${theme.text} opacity-80 flex items-start leading-tight`}>
-                            <span className="mr-1.5 text-blue-400 flex-shrink-0">•</span>
-                            <span>{perk}</span>
-                          </li>
-                        ))}
-                      </ul>
-                    )}
                   </div>
                   <div className="mt-2.5 px-1.5">
                     {!walletStatus?.isUnlocked ? (

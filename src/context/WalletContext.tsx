@@ -35,18 +35,29 @@ export const WalletProvider: React.FC<{ children: React.ReactNode }> = ({ childr
       setIsCheckingStatus(true);
       // @ts-ignore
       const activeAddress = await window.arweaveWallet?.getActiveAddress();
-      if (activeAddress) {
-        // @ts-ignore
-        const walletObj = { address: activeAddress, dispatch: window.arweaveWallet.dispatch };
-        setWallet(walletObj);
-        const status = await checkWalletStatus({ address: activeAddress });
-        console.log('Wallet status updated:', status);
-        setWalletStatus(status);
-        setLastCheck(now);
-        localStorage.setItem('walletStatus', JSON.stringify(status));
-        return status.isUnlocked;
+      if (!activeAddress) {
+        return false;
       }
-      return false;
+
+      // @ts-ignore
+      const walletObj = { address: activeAddress, dispatch: window.arweaveWallet.dispatch };
+      setWallet(walletObj);
+
+      // Use cached status if available and not forced
+      if (!force && localStorage.getItem('walletStatus')) {
+        const cachedStatus = JSON.parse(localStorage.getItem('walletStatus')!);
+        setWalletStatus(cachedStatus);
+        setLastCheck(now);
+        return cachedStatus.isUnlocked;
+      }
+
+      // Only fetch new status if forced or no cache
+      const status = await checkWalletStatus({ address: activeAddress });
+      console.log('Wallet status updated:', status);
+      setWalletStatus(status);
+      setLastCheck(now);
+      localStorage.setItem('walletStatus', JSON.stringify(status));
+      return status.isUnlocked;
     } catch (error) {
       console.error('Error checking wallet status:', error);
       return false;

@@ -10,9 +10,12 @@ interface ResultType {
     }>;
 }
 
+// Define supported asset type
+export type SupportedAssetId = typeof SUPPORTED_ASSETS[number];
+
 // Interface for wallet status
 export interface AssetInfo {
-    processId: string;
+    processId: SupportedAssetId;
     logo: string;
     name: string;
     ticker: string;
@@ -139,6 +142,8 @@ export interface FactionOptions {
     description: string;
     mascot: string;
     perks: string[];
+    memberCount: number;
+    monsterCount: number;
 }
 
 interface ContractResponse {
@@ -157,80 +162,66 @@ export const checkWalletStatus = async (walletInfo?: { address: string }): Promi
         const address = walletInfo?.address || await window.arweaveWallet.getActiveAddress();
         console.log("Checking wallet status for address:", address);
         
-        // Check if user is unlocked
-        const dryRunResult = await dryrun({
-            process: AdminSkinChanger,
-            tags: [
-                { name: "Action", value: "CheckUnlocked" },
-                { name: "Address", value: address }
-            ],
-            data: ""
-        }) as ResultType;
+        // Run all checks in parallel
+        const [unlockResult, skinResult, factionResult, monsterResult] = await Promise.all([
+            // Check if user is unlocked
+            dryrun({
+                process: AdminSkinChanger,
+                tags: [
+                    { name: "Action", value: "CheckUnlocked" },
+                    { name: "Address", value: address }
+                ],
+                data: ""
+            }),
+            // Check skin
+            dryrun({
+                process: AdminSkinChanger,
+                tags: [
+                    { name: "Action", value: "CheckSkin" },
+                    { name: "Address", value: address }
+                ],
+                data: ""
+            }),
+            // Check faction
+            dryrun({
+                process: AdminSkinChanger,
+                tags: [
+                    { name: "Action", value: "CheckFaction" },
+                    { name: "Address", value: address }
+                ],
+                data: ""
+            }),
+            // Get monster status
+            dryrun({
+                process: AdminSkinChanger,
+                tags: [
+                    { name: "Action", value: "GetUserMonster" },
+                    { name: "Wallet", value: address }
+                ],
+                data: ""
+            })
+        ]) as [ResultType, ResultType, ResultType, ResultType];
 
-        // Check if user is unlocked
-        const result2 = await dryrun({
-            process: AdminSkinChanger,
-            tags: [
-                { name: "Action", value: "CheckSkin" },
-                { name: "Address", value: address }
-            ],
-            data: ""
-        }) as ResultType;
-
-        const result3 = await dryrun({
-            process: AdminSkinChanger,
-            tags: [
-                { name: "Action", value: "CheckFaction" },
-                { name: "Address", value: address }
-            ],
-            data: ""
-        }) as ResultType;
-
-        console.log("CheckUnlocked response:", dryRunResult);
-        console.log("CheckSkin response:", result2);
-        console.log("CheckFaction response:", result3);
-
-        if (!dryRunResult.Messages || dryRunResult.Messages.length === 0) {
+        if (!unlockResult.Messages || unlockResult.Messages.length === 0) {
             throw new Error("No response from CheckUnlocked");
         }
 
-        const response = JSON.parse(dryRunResult.Messages[0].Data);
-        console.log("Parsed unlock status:", response);
-
-        // Handle both old and new response formats
+        const response = JSON.parse(unlockResult.Messages[0].Data);
         const isUnlocked = response.type === "ok" ? 
             JSON.parse(response.data).result : 
             response.result === true;
-            
-        console.log("Final unlock status:", isUnlocked);
 
-        let skinTxId = null;
-        if (result2.Messages && result2.Messages.length > 0) {
-            const skinResponse = result2.Messages[0].Data;
-            console.log("Skin response:", skinResponse);
-            skinTxId = skinResponse == "None" ? 
-                null : 
-                skinResponse;
-        }
-        let faction = null;
-        if (result3.Messages && result3.Messages.length > 0) {
-            const factionResponse = result3.Messages[0].Data;
-            console.log("Faction response:", factionResponse);
-            faction = factionResponse == "None" ? 
-                null : 
-                factionResponse;
-        }
+        // Process skin
+        const skinTxId = skinResult.Messages && skinResult.Messages.length > 0 ?
+            (skinResult.Messages[0].Data === "None" ? null : skinResult.Messages[0].Data) :
+            null;
 
-        // Get monster status
-        const monsterResult = await dryrun({
-            process: AdminSkinChanger,
-            tags: [
-                { name: "Action", value: "GetUserMonster" },
-                { name: "Wallet", value: address }
-            ],
-            data: ""
-        }) as ResultType;
+        // Process faction
+        const faction = factionResult.Messages && factionResult.Messages.length > 0 ?
+            (factionResult.Messages[0].Data === "None" ? null : factionResult.Messages[0].Data) :
+            null;
 
+        // Process monster
         let monster = null;
         if (monsterResult.Messages && monsterResult.Messages.length > 0) {
             const monsterResponse = JSON.parse(monsterResult.Messages[0].Data);
@@ -239,7 +230,6 @@ export const checkWalletStatus = async (walletInfo?: { address: string }): Promi
             }
         }
 
-        console.log("Current skin:", skinTxId);
         return {
             isUnlocked,
             currentSkin: skinTxId,
@@ -452,7 +442,9 @@ export const getFactionOptions = async (): Promise<FactionOptions[]> => {
             name: option.name,
             description: option.description,
             mascot: option.mascot,
-            perks: option.perks
+            perks: option.perks,
+            memberCount: option.memberCount,
+            monsterCount: option.monsterCount
         }));
     } catch (error) {
         console.error('Error getting purchase options:', error);
@@ -660,25 +652,31 @@ export const getAssetBalances = async (wallet: any): Promise<AssetBalance[]> => 
         
         const assetBalances: AssetBalance[] = [];
 
-        // Get info and balances for each asset
-        for (const processId of SUPPORTED_ASSETS) {
-            console.log(`Getting info and balance for process:`, processId);
-            
+        // Get info and balances for all assets in parallel
+        const assetPromises = SUPPORTED_ASSETS.map(async (processId) => {
             try {
-                // Get asset info
-                const infoResult = await dryrun({
-                    process: processId,
-                    tags: [
-                        { name: "Action", value: "Info" }
-                    ],
-                    data: ""
-                }) as ResultType;
+                // Run info and balance queries in parallel for each asset
+                const [infoResult, balanceResult] = await Promise.all([
+                    dryrun({
+                        process: processId,
+                        tags: [
+                            { name: "Action", value: "Info" }
+                        ],
+                        data: ""
+                    }),
+                    dryrun({
+                        process: processId,
+                        tags: [
+                            { name: "Action", value: "Balances" }
+                        ],
+                        data: ""
+                    })
+                ]) as [ResultType, ResultType];
 
                 if (!infoResult.Messages || infoResult.Messages.length === 0) {
-                    console.log(`No info response for process ${processId}`);
-                    // For known tokens, use hardcoded info if API fails
+                    // Handle known tokens with hardcoded info
                     if (processId === "wOrb8b_V8QixWyXZub48Ki5B6OIDyf_p1ngoonsaRpQ") {
-                        assetBalances.push({
+                        return {
                             info: {
                                 processId,
                                 logo: "hqg-Em9DdYHYmMysyVi8LuTGF8IF_F7ZacgjYiSpj0k",
@@ -686,9 +684,9 @@ export const getAssetBalances = async (wallet: any): Promise<AssetBalance[]> => 
                                 ticker: "TRUNK"
                             },
                             balance: 0
-                        });
+                        };
                     } else if (processId === "OsK9Vgjxo0ypX_HLz2iJJuh4hp3I80yA9KArsJjIloU") {
-                        assetBalances.push({
+                        return {
                             info: {
                                 processId,
                                 logo: "LQ4crOHN9qO6JsLNs253AaTch6MgAMbM8PKqBxs4hgI",
@@ -696,9 +694,9 @@ export const getAssetBalances = async (wallet: any): Promise<AssetBalance[]> => 
                                 ticker: "NAB"
                             },
                             balance: 0
-                        });
+                        };
                     }
-                    continue;
+                    return null;
                 }
 
                 const infoTags = infoResult.Messages[0].Tags;
@@ -707,18 +705,8 @@ export const getAssetBalances = async (wallet: any): Promise<AssetBalance[]> => 
                 const ticker = infoTags.find(t => t.name === "Ticker")?.value;
 
                 if (!logo || !name || !ticker) {
-                    console.log(`Missing info for process ${processId}`);
-                    continue;
+                    return null;
                 }
-
-                // Get balance
-                const balanceResult = await dryrun({
-                    process: processId,
-                    tags: [
-                        { name: "Action", value: "Balances" }
-                    ],
-                    data: ""
-                }) as ResultType;
 
                 let balance = 0;
                 if (balanceResult.Messages && balanceResult.Messages.length > 0) {
@@ -726,7 +714,7 @@ export const getAssetBalances = async (wallet: any): Promise<AssetBalance[]> => 
                     balance = parseInt(balanceData[wallet.address] || "0");
                 }
 
-                assetBalances.push({
+                return {
                     info: {
                         processId,
                         logo,
@@ -734,13 +722,20 @@ export const getAssetBalances = async (wallet: any): Promise<AssetBalance[]> => 
                         ticker
                     },
                     balance
-                });
+                };
             } catch (error) {
                 console.log(`Error loading asset ${processId}:`, error);
-                // Continue with other assets if one fails
-                continue;
+                return null;
             }
-        }
+        });
+
+        // Wait for all asset queries to complete
+        const results = await Promise.all(assetPromises);
+        const validResults = results.filter((result): result is AssetBalance => {
+            if (!result) return false;
+            return true; // All non-null results are valid AssetBalance objects
+        });
+        assetBalances.push(...validResults);
 
         console.log("Final asset balances:", assetBalances);
         return assetBalances;
@@ -921,12 +916,13 @@ export const getUserOfferings = async (userId: string): Promise<number> => {
         }) as ResultType;
 
         if (!dryRunResult.Messages || dryRunResult.Messages.length === 0) {
-            throw new Error("No response from GetUserOfferings");
+            return 0;
         }
 
-        return JSON.parse(dryRunResult.Messages[0].Data);
+        const result = JSON.parse(dryRunResult.Messages[0].Data);
+        return typeof result === 'number' ? result : 0;
     } catch (error) {
         console.error("Error getting user offerings:", error);
-        throw error;
+        return 0;
     }
 };

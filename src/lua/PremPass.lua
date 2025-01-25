@@ -441,15 +441,47 @@ Handlers.add(
     return "ok"
   end
 )
+-- Function to count members and monsters in a faction
+function GetFactionStats(factionName)
+  local memberCount = 0
+  local monsterCount = 0
+  
+  for userId, userFaction in pairs(UserFactions) do
+    if userFaction.faction == factionName then
+      memberCount = memberCount + 1
+      if UserMonsters[userId] then
+        monsterCount = monsterCount + 1
+      end
+    end
+  end
+  
+  return memberCount, monsterCount
+end
+
 -- Handle GetFactions action
 Handlers.add(
   "GetFactions",
   Handlers.utils.hasMatchingTag("Action", "GetFactions"),
   function(msg)
+    local factionsWithStats = {}
+    
+    for _, faction in ipairs(AvailableFactions) do
+      local memberCount, monsterCount = GetFactionStats(faction.name)
+      local factionWithStats = {
+        name = faction.name,
+        description = faction.description,
+        mascot = faction.mascot,
+        perks = faction.perks,
+        memberCount = memberCount,
+        monsterCount = monsterCount
+      }
+      table.insert(factionsWithStats, factionWithStats)
+    end
+    
     ao.send({
       Target = msg.From,
       Data = json.encode({
-        result = AvailableFactions
+        result = factionsWithStats
       })
     })
     return "ok"
