@@ -1,13 +1,15 @@
 import React, { useEffect, useState, useCallback } from 'react';
 import { useWallet } from '../hooks/useWallet';
-import { getFactionOptions, FactionOptions, setFaction, purchaseAccess, TokenOption } from '../utils/aoHelpers';
+import { getFactionOptions, FactionOptions, setFaction, purchaseAccess, TokenOption, getTotalOfferings, OfferingStats } from '../utils/aoHelpers';
 import { currentTheme } from '../constants/theme';
 import { Gateway } from '../constants/Constants';
 import PurchaseModal from '../components/PurchaseModal';
+import CheckInButton from '../components/CheckInButton';
 import Header from '../components/Header';
 import Confetti from 'react-confetti';
 import LoadingAnimation from '../components/LoadingAnimation';
 import Inventory from '../components/Inventory';
+import Footer from '../components/Footer';
 
 export const FactionPage: React.FC = () => {
   const { wallet, walletStatus, darkMode, connectWallet, setDarkMode } = useWallet();
@@ -17,7 +19,21 @@ export const FactionPage: React.FC = () => {
   const [isInitialLoad, setIsInitialLoad] = useState(true);
   const [isLoadingFactions, setIsLoadingFactions] = useState(false);
   const [showConfetti, setShowConfetti] = useState(false);
+  const [offeringStats, setOfferingStats] = useState<OfferingStats | null>(null);
   const theme = currentTheme(darkMode);
+
+  useEffect(() => {
+    const loadOfferingStats = async () => {
+      try {
+        const stats = await getTotalOfferings();
+        setOfferingStats(stats);
+      } catch (error) {
+        console.error('Error loading offering stats:', error);
+      }
+    };
+
+    loadOfferingStats();
+  }, []);
 
   const loadFactions = useCallback(async (isInitial = false) => {
     try {
@@ -122,6 +138,9 @@ export const FactionPage: React.FC = () => {
                         <p className={`text-sm ${theme.text} opacity-75`}>{currentFaction.perks[0]}</p>
                       </div>
                     )}
+                    <div className="mt-4">
+                      <CheckInButton />
+                    </div>
                   </div>
                 </div>
               </div>
@@ -163,7 +182,14 @@ export const FactionPage: React.FC = () => {
                     )}
                   </div>
                   <div className="flex-grow mt-2.5 px-1.5">
-                    <h3 className={`text-xl font-bold mb-2 ${theme.text}`}>{faction.name}</h3>
+                    <div className="flex justify-between items-center mb-2">
+                      <h3 className={`text-xl font-bold ${theme.text}`}>{faction.name}</h3>
+                      {offeringStats && (
+                        <div className={`text-sm ${theme.text} opacity-80`}>
+                          {offeringStats[faction.name as keyof OfferingStats]} offerings
+                        </div>
+                      )}
+                    </div>
                     {faction.perks && (
                       <ul className="space-y-1.5">
                         {faction.perks.map((perk, index) => (
@@ -203,6 +229,7 @@ export const FactionPage: React.FC = () => {
             </div>
           )}
         </div>
+        <Footer darkMode={darkMode} />
       </div>
     </div>
   );

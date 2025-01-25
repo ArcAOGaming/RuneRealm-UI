@@ -21,6 +21,6 @@
     "allowJs": true,
     "checkJs": false
   },
-  "include": ["src"],
+  "include": ["src", "src/pages/SpriteCustomizer.tsx"],
   "references": [{ "path": "./tsconfig.node.json" }]
 }

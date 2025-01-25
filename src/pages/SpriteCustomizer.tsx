@@ -10,7 +10,7 @@ import PurchaseModal from '../components/PurchaseModal'
 import { currentTheme } from '../constants/theme'
 import { SPRITE_CATEGORIES } from '../constants/Constants'
 import { ArconnectSigner } from '@ardrive/turbo-sdk/web'
-import logoPath from './assets/rune-realm-transparent.png'
+import logoPath from '../assets/rune-realm-transparent.png'
 import { checkWalletStatus, TokenOption, purchaseAccess } from '../utils/aoHelpers'
 import Confetti from 'react-confetti'
 import { AdminSkinChanger } from '../constants/Constants'
@@ -18,11 +18,10 @@ import AdminBulkUnlock from '../components/AdminBulkUnlock'
 import AdminRemoveUser from '../components/AdminRemoveUser'
 import TestButton from '../components/TestButton'
 import CacheDebugger from '../components/CacheDebugger'
-// Uncomment when deploying in Reality, comment out SimpleHeader import
-// import Header from './components/Header'
-// Comment out when deploying in Reality
 import SimpleHeader from '../components/SimpleHeader'
 import Header from '../components/Header'
+import Footer from '../components/Footer'
+import { ArweaveWallet, REQUIRED_PERMISSIONS } from '../types/arweave';
 
 interface LayerState {
   style: string;
@@ -32,8 +31,6 @@ interface LayerState {
 interface Layers {
   [key: string]: LayerState;
 }
-
-import { ArweaveWallet, REQUIRED_PERMISSIONS } from '../types/arweave';
 
 interface SpriteCustomizerProps {
   wallet?: ArweaveWallet;
@@ -71,7 +68,6 @@ const SpriteCustomizer: React.FC<SpriteCustomizerProps> = ({ wallet, onEnter, da
   const [showWarp, setShowWarp] = useState(false);
   const [showPreview, setShowPreview] = useState(false);
   const [showCustomizer, setShowCustomizer] = useState(false);
-
 
   const theme = currentTheme(darkMode);
 
@@ -490,52 +486,13 @@ const SpriteCustomizer: React.FC<SpriteCustomizerProps> = ({ wallet, onEnter, da
             />
           </div>
 
-          {/* Footer */}
-          <div className={`flex justify-center items-center gap-2 py-1.5 px-3 ${theme.container} backdrop-blur-sm rounded-b-2xl border-t ${theme.border} flex-shrink-0`}>
-            <div className="flex items-center gap-2">
-              <span className="text-sm text-white/70">Powered by</span>
-              <a 
-                href="https://ar.io" 
-                target="_blank" 
-                rel="noopener noreferrer" 
-                className="transition-transform hover:scale-105"
-              >
-                <img 
-                  src={new URL(`./assets/ARIO-${darkMode ? 'Dark' : 'Light'}.png`, import.meta.url).href} 
-                  alt="ARIO.pn" 
-                  className="h-10" 
-                />
-              </a>
-              <span className="text-sm text-white/70">+</span>
-              <a 
-                href="https://ardrive.io/turbo" 
-                target="_blank" 
-                rel="noopener noreferrer" 
-                className="transition-transform hover:scale-105"
-              >
-                <img 
-                  src={new URL(`./assets/Turbo-${darkMode ? 'Dark' : 'Light'}.png`, import.meta.url).href} 
-                  alt="Turbo" 
-                  className="h-10" 
-                />
-              </a>
-              <span className="text-sm text-white/70">on</span>
-              <a 
-                href="https://game.ar.io" 
-                target="_blank" 
-                rel="noopener noreferrer"
-                className="transition-transform hover:scale-105"
-              >
-                <img src={new URL('./assets/arcao.ico', import.meta.url).href} alt="arcao" className="h-10" />
-              </a>
-            </div>
-          </div>
+          <Footer darkMode={darkMode} />
 
           {/* Admin Tools - Comment out when not needed DO NOT REMOVE*/}
-          <div className={`flex flex-col gap-4 p-4 ${theme.container} border-t ${theme.border}`}>
+          {/* <div className={`flex flex-col gap-4 p-4 ${theme.container} border-t ${theme.border}`}>
             <AdminBulkUnlock />
             <AdminRemoveUser />
-          </div>
+          </div> */}
         </div>
 
         {showCelebration && (

@@ -1,25 +1,28 @@
-import React, { useState } from 'react';
+import React from 'react';
 import { useWallet } from '../hooks/useWallet';
+import CheckInButton from '../components/CheckInButton';
+import OfferingStats from '../components/OfferingStats';
+import Confetti from 'react-confetti';
 import { currentTheme } from '../constants/theme';
 import Header from '../components/Header';
+import Footer from '../components/Footer';
 import PurchaseModal from '../components/PurchaseModal';
 import { purchaseAccess, TokenOption } from '../utils/aoHelpers';
-import Confetti from 'react-confetti';
 
 const DailyCheckin: React.FC = () => {
-  const { wallet, walletStatus, darkMode, connectWallet, setDarkMode } = useWallet();
-  const [showPurchaseModal, setShowPurchaseModal] = useState(false);
-  const [showConfetti, setShowConfetti] = useState(false);
+  const { walletStatus, darkMode, setDarkMode, connectWallet } = useWallet();
+  const [isPurchaseModalOpen, setIsPurchaseModalOpen] = React.useState(false);
+  const [showConfetti, setShowConfetti] = React.useState(false);
   const theme = currentTheme(darkMode);
 
   const handlePurchase = async (selectedToken: TokenOption) => {
     try {
       await purchaseAccess(selectedToken);
       setShowConfetti(true);
-      setShowPurchaseModal(false);
+      setIsPurchaseModalOpen(false);
       setTimeout(() => {
         setShowConfetti(false);
-        connectWallet(true);
+        connectWallet();
       }, 5000);
     } catch (error) {
       console.error('Purchase failed:', error);
@@ -28,75 +31,80 @@ const DailyCheckin: React.FC = () => {
   };
 
   return (
-    <div className={`min-h-screen ${theme.bg} ${theme.text}`}>
-      <Header
-        theme={theme}
-        darkMode={darkMode}
-        onDarkModeToggle={() => setDarkMode(!darkMode)}
-      />
-      {showConfetti && (
-        <Confetti
-          width={window.innerWidth}
-          height={window.innerHeight}
-          recycle={false}
-          numberOfPieces={500}
-          gravity={0.3}
+    <div className="min-h-screen flex flex-col overflow-hidden">
+      <div className={`min-h-screen flex flex-col ${theme.bg}`}>
+        {showConfetti && (
+          <Confetti
+            width={window.innerWidth}
+            height={window.innerHeight}
+            recycle={false}
+            numberOfPieces={500}
+            gravity={0.3}
+          />
+        )}
+
+        <Header
+          theme={theme}
+          darkMode={darkMode}
+          onDarkModeToggle={() => setDarkMode(!darkMode)}
         />
-      )}
-      <div className="container mx-auto px-4 py-8">
-        <div className={`max-w-4xl mx-auto ${theme.container} rounded-2xl shadow-2xl p-6 border ${theme.border}`}>
-          <h1 className={`text-3xl font-bold mb-6 text-center ${theme.text}`}>Daily Check-in</h1>
-          
-          {!wallet?.address ? (
-            <div className={`text-center ${theme.text} opacity-80`}>
-              Please connect your wallet to continue
-            </div>
-          ) : !walletStatus?.isUnlocked ? (
-            <div className="text-center">
-              <p className={`mb-6 ${theme.text} opacity-80`}>
-                Purchase the Eternal Pass to access daily check-in rewards
-              </p>
-              <button
-                onClick={() => setShowPurchaseModal(true)}
-                className="relative px-8 py-4 text-xl font-bold rounded-lg transform hover:scale-105 transition-all duration-300 overflow-hidden"
-                style={{
-                  backgroundColor: '#1a1a1a',
-                  color: '#FFD700',
-                  border: '2px solid #FFD700',
-                  boxShadow: '0 0 20px #FFD700, 0 0 35px #FFD700, inset 0 0 5px rgba(255, 215, 0, 0.3)',
-                }}
-              >
-                <span>Unlock Access Now</span>
-              </button>
-            </div>
-          ) : (
-            <div>
-              {walletStatus?.faction ? (
-                <div className={`p-4 rounded-xl ${theme.container} border ${theme.border} mb-8`}>
-                  <h2 className={`text-2xl font-bold mb-4 ${theme.text}`}>Your Faction: {walletStatus.faction}</h2>
-                  {/* Daily rewards content will go here */}
-                  <div className={`text-center ${theme.text} opacity-80`}>
-                    Daily check-in rewards coming soon!
-                  </div>
-                </div>
-              ) : (
-                <div className={`text-center ${theme.text} opacity-80`}>
-                  Please join a faction to access daily check-in rewards
-                </div>
-              )}
-            </div>
-          )}
-        </div>
-      </div>
-      
-      {showPurchaseModal && (
+
         <PurchaseModal
-          isOpen={showPurchaseModal}
-          onClose={() => setShowPurchaseModal(false)}
+          isOpen={isPurchaseModalOpen}
+          onClose={() => setIsPurchaseModalOpen(false)}
           onPurchase={handlePurchase}
           contractName="Eternal Pass"
         />
-      )}
+
+        <div className={`container mx-auto px-6 py-8 flex-1 ${theme.text}`}>
+          <div className="max-w-4xl mx-auto">
+            <h1 className={`text-3xl font-bold mb-8 ${theme.text}`}>Daily Check-in</h1>
+
+            {!walletStatus?.isUnlocked ? (
+              <div className={`p-6 rounded-xl ${theme.container} border ${theme.border} backdrop-blur-md text-center`}>
+                <h2 className={`text-xl font-bold mb-4 ${theme.text}`}>Unlock Access</h2>
+                <p className={`mb-6 ${theme.text}`}>Purchase an Eternal Pass to access daily check-ins and rewards!</p>
+                <button
+                  onClick={() => setIsPurchaseModalOpen(true)}
+                  className={`px-6 py-3 rounded-lg font-bold transition-all duration-300 ${theme.buttonBg} ${theme.buttonHover} ${theme.text}`}
+                >
+                  Purchase Access
+                </button>
+              </div>
+            ) : !walletStatus?.faction ? (
+              <div className={`p-6 rounded-xl ${theme.container} border ${theme.border} backdrop-blur-md text-center`}>
+                <h2 className={`text-xl font-bold mb-4 ${theme.text}`}>Join a Faction First</h2>
+                <p className={`mb-6 ${theme.text}`}>You need to join a faction before you can start daily check-ins!</p>
+                <a
+                  href="/faction"
+                  className={`px-6 py-3 rounded-lg font-bold transition-all duration-300 ${theme.buttonBg} ${theme.buttonHover} ${theme.text}`}
+                >
+                  Choose Your Faction
+                </a>
+              </div>
+            ) : (
+              <div className={`p-6 rounded-xl ${theme.container} border ${theme.border} backdrop-blur-md`}>
+                <div className="flex items-center justify-between mb-6">
+                  <div>
+                    <h2 className={`text-2xl font-bold ${theme.text}`}>Your Faction</h2>
+                    <p className={`text-xl mt-2 ${theme.text}`}>{walletStatus.faction}</p>
+                  </div>
+                </div>
+              <div className="space-y-6">
+                <div className={`p-4 rounded-lg ${theme.container} border ${theme.border}`}>
+                  <h3 className={`text-lg font-bold mb-4 ${theme.text}`}>Daily Check-in</h3>
+                  <div className="flex justify-center">
+                    <CheckInButton />
+                  </div>
+                </div>
+                <OfferingStats />
+              </div>
+              </div>
+            )}
+          </div>
+        </div>
+        <Footer darkMode={darkMode} />
+      </div>
     </div>
   );
 };

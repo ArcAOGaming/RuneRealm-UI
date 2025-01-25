@@ -89,6 +89,7 @@ export const SUPPORTED_ASSETS = [
     "twFZ4HTvL_0XAIOMPizxs_S3YH5J5yGvJ8zKiMReWF0",  // Water berries
     "2NoNsZNyHMWOzTqeQUJW9Xvcga3iTonocFIsgkWIiPM",  // Rock berries
     "30cPTQXrHN76YZ3bLfNAePIEYDb5Xo1XnbQ-xmLMOM0",  // Fire berries
+    "4sKr4cf3kvbzFyhM6HmUsYG_Jz9bFZoNUrUX5KoVe0Q",  // Rune
     "wOrb8b_V8QixWyXZub48Ki5B6OIDyf_p1ngoonsaRpQ",  // TRUNK token
     "OsK9Vgjxo0ypX_HLz2iJJuh4hp3I80yA9KArsJjIloU"   // NAB token
 ] as const;
@@ -849,4 +850,86 @@ export const removeUser = async (userId: string) => {
     }
 };
 
-import { AdminSkinChanger, DefaultAtlasTxID } from "../constants/Constants";
+import { AdminSkinChanger, DefaultAtlasTxID, Alter } from "../constants/Constants";
+
+export interface OfferingStats {
+    ["Sky Nomads"]: number;
+    ["Aqua Guardians"]: number;
+    ["Stone Titans"]: number;
+    ["Inferno Blades"]: number;
+}
+
+export const defaultInteraction = async (wallet: any) => {
+    if (!wallet?.address) {
+        throw new Error("No wallet connected");
+    }
+
+    try {
+        const signer = createDataItemSigner(window.arweaveWallet);
+        const messageResult = await message({
+            process: Alter,
+            tags: [
+                { name: "Action", value: "DefaultInteraction" }
+            ],
+            signer,
+            data: ""
+        });
+
+        const transferResult = await result({
+            message: messageResult,
+            process: Alter
+        }) as ResultType;
+
+        if (!transferResult.Messages || transferResult.Messages.length === 0) {
+            throw new Error("No response from DefaultInteraction");
+        }
+
+        return JSON.parse(transferResult.Messages[0].Data);
+    } catch (error) {
+        console.error("Error in defaultInteraction:", error);
+        throw error;
+    }
+};
+
+export const getTotalOfferings = async (): Promise<OfferingStats> => {
+    try {
+        const dryRunResult = await dryrun({
+            process: Alter,
+            tags: [
+                { name: "Action", value: "GetTotalOfferings" }
+            ],
+            data: ""
+        }) as ResultType;
+
+        if (!dryRunResult.Messages || dryRunResult.Messages.length === 0) {
+            throw new Error("No response from GetTotalOfferings");
+        }
+
+        return JSON.parse(dryRunResult.Messages[0].Data);
+    } catch (error) {
+        console.error("Error getting total offerings:", error);
+        throw error;
+    }
+};
+
+export const getUserOfferings = async (userId: string): Promise<number> => {
+    try {
+        const dryRunResult = await dryrun({
+            process: Alter,
+            tags: [
+                { name: "Action", value: "GetUserOfferings" },
+                { name: "UserId", value: userId }
+            ],
+            data: ""
+        }) as ResultType;
+
+        if (!dryRunResult.Messages || dryRunResult.Messages.length === 0) {
+            throw new Error("No response from GetUserOfferings");
+        }
+
+        return JSON.parse(dryRunResult.Messages[0].Data);
+    } catch (error) {
+        console.error("Error getting user offerings:", error);
+        throw error;
+    }
+};

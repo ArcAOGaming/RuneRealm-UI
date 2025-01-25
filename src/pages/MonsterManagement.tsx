@@ -8,6 +8,7 @@ import PurchaseModal from '../components/PurchaseModal';
 import Inventory from '../components/Inventory';
 import StatAllocationModal from '../components/StatAllocationModal';
 import Header from '../components/Header';
+import Footer from '../components/Footer';
 import Confetti from 'react-confetti';
 import { Radar } from 'react-chartjs-2';
 import {
@@ -39,7 +40,7 @@ interface Wallet {
   address: string;
 }
 
-const MonsterManagement: React.FC = () => {
+export const MonsterManagement: React.FC = (): JSX.Element => {
   const { wallet, walletStatus, darkMode, connectWallet, setDarkMode } = useWallet();
   const [isPurchaseModalOpen, setIsPurchaseModalOpen] = useState(false);
   const [showConfetti, setShowConfetti] = useState(false);
@@ -53,48 +54,6 @@ const MonsterManagement: React.FC = () => {
   const [localMonster, setLocalMonster] = useState<MonsterStats | null>(null);
   const theme = currentTheme(darkMode);
   const [, setForceUpdate] = useState({});
-
-  // Calculate required exp for next level using Fibonacci sequence starting at 5
-  const getFibonacciExp = (level: number) => {
-    if (level === 0) return 1;
-    if (level === 1) return 2;
-    
-    let a = 1, b = 2;
-    for (let i = 2; i <= level; i++) {
-      const next = a + b;
-      a = b;
-      b = next;
-    }
-    return b;
-  };
-
-  // Format time remaining with rounding to nearest minute
-  const formatTimeRemaining = (until: number) => {
-    const remaining = Math.max(0, until - Date.now());
-    const minutes = remaining / 60000;
-    const roundedMinutes = Math.ceil(minutes);
-    
-    if (minutes < 1) {
-      const seconds = Math.ceil((remaining % 60000) / 1000);
-      return `${seconds}s`;
-    } else {
-      // Round up if more than 30 seconds into the minute
-      const seconds = Math.floor((remaining % 60000) / 1000);
-      if (seconds > 30) {
-        return `~${roundedMinutes}m`;
-      } else {
-        return `~${Math.floor(minutes)}m`;
-      }
-    }
-  };
-
-  // Calculate progress percentage (0-100) for activities
-  const calculateProgress = (since: number, until: number) => {
-    const now = Date.now();
-    const total = until - since;
-    const elapsed = now - since;
-    return Math.min(100, Math.max(0, (elapsed / total) * 100));
-  };
 
   // Handle timer updates for progress bars and countdowns
   useEffect(() => {
@@ -361,6 +320,48 @@ const MonsterManagement: React.FC = () => {
       console.error('Purchase failed:', error);
       throw error;
     }
+  };
+
+  // Calculate required exp for next level using Fibonacci sequence starting at 5
+  const getFibonacciExp = (level: number) => {
+    if (level === 0) return 1;
+    if (level === 1) return 2;
+    
+    let a = 1, b = 2;
+    for (let i = 2; i <= level; i++) {
+      const next = a + b;
+      a = b;
+      b = next;
+    }
+    return b;
+  };
+
+  // Format time remaining with rounding to nearest minute
+  const formatTimeRemaining = (until: number) => {
+    const remaining = Math.max(0, until - Date.now());
+    const minutes = remaining / 60000;
+    const roundedMinutes = Math.ceil(minutes);
+    
+    if (minutes < 1) {
+      const seconds = Math.ceil((remaining % 60000) / 1000);
+      return `${seconds}s`;
+    } else {
+      // Round up if more than 30 seconds into the minute
+      const seconds = Math.floor((remaining % 60000) / 1000);
+      if (seconds > 30) {
+        return `~${roundedMinutes}m`;
+      } else {
+        return `~${Math.floor(minutes)}m`;
+      }
+    }
+  };
+
+  // Calculate progress percentage (0-100) for activities
+  const calculateProgress = (since: number, until: number) => {
+    const now = Date.now();
+    const total = until - since;
+    const elapsed = now - since;
+    return Math.min(100, Math.max(0, (elapsed / total) * 100));
   };
 
   const renderMonsterCard = () => {
@@ -785,9 +786,8 @@ const MonsterManagement: React.FC = () => {
           </div>
         </div>
         {wallet?.address && <Inventory />}
+        <Footer darkMode={darkMode} />
       </div>
     </div>
   );
 };
-
-export { MonsterManagement };

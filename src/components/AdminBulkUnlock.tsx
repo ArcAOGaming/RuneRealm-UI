@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { currentTheme } from '../constants/theme';
 import { useWallet } from '../hooks/useWallet';
+import { bulkImportAddresses } from '../utils/aoHelpers';
 
 const AdminBulkUnlock: React.FC = () => {
   const { darkMode } = useWallet();
@@ -8,12 +9,21 @@ const AdminBulkUnlock: React.FC = () => {
   const [isProcessing, setIsProcessing] = useState(false);
   const theme = currentTheme(darkMode);
 
+  const [result, setResult] = useState<{ successful: number; failed: number } | null>(null);
+
   const handleBulkUnlock = async () => {
     setIsProcessing(true);
+    setResult(null);
     try {
       const addressList = addresses.split('\n').map(addr => addr.trim()).filter(Boolean);
-      // TODO: Implement bulk unlock logic
-      console.log('Processing bulk unlock for:', addressList);
+      const response = await bulkImportAddresses({
+        function: "BulkImportAddresses",
+        addresses: addressList
+      });
+      setResult(response);
+      if (response.successful > 0) {
+        setAddresses(''); // Clear the textarea on success
+      }
     } catch (error) {
       console.error('Error processing bulk unlock:', error);
     } finally {
@@ -30,6 +40,12 @@ const AdminBulkUnlock: React.FC = () => {
         placeholder="Enter wallet addresses (one per line)"
         className={`w-full h-32 px-4 py-2 mb-4 rounded-lg border ${theme.border} ${theme.container} ${theme.text}`}
       />
+      {result && (
+        <div className={`mb-4 ${theme.text}`}>
+          <p>Successfully unlocked: {result.successful}</p>
+          <p>Failed to unlock: {result.failed}</p>
+        </div>
+      )}
       <button
         onClick={handleBulkUnlock}
         disabled={isProcessing || !addresses.trim()}
