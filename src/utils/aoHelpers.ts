@@ -880,11 +880,8 @@ export const defaultInteraction = async (wallet: any) => {
             process: Alter
         }) as ResultType;
 
-        if (!transferResult.Messages || transferResult.Messages.length === 0) {
-            throw new Error("No response from DefaultInteraction");
-        }
-
-        return JSON.parse(transferResult.Messages[0].Data);
+        // DefaultInteraction doesn't return a response, it just triggers the interaction
+        return { status: "success" };
     } catch (error) {
         console.error("Error in defaultInteraction:", error);
         throw error;
