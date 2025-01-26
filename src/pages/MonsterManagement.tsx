@@ -70,6 +70,10 @@ export const MonsterManagement: React.FC = (): JSX.Element => {
       if (now >= localMonster.status.until_time) {
         console.log('[MonsterManagement] Activity complete, clearing timer');
         clearInterval(timer);
+        // Force one final update to ensure UI shows 100%
+        setForceUpdate({});
+        // Trigger a refresh to update the monster state
+        triggerRefresh();
       } else {
         setForceUpdate({});
       }
@@ -79,7 +83,7 @@ export const MonsterManagement: React.FC = (): JSX.Element => {
       console.log('[MonsterManagement] Cleaning up progress timer');
       clearInterval(timer);
     };
-  }, [localMonster?.status.type, localMonster?.status.until_time]);
+  }, [localMonster?.status.type, localMonster?.status.until_time, triggerRefresh]);
 
   // Update local monster and load assets when wallet status changes
   useEffect(() => {
@@ -373,9 +377,13 @@ export const MonsterManagement: React.FC = (): JSX.Element => {
   // Calculate progress percentage (0-100) for activities
   const calculateProgress = (since: number, until: number) => {
     const now = Date.now();
+    // If time is up, return 100% immediately
+    if (now >= until) return 100;
     const total = until - since;
     const elapsed = now - since;
-    return Math.min(100, Math.max(0, (elapsed / total) * 100));
+    // Round to 2 decimal places to avoid floating point issues
+    const progress = Math.round((elapsed / total) * 10000) / 100;
+    return Math.min(100, Math.max(0, progress));
   };
 
   const renderMonsterCard = React.useMemo(() => {
@@ -408,7 +416,7 @@ export const MonsterManagement: React.FC = (): JSX.Element => {
     const isMissionTime = monster.status.type === 'Mission';
     const now = Date.now();
     const timeUp = (isPlaytime || isMissionTime) && now >= monster.status.until_time;
-    const canReturn = timeUp;
+  
 
     // Use monster's activities directly
     const activities = monster.activities;
@@ -678,10 +686,10 @@ export const MonsterManagement: React.FC = (): JSX.Element => {
                   </div>
                   <button
                     onClick={handlePlayMonster}
-                    disabled={isPlaying || (monster.status.type !== 'Home' && !timeUp) || (monster.status.type === 'Home' && (berryBalance < activities.play.cost.amount || monster.energy < activities.play.energyCost))}
+                    disabled={isPlaying || (monster.status.type === 'Play' && !timeUp) || (monster.status.type === 'Home' && (berryBalance < activities.play.cost.amount || monster.energy < activities.play.energyCost)) || (monster.status.type != 'Home' && timeUp)}
                     className={`w-full px-4 py-2 rounded-lg font-bold text-lg transition-all duration-300 bg-gradient-to-br from-yellow-500 to-yellow-700 hover:from-yellow-400 hover:to-yellow-600 text-white ${(isPlaying || (monster.status.type !== 'Home' && !timeUp) || (monster.status.type === 'Home' && (berryBalance < activities.play.cost.amount || monster.energy < activities.play.energyCost))) ? 'opacity-50 cursor-not-allowed' : ''}`}
                   >
-                    {isPlaying ? 'Playing...' : timeUp ? 'Return from Play' : 'Play'}
+                    {isPlaying ? 'Playing...' : (timeUp && monster.status.type =="Play")  ? 'Return from Play' : 'Play'}
                   </button>
                 </div>
               </div>
