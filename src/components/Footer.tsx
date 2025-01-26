@@ -19,8 +19,8 @@ const Footer: React.FC<FooterProps> = ({ darkMode }) => {
           className="transition-transform hover:scale-105"
         >
           <img 
-            src={darkMode ? '/src/assets/ARIO-Dark.png' : '/src/assets/ARIO-Light.png'} 
-            alt="ARIO.pn" 
+            src={darkMode ? new URL('../assets/ARIO-Dark.png', import.meta.url).href : new URL('../assets/ARIO-Light.png', import.meta.url).href} 
+            alt="ARIO.png" 
             className="h-10" 
           />
         </a>
@@ -32,8 +32,8 @@ const Footer: React.FC<FooterProps> = ({ darkMode }) => {
           className="transition-transform hover:scale-105"
         >
           <img 
-            src={darkMode ? '/src/assets/Turbo-Dark.png' : '/src/assets/Turbo-Light.png'} 
-            alt="Turbo" 
+            src={darkMode ? new URL('../assets/Turbo-Dark.png', import.meta.url).href : new URL('../assets/Turbo-Light.png', import.meta.url).href} 
+            alt="Turbo.png" 
             className="h-10" 
           />
         </a>
@@ -44,7 +44,10 @@ const Footer: React.FC<FooterProps> = ({ darkMode }) => {
           rel="noopener noreferrer"
           className="transition-transform hover:scale-105"
         >
-          <img src="/src/assets/arcao.png" alt="arcao" className="h-10" />
+          <img 
+          src={darkMode ? new URL('../assets/arcao-Dark.png', import.meta.url).href : new URL('../assets/arcao-Light.png', import.meta.url).href} 
+          alt="arcao.png" 
+          className="h-10" />
         </a>
       </div>
     </div>

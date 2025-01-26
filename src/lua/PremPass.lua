@@ -661,8 +661,8 @@ Handlers.add(
           print("Monster state:", json.encode(monster))
           print("Received berry:", token)
     
-          if monster.berryType ~= token then
-            print("Wrong berry process. Expected:", monster.berryType, "Got:", token)
+          if monster.activities.play.cost.token ~= token then
+            print("Wrong berry process. Expected:", monster.activities.play.cost.token, "Got:", token)
             return
           end
 

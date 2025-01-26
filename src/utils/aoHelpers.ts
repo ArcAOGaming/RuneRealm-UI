@@ -4,9 +4,9 @@ import { AdminSkinChanger, DefaultAtlasTxID, Alter } from "../constants/Constant
 // Wrap the original message function to include refresh callback
 export const message = async (params: any, refreshCallback?: () => void) => {
   const response = await aoMessage(params);
-  // If a refresh callback is provided, schedule it after 10 seconds
+  // If a refresh callback is provided, call it immediately after message is sent
   if (refreshCallback) {
-    setTimeout(refreshCallback, 10000);
+    refreshCallback();
   }
   return response;
 };

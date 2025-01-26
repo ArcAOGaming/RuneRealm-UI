@@ -28,13 +28,17 @@ export const WalletProvider: React.FC<{ children: React.ReactNode }> = ({ childr
   const [refreshTrigger, setRefreshTrigger] = useState<number>(0);
 
   const triggerRefresh = useCallback(() => {
-    console.log('[WalletContext] Refresh triggered, scheduling update in 10s');
-    // Wait 10 seconds before triggering refresh
+    console.log('[WalletContext] Refresh triggered from message');
+    // Schedule the state update after 5 seconds
     setTimeout(() => {
-      console.log('[WalletContext] Executing scheduled refresh');
-      setRefreshTrigger(prev => prev + 1);
-      checkAndUpdateWalletStatus(true);
-    }, 10000);
+      console.log('[WalletContext] Updating refresh trigger after 5s delay');
+      setRefreshTrigger(prev => {
+        console.log('[WalletContext] Incrementing refresh trigger from', prev, 'to', prev + 1);
+        checkAndUpdateWalletStatus(true);
+        return prev + 1;
+        
+      });
+    }, 5000);
   }, []);
 
   const checkAndUpdateWalletStatus = async (force: boolean = false) => {

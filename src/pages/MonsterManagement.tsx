@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { useWallet } from '../hooks/useWallet';
-import { getFactionOptions, purchaseAccess, TokenOption, adoptMonster, getAssetBalances, AssetBalance, SUPPORTED_ASSETS, MonsterStats, MonsterStatus, MonsterMove } from '../utils/aoHelpers';
+import { getFactionOptions, purchaseAccess, TokenOption, adoptMonster, getAssetBalances, AssetBalance, MonsterStats } from '../utils/aoHelpers';
 import { createDataItemSigner } from '../config/aoConnection';
 import { message } from '../utils/aoHelpers';
 import { currentTheme } from '../constants/theme';
