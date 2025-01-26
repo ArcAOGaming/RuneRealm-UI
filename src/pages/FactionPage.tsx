@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useCallback } from 'react';
+import React, { useEffect, useState } from 'react';
 import { useWallet } from '../hooks/useWallet';
 import { getFactionOptions, FactionOptions, setFaction, purchaseAccess, TokenOption, getTotalOfferings, OfferingStats, getUserOfferings } from '../utils/aoHelpers';
 import { currentTheme } from '../constants/theme';
@@ -12,7 +12,7 @@ import Inventory from '../components/Inventory';
 import Footer from '../components/Footer';
 
 export const FactionPage: React.FC = () => {
-  const { wallet, walletStatus, darkMode, connectWallet, setDarkMode } = useWallet();
+  const { wallet, walletStatus, darkMode, connectWallet, setDarkMode, refreshTrigger, triggerRefresh } = useWallet();
   const [factions, setFactions] = useState<FactionOptions[]>([]);
   const [isPurchaseModalOpen, setIsPurchaseModalOpen] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
@@ -22,49 +22,52 @@ export const FactionPage: React.FC = () => {
   const [userOfferings, setUserOfferings] = useState<number>(0);
   const theme = currentTheme(darkMode);
 
-  // Load all data in parallel
-  useEffect(() => {
-    const loadAllData = async () => {
-      if (!wallet?.address) {
+  // Function to load data
+  const loadAllData = async (isInitialLoading = false) => {
+    if (!wallet?.address) {
+      if (isInitialLoading) {
         setFactions([]);
         setOfferingStats(null);
         setUserOfferings(0);
         setIsInitialLoad(false);
-        return;
       }
+      return;
+    }
 
-      try {
-        // Keep existing data during refresh
-        const [factionData, totalStats, userStats] = await Promise.all([
-          getFactionOptions(),
-          getTotalOfferings(),
-          getUserOfferings(wallet.address)
-        ]);
+    try {
+      const [factionData, totalStats, userStats] = await Promise.all([
+        getFactionOptions(),
+        getTotalOfferings(),
+        getUserOfferings(wallet.address)
+      ]);
 
-        setFactions(factionData || []);
-        setOfferingStats(totalStats);
-        setUserOfferings(userStats);
-      } catch (error) {
-        console.error('Error loading faction data:', error);
-      } finally {
+      // Update state while preserving existing data if available
+      setFactions(prevFactions => factionData || prevFactions);
+      setOfferingStats(prevStats => totalStats || prevStats);
+      setUserOfferings(prevOfferings => userStats || prevOfferings);
+    } catch (error) {
+      console.error('Error loading faction data:', error);
+    } finally {
+      if (isInitialLoading) {
         setIsInitialLoad(false);
       }
-    };
-
-    if (isInitialLoad) {
-      loadAllData();
-    } else {
-      // If not initial load, refresh data without loading state
-      loadAllData();
     }
-  }, [wallet?.address, isInitialLoad]);
+  };
+
+  // Initial load and refresh on trigger
+  useEffect(() => {
+    if (isInitialLoad) {
+      loadAllData(true);
+    } else {
+      loadAllData(false);
+    }
+  }, [wallet?.address, refreshTrigger, isInitialLoad]);
 
   const handleJoinFaction = async (factionName: string) => {
     try {
       setIsLoading(true);
       await setFaction(wallet, factionName);
-      setIsInitialLoad(true); // Trigger a data refresh
-      await connectWallet();
+      triggerRefresh();
     } catch (error) {
       console.error('Error joining faction:', error);
     } finally {
@@ -79,7 +82,7 @@ export const FactionPage: React.FC = () => {
       setIsPurchaseModalOpen(false);
       setTimeout(() => {
         setShowConfetti(false);
-        connectWallet();
+        triggerRefresh();
       }, 5000);
     } catch (error) {
       console.error('Purchase failed:', error);

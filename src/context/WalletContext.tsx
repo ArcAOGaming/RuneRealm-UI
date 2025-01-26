@@ -6,8 +6,10 @@ interface WalletContextType {
   walletStatus: WalletStatus | null;
   isCheckingStatus: boolean;
   darkMode: boolean;
+  refreshTrigger: number;
   connectWallet: (force?: boolean) => Promise<void>;
   setDarkMode: (mode: boolean) => void;
+  triggerRefresh: () => void;
 }
 
 const WalletContext = createContext<WalletContextType | undefined>(undefined);
@@ -23,6 +25,15 @@ export const WalletProvider: React.FC<{ children: React.ReactNode }> = ({ childr
     localStorage.getItem('darkMode') === 'true'
   );
   const [lastCheck, setLastCheck] = useState<number>(0);
+  const [refreshTrigger, setRefreshTrigger] = useState<number>(0);
+
+  const triggerRefresh = () => {
+    // Wait 5 seconds before triggering refresh
+    setTimeout(() => {
+      setRefreshTrigger(prev => prev + 1);
+      checkAndUpdateWalletStatus(true);
+    }, 5000);
+  };
 
   const checkAndUpdateWalletStatus = async (force: boolean = false) => {
     try {
@@ -128,8 +139,10 @@ export const WalletProvider: React.FC<{ children: React.ReactNode }> = ({ childr
     walletStatus,
     isCheckingStatus,
     darkMode,
+    refreshTrigger,
     connectWallet,
-    setDarkMode
+    setDarkMode,
+    triggerRefresh
   };
 
   return <WalletContext.Provider value={value}>{children}</WalletContext.Provider>;

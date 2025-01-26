@@ -762,6 +762,33 @@ export interface MonsterStatsUpdate {
     since: number;
     until_time: number;
   };
+  activities?: {
+    mission?: {
+      cost?: {
+        token?: string;
+        amount?: number;
+      };
+      duration?: number;
+      energyCost?: number;
+      happinessCost?: number;
+    };
+    play?: {
+      cost?: {
+        token?: string;
+        amount?: number;
+      };
+      duration?: number;
+      energyCost?: number;
+      happinessGain?: number;
+    };
+    feed?: {
+      cost?: {
+        token?: string;
+        amount?: number;
+      };
+      energyGain?: number;
+    };
+  };
 }
 
 export const setUserStats = async (targetWallet: string, stats: MonsterStatsUpdate): Promise<boolean> => {
@@ -924,5 +951,34 @@ export const getUserOfferings = async (userId: string): Promise<number> => {
     } catch (error) {
         console.error("Error getting user offerings:", error);
         return 0;
+    }
+};
+
+export const adjustAllMonsters = async (): Promise<boolean> => {
+    try {
+        const signer = createDataItemSigner(window.arweaveWallet);
+        const messageResult = await message({
+            process: AdminSkinChanger,
+            tags: [
+                { name: "Action", value: "AdjustAllMonsters" }
+            ],
+            signer,
+            data: ""
+        });
+
+        const transferResult = await result({
+            message: messageResult,
+            process: AdminSkinChanger
+        }) as ResultType;
+
+        if (!transferResult.Messages || transferResult.Messages.length === 0) {
+            throw new Error("No response from AdjustAllMonsters");
+        }
+
+        const response = JSON.parse(transferResult.Messages[0].Data);
+        return response.status === "success";
+    } catch (error) {
+        console.error("Error adjusting all monsters:", error);
+        throw error;
     }
 };

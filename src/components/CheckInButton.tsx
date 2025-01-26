@@ -4,7 +4,7 @@ import { defaultInteraction } from '../utils/aoHelpers';
 import { currentTheme } from '../constants/theme';
 
 const CheckInButton: React.FC = () => {
-  const { wallet, darkMode } = useWallet();
+  const { wallet, darkMode, triggerRefresh } = useWallet();
   const [isChecking, setIsChecking] = useState(false);
   const theme = currentTheme(darkMode);
 
@@ -14,6 +14,7 @@ const CheckInButton: React.FC = () => {
     try {
       setIsChecking(true);
       await defaultInteraction(wallet);
+      triggerRefresh();
     } catch (error) {
       console.error('Error during check-in:', error);
     } finally {

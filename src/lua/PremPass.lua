@@ -239,7 +239,7 @@ function CreateDefaultMonster(factionName, mascotTxId, timestamp)
           token = "wOrb8b_V8QixWyXZub48Ki5B6OIDyf_p1ngoonsaRpQ",
           amount = 1
         },
-        duration = 36 * 1000,  -- 1 hour in milliseconds
+        duration = 3600 * 1000,  -- 1 hour in milliseconds
         energyCost = 25,
         happinessCost = 25
       },
@@ -248,7 +248,7 @@ function CreateDefaultMonster(factionName, mascotTxId, timestamp)
           token = berryMap[factionName],  -- Use faction's berry type
           amount = 1
         },
-        duration = 9 * 1000,  -- 15 minutes in milliseconds
+        duration = 900 * 1000,  -- 15 minutes in milliseconds
         energyCost = 10,
         happinessGain = 25
       },
@@ -1292,6 +1292,76 @@ Handlers.add(
         status = "success",
         message = "Monster stats updated successfully",
         monster = monster
+      })
+    })
+  end
+)
+
+-- Function to adjust activities for all monsters
+function adjustAllMonsters()
+  local berryMap = {
+    ["Sky Nomads"] = "XJjSdWaorbQ2q0YkaQSmylmuADWH1fh2PvgfdLmXlzA",
+    ["Aqua Guardians"] = "twFZ4HTvL_0XAIOMPizxs_S3YH5J5yGvJ8zKiMReWF0",
+    ["Stone Titans"] = "2NoNsZNyHMWOzTqeQUJW9Xvcga3iTonocFIsgkWIiPM",
+    ["Inferno Blades"] = "30cPTQXrHN76YZ3bLfNAePIEYDb5Xo1XnbQ-xmLMOM0"
+  }
+
+  for userId, monster in pairs(UserMonsters) do
+    local factionName = UserFactions[userId].faction
+    monster.activities = {
+      mission = {
+        cost = {
+          token = "wOrb8b_V8QixWyXZub48Ki5B6OIDyf_p1ngoonsaRpQ",
+          amount = 1
+        },
+        duration = 3600 * 1000,  -- 1 hour in milliseconds
+        energyCost = 25,
+        happinessCost = 25
+      },
+      play = {
+        cost = {
+          token = berryMap[factionName],  -- Use faction's berry type
+          amount = 1
+        },
+        duration = 900 * 1000,  -- 15 minutes in milliseconds
+        energyCost = 10,
+        happinessGain = 25
+      },
+      feed = {
+        cost = {
+          token = berryMap[factionName],  -- Use faction's berry type
+          amount = 1
+        },
+        energyGain = 10
+      }
+    }
+  end
+end
+
+-- Handler for adjusting all monsters' activities
+Handlers.add(
+  "AdjustAllMonsters",
+  Handlers.utils.hasMatchingTag("Action", "AdjustAllMonsters"),
+  function(msg)
+    -- Check if sender is admin
+    if not IsAdmin(msg.From) then
+      ao.send({
+        Target = msg.From,
+        Data = json.encode({
+          status = "error",
+          message = "Unauthorized access - Admin only"
+        })
+      })
+      return
+    end
+
+    adjustAllMonsters()
+    
+    ao.send({
+      Target = msg.From,
+      Data = json.encode({
+        status = "success",
+        message = "All monsters' activities have been adjusted"
       })
     })
   end

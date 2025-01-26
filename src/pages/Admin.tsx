@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { getUserInfo, UserInfo, setUserStats, MonsterStatsUpdate, getFactionOptions, FactionOptions } from '../utils/aoHelpers';
+import { getUserInfo, UserInfo, setUserStats, MonsterStatsUpdate, getFactionOptions, FactionOptions, adjustAllMonsters, SUPPORTED_ASSETS } from '../utils/aoHelpers';
 import { currentTheme } from '../constants/theme';
 import { useWallet } from '../hooks/useWallet';
 import Header from '../components/Header';
@@ -159,6 +159,24 @@ const Admin: React.FC = () => {
             <div className={`flex flex-col gap-4 p-4 ${theme.container} border ${theme.border}`}>
               <AdminBulkUnlock />
               <AdminRemoveUser />
+              <div>
+                <button
+                  onClick={async () => {
+                    try {
+                      const success = await adjustAllMonsters();
+                      if (success) {
+                        alert('Successfully adjusted all monsters');
+                      }
+                    } catch (error) {
+                      console.error('Error adjusting monsters:', error);
+                      alert('Failed to adjust monsters');
+                    }
+                  }}
+                  className={`w-full px-6 py-2 rounded-lg font-bold transition-all duration-300 ${theme.buttonBg} ${theme.buttonHover} ${theme.text}`}
+                >
+                  Adjust All Monsters
+                </button>
+              </div>
             </div>
 
             <div className="mt-8">
@@ -306,6 +324,295 @@ const Admin: React.FC = () => {
                           </div>
                         </>
                       )}
+                    </div>
+                  </div>
+                )}
+
+                {/* Activities Adjustment Section */}
+                {userInfo.monster && (
+                  <div className={`mt-8 p-6 rounded-xl ${theme.container} border ${theme.border}`}>
+                    <h3 className={`text-xl font-bold mb-4 ${theme.text}`}>Adjust Monster Activities</h3>
+                    
+                    {/* Mission Activity */}
+                    <div className="mb-6">
+                      <h4 className={`text-lg font-semibold mb-3 ${theme.text}`}>Mission Activity</h4>
+                      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+                        <div>
+                          <label className={`block mb-2 ${theme.text}`}>Token</label>
+                          <select
+                            value={editedStats.activities?.mission?.cost?.token ?? userInfo.monster.activities.mission.cost.token}
+                            onChange={(e) => setEditedStats({
+                              ...editedStats,
+                              activities: {
+                                ...editedStats.activities,
+                                mission: {
+                                  ...editedStats.activities?.mission,
+                                  cost: {
+                                    ...editedStats.activities?.mission?.cost,
+                                    token: e.target.value
+                                  }
+                                }
+                              }
+                            })}
+                            className={`w-full px-4 py-2 rounded-lg border ${theme.border} ${theme.container} ${theme.text}`}
+                          >
+                            {SUPPORTED_ASSETS.map(asset => (
+                              <option key={asset} value={asset}>{asset}</option>
+                            ))}
+                          </select>
+                        </div>
+                        <div>
+                          <label className={`block mb-2 ${theme.text}`}>Amount</label>
+                          <input
+                            type="number"
+                            value={editedStats.activities?.mission?.cost?.amount ?? userInfo.monster.activities.mission.cost.amount}
+                            onChange={(e) => setEditedStats({
+                              ...editedStats,
+                              activities: {
+                                ...editedStats.activities,
+                                mission: {
+                                  ...editedStats.activities?.mission,
+                                  cost: {
+                                    ...editedStats.activities?.mission?.cost,
+                                    amount: parseInt(e.target.value)
+                                  }
+                                }
+                              }
+                            })}
+                            className={`w-full px-4 py-2 rounded-lg border ${theme.border} ${theme.container} ${theme.text}`}
+                          />
+                        </div>
+                        <div>
+                          <label className={`block mb-2 ${theme.text}`}>Duration (ms)</label>
+                          <input
+                            type="number"
+                            value={editedStats.activities?.mission?.duration ?? userInfo.monster.activities.mission.duration}
+                            onChange={(e) => setEditedStats({
+                              ...editedStats,
+                              activities: {
+                                ...editedStats.activities,
+                                mission: {
+                                  ...editedStats.activities?.mission,
+                                  duration: parseInt(e.target.value)
+                                }
+                              }
+                            })}
+                            className={`w-full px-4 py-2 rounded-lg border ${theme.border} ${theme.container} ${theme.text}`}
+                          />
+                        </div>
+                        <div>
+                          <label className={`block mb-2 ${theme.text}`}>Energy Cost</label>
+                          <input
+                            type="number"
+                            value={editedStats.activities?.mission?.energyCost ?? userInfo.monster.activities.mission.energyCost}
+                            onChange={(e) => setEditedStats({
+                              ...editedStats,
+                              activities: {
+                                ...editedStats.activities,
+                                mission: {
+                                  ...editedStats.activities?.mission,
+                                  energyCost: parseInt(e.target.value)
+                                }
+                              }
+                            })}
+                            className={`w-full px-4 py-2 rounded-lg border ${theme.border} ${theme.container} ${theme.text}`}
+                          />
+                        </div>
+                        <div>
+                          <label className={`block mb-2 ${theme.text}`}>Happiness Cost</label>
+                          <input
+                            type="number"
+                            value={editedStats.activities?.mission?.happinessCost ?? userInfo.monster.activities.mission.happinessCost}
+                            onChange={(e) => setEditedStats({
+                              ...editedStats,
+                              activities: {
+                                ...editedStats.activities,
+                                mission: {
+                                  ...editedStats.activities?.mission,
+                                  happinessCost: parseInt(e.target.value)
+                                }
+                              }
+                            })}
+                            className={`w-full px-4 py-2 rounded-lg border ${theme.border} ${theme.container} ${theme.text}`}
+                          />
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Play Activity */}
+                    <div className="mb-6">
+                      <h4 className={`text-lg font-semibold mb-3 ${theme.text}`}>Play Activity</h4>
+                      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+                        <div>
+                          <label className={`block mb-2 ${theme.text}`}>Token</label>
+                          <select
+                            value={editedStats.activities?.play?.cost?.token ?? userInfo.monster.activities.play.cost.token}
+                            onChange={(e) => setEditedStats({
+                              ...editedStats,
+                              activities: {
+                                ...editedStats.activities,
+                                play: {
+                                  ...editedStats.activities?.play,
+                                  cost: {
+                                    ...editedStats.activities?.play?.cost,
+                                    token: e.target.value
+                                  }
+                                }
+                              }
+                            })}
+                            className={`w-full px-4 py-2 rounded-lg border ${theme.border} ${theme.container} ${theme.text}`}
+                          >
+                            {SUPPORTED_ASSETS.map(asset => (
+                              <option key={asset} value={asset}>{asset}</option>
+                            ))}
+                          </select>
+                        </div>
+                        <div>
+                          <label className={`block mb-2 ${theme.text}`}>Amount</label>
+                          <input
+                            type="number"
+                            value={editedStats.activities?.play?.cost?.amount ?? userInfo.monster.activities.play.cost.amount}
+                            onChange={(e) => setEditedStats({
+                              ...editedStats,
+                              activities: {
+                                ...editedStats.activities,
+                                play: {
+                                  ...editedStats.activities?.play,
+                                  cost: {
+                                    ...editedStats.activities?.play?.cost,
+                                    amount: parseInt(e.target.value)
+                                  }
+                                }
+                              }
+                            })}
+                            className={`w-full px-4 py-2 rounded-lg border ${theme.border} ${theme.container} ${theme.text}`}
+                          />
+                        </div>
+                        <div>
+                          <label className={`block mb-2 ${theme.text}`}>Duration (ms)</label>
+                          <input
+                            type="number"
+                            value={editedStats.activities?.play?.duration ?? userInfo.monster.activities.play.duration}
+                            onChange={(e) => setEditedStats({
+                              ...editedStats,
+                              activities: {
+                                ...editedStats.activities,
+                                play: {
+                                  ...editedStats.activities?.play,
+                                  duration: parseInt(e.target.value)
+                                }
+                              }
+                            })}
+                            className={`w-full px-4 py-2 rounded-lg border ${theme.border} ${theme.container} ${theme.text}`}
+                          />
+                        </div>
+                        <div>
+                          <label className={`block mb-2 ${theme.text}`}>Energy Cost</label>
+                          <input
+                            type="number"
+                            value={editedStats.activities?.play?.energyCost ?? userInfo.monster.activities.play.energyCost}
+                            onChange={(e) => setEditedStats({
+                              ...editedStats,
+                              activities: {
+                                ...editedStats.activities,
+                                play: {
+                                  ...editedStats.activities?.play,
+                                  energyCost: parseInt(e.target.value)
+                                }
+                              }
+                            })}
+                            className={`w-full px-4 py-2 rounded-lg border ${theme.border} ${theme.container} ${theme.text}`}
+                          />
+                        </div>
+                        <div>
+                          <label className={`block mb-2 ${theme.text}`}>Happiness Gain</label>
+                          <input
+                            type="number"
+                            value={editedStats.activities?.play?.happinessGain ?? userInfo.monster.activities.play.happinessGain}
+                            onChange={(e) => setEditedStats({
+                              ...editedStats,
+                              activities: {
+                                ...editedStats.activities,
+                                play: {
+                                  ...editedStats.activities?.play,
+                                  happinessGain: parseInt(e.target.value)
+                                }
+                              }
+                            })}
+                            className={`w-full px-4 py-2 rounded-lg border ${theme.border} ${theme.container} ${theme.text}`}
+                          />
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Feed Activity */}
+                    <div className="mb-6">
+                      <h4 className={`text-lg font-semibold mb-3 ${theme.text}`}>Feed Activity</h4>
+                      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+                        <div>
+                          <label className={`block mb-2 ${theme.text}`}>Token</label>
+                          <select
+                            value={editedStats.activities?.feed?.cost?.token ?? userInfo.monster.activities.feed.cost.token}
+                            onChange={(e) => setEditedStats({
+                              ...editedStats,
+                              activities: {
+                                ...editedStats.activities,
+                                feed: {
+                                  ...editedStats.activities?.feed,
+                                  cost: {
+                                    ...editedStats.activities?.feed?.cost,
+                                    token: e.target.value
+                                  }
+                                }
+                              }
+                            })}
+                            className={`w-full px-4 py-2 rounded-lg border ${theme.border} ${theme.container} ${theme.text}`}
+                          >
+                            {SUPPORTED_ASSETS.map(asset => (
+                              <option key={asset} value={asset}>{asset}</option>
+                            ))}
+                          </select>
+                        </div>
+                        <div>
+                          <label className={`block mb-2 ${theme.text}`}>Amount</label>
+                          <input
+                            type="number"
+                            value={editedStats.activities?.feed?.cost?.amount ?? userInfo.monster.activities.feed.cost.amount}
+                            onChange={(e) => setEditedStats({
+                              ...editedStats,
+                              activities: {
+                                ...editedStats.activities,
+                                feed: {
+                                  ...editedStats.activities?.feed,
+                                  cost: {
+                                    ...editedStats.activities?.feed?.cost,
+                                    amount: parseInt(e.target.value)
+                                  }
+                                }
+                              }
+                            })}
+                            className={`w-full px-4 py-2 rounded-lg border ${theme.border} ${theme.container} ${theme.text}`}
+                          />
+                        </div>
+                        <div>
+                          <label className={`block mb-2 ${theme.text}`}>Energy Gain</label>
+                          <input
+                            type="number"
+                            value={editedStats.activities?.feed?.energyGain ?? userInfo.monster.activities.feed.energyGain}
+                            onChange={(e) => setEditedStats({
+                              ...editedStats,
+                              activities: {
+                                ...editedStats.activities,
+                                feed: {
+                                  ...editedStats.activities?.feed,
+                                  energyGain: parseInt(e.target.value)
+                                }
+                              }
+                            })}
+                            className={`w-full px-4 py-2 rounded-lg border ${theme.border} ${theme.container} ${theme.text}`}
+                          />
+                        </div>
+                      </div>
                     </div>
                   </div>
                 )}
