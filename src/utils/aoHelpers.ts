@@ -793,6 +793,7 @@ export interface MonsterStatsUpdate {
 
 export const setUserStats = async (targetWallet: string, stats: MonsterStatsUpdate): Promise<boolean> => {
   try {
+    console.log('Setting user stats with data:', JSON.stringify(stats, null, 2));
     const signer = createDataItemSigner(window.arweaveWallet);
     const messageResult = await message({
       process: AdminSkinChanger,

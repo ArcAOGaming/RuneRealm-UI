@@ -1271,6 +1271,67 @@ Handlers.add(
     if newStats.energy ~= nil then monster.energy = math.min(100, newStats.energy) end
     if newStats.happiness ~= nil then monster.happiness = math.min(100, newStats.happiness) end
     
+    -- Update activities
+    if newStats.activities ~= nil then
+      print("Updating activities:", json.encode(newStats.activities))
+      -- Update mission activity
+      if newStats.activities.mission ~= nil then
+        if newStats.activities.mission.cost ~= nil then
+          if newStats.activities.mission.cost.token ~= nil then
+            monster.activities.mission.cost.token = newStats.activities.mission.cost.token
+          end
+          if newStats.activities.mission.cost.amount ~= nil then
+            monster.activities.mission.cost.amount = newStats.activities.mission.cost.amount
+          end
+        end
+        if newStats.activities.mission.duration ~= nil then
+          monster.activities.mission.duration = newStats.activities.mission.duration
+        end
+        if newStats.activities.mission.energyCost ~= nil then
+          monster.activities.mission.energyCost = newStats.activities.mission.energyCost
+        end
+        if newStats.activities.mission.happinessCost ~= nil then
+          monster.activities.mission.happinessCost = newStats.activities.mission.happinessCost
+        end
+      end
+
+      -- Update play activity
+      if newStats.activities.play ~= nil then
+        if newStats.activities.play.cost ~= nil then
+          if newStats.activities.play.cost.token ~= nil then
+            monster.activities.play.cost.token = newStats.activities.play.cost.token
+          end
+          if newStats.activities.play.cost.amount ~= nil then
+            monster.activities.play.cost.amount = newStats.activities.play.cost.amount
+          end
+        end
+        if newStats.activities.play.duration ~= nil then
+          monster.activities.play.duration = newStats.activities.play.duration
+        end
+        if newStats.activities.play.energyCost ~= nil then
+          monster.activities.play.energyCost = newStats.activities.play.energyCost
+        end
+        if newStats.activities.play.happinessGain ~= nil then
+          monster.activities.play.happinessGain = newStats.activities.play.happinessGain
+        end
+      end
+
+      -- Update feed activity
+      if newStats.activities.feed ~= nil then
+        if newStats.activities.feed.cost ~= nil then
+          if newStats.activities.feed.cost.token ~= nil then
+            monster.activities.feed.cost.token = newStats.activities.feed.cost.token
+          end
+          if newStats.activities.feed.cost.amount ~= nil then
+            monster.activities.feed.cost.amount = newStats.activities.feed.cost.amount
+          end
+        end
+        if newStats.activities.feed.energyGain ~= nil then
+          monster.activities.feed.energyGain = newStats.activities.feed.energyGain
+        end
+      end
+    end
+    
     -- Update identity and status
     if newStats.faction ~= nil then 
       UserFactions[targetWallet] = { faction = newStats.faction }

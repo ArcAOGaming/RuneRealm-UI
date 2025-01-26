@@ -387,16 +387,21 @@ const Admin: React.FC = () => {
                           <input
                             type="number"
                             value={editedStats.activities?.mission?.duration ?? userInfo.monster.activities.mission.duration}
-                            onChange={(e) => setEditedStats({
+                          onChange={(e) => {
+                            const currentMission = userInfo.monster.activities.mission;
+                            setEditedStats({
                               ...editedStats,
                               activities: {
                                 ...editedStats.activities,
                                 mission: {
-                                  ...editedStats.activities?.mission,
-                                  duration: parseInt(e.target.value)
+                                  cost: editedStats.activities?.mission?.cost ?? currentMission.cost,
+                                  duration: parseInt(e.target.value),
+                                  energyCost: editedStats.activities?.mission?.energyCost ?? currentMission.energyCost,
+                                  happinessCost: editedStats.activities?.mission?.happinessCost ?? currentMission.happinessCost
                                 }
                               }
-                            })}
+                            });
+                          }}
                             className={`w-full px-4 py-2 rounded-lg border ${theme.border} ${theme.container} ${theme.text}`}
                           />
                         </div>
@@ -405,16 +410,21 @@ const Admin: React.FC = () => {
                           <input
                             type="number"
                             value={editedStats.activities?.mission?.energyCost ?? userInfo.monster.activities.mission.energyCost}
-                            onChange={(e) => setEditedStats({
+                          onChange={(e) => {
+                            const currentMission = userInfo.monster.activities.mission;
+                            setEditedStats({
                               ...editedStats,
                               activities: {
                                 ...editedStats.activities,
                                 mission: {
-                                  ...editedStats.activities?.mission,
-                                  energyCost: parseInt(e.target.value)
+                                  cost: editedStats.activities?.mission?.cost ?? currentMission.cost,
+                                  duration: editedStats.activities?.mission?.duration ?? currentMission.duration,
+                                  energyCost: parseInt(e.target.value),
+                                  happinessCost: editedStats.activities?.mission?.happinessCost ?? currentMission.happinessCost
                                 }
                               }
-                            })}
+                            });
+                          }}
                             className={`w-full px-4 py-2 rounded-lg border ${theme.border} ${theme.container} ${theme.text}`}
                           />
                         </div>
@@ -423,16 +433,21 @@ const Admin: React.FC = () => {
                           <input
                             type="number"
                             value={editedStats.activities?.mission?.happinessCost ?? userInfo.monster.activities.mission.happinessCost}
-                            onChange={(e) => setEditedStats({
+                          onChange={(e) => {
+                            const currentMission = userInfo.monster.activities.mission;
+                            setEditedStats({
                               ...editedStats,
                               activities: {
                                 ...editedStats.activities,
                                 mission: {
-                                  ...editedStats.activities?.mission,
+                                  cost: editedStats.activities?.mission?.cost ?? currentMission.cost,
+                                  duration: editedStats.activities?.mission?.duration ?? currentMission.duration,
+                                  energyCost: editedStats.activities?.mission?.energyCost ?? currentMission.energyCost,
                                   happinessCost: parseInt(e.target.value)
                                 }
                               }
-                            })}
+                            });
+                          }}
                             className={`w-full px-4 py-2 rounded-lg border ${theme.border} ${theme.container} ${theme.text}`}
                           />
                         </div>
@@ -493,16 +508,21 @@ const Admin: React.FC = () => {
                           <input
                             type="number"
                             value={editedStats.activities?.play?.duration ?? userInfo.monster.activities.play.duration}
-                            onChange={(e) => setEditedStats({
+                          onChange={(e) => {
+                            const currentPlay = userInfo.monster.activities.play;
+                            setEditedStats({
                               ...editedStats,
                               activities: {
                                 ...editedStats.activities,
                                 play: {
-                                  ...editedStats.activities?.play,
-                                  duration: parseInt(e.target.value)
+                                  cost: editedStats.activities?.play?.cost ?? currentPlay.cost,
+                                  duration: parseInt(e.target.value),
+                                  energyCost: editedStats.activities?.play?.energyCost ?? currentPlay.energyCost,
+                                  happinessGain: editedStats.activities?.play?.happinessGain ?? currentPlay.happinessGain
                                 }
                               }
-                            })}
+                            });
+                          }}
                             className={`w-full px-4 py-2 rounded-lg border ${theme.border} ${theme.container} ${theme.text}`}
                           />
                         </div>
@@ -511,16 +531,21 @@ const Admin: React.FC = () => {
                           <input
                             type="number"
                             value={editedStats.activities?.play?.energyCost ?? userInfo.monster.activities.play.energyCost}
-                            onChange={(e) => setEditedStats({
+                          onChange={(e) => {
+                            const currentPlay = userInfo.monster.activities.play;
+                            setEditedStats({
                               ...editedStats,
                               activities: {
                                 ...editedStats.activities,
                                 play: {
-                                  ...editedStats.activities?.play,
-                                  energyCost: parseInt(e.target.value)
+                                  cost: editedStats.activities?.play?.cost ?? currentPlay.cost,
+                                  duration: editedStats.activities?.play?.duration ?? currentPlay.duration,
+                                  energyCost: parseInt(e.target.value),
+                                  happinessGain: editedStats.activities?.play?.happinessGain ?? currentPlay.happinessGain
                                 }
                               }
-                            })}
+                            });
+                          }}
                             className={`w-full px-4 py-2 rounded-lg border ${theme.border} ${theme.container} ${theme.text}`}
                           />
                         </div>
@@ -529,16 +554,21 @@ const Admin: React.FC = () => {
                           <input
                             type="number"
                             value={editedStats.activities?.play?.happinessGain ?? userInfo.monster.activities.play.happinessGain}
-                            onChange={(e) => setEditedStats({
+                          onChange={(e) => {
+                            const currentPlay = userInfo.monster.activities.play;
+                            setEditedStats({
                               ...editedStats,
                               activities: {
                                 ...editedStats.activities,
                                 play: {
-                                  ...editedStats.activities?.play,
+                                  cost: editedStats.activities?.play?.cost ?? currentPlay.cost,
+                                  duration: editedStats.activities?.play?.duration ?? currentPlay.duration,
+                                  energyCost: editedStats.activities?.play?.energyCost ?? currentPlay.energyCost,
                                   happinessGain: parseInt(e.target.value)
                                 }
                               }
-                            })}
+                            });
+                          }}
                             className={`w-full px-4 py-2 rounded-lg border ${theme.border} ${theme.container} ${theme.text}`}
                           />
                         </div>
@@ -599,16 +629,19 @@ const Admin: React.FC = () => {
                           <input
                             type="number"
                             value={editedStats.activities?.feed?.energyGain ?? userInfo.monster.activities.feed.energyGain}
-                            onChange={(e) => setEditedStats({
+                          onChange={(e) => {
+                            const currentFeed = userInfo.monster.activities.feed;
+                            setEditedStats({
                               ...editedStats,
                               activities: {
                                 ...editedStats.activities,
                                 feed: {
-                                  ...editedStats.activities?.feed,
+                                  cost: editedStats.activities?.feed?.cost ?? currentFeed.cost,
                                   energyGain: parseInt(e.target.value)
                                 }
                               }
-                            })}
+                            });
+                          }}
                             className={`w-full px-4 py-2 rounded-lg border ${theme.border} ${theme.container} ${theme.text}`}
                           />
                         </div>
