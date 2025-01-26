@@ -17,68 +17,53 @@ export const FactionPage: React.FC = () => {
   const [isPurchaseModalOpen, setIsPurchaseModalOpen] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [isInitialLoad, setIsInitialLoad] = useState(true);
-  const [isLoadingFactions, setIsLoadingFactions] = useState(false);
   const [showConfetti, setShowConfetti] = useState(false);
   const [offeringStats, setOfferingStats] = useState<OfferingStats | null>(null);
   const [userOfferings, setUserOfferings] = useState<number>(0);
   const theme = currentTheme(darkMode);
 
+  // Load all data in parallel
   useEffect(() => {
-    const loadOfferingStats = async () => {
-      try {
-        const stats = await getTotalOfferings();
-        setOfferingStats(stats);
-      } catch (error) {
-        console.error('Error loading offering stats:', error);
+    const loadAllData = async () => {
+      if (!wallet?.address) {
+        setFactions([]);
+        setOfferingStats(null);
+        setUserOfferings(0);
+        setIsInitialLoad(false);
+        return;
       }
-    };
 
-    const loadStats = async () => {
       try {
-        const [totalStats, userStats] = await Promise.all([
+        // Keep existing data during refresh
+        const [factionData, totalStats, userStats] = await Promise.all([
+          getFactionOptions(),
           getTotalOfferings(),
-          wallet?.address ? getUserOfferings(wallet.address) : Promise.resolve(0)
+          getUserOfferings(wallet.address)
         ]);
+
+        setFactions(factionData || []);
         setOfferingStats(totalStats);
         setUserOfferings(userStats);
       } catch (error) {
-        console.error('Error loading stats:', error);
+        console.error('Error loading faction data:', error);
+      } finally {
+        setIsInitialLoad(false);
       }
     };
 
-    loadStats();
-  }, [wallet?.address]);
-
-  const loadFactions = useCallback(async (isInitial = false) => {
-    try {
-      if (isInitial) {
-        setIsLoadingFactions(true);
-      }
-      const options = await getFactionOptions();
-      setFactions(options || []);
-    } catch (error) {
-      console.error('Error loading factions:', error);
-      setFactions([]);
-    } finally {
-      setIsLoadingFactions(false);
-    }
-  }, []);
-
-  useEffect(() => {
-    if (wallet) {
-      loadFactions(true);
-      setIsInitialLoad(false);
+    if (isInitialLoad) {
+      loadAllData();
     } else {
-      setFactions([]);
-      setIsInitialLoad(false);
+      // If not initial load, refresh data without loading state
+      loadAllData();
     }
-  }, [wallet, loadFactions]); // Re-run when wallet changes
+  }, [wallet?.address, isInitialLoad]);
 
   const handleJoinFaction = async (factionName: string) => {
     try {
       setIsLoading(true);
       await setFaction(wallet, factionName);
-      await loadFactions(false); // Load factions without showing loading animation
+      setIsInitialLoad(true); // Trigger a data refresh
       await connectWallet();
     } catch (error) {
       console.error('Error joining faction:', error);
@@ -219,9 +204,11 @@ export const FactionPage: React.FC = () => {
             </div>
           )}
 
-          {/* Loading State or Factions Grid */}
+          {/* Loading State or Content */}
           {isInitialLoad ? (
-            <LoadingAnimation />
+            <div className="flex justify-center items-center min-h-[400px]">
+              <LoadingAnimation />
+            </div>
           ) : (
             <div 
               className={`grid gap-3 max-w-5xl mx-auto ${

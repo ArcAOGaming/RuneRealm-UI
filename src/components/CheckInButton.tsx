@@ -27,7 +27,7 @@ const CheckInButton: React.FC = () => {
       disabled={isChecking}
       className={`px-6 py-3 rounded-lg font-bold transition-all duration-300 ${theme.buttonBg} ${theme.buttonHover} ${theme.text} ${isChecking ? 'opacity-50 cursor-not-allowed' : ''}`}
     >
-      {isChecking ? 'Checking In...' : 'Daily Check-in'}
+      {isChecking ? 'Offering...' : 'Daily Faction Offering'}
     </button>
   );
 };
