@@ -1,9 +1,10 @@
 import React, { useState } from 'react';
 import { currentTheme } from '../constants/theme';
 import { useWallet } from '../hooks/useWallet';
+import { removeUser } from '../utils/aoHelpers';
 
 const AdminRemoveUser: React.FC = () => {
-  const { darkMode } = useWallet();
+  const { darkMode, triggerRefresh } = useWallet();
   const [address, setAddress] = useState('');
   const [isProcessing, setIsProcessing] = useState(false);
   const theme = currentTheme(darkMode);
@@ -13,8 +14,11 @@ const AdminRemoveUser: React.FC = () => {
     
     setIsProcessing(true);
     try {
-      // TODO: Implement user removal logic
-      console.log('Processing user removal for:', address);
+      const result = await removeUser(address, triggerRefresh);
+      if (result) {
+        setAddress(''); // Clear input on success
+        alert('User removed successfully');
+      }
     } catch (error) {
       console.error('Error removing user:', error);
     } finally {

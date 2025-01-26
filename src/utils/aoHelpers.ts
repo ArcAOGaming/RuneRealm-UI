@@ -1,4 +1,15 @@
-import { message, createDataItemSigner, dryrun, result } from "../config/aoConnection";
+import { message as aoMessage, createDataItemSigner, dryrun, result } from "../config/aoConnection";
+import { AdminSkinChanger, DefaultAtlasTxID, Alter } from "../constants/Constants";
+
+// Wrap the original message function to include refresh callback
+export const message = async (params: any, refreshCallback?: () => void) => {
+  const response = await aoMessage(params);
+  // If a refresh callback is provided, schedule it after 10 seconds
+  if (refreshCallback) {
+    setTimeout(refreshCallback, 10000);
+  }
+  return response;
+};
 
 interface ResultType {
     Messages?: Array<{
@@ -251,7 +262,7 @@ export const checkWalletStatus = async (walletInfo?: { address: string }): Promi
 };
 
 // Update user's skin
-export const updateUserSkin = async (wallet: any, spriteTxId: string) => {
+export const updateUserSkin = async (wallet: any, spriteTxId: string, refreshCallback?: () => void) => {
     if (!wallet?.address) {
         throw new Error("No wallet connected");
     }
@@ -274,7 +285,7 @@ export const updateUserSkin = async (wallet: any, spriteTxId: string) => {
             ],
             signer: createDataItemSigner(wallet),
             data: ""
-        });
+        }, refreshCallback);
 
         console.log("UpdateSkin response:", messageResult);
 
@@ -294,7 +305,7 @@ export const updateUserSkin = async (wallet: any, spriteTxId: string) => {
     }
 };
 
-export const setFaction = async (wallet: any, faction: string) => {
+export const setFaction = async (wallet: any, faction: string, refreshCallback?: () => void) => {
     if (!wallet?.address) {
         throw new Error("No wallet connected");
     }
@@ -316,7 +327,7 @@ export const setFaction = async (wallet: any, faction: string) => {
             ],
             signer,
             data: ""
-        });
+        }, refreshCallback);
 
         console.log("SetFaction response:", messageResult);
 
@@ -462,7 +473,7 @@ export const formatTokenAmount = (amount: string, denomination: number): string 
 };
 
 // Purchase access
-export const purchaseAccess = async (selectedToken: TokenOption): Promise<boolean> => {
+export const purchaseAccess = async (selectedToken: TokenOption, refreshCallback?: () => void): Promise<boolean> => {
     try {
         console.log("Initiating purchase with token:", selectedToken);
 
@@ -483,7 +494,7 @@ export const purchaseAccess = async (selectedToken: TokenOption): Promise<boolea
             ],
             signer,
             data: "" // Empty data for transfer
-        });
+        }, refreshCallback);
 
         console.log("Transfer message sent:", messageResult);
 
@@ -532,7 +543,7 @@ interface BulkImportRequest {
     addresses: string[];
 }
 
-export const bulkImportAddresses = async (data: BulkImportRequest): Promise<BulkImportResult> => {
+export const bulkImportAddresses = async (data: BulkImportRequest, refreshCallback?: () => void): Promise<BulkImportResult> => {
     try {
         const signer = createDataItemSigner(window.arweaveWallet);
         console.log("Created signer for wallet");
@@ -544,7 +555,7 @@ export const bulkImportAddresses = async (data: BulkImportRequest): Promise<Bulk
             ],
             data: JSON.stringify(data),
             signer
-        });
+        }, refreshCallback);
         console.log(messageResult);
 
         const transferResult = await result({
@@ -566,7 +577,7 @@ export const bulkImportAddresses = async (data: BulkImportRequest): Promise<Bulk
 
 // Remove user access
 // Adopt a monster
-export const adoptMonster = async (wallet: any) => {
+export const adoptMonster = async (wallet: any, refreshCallback?: () => void) => {
     if (!wallet?.address) {
         throw new Error("No wallet connected");
     }
@@ -591,7 +602,7 @@ export const adoptMonster = async (wallet: any) => {
             ],
             signer,
             data: ""
-        });
+        }, refreshCallback);
 
         console.log("AdoptMonster response:", messageResult);
 
@@ -791,7 +802,7 @@ export interface MonsterStatsUpdate {
   };
 }
 
-export const setUserStats = async (targetWallet: string, stats: MonsterStatsUpdate): Promise<boolean> => {
+export const setUserStats = async (targetWallet: string, stats: MonsterStatsUpdate, refreshCallback?: () => void): Promise<boolean> => {
   try {
     console.log('Setting user stats with data:', JSON.stringify(stats, null, 2));
     const signer = createDataItemSigner(window.arweaveWallet);
@@ -803,7 +814,7 @@ export const setUserStats = async (targetWallet: string, stats: MonsterStatsUpda
       ],
       data: JSON.stringify(stats),
       signer
-    });
+    }, refreshCallback);
 
     const transferResult = await result({
       message: messageResult,
@@ -844,7 +855,7 @@ export const getUserInfo = async (walletAddress: string): Promise<UserInfo | nul
     }
 };
 
-export const removeUser = async (userId: string) => {
+export const removeUser = async (userId: string, refreshCallback?: () => void) => {
     try {
         const signer = createDataItemSigner(window.arweaveWallet);
         const messageResult = await message({
@@ -855,7 +866,7 @@ export const removeUser = async (userId: string) => {
             ],
             signer,
             data: ""
-        });
+        }, refreshCallback);
 
         const transferResult = await result({
             message: messageResult,
@@ -873,8 +884,6 @@ export const removeUser = async (userId: string) => {
     }
 };
 
-import { AdminSkinChanger, DefaultAtlasTxID, Alter } from "../constants/Constants";
-
 export interface OfferingStats {
     ["Sky Nomads"]: number;
     ["Aqua Guardians"]: number;
@@ -882,7 +891,7 @@ export interface OfferingStats {
     ["Inferno Blades"]: number;
 }
 
-export const defaultInteraction = async (wallet: any) => {
+export const defaultInteraction = async (wallet: any, refreshCallback?: () => void) => {
     if (!wallet?.address) {
         throw new Error("No wallet connected");
     }
@@ -896,7 +905,7 @@ export const defaultInteraction = async (wallet: any) => {
             ],
             signer,
             data: ""
-        });
+        }, refreshCallback);
 
         const transferResult = await result({
             message: messageResult,
@@ -955,7 +964,7 @@ export const getUserOfferings = async (userId: string): Promise<number> => {
     }
 };
 
-export const adjustAllMonsters = async (): Promise<boolean> => {
+export const adjustAllMonsters = async (refreshCallback?: () => void): Promise<boolean> => {
     try {
         const signer = createDataItemSigner(window.arweaveWallet);
         const messageResult = await message({
@@ -965,7 +974,7 @@ export const adjustAllMonsters = async (): Promise<boolean> => {
             ],
             signer,
             data: ""
-        });
+        }, refreshCallback);
 
         const transferResult = await result({
             message: messageResult,

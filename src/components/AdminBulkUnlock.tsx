@@ -4,7 +4,7 @@ import { useWallet } from '../hooks/useWallet';
 import { bulkImportAddresses } from '../utils/aoHelpers';
 
 const AdminBulkUnlock: React.FC = () => {
-  const { darkMode } = useWallet();
+  const { darkMode, triggerRefresh } = useWallet();
   const [addresses, setAddresses] = useState('');
   const [isProcessing, setIsProcessing] = useState(false);
   const theme = currentTheme(darkMode);
@@ -19,7 +19,7 @@ const AdminBulkUnlock: React.FC = () => {
       const response = await bulkImportAddresses({
         function: "BulkImportAddresses",
         addresses: addressList
-      });
+      }, triggerRefresh);
       setResult(response);
       if (response.successful > 0) {
         setAddresses(''); // Clear the textarea on success

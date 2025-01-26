@@ -8,7 +8,7 @@ import AdminBulkUnlock from '../components/AdminBulkUnlock';
 import AdminRemoveUser from '../components/AdminRemoveUser';
 
 const Admin: React.FC = () => {
-  const { darkMode, setDarkMode } = useWallet();
+  const { darkMode, setDarkMode, triggerRefresh } = useWallet();
   const [walletAddress, setWalletAddress] = useState('');
   const [userInfo, setUserInfo] = useState<UserInfo | null>(null);
   const [isLoading, setIsLoading] = useState(false);
@@ -163,7 +163,7 @@ const Admin: React.FC = () => {
                 <button
                   onClick={async () => {
                     try {
-                      const success = await adjustAllMonsters();
+                      const success = await adjustAllMonsters(triggerRefresh);
                       if (success) {
                         alert('Successfully adjusted all monsters');
                       }
@@ -757,7 +757,7 @@ const Admin: React.FC = () => {
                         onClick={async () => {
                           setIsUpdating(true);
                           try {
-                            const success = await setUserStats(walletAddress, editedStats);
+                            const success = await setUserStats(walletAddress, editedStats, triggerRefresh);
                             if (success) {
                               const info = await getUserInfo(walletAddress);
                               setUserInfo(info);

@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useState, useEffect } from 'react';
+import React, { createContext, useContext, useState, useEffect, useCallback } from 'react';
 import { checkWalletStatus, WalletStatus } from '../utils/aoHelpers';
 
 interface WalletContextType {
@@ -14,7 +14,7 @@ interface WalletContextType {
 
 const WalletContext = createContext<WalletContextType | undefined>(undefined);
 
-export const WalletProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
+export const WalletProvider: React.FC<{ children: React.ReactNode }> = ({ children }): JSX.Element => {
   const [wallet, setWallet] = useState<any | null>(null);
   const [walletStatus, setWalletStatus] = useState<WalletStatus | null>(() => {
     const cached = localStorage.getItem('walletStatus');
@@ -27,22 +27,26 @@ export const WalletProvider: React.FC<{ children: React.ReactNode }> = ({ childr
   const [lastCheck, setLastCheck] = useState<number>(0);
   const [refreshTrigger, setRefreshTrigger] = useState<number>(0);
 
-  const triggerRefresh = () => {
-    // Wait 5 seconds before triggering refresh
+  const triggerRefresh = useCallback(() => {
+    console.log('[WalletContext] Refresh triggered, scheduling update in 10s');
+    // Wait 10 seconds before triggering refresh
     setTimeout(() => {
+      console.log('[WalletContext] Executing scheduled refresh');
       setRefreshTrigger(prev => prev + 1);
       checkAndUpdateWalletStatus(true);
-    }, 5000);
-  };
+    }, 10000);
+  }, []);
 
   const checkAndUpdateWalletStatus = async (force: boolean = false) => {
     try {
       // Only check if forced or if it's been more than 30 seconds since last check
       const now = Date.now();
       if (!force && now - lastCheck < 30000) {
+        console.log('[WalletContext] Skipping status check - within 30s window');
         return walletStatus?.isUnlocked || false;
       }
 
+      console.log('[WalletContext] Checking wallet status', { force, timeSinceLastCheck: now - lastCheck });
       setIsCheckingStatus(true);
       // @ts-ignore
       const activeAddress = await window.arweaveWallet?.getActiveAddress();
@@ -57,6 +61,7 @@ export const WalletProvider: React.FC<{ children: React.ReactNode }> = ({ childr
       // Use cached status if available and not forced
       if (!force && localStorage.getItem('walletStatus')) {
         const cachedStatus = JSON.parse(localStorage.getItem('walletStatus')!);
+        console.log('[WalletContext] Using cached status', cachedStatus);
         setWalletStatus(cachedStatus);
         setLastCheck(now);
         return cachedStatus.isUnlocked;
@@ -64,13 +69,16 @@ export const WalletProvider: React.FC<{ children: React.ReactNode }> = ({ childr
 
       // Only fetch new status if forced or no cache
       const status = await checkWalletStatus({ address: activeAddress });
-      console.log('Wallet status updated:', status);
-      setWalletStatus(status);
+      console.log('[WalletContext] Wallet status updated:', status);
+      // Only update if we got valid data
+      if (status) {
+        setWalletStatus(status);
+      }
       setLastCheck(now);
       localStorage.setItem('walletStatus', JSON.stringify(status));
       return status.isUnlocked;
     } catch (error) {
-      console.error('Error checking wallet status:', error);
+      console.error('[WalletContext] Error checking wallet status:', error);
       return false;
     } finally {
       setIsCheckingStatus(false);
@@ -81,6 +89,7 @@ export const WalletProvider: React.FC<{ children: React.ReactNode }> = ({ childr
     try {
       const isConnected = await checkAndUpdateWalletStatus(force);
       if (!isConnected) {
+        console.log('[WalletContext] Connecting wallet');
         // @ts-ignore
         await window.arweaveWallet?.connect([
           'ACCESS_ADDRESS',
@@ -94,7 +103,7 @@ export const WalletProvider: React.FC<{ children: React.ReactNode }> = ({ childr
         await checkAndUpdateWalletStatus();
       }
     } catch (error) {
-      console.error('Error connecting wallet:', error);
+      console.error('[WalletContext] Error connecting wallet:', error);
       throw error;
     }
   };
@@ -105,12 +114,12 @@ export const WalletProvider: React.FC<{ children: React.ReactNode }> = ({ childr
 
     // Set up wallet event listeners
     const handleWalletConnect = () => {
-      console.log('Wallet connected');
+      console.log('[WalletContext] Wallet connected');
       checkAndUpdateWalletStatus(true);
     };
 
     const handleWalletDisconnect = () => {
-      console.log('Wallet disconnected');
+      console.log('[WalletContext] Wallet disconnected');
       setWallet(null);
       setWalletStatus(null);
       localStorage.removeItem('walletStatus');

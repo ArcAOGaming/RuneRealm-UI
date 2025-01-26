@@ -1,7 +1,8 @@
 import React, { useEffect, useState } from 'react';
 import { useWallet } from '../hooks/useWallet';
 import { getFactionOptions, purchaseAccess, TokenOption, adoptMonster, getAssetBalances, AssetBalance, SUPPORTED_ASSETS, MonsterStats, MonsterStatus, MonsterMove } from '../utils/aoHelpers';
-import { message, createDataItemSigner } from '../config/aoConnection';
+import { createDataItemSigner } from '../config/aoConnection';
+import { message } from '../utils/aoHelpers';
 import { currentTheme } from '../constants/theme';
 import { Gateway } from '../constants/Constants';
 import PurchaseModal from '../components/PurchaseModal';
@@ -41,7 +42,7 @@ interface Wallet {
 }
 
 export const MonsterManagement: React.FC = (): JSX.Element => {
-  const { wallet, walletStatus, darkMode, connectWallet, setDarkMode } = useWallet();
+  const { wallet, walletStatus, darkMode, connectWallet, setDarkMode, triggerRefresh, refreshTrigger } = useWallet();
   const [isPurchaseModalOpen, setIsPurchaseModalOpen] = useState(false);
   const [showConfetti, setShowConfetti] = useState(false);
   const [isAdopting, setIsAdopting] = useState(false);
@@ -57,31 +58,57 @@ export const MonsterManagement: React.FC = (): JSX.Element => {
 
   // Handle timer updates for progress bars and countdowns
   useEffect(() => {
-    if (!localMonster || localMonster.status.type === 'Home') return;
+    if (!localMonster || localMonster.status.type === 'Home') {
+      console.log('[MonsterManagement] No timer needed - monster is home or null');
+      return;
+    }
 
+    console.log('[MonsterManagement] Starting progress timer');
     // Update every second for smooth progress
     const timer = setInterval(() => {
-      setForceUpdate({});
+      const now = Date.now();
+      if (now >= localMonster.status.until_time) {
+        console.log('[MonsterManagement] Activity complete, clearing timer');
+        clearInterval(timer);
+      } else {
+        setForceUpdate({});
+      }
     }, 1000);
 
-    return () => clearInterval(timer);
-  }, [localMonster]);
+    return () => {
+      console.log('[MonsterManagement] Cleaning up progress timer');
+      clearInterval(timer);
+    };
+  }, [localMonster?.status.type, localMonster?.status.until_time]);
 
-  // Update local monster when wallet status changes
+  // Update local monster and load assets when wallet status changes
   useEffect(() => {
-    if (walletStatus?.monster) {
-      setLocalMonster(walletStatus.monster);
-    }
-  }, [walletStatus?.monster]);
+    const updateData = async () => {
+      console.log('[MonsterManagement] Checking for updates', {
+        hasWallet: !!wallet?.address,
+        hasMonster: !!walletStatus?.monster,
+        refreshTrigger
+      });
 
-  useEffect(() => {
-    if (wallet?.address) {
-      loadAssetBalances();
-    }
-    if (walletStatus?.monster) {
-      console.log('Current monster state:', walletStatus.monster);
-    }
-  }, [wallet?.address, walletStatus?.monster]);
+      if (wallet?.address) {
+        await loadAssetBalances();
+      }
+      
+      if (walletStatus?.monster) {
+        const monsterChanged = JSON.stringify(walletStatus.monster) !== JSON.stringify(localMonster);
+        if (monsterChanged) {
+          console.log('[MonsterManagement] Monster state updated:', {
+            old: localMonster,
+            new: walletStatus.monster
+          });
+          setLocalMonster(walletStatus.monster);
+        } else {
+          console.log('[MonsterManagement] Monster state unchanged');
+        }
+      }
+    };
+    updateData();
+  }, [wallet?.address, walletStatus?.monster, refreshTrigger]);
 
   const loadAssetBalances = async () => {
     try {
@@ -126,12 +153,9 @@ export const MonsterManagement: React.FC = (): JSX.Element => {
         ],
         signer,
         data: ""
-      });
+      }, triggerRefresh);
 
-      await Promise.all([
-        loadAssetBalances(),
-        connectWallet()
-      ]);
+      await loadAssetBalances();
     } catch (error) {
       console.error('Error feeding monster:', error);
     } finally {
@@ -176,7 +200,7 @@ export const MonsterManagement: React.FC = (): JSX.Element => {
           ],
           signer,
           data: ""
-        });
+        }, triggerRefresh);
       } else {
         await message({
           process: playConfig.token,
@@ -188,13 +212,10 @@ export const MonsterManagement: React.FC = (): JSX.Element => {
           ],
           signer,
           data: ""
-        });
+        }, triggerRefresh);
       }
 
-      await Promise.all([
-        loadAssetBalances(),
-        connectWallet()
-      ]);
+      await loadAssetBalances();
     } catch (error) {
       console.error('Error with play action:', error);
     } finally {
@@ -222,7 +243,7 @@ export const MonsterManagement: React.FC = (): JSX.Element => {
           ],
           signer,
           data: ""
-        });
+        }, triggerRefresh);
       } else {
         const missionConfig = walletStatus.monster.activities.mission;
         const fuelAsset = assetBalances.find(a => a.info.processId === missionConfig.cost.token);
@@ -242,13 +263,10 @@ export const MonsterManagement: React.FC = (): JSX.Element => {
           ],
           signer,
           data: ""
-        });
+        }, triggerRefresh);
       }
 
-      await Promise.all([
-        loadAssetBalances(),
-        connectWallet()
-      ]);
+      await loadAssetBalances();
     } catch (error) {
       console.error('Error with mission:', error);
     } finally {
@@ -278,9 +296,7 @@ export const MonsterManagement: React.FC = (): JSX.Element => {
         ],
         signer,
         data: ""
-      });
-
-      await connectWallet();
+      }, triggerRefresh);
     } catch (error) {
       console.error('Error leveling up monster:', error);
     } finally {
@@ -291,13 +307,12 @@ export const MonsterManagement: React.FC = (): JSX.Element => {
   const handleAdoptMonster = async () => {
     try {
       setIsAdopting(true);
-      const result = await adoptMonster(wallet);
+      const result = await adoptMonster(wallet, triggerRefresh);
       console.log('Adopt monster result:', result);
       if (result.status === "success") {
         setShowConfetti(true);
         setTimeout(() => {
           setShowConfetti(false);
-          connectWallet();
         }, 5000);
       }
     } catch (error) {
@@ -309,12 +324,11 @@ export const MonsterManagement: React.FC = (): JSX.Element => {
 
   const handlePurchase = async (selectedToken: TokenOption) => {
     try {
-      await purchaseAccess(selectedToken);
+      await purchaseAccess(selectedToken, triggerRefresh);
       setShowConfetti(true);
       setIsPurchaseModalOpen(false);
       setTimeout(() => {
         setShowConfetti(false);
-        connectWallet();
       }, 5000);
     } catch (error) {
       console.error('Purchase failed:', error);
@@ -364,7 +378,7 @@ export const MonsterManagement: React.FC = (): JSX.Element => {
     return Math.min(100, Math.max(0, (elapsed / total) * 100));
   };
 
-  const renderMonsterCard = () => {
+  const renderMonsterCard = React.useMemo(() => {
     if (!walletStatus?.monster) {
       return (
         <div className={`p-6 rounded-xl ${theme.container} border ${theme.border} backdrop-blur-md text-center`}>
@@ -382,7 +396,13 @@ export const MonsterManagement: React.FC = (): JSX.Element => {
     }
 
     const monster = localMonster || walletStatus.monster;
-    console.log('Rendering monster card with stats:', monster);
+    console.log('[MonsterManagement] Rendering monster card', {
+      level: monster.level,
+      status: monster.status,
+      energy: monster.energy,
+      happiness: monster.happiness,
+      exp: monster.exp
+    });
 
     const isPlaytime = monster.status.type === 'Play';
     const isMissionTime = monster.status.type === 'Mission';
@@ -701,19 +721,10 @@ export const MonsterManagement: React.FC = (): JSX.Element => {
                   </div>
                   <button
                     onClick={handleMission}
-                    disabled={
-                      isOnMission || 
-                      (monster.status.type !== 'Home' && monster.status.type !== 'Mission') || 
-                      (monster.status.type === 'Home' && (monster.energy < activities.mission.energyCost || monster.happiness < activities.mission.happinessCost))
-                    }
-                    className={`w-full px-4 py-2 rounded-lg font-bold text-lg transition-all duration-300 bg-gradient-to-br from-emerald-500 to-emerald-700 hover:from-emerald-400 hover:to-emerald-600 text-white ${
-                      (isOnMission || 
-                       (monster.status.type !== 'Home' && monster.status.type !== 'Mission') || 
-                       (monster.status.type === 'Home' && (monster.energy < activities.mission.energyCost || monster.happiness < activities.mission.happinessCost))) 
-                      ? 'opacity-50 cursor-not-allowed' : ''}`}
+                    disabled={isOnMission || (monster.status.type !== 'Home' && monster.status.type !== 'Mission') || (monster.status.type === 'Home' && (monster.energy < activities.mission.energyCost || monster.happiness < activities.mission.happinessCost))}
+                    className={`w-full px-4 py-2 rounded-lg font-bold text-lg transition-all duration-300 bg-gradient-to-br from-emerald-500 to-emerald-700 hover:from-emerald-400 hover:to-emerald-600 text-white ${(isOnMission || (monster.status.type !== 'Home' && monster.status.type !== 'Mission') || (monster.status.type === 'Home' && (monster.energy < activities.mission.energyCost || monster.happiness < activities.mission.happinessCost))) ? 'opacity-50 cursor-not-allowed' : ''}`}
                   >
-                    {isOnMission ? 'On Mission...' : 
-                     monster.status.type === 'Mission' && Date.now() > monster.status.until_time ? 'Return from Mission' : 'Start Mission'}
+                    {isOnMission ? 'On Mission...' : monster.status.type === 'Mission' && Date.now() > monster.status.until_time ? 'Return from Mission' : 'Start Mission'}
                   </button>
                 </div>
               </div>
@@ -722,7 +733,32 @@ export const MonsterManagement: React.FC = (): JSX.Element => {
         </div>
       </div>
     );
-  };
+  }, [
+    // Only include dependencies that affect the visual rendering
+    localMonster?.level,
+    localMonster?.status,
+    localMonster?.energy,
+    localMonster?.happiness,
+    localMonster?.exp,
+    localMonster?.attack,
+    localMonster?.defense,
+    localMonster?.speed,
+    localMonster?.health,
+    localMonster?.moves,
+    assetBalances,
+    isAdopting,
+    isFeeding,
+    isPlaying,
+    isLevelingUp,
+    isOnMission,
+    darkMode,
+    theme,
+    handleAdoptMonster,
+    handleFeedMonster,
+    handlePlayMonster,
+    handleMission,
+    handleLevelUp
+  ]);
 
   return (
     <div className="min-h-screen flex flex-col overflow-hidden relative">
@@ -781,7 +817,7 @@ export const MonsterManagement: React.FC = (): JSX.Element => {
                 </a>
               </div>
             ) : (
-              renderMonsterCard()
+              renderMonsterCard
             )}
           </div>
         </div>
@@ -791,3 +827,5 @@ export const MonsterManagement: React.FC = (): JSX.Element => {
     </div>
   );
 };
+
+export default MonsterManagement;

@@ -13,8 +13,7 @@ const CheckInButton: React.FC = () => {
 
     try {
       setIsChecking(true);
-      await defaultInteraction(wallet);
-      triggerRefresh();
+      await defaultInteraction(wallet, triggerRefresh);
     } catch (error) {
       console.error('Error during check-in:', error);
     } finally {

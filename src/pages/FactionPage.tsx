@@ -66,8 +66,7 @@ export const FactionPage: React.FC = () => {
   const handleJoinFaction = async (factionName: string) => {
     try {
       setIsLoading(true);
-      await setFaction(wallet, factionName);
-      triggerRefresh();
+      await setFaction(wallet, factionName, triggerRefresh);
     } catch (error) {
       console.error('Error joining faction:', error);
     } finally {
@@ -77,12 +76,11 @@ export const FactionPage: React.FC = () => {
 
   const handlePurchase = async (selectedToken: TokenOption) => {
     try {
-      await purchaseAccess(selectedToken);
+      await purchaseAccess(selectedToken, triggerRefresh);
       setShowConfetti(true);
       setIsPurchaseModalOpen(false);
       setTimeout(() => {
         setShowConfetti(false);
-        triggerRefresh();
       }, 5000);
     } catch (error) {
       console.error('Purchase failed:', error);
