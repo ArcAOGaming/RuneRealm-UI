@@ -56,6 +56,11 @@ export const MonsterManagement: React.FC = (): JSX.Element => {
   const theme = currentTheme(darkMode);
   const [, setForceUpdate] = useState({});
 
+  // Add cooldown states
+  const [feedingCooldown, setFeedingCooldown] = useState(false);
+  const [playingCooldown, setPlayingCooldown] = useState(false);
+  const [missionCooldown, setMissionCooldown] = useState(false);
+
   // Handle timer updates for progress bars and countdowns
   useEffect(() => {
     if (!localMonster || localMonster.status.type === 'Home') {
@@ -160,6 +165,11 @@ export const MonsterManagement: React.FC = (): JSX.Element => {
       }, triggerRefresh);
 
       await loadAssetBalances();
+      // Start cooldown period after transaction confirms
+      setFeedingCooldown(true);
+      setTimeout(() => {
+        setFeedingCooldown(false);
+      }, 5000);
     } catch (error) {
       console.error('Error feeding monster:', error);
     } finally {
@@ -220,6 +230,11 @@ export const MonsterManagement: React.FC = (): JSX.Element => {
       }
 
       await loadAssetBalances();
+      // Start cooldown period after transaction confirms
+      setPlayingCooldown(true);
+      setTimeout(() => {
+        setPlayingCooldown(false);
+      }, 5000);
     } catch (error) {
       console.error('Error with play action:', error);
     } finally {
@@ -271,6 +286,11 @@ export const MonsterManagement: React.FC = (): JSX.Element => {
       }
 
       await loadAssetBalances();
+      // Start cooldown period after transaction confirms
+      setMissionCooldown(true);
+      setTimeout(() => {
+        setMissionCooldown(false);
+      }, 5000);
     } catch (error) {
       console.error('Error with mission:', error);
     } finally {
@@ -416,13 +436,29 @@ export const MonsterManagement: React.FC = (): JSX.Element => {
     const isMissionTime = monster.status.type === 'Mission';
     const now = Date.now();
     const timeUp = (isPlaytime || isMissionTime) && now >= monster.status.until_time;
-  
 
     // Use monster's activities directly
     const activities = monster.activities;
 
     // Get berry balance for play action
     const berryBalance = assetBalances.find(a => a.info.processId === monster.activities?.play?.cost?.token)?.balance || 0;
+    const fuelBalance = assetBalances.find(a => a.info.processId === monster.activities?.mission?.cost?.token)?.balance || 0;
+
+    // Check if all requirements are met for each activity
+    const canFeed = monster.status.type === 'Home' && 
+                    berryBalance >= activities.feed.cost.amount && 
+                    monster.energy < 100;
+
+    const canPlay = (monster.status.type === 'Home' && 
+                    berryBalance >= activities.play.cost.amount && 
+                    monster.energy >= activities.play.energyCost) ||
+                    (monster.status.type === 'Play' && timeUp);
+
+    const canMission = (monster.status.type === 'Home' && 
+                      fuelBalance >= activities.mission.cost.amount && 
+                      monster.energy >= activities.mission.energyCost && 
+                      monster.happiness >= activities.mission.happinessCost) ||
+                      (monster.status.type === 'Mission' && timeUp);
 
     return (
       <div className={`p-6 rounded-xl ${theme.container} border ${theme.border} backdrop-blur-md w-[95%] mx-auto`}>
@@ -628,7 +664,11 @@ export const MonsterManagement: React.FC = (): JSX.Element => {
                       <div className="absolute top-0 right-0 w-px h-[calc(100%-48px)] bg-gray-300"></div>
                       <div className="text-sm font-bold mb-3 text-gray-400">COSTS</div>
                       <div className="flex flex-wrap gap-2 max-h-[210px] overflow-y-auto">
-                        <div className={`px-3 py-1.5 rounded-full flex items-center gap-2 ${berryBalance >= activities.feed.cost.amount ? 'bg-gray-700/50 text-black font-medium' : 'bg-gray-800/50 text-gray-400 border-2 border-red-500/70 shadow-[0_0_10px_-3px_rgba(239,68,68,0.6)]'}`}>
+                        <div className={`px-3 py-1.5 rounded-full flex items-center gap-2 ${
+                          berryBalance >= activities.feed.cost.amount ? 
+                          'bg-gray-700/50 text-black font-medium' : 
+                          'bg-gray-800/50 text-gray-400 border-2 border-red-500/70 shadow-[0_0_10px_-3px_rgba(239,68,68,0.6)]'
+                        } ${monster.status.type === 'Home' ? '' : 'opacity-50'}`}>
                           <img src={`${Gateway}${assetBalances.find(a => a.info.processId === activities.feed.cost.token)?.info.logo}`} 
                                alt="Berry" className="w-4 h-4 rounded-full" />
                           <span>-{activities.feed.cost.amount}</span>
@@ -646,10 +686,12 @@ export const MonsterManagement: React.FC = (): JSX.Element => {
                   </div>
                   <button
                     onClick={handleFeedMonster}
-                    disabled={isFeeding || monster.energy >= 100 || monster.status.type !== 'Home'}
-                    className={`w-full px-4 py-2 rounded-lg font-bold text-lg transition-all duration-300 bg-gradient-to-br from-blue-500 to-blue-700 hover:from-blue-400 hover:to-blue-600 text-white ${(isFeeding || monster.energy >= 100 || monster.status.type !== 'Home') ? 'opacity-50 cursor-not-allowed' : ''}`}
+                    disabled={isFeeding || feedingCooldown || !canFeed}
+                    className={`w-full px-4 py-2 rounded-lg font-bold text-lg transition-all duration-300 bg-gradient-to-br from-blue-500 to-blue-700 hover:from-blue-400 hover:to-blue-600 text-white ${
+                      (isFeeding || feedingCooldown || !canFeed) ? 'opacity-50 cursor-not-allowed' : ''
+                    }`}
                   >
-                    {isFeeding ? 'Feeding...' : 'Feed'}
+                    {isFeeding || feedingCooldown ? 'Feeding...' : 'Feed'}
                   </button>
                 </div>
               </div>
@@ -665,12 +707,20 @@ export const MonsterManagement: React.FC = (): JSX.Element => {
                       <div className="absolute top-0 right-0 w-px h-[calc(100%-48px)] bg-gray-300"></div>
                       <div className="text-sm font-bold mb-3 text-gray-400">COSTS</div>
                       <div className="flex flex-wrap gap-2 max-h-[210px] overflow-y-auto">
-                        <div className={`px-3 py-1 rounded-full flex items-center gap-2 ${berryBalance >= activities.play.cost.amount ? 'bg-gray-700/50 text-black font-medium' : 'bg-gray-800/50 text-gray-500'}`}>
+                        <div className={`px-3 py-1 rounded-full flex items-center gap-2 ${
+                          berryBalance >= activities.play.cost.amount ? 
+                          'bg-gray-700/50 text-black font-medium' : 
+                          'bg-gray-800/50 text-gray-400 border-2 border-red-500/70 shadow-[0_0_10px_-3px_rgba(239,68,68,0.6)]'
+                        } ${monster.status.type === 'Home' || (monster.status.type === 'Play' && timeUp) ? '' : 'opacity-50'}`}>
                           <img src={`${Gateway}${assetBalances.find(a => a.info.processId === activities.play.cost.token)?.info.logo}`} 
                                alt="Berry" className="w-4 h-4 rounded-full" />
                           <span>-{activities.play.cost.amount}</span>
                         </div>
-                        <div className={`px-3 py-1.5 rounded-full ${monster.energy >= activities.play.energyCost ? 'bg-blue-500/30 text-black font-medium' : 'bg-gray-800/50 text-gray-400 border-2 border-red-500/70 shadow-[0_0_10px_-3px_rgba(239,68,68,0.6)]'}`}>
+                        <div className={`px-3 py-1.5 rounded-full ${
+                          monster.energy >= activities.play.energyCost ? 
+                          'bg-blue-500/30 text-black font-medium' : 
+                          'bg-gray-800/50 text-gray-400 border-2 border-red-500/70 shadow-[0_0_10px_-3px_rgba(239,68,68,0.6)]'
+                        } ${monster.status.type === 'Home' || (monster.status.type === 'Play' && timeUp) ? '' : 'opacity-50'}`}>
                           -{activities.play.energyCost} Energy
                         </div>
                       </div>
@@ -686,10 +736,13 @@ export const MonsterManagement: React.FC = (): JSX.Element => {
                   </div>
                   <button
                     onClick={handlePlayMonster}
-                    disabled={isPlaying || (monster.status.type === 'Play' && !timeUp) || (monster.status.type === 'Home' && (berryBalance < activities.play.cost.amount || monster.energy < activities.play.energyCost)) || (monster.status.type != 'Home' && timeUp)}
-                    className={`w-full px-4 py-2 rounded-lg font-bold text-lg transition-all duration-300 bg-gradient-to-br from-yellow-500 to-yellow-700 hover:from-yellow-400 hover:to-yellow-600 text-white ${(isPlaying || (monster.status.type !== 'Home' && !timeUp) || (monster.status.type === 'Home' && (berryBalance < activities.play.cost.amount || monster.energy < activities.play.energyCost))) ? 'opacity-50 cursor-not-allowed' : ''}`}
+                    disabled={isPlaying || playingCooldown || !canPlay || (monster.status.type !== 'Home' && monster.status.type !== 'Play')}
+                    className={`w-full px-4 py-2 rounded-lg font-bold text-lg transition-all duration-300 bg-gradient-to-br from-yellow-500 to-yellow-700 hover:from-yellow-400 hover:to-yellow-600 text-white ${
+                      (isPlaying || playingCooldown || !canPlay || (monster.status.type !== 'Home' && monster.status.type !== 'Play')) ? 'opacity-50 cursor-not-allowed' : ''
+                    }`}
                   >
-                    {isPlaying ? 'Playing...' : (timeUp && monster.status.type =="Play")  ? 'Return from Play' : 'Play'}
+                    {isPlaying || playingCooldown ? 'Playing...' : 
+                     (monster.status.type === 'Play' && timeUp) ? 'Return from Play' : 'Play'}
                   </button>
                 </div>
               </div>
@@ -705,15 +758,27 @@ export const MonsterManagement: React.FC = (): JSX.Element => {
                       <div className="absolute top-0 right-0 w-px h-[calc(100%-48px)] bg-gray-300"></div>
                       <div className="text-sm font-bold mb-3 text-gray-400">COSTS</div>
                       <div className="flex flex-wrap gap-2 max-h-[210px] overflow-y-auto">
-                        <div className={`px-3 py-1 rounded-full flex items-center gap-2 ${assetBalances.find(a => a.info.processId === activities.mission.cost.token)?.balance >= activities.mission.cost.amount ? 'bg-gray-700/50 text-black font-medium' : 'bg-gray-800/50 text-gray-500'}`}>
+                        <div className={`px-3 py-1 rounded-full flex items-center gap-2 ${
+                          fuelBalance >= activities.mission.cost.amount ? 
+                          'bg-gray-700/50 text-black font-medium' : 
+                          'bg-gray-800/50 text-gray-400 border-2 border-red-500/70 shadow-[0_0_10px_-3px_rgba(239,68,68,0.6)]'
+                        } ${monster.status.type === 'Home' || (monster.status.type === 'Mission' && timeUp) ? '' : 'opacity-50'}`}>
                           <img src={`${Gateway}${assetBalances.find(a => a.info.processId === activities.mission.cost.token)?.info.logo}`} 
                                alt="TRUNK" className="w-4 h-4 rounded-full" />
                           <span>-{activities.mission.cost.amount}</span>
                         </div>
-                        <div className={`px-3 py-1 rounded-full ${monster.energy >= activities.mission.energyCost ? 'bg-blue-500/30 text-black font-medium' : 'bg-gray-800/50 text-gray-500'}`}>
+                        <div className={`px-3 py-1 rounded-full ${
+                          monster.energy >= activities.mission.energyCost ? 
+                          'bg-blue-500/30 text-black font-medium' : 
+                          'bg-gray-800/50 text-gray-400 border-2 border-red-500/70 shadow-[0_0_10px_-3px_rgba(239,68,68,0.6)]'
+                        } ${monster.status.type === 'Home' || (monster.status.type === 'Mission' && timeUp) ? '' : 'opacity-50'}`}>
                           -{activities.mission.energyCost} Energy
                         </div>
-                        <div className={`px-3 py-1.5 rounded-full ${monster.happiness >= activities.mission.happinessCost ? 'bg-yellow-500/30 text-black font-medium' : 'bg-gray-800/50 text-gray-400 border-2 border-red-500/70 shadow-[0_0_10px_-3px_rgba(239,68,68,0.6)]'}`}>
+                        <div className={`px-3 py-1.5 rounded-full ${
+                          monster.happiness >= activities.mission.happinessCost ? 
+                          'bg-yellow-500/30 text-black font-medium' : 
+                          'bg-gray-800/50 text-gray-400 border-2 border-red-500/70 shadow-[0_0_10px_-3px_rgba(239,68,68,0.6)]'
+                        } ${monster.status.type === 'Home' || (monster.status.type === 'Mission' && timeUp) ? '' : 'opacity-50'}`}>
                           -{activities.mission.happinessCost} Happy
                         </div>
                       </div>
@@ -729,10 +794,13 @@ export const MonsterManagement: React.FC = (): JSX.Element => {
                   </div>
                   <button
                     onClick={handleMission}
-                    disabled={isOnMission || (monster.status.type !== 'Home' && monster.status.type !== 'Mission') || (monster.status.type === 'Home' && (monster.energy < activities.mission.energyCost || monster.happiness < activities.mission.happinessCost))}
-                    className={`w-full px-4 py-2 rounded-lg font-bold text-lg transition-all duration-300 bg-gradient-to-br from-emerald-500 to-emerald-700 hover:from-emerald-400 hover:to-emerald-600 text-white ${(isOnMission || (monster.status.type !== 'Home' && monster.status.type !== 'Mission') || (monster.status.type === 'Home' && (monster.energy < activities.mission.energyCost || monster.happiness < activities.mission.happinessCost))) ? 'opacity-50 cursor-not-allowed' : ''}`}
+                    disabled={isOnMission || missionCooldown || !canMission || (monster.status.type !== 'Home' && monster.status.type !== 'Mission')}
+                    className={`w-full px-4 py-2 rounded-lg font-bold text-lg transition-all duration-300 bg-gradient-to-br from-emerald-500 to-emerald-700 hover:from-emerald-400 hover:to-emerald-600 text-white ${
+                      (isOnMission || missionCooldown || !canMission || (monster.status.type !== 'Home' && monster.status.type !== 'Mission')) ? 'opacity-50 cursor-not-allowed' : ''
+                    }`}
                   >
-                    {isOnMission ? 'On Mission...' : monster.status.type === 'Mission' && Date.now() > monster.status.until_time ? 'Return from Mission' : 'Start Mission'}
+                    {isOnMission || missionCooldown ? 'On Mission...' : 
+                     (monster.status.type === 'Mission' && timeUp) ? 'Return from Mission' : 'Start Mission'}
                   </button>
                 </div>
               </div>
@@ -742,7 +810,6 @@ export const MonsterManagement: React.FC = (): JSX.Element => {
       </div>
     );
   }, [
-    // Only include dependencies that affect the visual rendering
     localMonster?.level,
     localMonster?.status,
     localMonster?.energy,
@@ -759,6 +826,9 @@ export const MonsterManagement: React.FC = (): JSX.Element => {
     isPlaying,
     isLevelingUp,
     isOnMission,
+    feedingCooldown,
+    playingCooldown,
+    missionCooldown,
     darkMode,
     theme,
     handleAdoptMonster,
