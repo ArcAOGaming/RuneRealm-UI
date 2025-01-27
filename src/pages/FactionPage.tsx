@@ -2,7 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { useWallet } from '../hooks/useWallet';
 import { getFactionOptions, FactionOptions, setFaction, purchaseAccess, TokenOption, getTotalOfferings, OfferingStats, getUserOfferings } from '../utils/aoHelpers';
 import { currentTheme } from '../constants/theme';
-import { Gateway } from '../constants/Constants';
+import { Gateway, ACTIVITY_POINTS } from '../constants/Constants';
 import PurchaseModal from '../components/PurchaseModal';
 import CheckInButton from '../components/CheckInButton';
 import Header from '../components/Header';
@@ -20,7 +20,30 @@ export const FactionPage: React.FC = () => {
   const [showConfetti, setShowConfetti] = useState(false);
   const [offeringStats, setOfferingStats] = useState<OfferingStats | null>(null);
   const [userOfferings, setUserOfferings] = useState<number>(0);
+  const [nextOfferingTime, setNextOfferingTime] = useState<string>('');
   const theme = currentTheme(darkMode);
+
+  useEffect(() => {
+    const updateNextOfferingTime = () => {
+      const now = new Date();
+      const midnight = new Date();
+      midnight.setUTCHours(24, 0, 0, 0);
+      
+      if (midnight.getTime() <= now.getTime()) {
+        midnight.setUTCDate(midnight.getUTCDate() + 1);
+      }
+
+      const hours = Math.floor((midnight.getTime() - now.getTime()) / (1000 * 60 * 60));
+      const minutes = Math.floor(((midnight.getTime() - now.getTime()) % (1000 * 60 * 60)) / (1000 * 60));
+      const seconds = Math.floor(((midnight.getTime() - now.getTime()) % (1000 * 60)) / 1000);
+
+      setNextOfferingTime(`${hours}h ${minutes}m ${seconds}s`);
+    };
+
+    updateNextOfferingTime();
+    const interval = setInterval(updateNextOfferingTime, 1000);
+    return () => clearInterval(interval);
+  }, []);
 
   // Function to load data
   const loadAllData = async (isInitialLoading = false) => {
@@ -176,41 +199,50 @@ export const FactionPage: React.FC = () => {
                       <p className={`text-sm ${theme.text} opacity-80 mb-2`}>
                         Offer praise to the altar of your team once daily. Build streaks to earn RUNE rewards - consistency is key!
                       </p>
-                      <div className={`grid grid-cols-2 gap-4 p-3 rounded-lg ${theme.container} bg-opacity-50 mb-4`}>
-                        <div className={`space-y-2 text-sm ${theme.text}`}>
-                          <div>
-                            <span className="opacity-70">Total offerings:</span>
-                            <span className="float-right font-semibold">
-                              {offeringStats?.[currentFaction.name as keyof OfferingStats] || 0}
-                            </span>
+                      <div className="grid grid-cols-2 gap-4">
+                        <div className={`space-y-2 p-3 rounded-lg ${theme.container} bg-opacity-50 mb-4`}>
+                          <div className={`text-sm ${theme.text}`}>
+                            <span className="opacity-70">Your Offerings:</span>
+                            <span className="float-right font-semibold">{userOfferings}</span>
                           </div>
-                          <div>
-                            <span className="opacity-70">Total times fed:</span>
-                            <span className="float-right font-semibold">
-                              {currentFaction.totalTimesFed || 0}
-                            </span>
+                          <div className={`text-sm ${theme.text}`}>
+                            <span className="opacity-70">Times Fed:</span>
+                            <span className="float-right font-semibold">{walletStatus?.monster?.totalTimesFed || 0}</span>
                           </div>
-                          <div>
-                            <span className="opacity-70">Total times played:</span>
-                            <span className="float-right font-semibold">
-                              {currentFaction.totalTimesPlay || 0}
-                            </span>
+                          <div className={`text-sm ${theme.text}`}>
+                            <span className="opacity-70">Times Played:</span>
+                            <span className="float-right font-semibold">{walletStatus?.monster?.totalTimesPlay || 0}</span>
                           </div>
-                          <div>
-                            <span className="opacity-70">Total missions:</span>
-                            <span className="float-right font-semibold">
-                              {currentFaction.totalTimesMission || 0}
+                          <div className={`text-sm ${theme.text}`}>
+                            <span className="opacity-70">Missions Completed:</span>
+                            <span className="float-right font-semibold">{walletStatus?.monster?.totalTimesMission || 0}</span>
+                          </div>
+                          <div className={`text-sm ${theme.text} font-bold pt-2 border-t border-gray-600`}>
+                            <span>Total Points:</span>
+                            <span className="float-right">
+                              {(userOfferings * ACTIVITY_POINTS.OFFERING) +
+                               ((walletStatus?.monster?.totalTimesFed || 0) * ACTIVITY_POINTS.FEED) +
+                               ((walletStatus?.monster?.totalTimesPlay || 0) * ACTIVITY_POINTS.PLAY) +
+                               ((walletStatus?.monster?.totalTimesMission || 0) * ACTIVITY_POINTS.MISSION)}
                             </span>
                           </div>
                         </div>
-                        <div className={`text-sm ${theme.text}`}>
-                          <span className="opacity-70">Your Offerings:</span>
-                          <span className="float-right font-semibold">
-                            {userOfferings}
-                          </span>
+                        <div className={`p-3 rounded-lg ${theme.container} bg-opacity-50 mb-4`}>
+                          <h4 className={`text-sm font-bold ${theme.text} mb-2`}>Point Values</h4>
+                          <div className={`space-y-1 text-sm ${theme.text} opacity-80`}>
+                            <div>Offering: {ACTIVITY_POINTS.OFFERING}pts</div>
+                            <div>Feed: {ACTIVITY_POINTS.FEED}pt</div>
+                            <div>Play: {ACTIVITY_POINTS.PLAY}pts</div>
+                            <div>Mission: {ACTIVITY_POINTS.MISSION}pts</div>
+                          </div>
                         </div>
                       </div>
-                      <CheckInButton />
+                      <div className="flex items-center gap-4">
+                        <CheckInButton />
+                        <div className={`text-sm ${theme.text} opacity-80`}>
+                          Next offering in: {nextOfferingTime}
+                        </div>
+                      </div>
                     </div>
                   </div>
                 </div>
@@ -269,23 +301,48 @@ export const FactionPage: React.FC = () => {
                           </ul>
                         )}
                       </div>
-                      <div className={`grid grid-cols-1 gap-2 p-2 rounded-lg ${theme.container} bg-opacity-50`}>
-                        <div className={`text-sm ${theme.text}`}>
-                          <span className="opacity-70">Current members:</span>
-                          <span className="float-right font-semibold">{faction.memberCount}</span>
-                        </div>
-                        <div className={`text-sm ${theme.text}`}>
-                          <span className="opacity-70">Total monsters adopted:</span>
-                          <span className="float-right font-semibold">{faction.monsterCount}</span>
-                        </div>
-                        {offeringStats && (
+                        <div className={`grid grid-cols-1 gap-2 p-2 rounded-lg ${theme.container} bg-opacity-50`}>
                           <div className={`text-sm ${theme.text}`}>
-                            <span className="opacity-70">Total offerings given:</span>
+                            <span className="opacity-70">Current members:</span>
+                            <span className="float-right font-semibold">{faction.memberCount}</span>
+                          </div>
+                          <div className={`text-sm ${theme.text}`}>
+                            <span className="opacity-70">Total monsters adopted:</span>
+                            <span className="float-right font-semibold">{faction.monsterCount}</span>
+                          </div>
+                          <div className={`text-sm ${theme.text}`}>
+                            <span className="opacity-70">Total offerings:</span>
                             <span className="float-right font-semibold">
-                              {offeringStats[faction.name as keyof OfferingStats]}
+                              {offeringStats?.[faction.name as keyof OfferingStats] || 0}
                             </span>
                           </div>
-                        )}
+                          <div className={`text-sm ${theme.text}`}>
+                            <span className="opacity-70">Total times fed:</span>
+                            <span className="float-right font-semibold">
+                              {faction.totalTimesFed || 0}
+                            </span>
+                          </div>
+                          <div className={`text-sm ${theme.text}`}>
+                            <span className="opacity-70">Total times played:</span>
+                            <span className="float-right font-semibold">
+                              {faction.totalTimesPlay || 0}
+                            </span>
+                          </div>
+                          <div className={`text-sm ${theme.text}`}>
+                            <span className="opacity-70">Total missions:</span>
+                            <span className="float-right font-semibold">
+                              {faction.totalTimesMission || 0}
+                            </span>
+                          </div>
+                          <div className={`text-sm ${theme.text} font-bold pt-2 border-t border-gray-600`}>
+                            <span>Total Points:</span>
+                            <span className="float-right">
+                              {(offeringStats?.[faction.name as keyof OfferingStats] || 0) * ACTIVITY_POINTS.OFFERING +
+                               (faction.totalTimesFed || 0) * ACTIVITY_POINTS.FEED +
+                               (faction.totalTimesPlay || 0) * ACTIVITY_POINTS.PLAY +
+                               (faction.totalTimesMission || 0) * ACTIVITY_POINTS.MISSION}
+                            </span>
+                          </div>
                       </div>
                     </div>
                   </div>

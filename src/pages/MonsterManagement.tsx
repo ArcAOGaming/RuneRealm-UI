@@ -593,8 +593,8 @@ export const MonsterManagement: React.FC = (): JSX.Element => {
               </div>
               
               {/* Radar Chart */}
-              <div className="flex-1">
-                <div className="w-full h-[187px] flex items-center justify-center">
+              <div className="flex-1 px-8">
+                <div className="w-full h-[300px] flex items-center justify-center">
                   <Radar
                     data={{
                       labels: ['Attack', 'Defense', 'Speed', 'Health'],
@@ -622,7 +622,7 @@ export const MonsterManagement: React.FC = (): JSX.Element => {
                             stepSize: 1,
                             color: darkMode ? '#FCF5D8' : '#2A1912',
                             font: {
-                              size: 10
+                              size: 12
                             }
                           },
                           grid: {
@@ -634,15 +634,28 @@ export const MonsterManagement: React.FC = (): JSX.Element => {
                           pointLabels: {
                             color: darkMode ? '#FCF5D8' : '#2A1912',
                             font: {
-                              size: 12,
+                              size: 16,
                               weight: 'bold'
-                            }
+                            },
+                            padding: 20
                           }
                         }
                       },
                       plugins: {
                         legend: {
                           display: false
+                        }
+                      },
+                      maintainAspectRatio: true,
+                      responsive: true,
+                      aspectRatio: 1,
+                      devicePixelRatio: 0.85, // Makes the chart 15% smaller
+                      layout: {
+                        padding: {
+                          top: 20,
+                          bottom: 20,
+                          left: 20,
+                          right: 20
                         }
                       }
                     }}

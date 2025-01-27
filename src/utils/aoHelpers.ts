@@ -65,6 +65,9 @@ export interface MonsterStats {
     exp: number;
     berryType: string;
     happiness: number;
+    totalTimesFed: number;
+    totalTimesPlay: number;
+    totalTimesMission: number;
     status: MonsterStatus;
     moves: {
         [key: string]: MonsterMove;
