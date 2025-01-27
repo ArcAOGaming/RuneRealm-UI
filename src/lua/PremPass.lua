@@ -445,17 +445,28 @@ Handlers.add(
 function GetFactionStats(factionName)
   local memberCount = 0
   local monsterCount = 0
+  local members = {}
+  local totalLevel = 0
   
   for userId, userFaction in pairs(UserFactions) do
     if userFaction.faction == factionName then
       memberCount = memberCount + 1
+      local memberInfo = {
+        id = userId,
+        level = 0
+      }
+      
       if UserMonsters[userId] then
         monsterCount = monsterCount + 1
+        memberInfo.level = UserMonsters[userId].level
+        totalLevel = totalLevel + UserMonsters[userId].level
       end
+      
+      table.insert(members, memberInfo)
     end
   end
   
-  return memberCount, monsterCount
+  return memberCount, monsterCount, members, totalLevel / (monsterCount > 0 and monsterCount or 1)
 end
 
 -- Handle GetFactions action
@@ -466,14 +477,16 @@ Handlers.add(
     local factionsWithStats = {}
     
     for _, faction in ipairs(AvailableFactions) do
-      local memberCount, monsterCount = GetFactionStats(faction.name)
+      local memberCount, monsterCount, members, avgLevel = GetFactionStats(faction.name)
       local factionWithStats = {
         name = faction.name,
         description = faction.description,
         mascot = faction.mascot,
         perks = faction.perks,
         memberCount = memberCount,
-        monsterCount = monsterCount
+        monsterCount = monsterCount,
+        members = members,
+        averageLevel = avgLevel
       }
       table.insert(factionsWithStats, factionWithStats)
     end
@@ -898,8 +911,8 @@ Handlers.add(
 )
 
 
--- Function to remove a user from the unlocked list
-function RemoveUserFromUnlocked(userId)
+  -- Function to remove a user from the unlocked list
+  function RemoveUserFromUnlocked(userId)
     for index, value in ipairs(Unlocked) do
       if value == userId then
         table.remove(Unlocked, index)
@@ -919,6 +932,28 @@ function RemoveUserFromUnlocked(userId)
       return true
     end
     print("User skin not found: " .. userId)
+    return false
+  end
+
+  -- Function to remove a user's faction
+  function RemoveUserFaction(userId)
+    if UserFactions[userId] then
+      UserFactions[userId] = nil
+      print("Removed user's faction: " .. userId)
+      return true
+    end
+    print("User faction not found: " .. userId)
+    return false
+  end
+
+  -- Function to remove a user's monster
+  function RemoveUserMonster(userId)
+    if UserMonsters[userId] then
+      UserMonsters[userId] = nil
+      print("Removed user's monster: " .. userId)
+      return true
+    end
+    print("User monster not found: " .. userId)
     return false
   end
   
@@ -953,12 +988,16 @@ function RemoveUserFromUnlocked(userId)
   
       local unlockedRemoved = RemoveUserFromUnlocked(userId)
       local skinRemoved = RemoveUserSkin(userId)
+      local factionRemoved = RemoveUserFaction(userId)
+      local monsterRemoved = RemoveUserMonster(userId)
   
       local result = {
         type = "ok",
         message = "User removal complete",
         unlockedRemoved = unlockedRemoved,
-        skinRemoved = skinRemoved
+        skinRemoved = skinRemoved,
+        factionRemoved = factionRemoved,
+        monsterRemoved = monsterRemoved
       }
   
       ao.send({

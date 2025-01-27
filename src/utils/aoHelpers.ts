@@ -148,6 +148,11 @@ export interface TokenOption {
     denomination: number;
 }
 
+interface FactionMember {
+    id: string;
+    level: number;
+}
+
 export interface FactionOptions {
     name: string;
     description: string;
@@ -155,6 +160,8 @@ export interface FactionOptions {
     perks: string[];
     memberCount: number;
     monsterCount: number;
+    members: FactionMember[];
+    averageLevel: number;
 }
 
 interface ContractResponse {
@@ -449,14 +456,20 @@ export const getFactionOptions = async (): Promise<FactionOptions[]> => {
             throw new Error("Invalid purchase options format");
         }
 
-        return options.map((option: any) => ({
-            name: option.name,
-            description: option.description,
-            mascot: option.mascot,
-            perks: option.perks,
-            memberCount: option.memberCount,
-            monsterCount: option.monsterCount
-        }));
+        return options.map((option: any) => {
+            console.log(`Faction ${option.name} members:`, option.members);
+            console.log(`Faction ${option.name} average monster level:`, option.averageLevel);
+            return {
+                name: option.name,
+                description: option.description,
+                mascot: option.mascot,
+                perks: option.perks,
+                memberCount: option.memberCount,
+                monsterCount: option.monsterCount,
+                members: option.members,
+                averageLevel: option.averageLevel
+            };
+        });
     } catch (error) {
         console.error('Error getting purchase options:', error);
         throw error;
