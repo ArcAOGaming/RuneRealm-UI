@@ -177,11 +177,31 @@ export const FactionPage: React.FC = () => {
                         Offer praise to the altar of your team once daily. Build streaks to earn RUNE rewards - consistency is key!
                       </p>
                       <div className={`grid grid-cols-2 gap-4 p-3 rounded-lg ${theme.container} bg-opacity-50 mb-4`}>
-                        <div className={`text-sm ${theme.text}`}>
-                          <span className="opacity-70">Total Offerings:</span>
-                          <span className="float-right font-semibold">
-                            {offeringStats?.[currentFaction.name as keyof OfferingStats] || 0}
-                          </span>
+                        <div className={`space-y-2 text-sm ${theme.text}`}>
+                          <div>
+                            <span className="opacity-70">Total offerings:</span>
+                            <span className="float-right font-semibold">
+                              {offeringStats?.[currentFaction.name as keyof OfferingStats] || 0}
+                            </span>
+                          </div>
+                          <div>
+                            <span className="opacity-70">Total times fed:</span>
+                            <span className="float-right font-semibold">
+                              {currentFaction.totalTimesFed || 0}
+                            </span>
+                          </div>
+                          <div>
+                            <span className="opacity-70">Total times played:</span>
+                            <span className="float-right font-semibold">
+                              {currentFaction.totalTimesPlay || 0}
+                            </span>
+                          </div>
+                          <div>
+                            <span className="opacity-70">Total missions:</span>
+                            <span className="float-right font-semibold">
+                              {currentFaction.totalTimesMission || 0}
+                            </span>
+                          </div>
                         </div>
                         <div className={`text-sm ${theme.text}`}>
                           <span className="opacity-70">Your Offerings:</span>

@@ -162,6 +162,9 @@ export interface FactionOptions {
     monsterCount: number;
     members: FactionMember[];
     averageLevel: number;
+    totalTimesFed: number;
+    totalTimesPlay: number;
+    totalTimesMission: number;
 }
 
 interface ContractResponse {
@@ -467,7 +470,10 @@ export const getFactionOptions = async (): Promise<FactionOptions[]> => {
                 memberCount: option.memberCount,
                 monsterCount: option.monsterCount,
                 members: option.members,
-                averageLevel: option.averageLevel
+                averageLevel: option.averageLevel,
+                totalTimesFed: option.totalTimesFed || 0,
+                totalTimesPlay: option.totalTimesPlay || 0,
+                totalTimesMission: option.totalTimesMission || 0
             };
         });
     } catch (error) {

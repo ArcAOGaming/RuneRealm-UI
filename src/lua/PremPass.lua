@@ -221,6 +221,9 @@ function CreateDefaultMonster(factionName, mascotTxId, timestamp)
     level = 0,
     exp = 0,
     berryType = berryMap[factionName],  -- Store process ID directly
+    totalTimesFed = 0,
+    totalTimesPlay = 0,
+    totalTimesMission = 0,
     moves = {
       [move1] = typePool[move1],
       [move2] = typePool[move2],
@@ -316,6 +319,8 @@ Handlers.add(
       until_time = msg.Timestamp
     }
     monster.exp = monster.exp + 1  -- Grant 1 exp for completing mission
+    monster.totalTimesMission = (monster.totalTimesMission or 0) + 1
+    print("Total missions completed:", monster.totalTimesMission)
 
     ao.send({
       Target = msg.From,
@@ -380,6 +385,8 @@ Handlers.add(
       until_time = msg.Timestamp
     }
     monster.happiness = math.min(100, monster.happiness + monster.activities.play.happinessGain)
+    monster.totalTimesPlay = (monster.totalTimesPlay or 0) + 1
+    print("Total times played:", monster.totalTimesPlay)
 
     ao.send({
       Target = msg.From,
@@ -441,32 +448,49 @@ Handlers.add(
     return "ok"
   end
 )
+
+
 -- Function to count members and monsters in a faction
 function GetFactionStats(factionName)
   local memberCount = 0
   local monsterCount = 0
   local members = {}
   local totalLevel = 0
+  local totalTimesFed = 0
+  local totalTimesPlay = 0
+  local totalTimesMission = 0
   
   for userId, userFaction in pairs(UserFactions) do
     if userFaction.faction == factionName then
       memberCount = memberCount + 1
       local memberInfo = {
         id = userId,
-        level = 0
+        level = 0,
+        timesFed = 0,
+        timesPlay = 0,
+        timesMission = 0
       }
       
       if UserMonsters[userId] then
+        local monster = UserMonsters[userId]
         monsterCount = monsterCount + 1
-        memberInfo.level = UserMonsters[userId].level
-        totalLevel = totalLevel + UserMonsters[userId].level
+        memberInfo.level = monster.level
+        memberInfo.timesFed = monster.totalTimesFed or 0
+        memberInfo.timesPlay = monster.totalTimesPlay or 0
+        memberInfo.timesMission = monster.totalTimesMission or 0
+        
+        totalLevel = totalLevel + monster.level
+        totalTimesFed = totalTimesFed + (monster.totalTimesFed or 0)
+        totalTimesPlay = totalTimesPlay + (monster.totalTimesPlay or 0)
+        totalTimesMission = totalTimesMission + (monster.totalTimesMission or 0)
       end
       
       table.insert(members, memberInfo)
     end
   end
   
-  return memberCount, monsterCount, members, totalLevel / (monsterCount > 0 and monsterCount or 1)
+  return memberCount, monsterCount, members, totalLevel / (monsterCount > 0 and monsterCount or 1),
+         totalTimesFed, totalTimesPlay, totalTimesMission
 end
 
 -- Handle GetFactions action
@@ -477,7 +501,7 @@ Handlers.add(
     local factionsWithStats = {}
     
     for _, faction in ipairs(AvailableFactions) do
-      local memberCount, monsterCount, members, avgLevel = GetFactionStats(faction.name)
+      local memberCount, monsterCount, members, avgLevel, totalFed, totalPlay, totalMission = GetFactionStats(faction.name)
       local factionWithStats = {
         name = faction.name,
         description = faction.description,
@@ -486,7 +510,10 @@ Handlers.add(
         memberCount = memberCount,
         monsterCount = monsterCount,
         members = members,
-        averageLevel = avgLevel
+        averageLevel = avgLevel,
+        totalTimesFed = totalFed,
+        totalTimesPlay = totalPlay,
+        totalTimesMission = totalMission
       }
       table.insert(factionsWithStats, factionWithStats)
     end
@@ -647,6 +674,7 @@ Handlers.add(
 
       -- Increase energy by configured amount, not exceeding 100
       monster.energy = math.min(100, monster.energy + monster.activities.feed.energyGain)
+      monster.totalTimesFed = (monster.totalTimesFed or 0) + 1
       print("Updated energy to:", monster.energy)
 
       -- Send confirmation back to the user
