@@ -665,7 +665,14 @@ export const getUserMonster = async (wallet: any): Promise<MonsterStats | null> 
     }
 };
 
-// Get asset info and balances
+// Helper to create a timeout for promises
+const withTimeout = <T>(promise: Promise<T>, ms: number): Promise<T | null> => {
+    return Promise.race([
+        promise,
+        new Promise<null>((resolve) => setTimeout(() => resolve(null), ms))
+    ]);
+};
+
 export const getAssetBalances = async (wallet: any): Promise<AssetBalance[]> => {
     if (!wallet?.address) {
         throw new Error("No wallet connected");
@@ -673,32 +680,33 @@ export const getAssetBalances = async (wallet: any): Promise<AssetBalance[]> => 
 
     try {
         console.log("Getting berry balances for wallet:", wallet.address);
-        
-        const assetBalances: AssetBalance[] = [];
 
-        // Get info and balances for all assets in parallel
         const assetPromises = SUPPORTED_ASSETS.map(async (processId) => {
             try {
-                // Run info and balance queries in parallel for each asset
-                const [infoResult, balanceResult] = await Promise.all([
-                    dryrun({
-                        process: processId,
-                        tags: [
-                            { name: "Action", value: "Info" }
-                        ],
-                        data: ""
-                    }),
-                    dryrun({
-                        process: processId,
-                        tags: [
-                            { name: "Action", value: "Balances" }
-                        ],
-                        data: ""
-                    })
-                ]) as [ResultType, ResultType];
+                const result = await withTimeout(
+                    Promise.all([
+                        dryrun({
+                            process: processId,
+                            tags: [{ name: "Action", value: "Info" }],
+                            data: ""
+                        }),
+                        dryrun({
+                            process: processId,
+                            tags: [{ name: "Action", value: "Balances" }],
+                            data: ""
+                        })
+                    ]),
+                    5000 // 5-second timeout
+                );
+
+                if (!result) {
+                    console.warn(`Timeout for asset ${processId}`);
+                    return null;
+                }
+
+                const [infoResult, balanceResult] = result as [ResultType, ResultType];
 
                 if (!infoResult.Messages || infoResult.Messages.length === 0) {
-                    // Handle known tokens with hardcoded info
                     if (processId === "wOrb8b_V8QixWyXZub48Ki5B6OIDyf_p1ngoonsaRpQ") {
                         return {
                             info: {
@@ -739,35 +747,27 @@ export const getAssetBalances = async (wallet: any): Promise<AssetBalance[]> => 
                 }
 
                 return {
-                    info: {
-                        processId,
-                        logo,
-                        name,
-                        ticker
-                    },
+                    info: { processId, logo, name, ticker },
                     balance
                 };
             } catch (error) {
-                console.log(`Error loading asset ${processId}:`, error);
+                console.error(`Error loading asset ${processId}:`, error);
                 return null;
             }
         });
 
-        // Wait for all asset queries to complete
         const results = await Promise.all(assetPromises);
-        const validResults = results.filter((result): result is AssetBalance => {
-            if (!result) return false;
-            return true; // All non-null results are valid AssetBalance objects
-        });
-        assetBalances.push(...validResults);
+        const validResults = results.filter((result): result is AssetBalance => result !== null);
 
-        console.log("Final asset balances:", assetBalances);
-        return assetBalances;
+        console.log("Final asset balances:", validResults);
+        return validResults;
     } catch (error) {
         console.error("Error getting berry balances:", error);
         return [];
     }
 };
+
+
 
 export interface MonsterStatsUpdate {
   level?: number;

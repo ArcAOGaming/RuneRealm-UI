@@ -1,9 +1,9 @@
 import React, { useState, useEffect } from 'react';
-import { getUserInfo, UserInfo, setUserStats, MonsterStatsUpdate, getFactionOptions, FactionOptions, adjustAllMonsters, SUPPORTED_ASSETS } from '../utils/aoHelpers';
+import { getUserInfo, UserInfo, setUserStats, MonsterStatsUpdate, getFactionOptions, FactionOptions, adjustAllMonsters } from '../utils/aoHelpers';
 import { currentTheme } from '../constants/theme';
 import { useWallet } from '../hooks/useWallet';
 import Header from '../components/Header';
-import { Gateway } from '../constants/Constants';
+import { Gateway, SUPPORTED_ASSETS } from '../constants/Constants';
 import AdminBulkUnlock from '../components/AdminBulkUnlock';
 import AdminRemoveUser from '../components/AdminRemoveUser';
 
