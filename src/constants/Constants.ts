@@ -90,3 +90,5 @@ export const SUPPORTED_ASSETS = [
     "wOrb8b_V8QixWyXZub48Ki5B6OIDyf_p1ngoonsaRpQ",  // TRUNK token
     "OsK9Vgjxo0ypX_HLz2iJJuh4hp3I80yA9KArsJjIloU"   // NAB token
 ] as const;
+
+export const WAITTIMEOUIT = 5000;

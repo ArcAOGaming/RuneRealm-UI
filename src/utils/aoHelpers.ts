@@ -1,5 +1,5 @@
 import { message as aoMessage, createDataItemSigner, dryrun, result } from "../config/aoConnection";
-import { AdminSkinChanger, DefaultAtlasTxID, Alter, SUPPORTED_ASSETS } from "../constants/Constants";
+import { AdminSkinChanger, DefaultAtlasTxID, Alter, SUPPORTED_ASSETS, WAITTIMEOUIT } from "../constants/Constants";
 
 // Wrap the original message function to include refresh callback
 export const message = async (params: any, refreshCallback?: () => void) => {
@@ -696,7 +696,7 @@ export const getAssetBalances = async (wallet: any): Promise<AssetBalance[]> => 
                             data: ""
                         })
                     ]),
-                    5000 // 5-second timeout
+                    WAITTIMEOUIT
                 );
 
                 if (!result) {
