@@ -1,5 +1,5 @@
 import { message as aoMessage, createDataItemSigner, dryrun, result } from "../config/aoConnection";
-import { AdminSkinChanger, DefaultAtlasTxID, Alter } from "../constants/Constants";
+import { AdminSkinChanger, DefaultAtlasTxID, Alter, SUPPORTED_ASSETS } from "../constants/Constants";
 
 // Wrap the original message function to include refresh callback
 export const message = async (params: any, refreshCallback?: () => void) => {
@@ -101,15 +101,6 @@ export interface MonsterStats {
     };
 }
 
-export const SUPPORTED_ASSETS = [
-    "XJjSdWaorbQ2q0YkaQSmylmuADWH1fh2PvgfdLmXlzA",  // Air berries
-    "twFZ4HTvL_0XAIOMPizxs_S3YH5J5yGvJ8zKiMReWF0",  // Water berries
-    "2NoNsZNyHMWOzTqeQUJW9Xvcga3iTonocFIsgkWIiPM",  // Rock berries
-    "30cPTQXrHN76YZ3bLfNAePIEYDb5Xo1XnbQ-xmLMOM0",  // Fire berries
-    "4sKr4cf3kvbzFyhM6HmUsYG_Jz9bFZoNUrUX5KoVe0Q",  // Rune
-    "wOrb8b_V8QixWyXZub48Ki5B6OIDyf_p1ngoonsaRpQ",  // TRUNK token
-    "OsK9Vgjxo0ypX_HLz2iJJuh4hp3I80yA9KArsJjIloU"   // NAB token
-] as const;
 
 export interface UserInfo {
     isUnlocked: boolean;
