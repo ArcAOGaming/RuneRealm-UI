@@ -6,6 +6,7 @@ import Header from '../components/Header';
 import Footer from '../components/Footer';
 import Loading from '../components/Loading';
 import { useNavigate } from 'react-router-dom';
+import MonsterSpriteView from '../components/MonsterSpriteView';
 
 // Popup component for battle transitions
 const BattlePopup: React.FC<{
@@ -86,6 +87,10 @@ export const ActiveBattlePage: React.FC = (): JSX.Element => {
     attacker: 'player' | 'opponent';
     moveName: string;
   } | null>(null);
+  const [playerSpriteId] = useState(() => Math.floor(Math.random() * 4) + 1);
+  const [opponentSpriteId] = useState(() => Math.floor(Math.random() * 4) + 1);
+  const [playerAnimation, setPlayerAnimation] = useState<'attack1' | 'attack2' | undefined>();
+  const [opponentAnimation, setOpponentAnimation] = useState<'attack1' | 'attack2' | undefined>();
   const [initialLoading, setInitialLoading] = useState(true);
   const [isUpdating, setIsUpdating] = useState(false);
   const theme = currentTheme(darkMode);
@@ -102,6 +107,26 @@ export const ActiveBattlePage: React.FC = (): JSX.Element => {
         attacker: newTurn.attacker,
         moveName: newTurn.move
       });
+
+      // Trigger sprite animation for 5 seconds
+      const attackAnim = Math.random() < 0.5 ? 'attack1' : 'attack2' as const;
+      const resetAnimation = (attacker: 'player' | 'opponent') => {
+        setTimeout(() => {
+          if (attacker === 'player') {
+            setPlayerAnimation(undefined);
+          } else {
+            setOpponentAnimation(undefined);
+          }
+        }, 5000);
+      };
+
+      if (newTurn.attacker === 'player') {
+        setPlayerAnimation(attackAnim);
+        resetAnimation('player');
+      } else {
+        setOpponentAnimation(attackAnim);
+        resetAnimation('opponent');
+      }
     }
   }, [activeBattle, previousBattle]);
 
@@ -187,67 +212,87 @@ export const ActiveBattlePage: React.FC = (): JSX.Element => {
           setBattleManagerInfo(result.session);
           setActiveBattle(null);
         } else {
-          // Battle continues - animate turns one at a time
+          // Battle continues - process new turns
           const battleData = response.data as ActiveBattle;
           const previousTurns = activeBattle?.turns.length || 0;
           const newTurns = battleData.turns.length;
           
           if (newTurns > previousTurns) {
-            // Show first turn animation
-            const firstTurn = battleData.turns[previousTurns];
-            setAttackAnimation({
-              attacker: firstTurn.attacker,
-              moveName: firstTurn.move
-            });
-            
-            // Create partial battle state with first turn
-            const partialBattle = {...battleData};
-            partialBattle.turns = battleData.turns.slice(0, previousTurns + 1);
-            
-            // Update stats based on first turn
-            if (firstTurn.statsChanged) {
-              const stats = firstTurn.statsChanged;
-              if (firstTurn.attacker === 'player') {
-                partialBattle.player.speed += stats.speed || 0;
-                partialBattle.player.shield = Math.min(
-                  (partialBattle.player.shield || 0) + (stats.defense || 0),
-                  partialBattle.player.defense
-                );
+            // Process turns in sequence
+            const processNextTurn = async (turnIndex: number, currentBattle: ActiveBattle) => {
+              if (turnIndex >= newTurns) {
+                // All turns processed
+                setActiveBattle(battleData);
+                setPreviousBattle(battleData);
+                getBattleManagerInfo(wallet.address).then(info => {
+                  if (info) setBattleManagerInfo(info);
+                });
+                return;
+              }
+
+              const turn = battleData.turns[turnIndex];
+              
+              // Show attack animation
+              setAttackAnimation({
+                attacker: turn.attacker,
+                moveName: turn.move
+              });
+
+              // Set appropriate sprite animation
+              const attackAnim = Math.random() < 0.5 ? 'attack1' : 'attack2' as const;
+              if (turn.attacker === 'player') {
+                setPlayerAnimation(attackAnim);
               } else {
-                partialBattle.opponent.speed += stats.speed || 0;
-                partialBattle.opponent.shield = Math.min(
-                  (partialBattle.opponent.shield || 0) + (stats.defense || 0),
-                  partialBattle.opponent.defense
+                setOpponentAnimation(attackAnim);
+              }
+
+              // Wait for animation to complete (5 seconds)
+              await new Promise(resolve => setTimeout(resolve, 5000));
+
+              // Clear animations
+              setAttackAnimation(null);
+              setPlayerAnimation(undefined);
+              setOpponentAnimation(undefined);
+
+              // Apply turn effects
+              const updatedBattle = {...currentBattle};
+              const target = turn.attacker === 'player' ? 'opponent' : 'player';
+              
+              if (turn.healthDamage > 0) {
+                updatedBattle[target].healthPoints = Math.max(
+                  0,
+                  updatedBattle[target].healthPoints - turn.healthDamage
                 );
               }
-            }
-            
-            // Apply first turn state
-            setActiveBattle(partialBattle);
-            setPreviousBattle(partialBattle);
-            
-            // After first animation, show second turn if it exists
-            if (newTurns > previousTurns + 1) {
-              const secondTurn = battleData.turns[previousTurns + 1];
-              setTimeout(() => {
-                setAttackAnimation({
-                  attacker: secondTurn.attacker,
-                  moveName: secondTurn.move
-                });
-                
-                // After second animation, update to final state
-                setTimeout(() => {
-                  setActiveBattle(battleData);
-                  setPreviousBattle(battleData);
-                  // Get updated battle status
-                  getBattleManagerInfo(wallet.address).then(info => {
-                    if (info) {
-                      setBattleManagerInfo(info);
-                    }
-                  });
-                }, 2000);
-              }, 2000);
-            }
+              
+              if (turn.shieldDamage > 0) {
+                updatedBattle[target].shield = Math.max(
+                  0,
+                  updatedBattle[target].shield - turn.shieldDamage
+                );
+              }
+
+              if (turn.statsChanged) {
+                const stats = turn.statsChanged;
+                const entity = turn.attacker === 'player' ? 'player' : 'opponent';
+                updatedBattle[entity].speed += stats.speed || 0;
+                updatedBattle[entity].shield = Math.min(
+                  (updatedBattle[entity].shield || 0) + (stats.defense || 0),
+                  updatedBattle[entity].defense
+                );
+              }
+
+              // Update battle state
+              setActiveBattle(updatedBattle);
+              setPreviousBattle(updatedBattle);
+
+              // Process next turn
+              await new Promise(resolve => setTimeout(resolve, 500)); // Small delay between turns
+              processNextTurn(turnIndex + 1, updatedBattle);
+            };
+
+            // Start processing turns from the first new turn
+            processNextTurn(previousTurns, {...activeBattle});
           }
         }
       }
@@ -308,6 +353,24 @@ export const ActiveBattlePage: React.FC = (): JSX.Element => {
                 <h2 className={`text-2xl font-bold mb-6 ${theme.text}`}>Active Battle</h2>
                 
                 <div className={`p-4 rounded-lg ${theme.container} bg-opacity-20 mb-4 transition-all duration-300`}>
+                  {/* Monster Sprites */}
+                  <div className="flex justify-between items-center mb-6">
+                    <div className="flex flex-col items-center">
+                      <MonsterSpriteView
+                        spriteId={playerSpriteId}
+                        currentAnimation={playerAnimation}
+                        onAnimationComplete={() => {}}
+                      />
+                    </div>
+                    <div className="flex flex-col items-center">
+                      <MonsterSpriteView
+                        spriteId={opponentSpriteId}
+                        currentAnimation={opponentAnimation}
+                        onAnimationComplete={() => {}}
+                        isOpponent
+                      />
+                    </div>
+                  </div>
                   <h3 className={`text-lg font-bold mb-4 ${theme.text}`}>Battle Status</h3>
                   <div className="grid grid-cols-2 gap-6">
                     {/* Player Status */}
