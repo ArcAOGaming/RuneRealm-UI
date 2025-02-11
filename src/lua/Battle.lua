@@ -192,17 +192,11 @@ local function processAttack(attacker, defender, move, isPlayer, battle)
   end
   battle.moveCounts[moveCountKey][move.name] = (battle.moveCounts[moveCountKey][move.name] or 0) + 1
 
-  -- If defender died, remove battle and return
+  -- If defender died, set battle status to ended
   if defender.healthPoints <= 0 then
     turnInfo.remainingShield = defender.shield
     turnInfo.remainingHealth = 0
-    
-    -- Remove battle from active battles using player's address
-    local userId = battle.player.address
-    print("Removing battle for user", userId, "from active battles")
-    activeBattles[userId] = nil
-    
-    return turnInfo
+    battle.status = "ended"
   end
 
   turnInfo.remainingShield = defender.shield
@@ -513,7 +507,8 @@ Handlers.add(
       moveCounts = {
         player = {},
         opponent = {}
-      }
+      },
+      status = "battling" -- Add status field
     }
 
     -- Validate and initialize moves
@@ -754,23 +749,20 @@ Handlers.add(
       local session = recordBattle(userId, true)
       battle.stats = session
       local finalLogs = battleLogs[battleId]
+      battle.status = "ended"
       
       if session.battlesRemaining <= 0 then
-        activeBattles[battleId] = nil
-
-            ao.send({
-      Target = TARGET_PREMPASS_PID,
-      Tags = {
-        Action = "ReturnFromBattle",
-        UserId = userId
-      },
-      Data = json.encode({
-        status = "home",
-        message = "User return from battle"
-      })
-    })
-      else
-        activeBattles[battleId] = battle
+        ao.send({
+          Target = TARGET_PREMPASS_PID,
+          Tags = {
+            Action = "ReturnFromBattle",
+            UserId = userId
+          },
+          Data = json.encode({
+            status = "home",
+            message = "User return from battle"
+          })
+        })
       end
       
       battleLogs[battleId] = finalLogs
@@ -784,7 +776,7 @@ Handlers.add(
             result = "win",
             session = session,
             turns = finalLogs,
-            battle = activeBattles[battleId]
+            battle = battle
           }
         })
       })
@@ -858,11 +850,9 @@ Handlers.add(
       local playerWon = result.playerWon
       local session = recordBattle(userId, playerWon)
       battle.stats = session
+      battle.status = "ended"
       
       local finalLogs = battleLogs[battleId]
-      
-      -- Always remove battle when it's over
-      activeBattles[battleId] = nil
       
       -- Send return message if no battles remaining
       if session.battlesRemaining <= 0 then
@@ -890,7 +880,7 @@ Handlers.add(
             result = playerWon and "win" or "loss",
             session = session,
             turns = finalLogs,
-            battle = activeBattles[battleId]
+            battle = battle
           }
         })
       })
@@ -904,6 +894,73 @@ Handlers.add(
         })
       })
     end
+  end
+)
+
+Handlers.add(
+  "EndBattle",
+  Handlers.utils.hasMatchingTag("Action", "EndBattle"),
+  function(msg)
+    local userId = msg.From
+    local battleId = msg.Tags.BattleId
+    
+    local battle = activeBattles[battleId]
+    if not battle then
+      ao.send({
+        Target = msg.From,
+        Data = json.encode({
+          status = "error",
+          message = "Battle not found"
+        })
+      })
+      return
+    end
+    
+    if battle.status ~= "ended" then
+      ao.send({
+        Target = msg.From,
+        Data = json.encode({
+          status = "error",
+          message = "Battle is not ended"
+        })
+      })
+      return
+    end
+    
+    -- Record battle result if not already recorded
+    local playerWon = battle.opponent.healthPoints <= 0
+    local session = recordBattle(userId, playerWon)
+    
+    -- Remove battle but keep logs
+    local finalLogs = battleLogs[battleId]
+    activeBattles[battleId] = nil
+    
+    -- Send return message if no battles remaining
+    if session.battlesRemaining <= 0 then
+      ao.send({
+        Target = TARGET_PREMPASS_PID,
+        Tags = {
+          Action = "ReturnFromBattle",
+          UserId = userId
+        },
+        Data = json.encode({
+          status = "home",
+          message = "User return from battle"
+        })
+      })
+    end
+    
+    ao.send({
+      Target = msg.From,
+      Data = json.encode({
+        status = "success",
+        message = "Battle ended",
+        data = {
+          session = session,
+          turns = finalLogs
+        }
+      })
+    })
   end
 )
 
@@ -986,6 +1043,7 @@ Handlers.add(
         UserId = userId
       },
       Data = json.encode({
+        status = "home",
         message = "Admin return from battle"
       })
     })

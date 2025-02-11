@@ -1366,3 +1366,38 @@ export const executeAttack = async (wallet: any, battleId: string, moveName: str
         throw error;
     }
 };
+
+
+// End a battle
+export const endBattle = async (wallet: any, battleId: string, refreshCallback?: () => void): Promise<BattleResponse> => {
+    if (!wallet?.address) {
+        throw new Error("No wallet connected");
+    }
+
+    try {
+        const signer = createDataItemSigner(window.arweaveWallet);
+        const messageResult = await message({
+            process: TARGET_BATTLE_PID,
+            tags: [
+                { name: "Action", value: "EndBattle" },
+                { name: "BattleId", value: battleId }
+            ],
+            signer,
+            data: ""
+        }, refreshCallback);
+
+        const transferResult = await result({
+            message: messageResult,
+            process: TARGET_BATTLE_PID
+        }) as ResultType;
+
+        if (!transferResult.Messages || transferResult.Messages.length === 0) {
+            throw new Error("No response from end battle");
+        }
+
+        return JSON.parse(transferResult.Messages[0].Data);
+    } catch (error) {
+        console.error("Error ending battle:", error);
+        throw error;
+    }
+};

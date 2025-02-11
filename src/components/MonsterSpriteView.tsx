@@ -1,10 +1,12 @@
 import React, { useEffect, useRef, useState } from 'react';
 
 type AnimationType = 'walkRight' | 'walkLeft' | 'walkUp' | 'walkDown' | 'attack1' | 'attack2';
+type PoseType = 'right' | 'left';
 
 interface MonsterSpriteViewProps {
   spriteId: number; // 1-4 for different sprite sheets
   currentAnimation?: AnimationType;
+  pose?: PoseType; // Static pose when not animating
   onAnimationComplete?: () => void;
   isOpponent?: boolean; // Used to determine facing direction
 }
@@ -18,6 +20,7 @@ const ANIMATION_SPEED = 750; // Slower animation speed (750ms per frame)
 const MonsterSpriteView: React.FC<MonsterSpriteViewProps> = ({ 
   spriteId, 
   currentAnimation,
+  pose,
   onAnimationComplete,
   isOpponent = false
 }) => {
@@ -124,9 +127,9 @@ const MonsterSpriteView: React.FC<MonsterSpriteViewProps> = ({
     if (!canvas || !ctx || !sprite) return;
 
     if (!currentAnimation) {
-      // Default to facing each other when idle
-      const idleAnimation = isOpponent ? 'walkLeft' : 'walkRight';
-      drawFrame(ctx, 0, getAnimationRow(idleAnimation));
+      // Always use walkRight as the default pose
+      const poseAnimation = 'walkRight';
+      drawFrame(ctx, 0, getAnimationRow(poseAnimation));
     }
   }, [sprite, currentAnimation, isOpponent]);
 
