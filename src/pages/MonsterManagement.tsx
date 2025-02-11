@@ -1,4 +1,5 @@
 import React, { useEffect, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { useWallet } from '../hooks/useWallet';
 import { getFactionOptions, purchaseAccess, TokenOption, adoptMonster, getAssetBalances, AssetBalance, MonsterStats } from '../utils/aoHelpers';
 import { createDataItemSigner } from '../config/aoConnection';
@@ -42,6 +43,7 @@ interface Wallet {
 }
 
 export const MonsterManagement: React.FC = (): JSX.Element => {
+  const navigate = useNavigate();
   const { wallet, walletStatus, darkMode, connectWallet, setDarkMode, triggerRefresh, refreshTrigger } = useWallet();
   const [isPurchaseModalOpen, setIsPurchaseModalOpen] = useState(false);
   const [showConfetti, setShowConfetti] = useState(false);
@@ -51,6 +53,7 @@ export const MonsterManagement: React.FC = (): JSX.Element => {
   const [isLevelingUp, setIsLevelingUp] = useState(false);
   const [showStatModal, setShowStatModal] = useState(false);
   const [isOnMission, setIsOnMission] = useState(false);
+  const [isInBattle, setIsInBattle] = useState(false);
   const [assetBalances, setAssetBalances] = useState<AssetBalance[]>([]);
   const [localMonster, setLocalMonster] = useState<MonsterStats | null>(null);
   const theme = currentTheme(darkMode);
@@ -60,6 +63,52 @@ export const MonsterManagement: React.FC = (): JSX.Element => {
   const [feedingCooldown, setFeedingCooldown] = useState(false);
   const [playingCooldown, setPlayingCooldown] = useState(false);
   const [missionCooldown, setMissionCooldown] = useState(false);
+  const [battleCooldown, setBattleCooldown] = useState(false);
+
+  // Add battle handler
+  const handleBattle = async () => {
+    if (!walletStatus?.monster || !wallet?.address) return;
+
+    try {
+      setIsInBattle(true);
+      console.log('Starting battle');
+      
+      const signer = createDataItemSigner(window.arweaveWallet);
+      const battleConfig = walletStatus.monster.activities.battle;
+      const fuelAsset = assetBalances.find(a => a.info.processId === battleConfig.cost.token);
+      
+      if (!fuelAsset || fuelAsset.balance < battleConfig.cost.amount) {
+        console.error('Not enough battle fuel');
+        return;
+      }
+
+      await message({
+        process: battleConfig.cost.token,
+        tags: [
+          { name: "Action", value: "Transfer" },
+          { name: "Quantity", value: battleConfig.cost.amount.toString() },
+          { name: "Recipient", value: "j7NcraZUL6GZlgdPEoph12Q5rk_dydvQDecLNxYi8rI" },
+          { name: "X-Action", value: "Battle" }
+        ],
+        signer,
+        data: ""
+      }, triggerRefresh);
+
+      await loadAssetBalances();
+      // Start cooldown period after transaction confirms
+      setBattleCooldown(true);
+      setTimeout(() => {
+        setBattleCooldown(false);
+      }, 5000);
+
+      // Navigate to battle page
+      navigate('/battle');
+    } catch (error) {
+      console.error('Error starting battle:', error);
+    } finally {
+      setIsInBattle(false);
+    }
+  };
 
   // Handle timer updates for progress bars and countdowns
   useEffect(() => {
@@ -460,6 +509,11 @@ export const MonsterManagement: React.FC = (): JSX.Element => {
                       monster.happiness >= activities.mission.happinessCost) ||
                       (monster.status.type === 'Mission' && timeUp);
 
+    const canBattle = monster.status.type === 'Home' && 
+                     fuelBalance >= activities.battle.cost.amount && 
+                     monster.energy >= activities.battle.energyCost && 
+                     monster.happiness >= activities.battle.happinessCost;
+
     return (
       <div className={`p-6 rounded-xl ${theme.container} border ${theme.border} backdrop-blur-md w-[95%] mx-auto`}>
         <div className="flex justify-between items-center mb-4">
@@ -760,6 +814,63 @@ export const MonsterManagement: React.FC = (): JSX.Element => {
                 </div>
               </div>
 
+              {/* Battle Button */}
+              <div className={`rounded-lg overflow-hidden ${theme.container} border ${theme.border}`}>
+                <div className="bg-black text-white px-4 py-2 text-center font-bold">
+                  BATTLE
+                </div>
+                <div className="p-6 flex flex-col h-[300px] relative">
+                  <div className="flex-1 flex justify-between items-start">
+                    <div className="w-1/2 pr-4 relative">
+                      <div className="absolute top-0 right-0 w-px h-[calc(100%-48px)] bg-gray-300"></div>
+                      <div className="text-sm font-bold mb-3 text-gray-400">COSTS</div>
+                      <div className="flex flex-wrap gap-2 max-h-[210px] overflow-y-auto">
+                        <div className={`px-3 py-1 rounded-full flex items-center gap-2 ${
+                          fuelBalance >= activities.battle.cost.amount ? 
+                          'bg-gray-700/50 text-black font-medium' : 
+                          'bg-gray-800/50 text-gray-400 border-2 border-red-500/70 shadow-[0_0_10px_-3px_rgba(239,68,68,0.6)]'
+                        } ${monster.status.type === 'Home' ? '' : 'opacity-50'}`}>
+                          <img src={`${Gateway}${assetBalances.find(a => a.info.processId === activities.battle.cost.token)?.info.logo}`} 
+                               alt="TRUNK" className="w-4 h-4 rounded-full" />
+                          <span>-{activities.battle.cost.amount}</span>
+                        </div>
+                        <div className={`px-3 py-1 rounded-full ${
+                          monster.energy >= activities.battle.energyCost ? 
+                          'bg-blue-500/30 text-black font-medium' : 
+                          'bg-gray-800/50 text-gray-400 border-2 border-red-500/70 shadow-[0_0_10px_-3px_rgba(239,68,68,0.6)]'
+                        } ${monster.status.type === 'Home' ? '' : 'opacity-50'}`}>
+                          -{activities.battle.energyCost} Energy
+                        </div>
+                        <div className={`px-3 py-1.5 rounded-full ${
+                          monster.happiness >= activities.battle.happinessCost ? 
+                          'bg-yellow-500/30 text-black font-medium' : 
+                          'bg-gray-800/50 text-gray-400 border-2 border-red-500/70 shadow-[0_0_10px_-3px_rgba(239,68,68,0.6)]'
+                        } ${monster.status.type === 'Home' ? '' : 'opacity-50'}`}>
+                          -{activities.battle.happinessCost} Happy
+                        </div>
+                      </div>
+                    </div>
+                    <div className="w-1/2 pl-4">
+                      <div className="text-sm font-bold mb-3 text-gray-400">REWARDS</div>
+                      <div className="flex flex-wrap gap-2">
+                        <div className="px-3 py-1 rounded-full bg-emerald-500/30 text-black font-medium">
+                          4 Battles
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                  <button
+                    onClick={handleBattle}
+                    disabled={isInBattle || battleCooldown || !canBattle || monster.status.type !== 'Home'}
+                    className={`w-full px-4 py-2 rounded-lg font-bold text-lg transition-all duration-300 bg-gradient-to-br from-red-500 to-red-700 hover:from-red-400 hover:to-red-600 text-white ${
+                      (isInBattle || battleCooldown || !canBattle || monster.status.type !== 'Home') ? 'opacity-50 cursor-not-allowed' : ''
+                    }`}
+                  >
+                    {isInBattle || battleCooldown ? 'In Battle...' : 'Start Battle'}
+                  </button>
+                </div>
+              </div>
+
               {/* Mission Button */}
               <div className={`rounded-lg overflow-hidden ${theme.container} border ${theme.border}`}>
                 <div className="bg-black text-white px-4 py-2 text-center font-bold">
@@ -848,7 +959,10 @@ export const MonsterManagement: React.FC = (): JSX.Element => {
     handleFeedMonster,
     handlePlayMonster,
     handleMission,
-    handleLevelUp
+    handleLevelUp,
+    handleBattle,
+    isInBattle,
+    battleCooldown
   ]);
 
   return (

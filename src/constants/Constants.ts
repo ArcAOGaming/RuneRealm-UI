@@ -5,6 +5,7 @@ export interface SpriteCategory {
   options: string[];
 }
 export const AdminSkinChanger = "j7NcraZUL6GZlgdPEoph12Q5rk_dydvQDecLNxYi8rI"
+export const TARGET_BATTLE_PID = "8hnue8PYCrgOB4OKHB6HS-ujbPOVuikOaTyICQjQJYQ"
 export const Alter = "GhNl98tr7ZQxIJHx4YcVdGh7WkT9dD7X4kmQOipvePQ"
 export const DefaultAtlasTxID = "sVIX0l_PFC6M7lYpuEOGJ_f5ESOkMxd5f5xCQSUH_2g"
 export const Gateway = "https://arweave.net/"
@@ -81,7 +82,7 @@ export const SPRITE_CATEGORIES: SpriteCategory[] = [
 export const PUBLIC_ASSETS_PATH = '/assets';
 
 
-export const SUPPORTED_ASSETS = [
+export const SUPPORTED_ASSET_IDS = [
     "XJjSdWaorbQ2q0YkaQSmylmuADWH1fh2PvgfdLmXlzA",  // Air berries
     "twFZ4HTvL_0XAIOMPizxs_S3YH5J5yGvJ8zKiMReWF0",  // Water berries
     "2NoNsZNyHMWOzTqeQUJW9Xvcga3iTonocFIsgkWIiPM",  // Rock berries
@@ -91,4 +92,28 @@ export const SUPPORTED_ASSETS = [
     "OsK9Vgjxo0ypX_HLz2iJJuh4hp3I80yA9KArsJjIloU"   // NAB token
 ] as const;
 
-export const WAITTIMEOUIT = 5000;
+export type SupportedAssetId = typeof SUPPORTED_ASSET_IDS[number];
+
+export interface AssetInfo {
+    processId: SupportedAssetId;
+    logo: string;
+    name: string;
+    ticker: string;
+}
+
+export const ASSET_INFO: Partial<Record<SupportedAssetId, AssetInfo>> = {
+    "wOrb8b_V8QixWyXZub48Ki5B6OIDyf_p1ngoonsaRpQ": {
+        processId: "wOrb8b_V8QixWyXZub48Ki5B6OIDyf_p1ngoonsaRpQ",
+        logo: "hqg-Em9DdYHYmMysyVi8LuTGF8IF_F7ZacgjYiSpj0k",
+        name: "TRUNK Token",
+        ticker: "TRUNK"
+    },
+    "OsK9Vgjxo0ypX_HLz2iJJuh4hp3I80yA9KArsJjIloU": {
+        processId: "OsK9Vgjxo0ypX_HLz2iJJuh4hp3I80yA9KArsJjIloU",
+        logo: "LQ4crOHN9qO6JsLNs253AaTch6MgAMbM8PKqBxs4hgI",
+        name: "NAB Token",
+        ticker: "NAB"
+    }
+};
+
+export const WAITTIMEOUIT = 7500;

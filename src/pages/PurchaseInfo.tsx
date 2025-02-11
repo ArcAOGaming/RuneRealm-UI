@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
-import { purchaseAccess, TokenOption } from '../utils/aoHelpers';
+import { purchaseAccess, TokenOption, copyReferralLink } from '../utils/aoHelpers';
 import { useWallet } from '../hooks/useWallet';
 import { currentTheme } from '../constants/theme';
 import accessTicketImg from '../assets/access-ticket.png';
@@ -8,12 +8,24 @@ import PurchaseModal from '../components/PurchaseModal';
 import Confetti from 'react-confetti';
 import Header from '../components/Header';
 import Inventory from '../components/Inventory';
+import BattleStatusComponent from '../components/BattleStatus';
 
 const PurchaseInfo: React.FC = () => {
   const { wallet, walletStatus, darkMode, connectWallet, setDarkMode } = useWallet();
   const theme = currentTheme(darkMode);
   const [showPurchaseModal, setShowPurchaseModal] = useState(false);
   const [showConfetti, setShowConfetti] = useState(false);
+  const [showCopiedNotification, setShowCopiedNotification] = useState(false);
+
+  const handleCopyReferralLink = async () => {
+    try {
+      await copyReferralLink();
+      setShowCopiedNotification(true);
+      setTimeout(() => setShowCopiedNotification(false), 2000);
+    } catch (error) {
+      console.error('Failed to copy referral link:', error);
+    }
+  };
 
   // Initial load of wallet status
   useEffect(() => {
@@ -172,11 +184,49 @@ const PurchaseInfo: React.FC = () => {
                   >
                     Monster Training
                   </Link>
+                  <Link
+                    to="/battle"
+                    className={`px-6 py-3 rounded-xl text-lg font-medium transition-all duration-300 transform hover:scale-105
+                      ${theme.buttonBg} ${theme.buttonHover} ${theme.text} 
+                      backdrop-blur-md shadow-lg hover:shadow-xl border ${theme.border}`}
+                  >
+                    Battle
+                  </Link>
+                </div>
+                {/* Referral Link Button */}
+                <div className="flex justify-center mt-4">
+                  <button
+                    onClick={handleCopyReferralLink}
+                    className="relative px-8 py-3 text-lg font-medium rounded-xl transform hover:scale-105 transition-all duration-300"
+                    style={{
+                      backgroundColor: '#1a1a1a',
+                      color: '#FFD700',
+                      border: '2px solid #FFD700',
+                      boxShadow: '0 0 15px #FFD700, 0 0 25px #FFD700, inset 0 0 5px rgba(255, 215, 0, 0.3)',
+                      animation: 'pulseGold 2s infinite',
+                    }}
+                  >
+                    <div className="flex items-center gap-2">
+                      <span>🔗</span>
+                      <span className="tracking-wider">Copy Referral Link</span>
+                      {showCopiedNotification && (
+                        <span className="text-green-400 ml-2">✓</span>
+                      )}
+                    </div>
+                  </button>
                 </div>
                 {walletStatus?.isUnlocked && (
-                  <div className="mt-8">
-                    <Inventory />
-                  </div>
+                  <>
+                    {/* <div className="mt-8">
+                      <BattleStatusComponent 
+                        walletAddress={wallet.address} 
+                        darkMode={darkMode}
+                      />
+                    </div> */}
+                    <div className="mt-8">
+                      <Inventory />
+                    </div>
+                  </>
                 )}
               </>
             ) : (

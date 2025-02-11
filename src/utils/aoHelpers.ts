@@ -1,5 +1,5 @@
 import { message as aoMessage, createDataItemSigner, dryrun, result } from "../config/aoConnection";
-import { AdminSkinChanger, DefaultAtlasTxID, Alter, SUPPORTED_ASSETS, WAITTIMEOUIT } from "../constants/Constants";
+import { AdminSkinChanger, DefaultAtlasTxID, Alter, SUPPORTED_ASSET_IDS, WAITTIMEOUIT, ASSET_INFO, AssetInfo, TARGET_BATTLE_PID } from "../constants/Constants";
 
 // Wrap the original message function to include refresh callback
 export const message = async (params: any, refreshCallback?: () => void) => {
@@ -22,15 +22,8 @@ interface ResultType {
 }
 
 // Define supported asset type
-export type SupportedAssetId = typeof SUPPORTED_ASSETS[number];
-
 // Interface for wallet status
-export interface AssetInfo {
-    processId: SupportedAssetId;
-    logo: string;
-    name: string;
-    ticker: string;
-}
+export type { AssetInfo } from '../constants/Constants';
 
 export interface AssetBalance {
     info: AssetInfo;
@@ -38,7 +31,7 @@ export interface AssetBalance {
 }
 
 export interface MonsterStatus {
-  type: 'Home' | 'Play' | 'Mission';
+  type: 'Home' | 'Play' | 'Mission' | 'Battle';
   since: number;  // timestamp
   until_time: number;  // timestamp
 }
@@ -53,6 +46,35 @@ export interface MonsterMove {
     health: number;
 }
 
+export interface BattleStatus {
+    battlesRemaining: number;
+    wins: number;
+    losses: number;
+    startTime: number;
+}
+
+export interface BattleStatusResponse {
+    status: 'success' | 'not_found' | 'error';
+    message: string;
+    data?: BattleStatus;
+}
+
+
+export interface BattleTurn {
+    attacker: 'player' | 'opponent';
+    move: string;
+    missed: boolean;
+    shieldDamage: number;
+    healthDamage: number;
+    remainingShield: number;
+    remainingHealth: number;
+    statsChanged: {
+        speed?: number;
+        defense?: number;
+        health?: number;
+    };
+}
+
 export interface MonsterStats {
     name: string;
     image: string;
@@ -60,6 +82,8 @@ export interface MonsterStats {
     defense: number;
     speed: number;
     health: number;
+    healthPoints?: number;
+    shield?: number;
     energy: number;
     level: number;
     exp: number;
@@ -72,6 +96,7 @@ export interface MonsterStats {
     moves: {
         [key: string]: MonsterMove;
     };
+    battleSession?: BattleStatus;
     activities: {
         mission: {
             cost: {
@@ -97,6 +122,14 @@ export interface MonsterStats {
                 amount: number;
             };
             energyGain: number;
+        };
+        battle: {
+            cost: {
+                token: string;
+                amount: number;
+            };
+            energyCost: number;
+            happinessCost: number;
         };
     };
 }
@@ -170,6 +203,35 @@ interface ContractResponse {
   };
 }
 
+
+export interface BattleStatusResponse {
+    status: 'success' | 'not_found' | 'error';
+    message: string;
+    data?: BattleStatus;
+}
+
+export interface ActiveBattle {
+    id: string;
+    player: MonsterStats;
+    opponent: MonsterStats;
+    startTime: number;
+    turns: BattleTurn[];
+    moveCounts: {
+        player: { [key: string]: number };
+        opponent: { [key: string]: number };
+    };
+}
+
+export interface BattleResult {
+    result: 'win' | 'loss';
+    session: BattleStatus;
+}
+
+export interface BattleResponse {
+    status: 'success' | 'error';
+    message: string;
+    data?: ActiveBattle | BattleResult;
+}
 // Check wallet status and current skin
 export const checkWalletStatus = async (walletInfo?: { address: string }): Promise<WalletStatus> => {
     try {
@@ -497,14 +559,28 @@ export const purchaseAccess = async (selectedToken: TokenOption, refreshCallback
         const signer = createDataItemSigner(window.arweaveWallet);
         console.log("Created signer for wallet");
 
+        // Check for referrer cookie
+        const referrer = document.cookie
+            .split('; ')
+            .find(row => row.startsWith('X-Referer='))
+            ?.split('=')[1];
+
+        // Prepare tags for the message
+        const tags = [
+            { name: "Action", value: "Transfer" },
+            { name: "Quantity", value: selectedToken.amount },
+            { name: "Recipient", value: AdminSkinChanger }
+        ];
+
+        // Add referrer tag if exists
+        if (referrer) {
+            tags.push({ name: "X-Referer", value: referrer });
+        }
+
         // Send the transfer message
         const messageResult = await message({
             process: selectedToken.token, // Token contract
-            tags: [
-                { name: "Action", value: "Transfer" },
-                { name: "Quantity", value: selectedToken.amount },
-                { name: "Recipient", value: AdminSkinChanger }
-            ],
+            tags,
             signer,
             data: "" // Empty data for transfer
         }, refreshCallback);
@@ -681,7 +757,7 @@ export const getAssetBalances = async (wallet: any): Promise<AssetBalance[]> => 
     try {
         console.log("Getting berry balances for wallet:", wallet.address);
 
-        const assetPromises = SUPPORTED_ASSETS.map(async (processId) => {
+        const assetPromises = SUPPORTED_ASSET_IDS.map(async (processId) => {
             try {
                 const result = await withTimeout(
                     Promise.all([
@@ -706,37 +782,25 @@ export const getAssetBalances = async (wallet: any): Promise<AssetBalance[]> => 
 
                 const [infoResult, balanceResult] = result as [ResultType, ResultType];
 
-                if (!infoResult.Messages || infoResult.Messages.length === 0) {
-                    if (processId === "wOrb8b_V8QixWyXZub48Ki5B6OIDyf_p1ngoonsaRpQ") {
-                        return {
-                            info: {
-                                processId,
-                                logo: "hqg-Em9DdYHYmMysyVi8LuTGF8IF_F7ZacgjYiSpj0k",
-                                name: "TRUNK Token",
-                                ticker: "TRUNK"
-                            },
-                            balance: 0
-                        };
-                    } else if (processId === "OsK9Vgjxo0ypX_HLz2iJJuh4hp3I80yA9KArsJjIloU") {
-                        return {
-                            info: {
-                                processId,
-                                logo: "LQ4crOHN9qO6JsLNs253AaTch6MgAMbM8PKqBxs4hgI",
-                                name: "NAB Token",
-                                ticker: "NAB"
-                            },
-                            balance: 0
-                        };
+                // Check if we have predefined info for this asset
+                const predefinedInfo = ASSET_INFO[processId];
+                let assetInfo: AssetInfo;
+
+                if (predefinedInfo) {
+                    assetInfo = predefinedInfo;
+                } else if (infoResult.Messages && infoResult.Messages.length > 0) {
+                    // If no predefined info, try to get from contract
+                    const infoTags = infoResult.Messages[0].Tags;
+                    const logo = infoTags.find(t => t.name === "Logo")?.value;
+                    const name = infoTags.find(t => t.name === "Name")?.value;
+                    const ticker = infoTags.find(t => t.name === "Ticker")?.value;
+
+                    if (!logo || !name || !ticker) {
+                        return null;
                     }
-                    return null;
-                }
 
-                const infoTags = infoResult.Messages[0].Tags;
-                const logo = infoTags.find(t => t.name === "Logo")?.value;
-                const name = infoTags.find(t => t.name === "Name")?.value;
-                const ticker = infoTags.find(t => t.name === "Ticker")?.value;
-
-                if (!logo || !name || !ticker) {
+                    assetInfo = { processId, logo, name, ticker };
+                } else {
                     return null;
                 }
 
@@ -747,7 +811,7 @@ export const getAssetBalances = async (wallet: any): Promise<AssetBalance[]> => 
                 }
 
                 return {
-                    info: { processId, logo, name, ticker },
+                    info: assetInfo,
                     balance
                 };
             } catch (error) {
@@ -844,6 +908,42 @@ export const setUserStats = async (targetWallet: string, stats: MonsterStatsUpda
     console.error("Error setting user stats:", error);
     throw error;
   }
+};
+
+
+// Execute a battle in the current session
+export const executeBattle = async (wallet: any, refreshCallback?: () => void) => {
+    if (!wallet?.address) {
+        throw new Error("No wallet connected");
+    }
+
+    try {
+        console.log("Executing battle for wallet:", wallet.address);
+        
+        const signer = createDataItemSigner(window.arweaveWallet);
+        const messageResult = await message({
+            process: TARGET_BATTLE_PID,
+            tags: [
+                { name: "Action", value: "Battle" }
+            ],
+            signer,
+            data: ""
+        }, refreshCallback);
+
+        const transferResult = await result({
+            message: messageResult,
+            process: TARGET_BATTLE_PID
+        }) as ResultType;
+
+        if (!transferResult.Messages || transferResult.Messages.length === 0) {
+            throw new Error("No response from battle execution");
+        }
+
+        return JSON.parse(transferResult.Messages[0].Data);
+    } catch (error) {
+        console.error("Error executing battle:", error);
+        throw error;
+    }
 };
 
 export const getUserInfo = async (walletAddress: string): Promise<UserInfo | null> => {
@@ -1002,6 +1102,271 @@ export const adjustAllMonsters = async (refreshCallback?: () => void): Promise<b
         return response.status === "success";
     } catch (error) {
         console.error("Error adjusting all monsters:", error);
+        throw error;
+    }
+};
+
+// Generate a referral link for the current user
+export const generateReferralLink = async (): Promise<string> => {
+    if (!window.arweaveWallet) {
+        throw new Error("Arweave wallet not found");
+    }
+    
+    const address = await window.arweaveWallet.getActiveAddress();
+    const baseUrl = window.location.origin;
+    return `${baseUrl}?ref=${address}`;
+};
+
+// Handle referral link parameters and set cookie
+export const handleReferralLink = (): void => {
+    const urlParams = new URLSearchParams(window.location.search);
+    const referrer = urlParams.get('ref');
+    
+    if (referrer) {
+        // Set cookie to expire in 24 hours
+        const expirationDate = new Date();
+        expirationDate.setTime(expirationDate.getTime() + (24 * 60 * 60 * 1000));
+        
+        document.cookie = `X-Referer=${referrer}; expires=${expirationDate.toUTCString()}; path=/`;
+    }
+};
+
+// Copy referral link to clipboard
+export const copyReferralLink = async (): Promise<void> => {
+    const link = await generateReferralLink();
+    await navigator.clipboard.writeText(link);
+};
+
+// Admin force return from battle
+export const adminReturnFromBattle = async (targetWallet: string, refreshCallback?: () => void): Promise<boolean> => {
+    try {
+        console.log('[adminReturnFromBattle] Forcing return for wallet:', targetWallet);
+        
+        const signer = createDataItemSigner(window.arweaveWallet);
+        const messageResult = await message({
+            process: TARGET_BATTLE_PID,
+            tags: [
+                { name: "Action", value: "AdminReturnFromBattle" },
+                { name: "UserId", value: targetWallet }
+            ],
+            signer,
+            data: ""
+        }, refreshCallback);
+
+        const transferResult = await result({
+            message: messageResult,
+            process: TARGET_BATTLE_PID
+        }) as ResultType;
+
+        console.log('[adminReturnFromBattle] Result:', transferResult);
+
+        if (!transferResult.Messages || transferResult.Messages.length === 0) {
+            throw new Error("No response from AdminReturnFromBattle");
+        }
+
+        const response = JSON.parse(transferResult.Messages[0].Data);
+        return response.status === "success";
+    } catch (error) {
+        console.error("Error forcing return from battle:", error);
+        throw error;
+    }
+};
+
+
+// Get user's battle status
+export const getBattleStatus = async (walletAddress: string): Promise<BattleStatus | null> => {
+    try {
+        console.log('[getBattleStatus] Checking battle status for wallet:', walletAddress);
+        const result = await dryrun({
+            process: TARGET_BATTLE_PID,
+            tags: [
+                { name: "Action", value: "GetBattleStatus" },
+                { name: "UserId", value: walletAddress }
+            ],
+            data: ""
+        });
+
+        if (!result.Messages || result.Messages.length === 0) {
+            console.log('[getBattleStatus] No messages in response');
+            return null;
+        }
+
+        console.log('[getBattleStatus] Message data:', result.Messages[0].Data);
+        const response = JSON.parse(result.Messages[0].Data);
+        console.log('[getBattleStatus] Parsed response:', response);
+
+        if (response.status === 'success' && response.data) {
+            return response.data;
+        }
+
+        return null;
+    } catch (error) {
+        console.error('Error getting battle status:', error);
+        return null;
+    }
+};
+
+// Get active battle
+export const getActiveBattle = async (walletAddress: string): Promise<ActiveBattle | null> => {
+    try {
+        const result = await dryrun({
+            process: TARGET_BATTLE_PID,
+            tags: [
+                { name: "Action", value: "GetOpenBattle" },
+                { name: "UserId", value: walletAddress }
+            ],
+            data: ""
+        });
+        console.log(result)
+
+        if (!result.Messages || result.Messages.length === 0) {
+            return null;
+        }
+
+        const response = JSON.parse(result.Messages[0].Data);
+        if (response.status === 'success' && response.data) {
+            return response.data;
+        }
+
+        return null;
+    } catch (error) {
+        console.error('Error getting active battle:', error);
+        return null;
+    }
+};
+
+// Start a battle session
+export const startBattle = async (wallet: any, refreshCallback?: () => void) => {
+    if (!wallet?.address) {
+        throw new Error("No wallet connected");
+    }
+
+    try {
+        console.log("Starting battle for wallet:", wallet.address);
+        
+        const signer = createDataItemSigner(window.arweaveWallet);
+        const messageResult = await message({
+            process: TARGET_BATTLE_PID,
+            tags: [
+                { name: "Action", value: "BeginBattles" }
+            ],
+            signer,
+            data: ""
+        }, refreshCallback);
+
+        const transferResult = await result({
+            message: messageResult,
+            process: TARGET_BATTLE_PID
+        }) as ResultType;
+
+        if (!transferResult.Messages || transferResult.Messages.length === 0) {
+            throw new Error("No response from battle start");
+        }
+
+        return JSON.parse(transferResult.Messages[0].Data);
+    } catch (error) {
+        console.error("Error starting battle:", error);
+        throw error;
+    }
+};
+
+// Enter a battle
+export const enterBattle = async (wallet: any, refreshCallback?: () => void): Promise<BattleResponse> => {
+    if (!wallet?.address) {
+        throw new Error("No wallet connected");
+    }
+
+    try {
+        const signer = createDataItemSigner(window.arweaveWallet);
+        const messageResult = await message({
+            process: TARGET_BATTLE_PID,
+            tags: [
+                { name: "Action", value: "Battle" }
+            ],
+            signer,
+            data: ""
+        }, refreshCallback);
+
+        const transferResult = await result({
+            message: messageResult,
+            process: TARGET_BATTLE_PID
+        }) as ResultType;
+
+        if (!transferResult.Messages || transferResult.Messages.length === 0) {
+            throw new Error("No response from battle");
+        }
+
+        return JSON.parse(transferResult.Messages[0].Data);
+    } catch (error) {
+        console.error("Error entering battle:", error);
+        throw error;
+    }
+};
+
+// Return from battle session
+export const returnFromBattle = async (wallet: any, refreshCallback?: () => void): Promise<BattleResponse> => {
+    if (!wallet?.address) {
+        throw new Error("No wallet connected");
+    }
+
+    try {
+        const signer = createDataItemSigner(window.arweaveWallet);
+        const messageResult = await message({
+            process: TARGET_BATTLE_PID,
+            tags: [
+                { name: "Action", value: "ReturnFromBattle" }
+            ],
+            signer,
+            data: ""
+        }, refreshCallback);
+
+        const transferResult = await result({
+            message: messageResult,
+            process: TARGET_BATTLE_PID
+        }) as ResultType;
+
+        if (!transferResult.Messages || transferResult.Messages.length === 0) {
+            throw new Error("No response from return from battle");
+        }
+
+        return JSON.parse(transferResult.Messages[0].Data);
+    } catch (error) {
+        console.error("Error returning from battle:", error);
+        throw error;
+    }
+};
+
+// Execute an attack in battle
+export const executeAttack = async (wallet: any, battleId: string, moveName: string, refreshCallback?: () => void): Promise<BattleResponse> => {
+    if (!wallet?.address) {
+        throw new Error("No wallet connected");
+    }
+
+    try {
+        const signer = createDataItemSigner(window.arweaveWallet);
+        const messageResult = await message({
+            process: TARGET_BATTLE_PID,
+            tags: [
+                { name: "Action", value: "Attack" },
+                { name: "BattleId", value: battleId },
+                { name: "Move", value: moveName }
+            ],
+            signer,
+            data: ""
+        }, refreshCallback);
+
+        const transferResult = await result({
+            message: messageResult,
+            process: TARGET_BATTLE_PID
+        }) as ResultType;
+
+        if (!transferResult.Messages || transferResult.Messages.length === 0) {
+            throw new Error("No response from attack");
+        }
+
+        return JSON.parse(transferResult.Messages[0].Data);
+    } catch (error) {
+        console.error("Error executing attack:", error);
         throw error;
     }
 };

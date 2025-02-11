@@ -1,9 +1,9 @@
 import React, { useState, useEffect } from 'react';
-import { getUserInfo, UserInfo, setUserStats, MonsterStatsUpdate, getFactionOptions, FactionOptions, adjustAllMonsters } from '../utils/aoHelpers';
+import { getUserInfo, UserInfo, setUserStats, MonsterStatsUpdate, getFactionOptions, FactionOptions, adjustAllMonsters, adminReturnFromBattle } from '../utils/aoHelpers';
 import { currentTheme } from '../constants/theme';
 import { useWallet } from '../hooks/useWallet';
 import Header from '../components/Header';
-import { Gateway, SUPPORTED_ASSETS } from '../constants/Constants';
+import { Gateway, SUPPORTED_ASSET_IDS } from '../constants/Constants';
 import AdminBulkUnlock from '../components/AdminBulkUnlock';
 import AdminRemoveUser from '../components/AdminRemoveUser';
 
@@ -157,6 +157,38 @@ const Admin: React.FC = () => {
             
             {/* Admin Tools Section */}
             <div className={`flex flex-col gap-4 p-4 ${theme.container} border ${theme.border}`}>
+              {/* Force Return from Battle */}
+              <div>
+                <h3 className={`text-lg font-bold mb-2 ${theme.text}`}>Force Return from Battle</h3>
+                <div className="flex gap-2">
+                  <input
+                    type="text"
+                    placeholder="Enter wallet address"
+                    className={`flex-1 px-4 py-2 rounded-lg border ${theme.border} ${theme.container} ${theme.text}`}
+                    value={walletAddress}
+                    onChange={(e) => setWalletAddress(e.target.value)}
+                  />
+                  <button
+                    onClick={async () => {
+                      if (!walletAddress) return;
+                      try {
+                        const success = await adminReturnFromBattle(walletAddress, triggerRefresh);
+                        if (success) {
+                          alert('Successfully returned user from battle');
+                        } else {
+                          alert('Failed to return user from battle');
+                        }
+                      } catch (error) {
+                        console.error('Error returning from battle:', error);
+                        alert('Error returning from battle');
+                      }
+                    }}
+                    className={`px-6 py-2 rounded-lg font-bold transition-all duration-300 ${theme.buttonBg} ${theme.buttonHover} ${theme.text}`}
+                  >
+                    Force Return
+                  </button>
+                </div>
+              </div>
               <AdminBulkUnlock />
               <AdminRemoveUser />
               <div>
@@ -356,8 +388,8 @@ const Admin: React.FC = () => {
                             })}
                             className={`w-full px-4 py-2 rounded-lg border ${theme.border} ${theme.container} ${theme.text}`}
                           >
-                            {SUPPORTED_ASSETS.map(asset => (
-                              <option key={asset} value={asset}>{asset}</option>
+                            {SUPPORTED_ASSET_IDS.map(assetId => (
+                              <option key={assetId} value={assetId}>{assetId}</option>
                             ))}
                           </select>
                         </div>
@@ -477,8 +509,8 @@ const Admin: React.FC = () => {
                             })}
                             className={`w-full px-4 py-2 rounded-lg border ${theme.border} ${theme.container} ${theme.text}`}
                           >
-                            {SUPPORTED_ASSETS.map(asset => (
-                              <option key={asset} value={asset}>{asset}</option>
+                            {SUPPORTED_ASSET_IDS.map(assetId => (
+                              <option key={assetId} value={assetId}>{assetId}</option>
                             ))}
                           </select>
                         </div>
@@ -598,8 +630,8 @@ const Admin: React.FC = () => {
                             })}
                             className={`w-full px-4 py-2 rounded-lg border ${theme.border} ${theme.container} ${theme.text}`}
                           >
-                            {SUPPORTED_ASSETS.map(asset => (
-                              <option key={asset} value={asset}>{asset}</option>
+                            {SUPPORTED_ASSET_IDS.map(assetId => (
+                              <option key={assetId} value={assetId}>{assetId}</option>
                             ))}
                           </select>
                         </div>
