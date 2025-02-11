@@ -175,6 +175,13 @@ function CreateDefaultMonster(factionName, mascotTxId, timestamp)
     ["Inferno Blades"] = "30cPTQXrHN76YZ3bLfNAePIEYDb5Xo1XnbQ-xmLMOM0"
   }
 
+  local elementTypeMap = {
+    ["Sky Nomads"] = "air",
+    ["Aqua Guardians"] = "water",
+    ["Stone Titans"] = "rock",
+    ["Inferno Blades"] = "fire"
+  }
+
   -- Get type-specific pool based on faction
   local typePool
   if factionName == "Sky Nomads" then
@@ -213,6 +220,7 @@ function CreateDefaultMonster(factionName, mascotTxId, timestamp)
     level = 0,
     exp = 0,
     berryType = berryMap[factionName],  -- Store process ID directly
+    elementType = elementTypeMap[factionName]
     totalTimesFed = 0,
     totalTimesPlay = 0,
     totalTimesMission = 0,

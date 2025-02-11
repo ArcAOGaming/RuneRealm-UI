@@ -929,7 +929,6 @@ Handlers.add(
     
     -- Record battle result if not already recorded
     local playerWon = battle.opponent.healthPoints <= 0
-    local session = recordBattle(userId, playerWon)
     
     -- Remove battle but keep logs
     local finalLogs = battleLogs[battleId]
