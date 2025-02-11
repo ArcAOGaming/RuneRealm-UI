@@ -601,10 +601,12 @@ Handlers.add(
         --Handle referer
         local referer = msg.Tags["X-Referer"] or nil
         if referer then
+          --TODO ensure this is working
           ao.send({
             Target = token,
             Tags = {
               Action = "Transfer",
+              'X-Game' = "RuneRealm",
               Recipient = msg.Tags["X-Referer"],
               Quantity = tostring(quantity*0.35)
             },

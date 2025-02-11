@@ -46,17 +46,17 @@ export interface MonsterMove {
     health: number;
 }
 
-export interface BattleStatus {
+export interface BattleManagerInfo {
     battlesRemaining: number;
     wins: number;
     losses: number;
     startTime: number;
 }
 
-export interface BattleStatusResponse {
+export interface BattleManagerResponse {
     status: 'success' | 'not_found' | 'error';
     message: string;
-    data?: BattleStatus;
+    data?: BattleManagerInfo;
 }
 
 
@@ -96,7 +96,7 @@ export interface MonsterStats {
     moves: {
         [key: string]: MonsterMove;
     };
-    battleSession?: BattleStatus;
+    battleSession?: BattleManagerInfo;
     activities: {
         mission: {
             cost: {
@@ -204,11 +204,6 @@ interface ContractResponse {
 }
 
 
-export interface BattleStatusResponse {
-    status: 'success' | 'not_found' | 'error';
-    message: string;
-    data?: BattleStatus;
-}
 
 export interface ActiveBattle {
     id: string;
@@ -224,13 +219,13 @@ export interface ActiveBattle {
 
 export interface BattleResult {
     result: 'win' | 'loss';
-    session: BattleStatus;
+    session: BattleManagerInfo;
 }
 
 export interface BattleResponse {
     status: 'success' | 'error';
     message: string;
-    data?: ActiveBattle | BattleResult;
+    data?: ActiveBattle | BattleResult | BattleManagerInfo;
 }
 // Check wallet status and current skin
 export const checkWalletStatus = async (walletInfo?: { address: string }): Promise<WalletStatus> => {
@@ -1174,26 +1169,27 @@ export const adminReturnFromBattle = async (targetWallet: string, refreshCallbac
 
 
 // Get user's battle status
-export const getBattleStatus = async (walletAddress: string): Promise<BattleStatus | null> => {
+export const getBattleManagerInfo = async (walletAddress: string): Promise<BattleManagerInfo | null> => {
     try {
-        console.log('[getBattleStatus] Checking battle status for wallet:', walletAddress);
+        console.log('[getBattleManagerInfo] Checking battle manager info for wallet:', walletAddress);
         const result = await dryrun({
             process: TARGET_BATTLE_PID,
             tags: [
-                { name: "Action", value: "GetBattleStatus" },
+                { name: "Action", value: "GetBattleManagerInfo" },
                 { name: "UserId", value: walletAddress }
             ],
             data: ""
         });
+        console.log(result)
 
         if (!result.Messages || result.Messages.length === 0) {
-            console.log('[getBattleStatus] No messages in response');
+            console.log('[getBattleManagerInfo] No messages in response');
             return null;
         }
 
-        console.log('[getBattleStatus] Message data:', result.Messages[0].Data);
+        console.log('[getBattleManagerInfo] Message data:', result.Messages[0].Data);
         const response = JSON.parse(result.Messages[0].Data);
-        console.log('[getBattleStatus] Parsed response:', response);
+        console.log('[getBattleManagerInfo] Parsed response:', response);
 
         if (response.status === 'success' && response.data) {
             return response.data;
@@ -1201,7 +1197,7 @@ export const getBattleStatus = async (walletAddress: string): Promise<BattleStat
 
         return null;
     } catch (error) {
-        console.error('Error getting battle status:', error);
+        console.error('Error getting battle manager info:', error);
         return null;
     }
 };

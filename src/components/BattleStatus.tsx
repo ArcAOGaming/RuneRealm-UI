@@ -1,14 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { getBattleStatus } from '../utils/aoHelpers';
+import { getBattleManagerInfo, BattleManagerInfo } from '../utils/aoHelpers';
 import { currentTheme } from '../constants/theme';
-
-interface BattleStatus {
-  battlesRemaining: number;
-  wins: number;
-  losses: number;
-  startTime: number;
-}
 
 interface Props {
   walletAddress?: string;
@@ -16,29 +9,29 @@ interface Props {
 }
 
 export const BattleStatusComponent: React.FC<Props> = ({ walletAddress, darkMode }) => {
-  const [battleStatus, setBattleStatus] = useState<BattleStatus | null>(null);
+  const [battleManagerInfo, setBattleManagerInfo] = useState<BattleManagerInfo | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const theme = currentTheme(darkMode);
   const navigate = useNavigate();
 
   useEffect(() => {
-    const loadBattleStatus = async () => {
+    const loadBattleManagerInfo = async () => {
       if (!walletAddress) return;
 
       try {
         setIsLoading(true);
-        const status = await getBattleStatus(walletAddress);
-        setBattleStatus(status);
+        const info = await getBattleManagerInfo(walletAddress);
+        setBattleManagerInfo(info);
       } catch (error) {
-        console.error('Error loading battle status:', error);
+        console.error('Error loading battle manager info:', error);
       } finally {
         setIsLoading(false);
       }
     };
 
-    loadBattleStatus();
+    loadBattleManagerInfo();
     // Refresh every 30 seconds
-    const interval = setInterval(loadBattleStatus, 30000);
+    const interval = setInterval(loadBattleManagerInfo, 30000);
     return () => clearInterval(interval);
   }, [walletAddress]);
 
@@ -75,7 +68,7 @@ export const BattleStatusComponent: React.FC<Props> = ({ walletAddress, darkMode
     );
   }
 
-  if (!battleStatus) {
+  if (!battleManagerInfo) {
     return (
       <div className={`p-6 rounded-xl ${theme.container} border ${theme.border} backdrop-blur-md text-center`}>
         <h2 className={`text-xl font-bold mb-4 ${theme.text}`}>No Active Battles</h2>
@@ -99,15 +92,15 @@ export const BattleStatusComponent: React.FC<Props> = ({ walletAddress, darkMode
         <div>
           <div className="space-y-4">
             <div className={`${theme.text} p-4 rounded bg-opacity-20 ${theme.container}`}>
-              <span className="font-semibold">Battles Remaining:</span> {battleStatus.battlesRemaining}
+              <span className="font-semibold">Battles Remaining:</span> {battleManagerInfo.battlesRemaining}
             </div>
             <div className={`${theme.text} p-4 rounded bg-opacity-20 ${theme.container}`}>
               <span className="font-semibold">Win Rate:</span>{' '}
-              {((battleStatus.wins / (battleStatus.wins + battleStatus.losses)) * 100).toFixed(1)}%
+              {((battleManagerInfo.wins / (battleManagerInfo.wins + battleManagerInfo.losses)) * 100).toFixed(1)}%
             </div>
             <div className={`${theme.text} p-4 rounded bg-opacity-20 ${theme.container}`}>
               <span className="font-semibold">Record:</span>{' '}
-              {battleStatus.wins}W - {battleStatus.losses}L
+              {battleManagerInfo.wins}W - {battleManagerInfo.losses}L
             </div>
           </div>
         </div>
@@ -123,19 +116,19 @@ export const BattleStatusComponent: React.FC<Props> = ({ walletAddress, darkMode
               </div>
               <div className={`text-right ${theme.text}`}>
                 <span className="text-xs font-semibold inline-block">
-                  {4 - battleStatus.battlesRemaining}/4
+                  {4 - battleManagerInfo.battlesRemaining}/4
                 </span>
               </div>
             </div>
             <div className="flex h-2 mb-4 overflow-hidden rounded bg-gray-200">
               <div
-                style={{ width: `${((4 - battleStatus.battlesRemaining) / 4) * 100}%` }}
+                style={{ width: `${((4 - battleManagerInfo.battlesRemaining) / 4) * 100}%` }}
                 className="bg-blue-500 transition-all duration-500"
               ></div>
             </div>
           </div>
           <div className={`${theme.text} text-center mt-4`}>
-            Started {formatTimeAgo(battleStatus.startTime)}
+            Started {formatTimeAgo(battleManagerInfo.startTime)}
           </div>
         </div>
       </div>

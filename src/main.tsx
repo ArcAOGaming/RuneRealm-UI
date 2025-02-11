@@ -10,6 +10,7 @@ import './index.css'
 import { FactionPage } from './pages/FactionPage'
 import { BattlePage } from './pages/BattlePage'
 import { handleReferralLink } from './utils/aoHelpers'
+import { ActiveBattlePage } from './pages/ActiveBattlePage'
 
 const App = () => {
   useEffect(() => {
@@ -27,6 +28,7 @@ const App = () => {
           <Route path="/monsters" element={<MonsterManagement />} />
           <Route path="/admin" element={<Admin />} />
           <Route path="/battle" element={<BattlePage />} />
+          <Route path="/battle/active" element={<ActiveBattlePage />} />
         </Routes>
       </WalletProvider>
     </Router>

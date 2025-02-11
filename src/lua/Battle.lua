@@ -141,12 +141,12 @@ local function processAttack(attacker, defender, move, isPlayer, battle)
 
   -- Apply defense if move has defense (adds to shield without refilling)
   if move.defense and move.defense > 0 then
-    attacker.shield = attacker.shield + move.defense
+    attacker.shield = math.min(attacker.shield + move.defense, attacker.defense)
     turnInfo.statsChanged.defense = move.defense
   end
 
-  -- Apply health restoration if move has health
-  if move.health and move.health > 0 then
+  -- Apply health restoration if move has health and attacker is alive
+  if move.health and move.health > 0 and attacker.healthPoints > 0 then
     local healAmount = move.health * 10
     local maxHealth = attacker.health * 10
     local missingHealth = maxHealth - attacker.healthPoints
@@ -158,7 +158,7 @@ local function processAttack(attacker, defender, move, isPlayer, battle)
       -- Heal health and put excess into shield
       attacker.healthPoints = attacker.healthPoints + missingHealth
       local excessHeal = healAmount - missingHealth
-      attacker.shield = attacker.shield + excessHeal
+      attacker.shield = math.min(attacker.shield + excessHeal, attacker.defense)
     end
     turnInfo.statsChanged.health = healAmount
   end
@@ -171,7 +171,7 @@ local function processAttack(attacker, defender, move, isPlayer, battle)
     if damage > defender.shield then
       turnInfo.shieldDamage = defender.shield
       turnInfo.healthDamage = damage - defender.shield
-      defender.healthPoints = defender.healthPoints - turnInfo.healthDamage
+      defender.healthPoints = math.max(0, defender.healthPoints - turnInfo.healthDamage)
       defender.shield = 0
     else
       turnInfo.shieldDamage = damage
@@ -179,8 +179,11 @@ local function processAttack(attacker, defender, move, isPlayer, battle)
     end
   else
     turnInfo.healthDamage = damage
-    defender.healthPoints = defender.healthPoints - damage
+    defender.healthPoints = math.max(0, defender.healthPoints - damage)
   end
+
+  -- Ensure shield never exceeds max
+  defender.shield = math.min(defender.shield, defender.defense)
 
   -- Update move count
   local moveCountKey = isPlayer and "player" or "opponent"
@@ -188,6 +191,19 @@ local function processAttack(attacker, defender, move, isPlayer, battle)
     battle.moveCounts[moveCountKey] = {}
   end
   battle.moveCounts[moveCountKey][move.name] = (battle.moveCounts[moveCountKey][move.name] or 0) + 1
+
+  -- If defender died, remove battle and return
+  if defender.healthPoints <= 0 then
+    turnInfo.remainingShield = defender.shield
+    turnInfo.remainingHealth = 0
+    
+    -- Remove battle from active battles using player's address
+    local userId = battle.player.address
+    print("Removing battle for user", userId, "from active battles")
+    activeBattles[userId] = nil
+    
+    return turnInfo
+  end
 
   turnInfo.remainingShield = defender.shield
   turnInfo.remainingHealth = defender.healthPoints
@@ -269,12 +285,18 @@ local function processBattleTurn(battleId, playerMove, npcMove, playerFirst)
   -- Update battle logs immediately
   battleLogs[battleId] = battle.turns
   
-  -- Check if battle is over
-  if battle.opponent.healthPoints <= 0 or battle.player.healthPoints <= 0 then
-    return true
+  -- Check if defender died during first attack
+  if turnInfo.remainingHealth <= 0 then
+    print("Battle ended during first attack - defender died")
+    print("Player health:", battle.player.healthPoints)
+    print("Opponent health:", battle.opponent.healthPoints)
+    return {
+      battleOver = true,
+      playerWon = playerFirst -- If player went first, they won since defender died
+    }
   end
   
-  -- Second attack
+  -- Second attack only happens if first attack didn't end battle
   turnInfo = processAttack(secondAttacker, firstAttacker, secondMove, not playerFirst, battle)
   if not turnInfo then
     print("Error: Second attack returned nil turnInfo")
@@ -284,7 +306,20 @@ local function processBattleTurn(battleId, playerMove, npcMove, playerFirst)
   -- Update battle logs immediately
   battleLogs[battleId] = battle.turns
   
-  return battle.opponent.healthPoints <= 0 or battle.player.healthPoints <= 0
+  -- Check if defender died during second attack
+  if turnInfo.remainingHealth <= 0 then
+    print("Battle ended during second attack - defender died")
+    print("Player health:", battle.player.healthPoints)
+    print("Opponent health:", battle.opponent.healthPoints)
+    return {
+      battleOver = true,
+      playerWon = not playerFirst -- If opponent went first, player won if opponent's target died
+    }
+  end
+  
+  return {
+    battleOver = false
+  }
 end
 
 -- Handlers
@@ -323,8 +358,8 @@ Handlers.add(
 )
 
 Handlers.add(
-  "GetBattleStatus",
-  Handlers.utils.hasMatchingTag("Action", "GetBattleStatus"),
+  "GetBattleManagerInfo",
+  Handlers.utils.hasMatchingTag("Action", "GetBattleManagerInfo"),
   function(msg)
     local userId = msg.Tags.UserId
     local session = getBattleSession(userId)
@@ -722,6 +757,18 @@ Handlers.add(
       
       if session.battlesRemaining <= 0 then
         activeBattles[battleId] = nil
+
+            ao.send({
+      Target = TARGET_PREMPASS_PID,
+      Tags = {
+        Action = "ReturnFromBattle",
+        UserId = userId
+      },
+      Data = json.encode({
+        status = "home",
+        message = "User return from battle"
+      })
+    })
       else
         activeBattles[battleId] = battle
       end
@@ -805,19 +852,31 @@ Handlers.add(
     local playerFirst = battle.player.speed >= battle.opponent.speed
     print("Player goes first:", playerFirst)
     print("Player move object:", json.encode(playerMove))
-    local battleOver = processBattleTurn(battleId, playerMove, npcMove, playerFirst)
+    local result = processBattleTurn(battleId, playerMove, npcMove, playerFirst)
     
-    if battleOver then
-      local playerWon = battle.opponent.healthPoints <= 0
+    if result.battleOver then
+      local playerWon = result.playerWon
       local session = recordBattle(userId, playerWon)
       battle.stats = session
       
       local finalLogs = battleLogs[battleId]
       
+      -- Always remove battle when it's over
+      activeBattles[battleId] = nil
+      
+      -- Send return message if no battles remaining
       if session.battlesRemaining <= 0 then
-        activeBattles[battleId] = nil
-      else
-        activeBattles[battleId] = battle
+        ao.send({
+          Target = TARGET_PREMPASS_PID,
+          Tags = {
+            Action = "ReturnFromBattle",
+            UserId = userId
+          },
+          Data = json.encode({
+            status = "home",
+            message = "User return from battle"
+          })
+        })
       end
       
       battleLogs[battleId] = finalLogs
@@ -927,7 +986,6 @@ Handlers.add(
         UserId = userId
       },
       Data = json.encode({
-        status = "home",
         message = "Admin return from battle"
       })
     })
