@@ -89,7 +89,7 @@ export const ActiveBattlesPage: React.FC = (): JSX.Element => {
                 <h2 className={`text-xl font-bold mb-4 ${theme.text}`}>No Battle Status</h2>
                 <p className={`mb-4 ${theme.text}`}>You need to send your monster to battle first.</p>
                 <button
-                  onClick={() => navigate('monsters')}
+                  onClick={() => navigate('/monsters')}
                   className={`px-6 py-3 rounded-lg font-bold transition-all duration-300 ${theme.buttonBg} ${theme.buttonHover} ${theme.text}`}
                 >
                   Go to Monsters

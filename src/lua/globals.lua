@@ -220,7 +220,7 @@ function CreateDefaultMonster(factionName, mascotTxId, timestamp)
     level = 0,
     exp = 0,
     berryType = berryMap[factionName],  -- Store process ID directly
-    elementType = elementTypeMap[factionName]
+    elementType = elementTypeMap[factionName],
     totalTimesFed = 0,
     totalTimesPlay = 0,
     totalTimesMission = 0,

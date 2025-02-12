@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { useWallet } from '../hooks/useWallet';
-import { getBattleManagerInfo, getActiveBattle, executeAttack, endBattle, BattleManagerInfo, ActiveBattle, BattleResult } from '../utils/aoHelpers';
+import { getBattleManagerInfo, getActiveBattle, executeAttack, endBattle, returnFromBattle, BattleManagerInfo, ActiveBattle, BattleResult } from '../utils/aoHelpers';
 import { currentTheme } from '../constants/theme';
 import Header from '../components/Header';
 import Footer from '../components/Footer';
@@ -215,8 +215,19 @@ export const ActiveBattlePage: React.FC = (): JSX.Element => {
     }
   };
 
-  const handleReturnToBattleManager = () => {
-    navigate('/battle');
+  const handleReturnToBattleManager = async () => {
+    if (!wallet?.address) return;
+    try {
+      setIsUpdating(true);
+      const response = await returnFromBattle(wallet);
+      if (response.status === 'success') {
+        navigate('/battle');
+      }
+    } catch (error) {
+      console.error('Error returning from battle:', error);
+    } finally {
+      setIsUpdating(false);
+    }
   };
 
   const handleEndBattle = async () => {
@@ -400,14 +411,15 @@ export const ActiveBattlePage: React.FC = (): JSX.Element => {
                     <div className={`p-4 rounded-lg ${theme.container} bg-opacity-20`}>
                       <h4 className="text-md font-semibold mb-3">Your Moves</h4>
                       <div className="space-y-2">
+                        {/* Regular moves */}
                         {Object.entries(activeBattle.player.moves).map(([moveName, move]) => (
                           <button
                             key={moveName}
                             onClick={() => handleAttack(moveName)}
-                            disabled={isUpdating || activeBattle.status === 'ended'}
+                            disabled={isUpdating || activeBattle.status === 'ended' || move.count === 0}
                             className={`w-full p-3 rounded-lg font-medium text-left transition-all duration-300 
                               ${moveName === 'attack' ? 'bg-red-500 hover:bg-red-600' : 'bg-blue-500 hover:bg-blue-600'} 
-                              ${activeBattle.status === 'ended' ? 'opacity-50 cursor-not-allowed' : ''}
+                              ${activeBattle.status === 'ended' || move.count === 0 ? 'opacity-50 cursor-not-allowed' : ''}
                               text-white relative overflow-hidden group`}
                           >
                             <div className="flex justify-between items-center">
@@ -433,6 +445,27 @@ export const ActiveBattlePage: React.FC = (): JSX.Element => {
                             <div className="absolute inset-0 bg-white opacity-0 group-hover:opacity-10 transition-opacity duration-300"></div>
                           </button>
                         ))}
+
+                        {/* Struggle button - only show when all moves have 0 uses */}
+                        {Object.values(activeBattle.player.moves).every(move => move.count === 0) && (
+                          <button
+                            onClick={() => handleAttack('struggle')}
+                            disabled={isUpdating || activeBattle.status === 'ended'}
+                            className={`w-full mt-4 p-3 rounded-lg font-medium text-left transition-all duration-300 
+                              bg-purple-500 hover:bg-purple-600
+                              ${activeBattle.status === 'ended' ? 'opacity-50 cursor-not-allowed' : ''}
+                              text-white relative overflow-hidden group`}
+                          >
+                            <div className="flex justify-between items-center">
+                              <span className="capitalize">Struggle</span>
+                              <span className="text-sm opacity-75">Last Resort</span>
+                            </div>
+                            <div className="text-sm mt-1 space-x-3">
+                              <span>⚔️ +1</span>
+                            </div>
+                            <div className="absolute inset-0 bg-white opacity-0 group-hover:opacity-10 transition-opacity duration-300"></div>
+                          </button>
+                        )}
                       </div>
                     </div>
                     

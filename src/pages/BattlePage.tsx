@@ -1,6 +1,6 @@
 import React, { useEffect, useState, useCallback } from 'react';
 import { useWallet } from '../hooks/useWallet';
-import { getBattleManagerInfo, getActiveBattle, enterBattle, BattleManagerInfo, ActiveBattle } from '../utils/aoHelpers';
+import { getBattleManagerInfo, getActiveBattle, enterBattle, returnFromBattle, BattleManagerInfo, ActiveBattle } from '../utils/aoHelpers';
 import { currentTheme } from '../constants/theme';
 import Header from '../components/Header';
 import Footer from '../components/Footer';
@@ -111,6 +111,19 @@ export const BattlePage: React.FC = (): JSX.Element => {
     navigate('/battle/active');
   };
 
+  const handleReturnHome = async () => {
+    if (!wallet?.address) return;
+    try {
+      setIsUpdating(true);
+      await returnFromBattle(wallet);
+      navigate('/');
+    } catch (error) {
+      console.error('Error returning from battle:', error);
+    } finally {
+      setIsUpdating(false);
+    }
+  };
+
   return (
     <div className="min-h-screen flex flex-col">
       <div className={`min-h-screen flex flex-col ${theme.bg}`}>
@@ -136,7 +149,7 @@ export const BattlePage: React.FC = (): JSX.Element => {
                 <h2 className={`text-xl font-bold mb-4 ${theme.text}`}>No Battle Status</h2>
                 <p className={`mb-4 ${theme.text}`}>You need to send your monster to battle first.</p>
                 <button
-                  onClick={() => navigate('monsters')}
+                  onClick={() => navigate('/monsters')}
                   className={`px-6 py-3 rounded-lg font-bold transition-all duration-300 ${theme.buttonBg} ${theme.buttonHover} ${theme.text}`}
                 >
                   Go to Monsters
@@ -250,6 +263,17 @@ export const BattlePage: React.FC = (): JSX.Element => {
                       <p className={`mb-4 ${theme.text}`}>No battles remaining in current session.</p>
                     </div>
                   )}
+                </div>
+
+                {/* Return Home Button */}
+                <div className="mt-6 mb-6 text-center">
+                  <button
+                    onClick={handleReturnHome}
+                    className={`px-6 py-3 rounded-lg font-bold transition-all duration-300 ${theme.buttonBg} ${theme.buttonHover} ${theme.text}`}
+                    disabled={isUpdating}
+                  >
+                    Return Home
+                  </button>
                 </div>
 
                 {/* Session Stats */}
