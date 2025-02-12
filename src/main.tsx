@@ -5,6 +5,7 @@ import SpriteCustomizer from './pages/SpriteCustomizer'
 import PurchaseInfo from './pages/PurchaseInfo'
 import {MonsterManagement} from './pages/MonsterManagement'
 import Admin from './pages/Admin'
+import MonsterTest from './pages/MonsterTest'
 import { WalletProvider } from './context/WalletContext'
 import './index.css'
 import { FactionPage } from './pages/FactionPage'
@@ -29,6 +30,7 @@ const App = () => {
           <Route path="/admin" element={<Admin />} />
           <Route path="/battle" element={<BattlePage />} />
           <Route path="/battle/active" element={<ActiveBattlePage />} />
+          <Route path="/monster-test" element={<MonsterTest />} />
         </Routes>
       </WalletProvider>
     </Router>

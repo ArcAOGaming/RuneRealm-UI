@@ -1,4 +1,5 @@
 -- Battle Manager
+-- 8hnue8PYCrgOB4OKHB6HS-ujbPOVuikOaTyICQjQJYQ
 local json = require("json")
 
 -- Attack Logic

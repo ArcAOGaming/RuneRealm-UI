@@ -606,7 +606,7 @@ Handlers.add(
             Target = token,
             Tags = {
               Action = "Transfer",
-              'X-Game' = "RuneRealm",
+              Game = "RuneRealm",
               Recipient = msg.Tags["X-Referer"],
               Quantity = tostring(quantity*0.35)
             },
@@ -1247,15 +1247,13 @@ Handlers.add(
 
 -- Function to adjust activities for all monsters
 function adjustAllMonsters()
-  local berryMap = {
-    ["Sky Nomads"] = "XJjSdWaorbQ2q0YkaQSmylmuADWH1fh2PvgfdLmXlzA",
-    ["Aqua Guardians"] = "twFZ4HTvL_0XAIOMPizxs_S3YH5J5yGvJ8zKiMReWF0",
-    ["Stone Titans"] = "2NoNsZNyHMWOzTqeQUJW9Xvcga3iTonocFIsgkWIiPM",
-    ["Inferno Blades"] = "30cPTQXrHN76YZ3bLfNAePIEYDb5Xo1XnbQ-xmLMOM0"
-  }
+  -- Map faction names to berry process IDs
 
   for userId, monster in pairs(UserMonsters) do
     local factionName = UserFactions[userId].faction
+    monster.image = monstersMAP[factionName].image
+    monster.sprite = monstersMAP[factionName].sprite
+    monster.elementType = monstersMAP[factionName].element
     monster.activities = {
       mission = {
         cost = {
@@ -1276,7 +1274,7 @@ function adjustAllMonsters()
       },
       play = {
         cost = {
-          token = berryMap[factionName],  -- Use faction's berry type
+          token = monstersMAP[factionName].berry,  -- Use faction's berry type
           amount = 1
         },
         duration = 900 * 1000,  -- 15 minutes in milliseconds
@@ -1285,7 +1283,7 @@ function adjustAllMonsters()
       },
       feed = {
         cost = {
-          token = berryMap[factionName],  -- Use faction's berry type
+          token = monstersMAP[factionName].berry,  -- Use faction's berry type
           amount = 1
         },
         energyGain = 10

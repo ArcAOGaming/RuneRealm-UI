@@ -4,7 +4,7 @@ type AnimationType = 'walkRight' | 'walkLeft' | 'walkUp' | 'walkDown' | 'attack1
 type PoseType = 'right' | 'left';
 
 interface MonsterSpriteViewProps {
-  spriteId: number; // 1-4 for different sprite sheets
+  sprite: string; // Arweave transaction ID for the sprite sheet
   currentAnimation?: AnimationType;
   pose?: PoseType; // Static pose when not animating
   onAnimationComplete?: () => void;
@@ -15,30 +15,30 @@ const FRAME_WIDTH = 64;
 const FRAME_HEIGHT = 64;
 const FRAMES_PER_ANIMATION = 4;
 const ANIMATION_ROWS = 6;
-const ANIMATION_SPEED = 750; // Slower animation speed (750ms per frame)
+const ANIMATION_SPEED = 1000 / 4; // 1 second total divided by 4 frames = 250ms per frame
 
 const MonsterSpriteView: React.FC<MonsterSpriteViewProps> = ({ 
-  spriteId, 
+  sprite, 
   currentAnimation,
   pose,
   onAnimationComplete,
   isOpponent = false
 }) => {
   const canvasRef = useRef<HTMLCanvasElement>(null);
-  const [sprite, setSprite] = useState<HTMLImageElement | null>(null);
+  const [spriteImage, setSpriteImage] = useState<HTMLImageElement | null>(null);
   const animationFrameRef = useRef<number>(0);
   const currentFrameRef = useRef<number>(0);
   const animationTimerRef = useRef<NodeJS.Timeout | null>(null);
 
-  // Load sprite sheet
+  // Load sprite sheet from local assets
   useEffect(() => {
     const img = new Image();
-    img.src = `/src/assets/sprites/${spriteId}.png`;
-    img.onload = () => setSprite(img);
+    img.src = `/src/assets/sprites/${sprite}.png`;
+    img.onload = () => setSpriteImage(img);
     return () => {
       img.onload = null;
     };
-  }, [spriteId]);
+  }, [sprite]);
 
   // Animation mapping
   const getAnimationRow = (type: AnimationType): number => {
@@ -54,11 +54,11 @@ const MonsterSpriteView: React.FC<MonsterSpriteViewProps> = ({
 
   // Draw current frame
   const drawFrame = (ctx: CanvasRenderingContext2D, frameIndex: number, row: number) => {
-    if (!sprite) return;
+    if (!spriteImage) return;
     
     ctx.clearRect(0, 0, FRAME_WIDTH, FRAME_HEIGHT);
     ctx.drawImage(
-      sprite,
+      spriteImage,
       frameIndex * FRAME_WIDTH,
       row * FRAME_HEIGHT,
       FRAME_WIDTH,
@@ -74,7 +74,7 @@ const MonsterSpriteView: React.FC<MonsterSpriteViewProps> = ({
   useEffect(() => {
     const canvas = canvasRef.current;
     const ctx = canvas?.getContext('2d');
-    if (!canvas || !ctx || !sprite || !currentAnimation) return;
+    if (!canvas || !ctx || !spriteImage || !currentAnimation) return;
 
     const row = getAnimationRow(currentAnimation);
     let frame = 0;
@@ -95,17 +95,42 @@ const MonsterSpriteView: React.FC<MonsterSpriteViewProps> = ({
       animationFrameRef.current = requestAnimationFrame(animate);
     };
 
-    // Start animation loop with consistent timing
+    // Start animation with precise timing
     const startAnimation = () => {
-      if (animationTimerRef.current) {
-        clearInterval(animationTimerRef.current);
-      }
-      animationTimerRef.current = setInterval(() => {
-        if (animationFrameRef.current) {
-          cancelAnimationFrame(animationFrameRef.current);
+      let startTime: number | null = null;
+      let frame = 0;
+      let cycleCount = 0;
+
+      const animate = (timestamp: number) => {
+        if (!startTime) startTime = timestamp;
+        const elapsed = timestamp - startTime;
+        const currentFrame = Math.floor((elapsed / ANIMATION_SPEED) % FRAMES_PER_ANIMATION);
+        
+        if (currentFrame !== frame) {
+          frame = currentFrame;
+          drawFrame(ctx, frame, row);
+          currentFrameRef.current = frame;
+
+          // Check for cycle completion
+          if (frame === 0 && elapsed > 0) {
+            cycleCount++;
+            // For attack animations, complete after one cycle
+            if (currentAnimation.startsWith('attack') && cycleCount >= 4) { // 4 cycles = 2 seconds
+              if (onAnimationComplete) {
+                onAnimationComplete();
+              }
+              return;
+            }
+          }
         }
-        animate();
-      }, ANIMATION_SPEED);
+
+        animationFrameRef.current = requestAnimationFrame(animate);
+      };
+
+      if (animationFrameRef.current) {
+        cancelAnimationFrame(animationFrameRef.current);
+      }
+      animationFrameRef.current = requestAnimationFrame(animate);
     };
 
     startAnimation();
@@ -114,24 +139,21 @@ const MonsterSpriteView: React.FC<MonsterSpriteViewProps> = ({
       if (animationFrameRef.current) {
         cancelAnimationFrame(animationFrameRef.current);
       }
-      if (animationTimerRef.current) {
-        clearInterval(animationTimerRef.current);
-      }
     };
-  }, [sprite, currentAnimation, onAnimationComplete]);
+  }, [spriteImage, currentAnimation, onAnimationComplete]);
 
   // Draw idle frame when no animation is playing
   useEffect(() => {
     const canvas = canvasRef.current;
     const ctx = canvas?.getContext('2d');
-    if (!canvas || !ctx || !sprite) return;
+    if (!canvas || !ctx || !spriteImage) return;
 
     if (!currentAnimation) {
       // Always use walkRight as the default pose
       const poseAnimation = 'walkRight';
       drawFrame(ctx, 0, getAnimationRow(poseAnimation));
     }
-  }, [sprite, currentAnimation, isOpponent]);
+  }, [spriteImage, currentAnimation, isOpponent]);
 
   return (
     <canvas
@@ -140,8 +162,8 @@ const MonsterSpriteView: React.FC<MonsterSpriteViewProps> = ({
       height={FRAME_HEIGHT}
       className="pixelated" // Ensure pixel-perfect scaling
       style={{
-        width: FRAME_WIDTH * 2, // Scale up 2x for better visibility
-        height: FRAME_HEIGHT * 2,
+        width: FRAME_WIDTH * 3.75, // Scale up 3.75x for better visibility
+        height: FRAME_HEIGHT * 3.75,
         imageRendering: 'pixelated',
         transform: isOpponent ? 'scaleX(-1)' : undefined // Flip opponent sprites horizontally
       }}

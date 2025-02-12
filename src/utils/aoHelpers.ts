@@ -78,6 +78,7 @@ export interface BattleTurn {
 export interface MonsterStats {
     name: string;
     image: string;
+    sprite: string;
     attack: number;
     defense: number;
     speed: number;
@@ -210,6 +211,7 @@ export interface ActiveBattle {
     player: MonsterStats;
     opponent: MonsterStats;
     startTime: number;
+    status: 'active' | 'ended';
     turns: BattleTurn[];
     moveCounts: {
         player: { [key: string]: number };
@@ -1220,6 +1222,7 @@ export const getActiveBattle = async (walletAddress: string): Promise<ActiveBatt
         }
 
         const response = JSON.parse(result.Messages[0].Data);
+        console.log(response)
         if (response.status === 'success' && response.data) {
             return response.data;
         }

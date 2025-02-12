@@ -164,23 +164,63 @@ function GetRandomMove(pool)
   return moves[index]
 end
 
+monstersMAP = {
+  ["Sky Nomads"] = {
+      berry = "XJjSdWaorbQ2q0YkaQSmylmuADWH1fh2PvgfdLmXlzA",
+      element = "air",
+      image = "XD4tSBeekM1ETZMflAANDfkW6pVWaQIXgSdSiwfwVqw",
+      sprite = "0_gQ7rNpxD8S4wZBE_DZs3adWfZMsBIuo8fwvH3SwL0"
+  },
+  ["Aqua Guardians"] = {
+      berry = "twFZ4HTvL_0XAIOMPizxs_S3YH5J5yGvJ8zKiMReWF0",
+      element = "water",
+      image = "w_-mPdemSXZ1G-Q6fMEu6wTDJYFnJM9XePjGf_ZChgo",
+      sprite = "p90BYY1O3BS3VVzdZETr-hG6jkA3kwo8l0h3aQ2UFoc"
+  },
+  ["Stone Titans"] = {
+      berry = "2NoNsZNyHMWOzTqeQUJW9Xvcga3iTonocFIsgkWIiPM",
+      element = "rock",
+      image = "WhdcUkIGYZG4M5kq00TnUwaIt5OCGz3Q4u6_fZNktvQ",
+      sprite = "Zt8LmHGVIziXhzjqBhEAWLuGetcDitFKbfaJROkyZks"
+  },
+  ["Inferno Blades"] = {
+      berry = "30cPTQXrHN76YZ3bLfNAePIEYDb5Xo1XnbQ-xmLMOM0",
+      element = "fire",
+      image = "lnYr9oTtkRHiheQFwH4ns50mrQE6AQR-8Bvl4VfXb0o",
+      sprite = "wUo47CacsMRFFizJqUhSj75Rczg3f_MvHs4ytfPtCjQ"
+  }
+}
 
 -- Monster template structure
 function CreateDefaultMonster(factionName, mascotTxId, timestamp)
   -- Map faction names to berry process IDs
-  local berryMap = {
-    ["Sky Nomads"] = "XJjSdWaorbQ2q0YkaQSmylmuADWH1fh2PvgfdLmXlzA",
-    ["Aqua Guardians"] = "twFZ4HTvL_0XAIOMPizxs_S3YH5J5yGvJ8zKiMReWF0",
-    ["Stone Titans"] = "2NoNsZNyHMWOzTqeQUJW9Xvcga3iTonocFIsgkWIiPM",
-    ["Inferno Blades"] = "30cPTQXrHN76YZ3bLfNAePIEYDb5Xo1XnbQ-xmLMOM0"
-  }
+  -- local berryMap = {
+  --   ["Sky Nomads"] = "XJjSdWaorbQ2q0YkaQSmylmuADWH1fh2PvgfdLmXlzA",
+  --   ["Aqua Guardians"] = "twFZ4HTvL_0XAIOMPizxs_S3YH5J5yGvJ8zKiMReWF0",
+  --   ["Stone Titans"] = "2NoNsZNyHMWOzTqeQUJW9Xvcga3iTonocFIsgkWIiPM",
+  --   ["Inferno Blades"] = "30cPTQXrHN76YZ3bLfNAePIEYDb5Xo1XnbQ-xmLMOM0"
+  -- }
 
-  local elementTypeMap = {
-    ["Sky Nomads"] = "air",
-    ["Aqua Guardians"] = "water",
-    ["Stone Titans"] = "rock",
-    ["Inferno Blades"] = "fire"
-  }
+  -- local elementTypeMap = {
+  --   ["Sky Nomads"] = "air",
+  --   ["Aqua Guardians"] = "water",
+  --   ["Stone Titans"] = "rock",
+  --   ["Inferno Blades"] = "fire"
+  -- }
+
+  -- local imageMap = {
+  --   ["Sky Nomads"] = "XD4tSBeekM1ETZMflAANDfkW6pVWaQIXgSdSiwfwVqw",
+  --   ["Aqua Guardians"] = "w_-mPdemSXZ1G-Q6fMEu6wTDJYFnJM9XePjGf_ZChgo",
+  --   ["Stone Titans"] = "WhdcUkIGYZG4M5kq00TnUwaIt5OCGz3Q4u6_fZNktvQ",
+  --   ["Inferno Blades"] = "lnYr9oTtkRHiheQFwH4ns50mrQE6AQR-8Bvl4VfXb0o"
+  -- }
+
+  -- local spriteMap = {
+  --   ["Sky Nomads"] = "0_gQ7rNpxD8S4wZBE_DZs3adWfZMsBIuo8fwvH3SwL0",
+  --   ["Aqua Guardians"] = "p90BYY1O3BS3VVzdZETr-hG6jkA3kwo8l0h3aQ2UFoc",
+  --   ["Stone Titans"] = "Zt8LmHGVIziXhzjqBhEAWLuGetcDitFKbfaJROkyZks",
+  --   ["Inferno Blades"] = "wUo47CacsMRFFizJqUhSj75Rczg3f_MvHs4ytfPtCjQ"
+  -- }
 
   -- Get type-specific pool based on faction
   local typePool
@@ -210,7 +250,8 @@ function CreateDefaultMonster(factionName, mascotTxId, timestamp)
 
   return {
     name = factionName .. " Monster",
-    image = mascotTxId,
+    image = monstersMAP[factionName].image,
+    sprite = monstersMAP[factionName].sprite,
     attack = startingStats.attack,
     defense = startingStats.defense,
     speed = startingStats.speed,
@@ -219,8 +260,8 @@ function CreateDefaultMonster(factionName, mascotTxId, timestamp)
     happiness = 50,  -- Start with 50 happiness
     level = 0,
     exp = 0,
-    berryType = berryMap[factionName],  -- Store process ID directly
-    elementType = elementTypeMap[factionName],
+    berryType = monstersMAP[factionName].berry,  -- Store process ID directly
+    elementType = monstersMAP[factionName].element,
     totalTimesFed = 0,
     totalTimesPlay = 0,
     totalTimesMission = 0,
@@ -256,7 +297,7 @@ function CreateDefaultMonster(factionName, mascotTxId, timestamp)
       },
       play = {
         cost = {
-          token = berryMap[factionName],  -- Use faction's berry type
+          token = monstersMAP[factionName].berry,  -- Use faction's berry type
           amount = 1
         },
         duration = 900 * 1000,  -- 15 minutes in milliseconds
@@ -265,7 +306,7 @@ function CreateDefaultMonster(factionName, mascotTxId, timestamp)
       },
       feed = {
         cost = {
-          token = berryMap[factionName],  -- Use faction's berry type
+          token = monstersMAP[factionName].berry,  -- Use faction's berry type
           amount = 1
         },
         energyGain = 10

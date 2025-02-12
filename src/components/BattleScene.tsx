@@ -1,0 +1,132 @@
+import React, { useState, useEffect } from 'react';
+import MonsterSpriteView from './MonsterSpriteView';
+import { MonsterStats } from '../utils/aoHelpers';
+
+interface BattleSceneProps {
+  player: MonsterStats;
+  opponent: MonsterStats;
+  playerAnimation?: 'walkRight' | 'walkLeft' | 'walkUp' | 'walkDown' | 'attack1' | 'attack2';
+  opponentAnimation?: 'walkRight' | 'walkLeft' | 'walkUp' | 'walkDown' | 'attack1' | 'attack2';
+  onPlayerAnimationComplete?: () => void;
+  onOpponentAnimationComplete?: () => void;
+}
+
+const BattleScene: React.FC<BattleSceneProps> = ({
+  player,
+  opponent,
+  playerAnimation,
+  opponentAnimation,
+  onPlayerAnimationComplete,
+  onOpponentAnimationComplete
+}) => {
+  const [playerPosition, setPlayerPosition] = useState<'home' | 'attack'>('home');
+  const [opponentPosition, setOpponentPosition] = useState<'home' | 'attack'>('home');
+
+  // Update positions based on animations
+  useEffect(() => {
+    if (playerAnimation === 'walkRight') {
+      setPlayerPosition('attack');
+    } else if (playerAnimation === 'walkLeft') {
+      setPlayerPosition('home');
+    }
+  }, [playerAnimation]);
+
+  useEffect(() => {
+    if (opponentAnimation === 'walkRight') {
+      setOpponentPosition('attack');
+    } else if (opponentAnimation === 'walkLeft') {
+      setOpponentPosition('home');
+    }
+  }, [opponentAnimation]);
+
+  return (
+    <div className="relative w-full h-[400px] overflow-hidden rounded-lg">
+      {/* Background */}
+      <div 
+        className="absolute inset-0 bg-cover bg-center"
+        style={{ backgroundImage: 'url(/src/assets/backgrounds/1.png)' }}
+      />
+      
+      {/* Player Monster */}
+      <div 
+        className="absolute bottom-20 transition-all duration-[1000ms] ease-in-out"
+        style={{ 
+          left: playerPosition === 'attack' ? '200px' : '24px'
+        }}
+      >
+        {/* Stats Display */}
+        <div className="absolute -top-16 left-1/2 -translate-x-1/2 flex flex-col items-center gap-1 w-40">
+          {/* Shield Bar */}
+          <div className="w-full h-4 bg-gray-800 rounded-full overflow-hidden relative">
+            <div 
+              className="h-full bg-blue-500 transition-all duration-500"
+              style={{ width: `${(player.shield / player.defense) * 100}%` }}
+            />
+            <div className="absolute inset-0 flex items-center justify-center text-xs text-white font-bold">
+              {player.shield}/{player.defense}
+            </div>
+          </div>
+          {/* Health Bar */}
+          <div className="w-full h-4 bg-gray-800 rounded-full overflow-hidden relative">
+            <div 
+              className="h-full bg-red-500 transition-all duration-500"
+              style={{ width: `${(player.healthPoints / (player.health * 10)) * 100}%` }}
+            />
+            <div className="absolute inset-0 flex items-center justify-center text-xs text-white font-bold">
+              {player.healthPoints}/{player.health * 10}
+            </div>
+          </div>
+        </div>
+        
+        {/* Monster Sprite */}
+        <MonsterSpriteView
+          sprite={player.sprite}
+          currentAnimation={playerAnimation}
+          onAnimationComplete={onPlayerAnimationComplete}
+        />
+      </div>
+      
+      {/* Opponent Monster */}
+      <div 
+        className="absolute bottom-20 transition-all duration-[1000ms] ease-in-out"
+        style={{ 
+          right: opponentPosition === 'attack' ? '200px' : '24px'
+        }}
+      >
+        {/* Stats Display */}
+        <div className="absolute -top-16 left-1/2 -translate-x-1/2 flex flex-col items-center gap-1 w-40">
+          {/* Shield Bar */}
+          <div className="w-full h-4 bg-gray-800 rounded-full overflow-hidden relative">
+            <div 
+              className="h-full bg-blue-500 transition-all duration-500"
+              style={{ width: `${(opponent.shield / opponent.defense) * 100}%` }}
+            />
+            <div className="absolute inset-0 flex items-center justify-center text-xs text-white font-bold">
+              {opponent.shield}/{opponent.defense}
+            </div>
+          </div>
+          {/* Health Bar */}
+          <div className="w-full h-4 bg-gray-800 rounded-full overflow-hidden relative">
+            <div 
+              className="h-full bg-red-500 transition-all duration-500"
+              style={{ width: `${(opponent.healthPoints / (opponent.health * 10)) * 100}%` }}
+            />
+            <div className="absolute inset-0 flex items-center justify-center text-xs text-white font-bold">
+              {opponent.healthPoints}/{opponent.health * 10}
+            </div>
+          </div>
+        </div>
+        
+        {/* Monster Sprite */}
+        <MonsterSpriteView
+          sprite={opponent.sprite}
+          currentAnimation={opponentAnimation}
+          onAnimationComplete={onOpponentAnimationComplete}
+          isOpponent
+        />
+      </div>
+    </div>
+  );
+};
+
+export default BattleScene;

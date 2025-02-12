@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useCallback } from 'react';
 import { useWallet } from '../hooks/useWallet';
 import { getBattleManagerInfo, getActiveBattle, executeAttack, endBattle, returnFromBattle, BattleManagerInfo, ActiveBattle, BattleResult } from '../utils/aoHelpers';
 import { currentTheme } from '../constants/theme';
@@ -6,7 +6,7 @@ import Header from '../components/Header';
 import Footer from '../components/Footer';
 import Loading from '../components/Loading';
 import { useNavigate } from 'react-router-dom';
-import MonsterSpriteView from '../components/MonsterSpriteView';
+import BattleScene from '../components/BattleScene';
 
 // Attack animation component
 const AttackAnimation: React.FC<{
@@ -44,26 +44,44 @@ export const ActiveBattlePage: React.FC = (): JSX.Element => {
     attacker: 'player' | 'opponent';
     moveName: string;
   } | null>(null);
-  const [playerSpriteId] = useState(() => Math.floor(Math.random() * 4) + 1);
-  const [opponentSpriteId] = useState(() => Math.floor(Math.random() * 4) + 1);
-  const [playerAnimation, setPlayerAnimation] = useState<'attack1' | 'attack2' | undefined>();
-  const [opponentAnimation, setOpponentAnimation] = useState<'attack1' | 'attack2' | undefined>();
+  const [playerAnimation, setPlayerAnimation] = useState<'walkRight' | 'walkLeft' | 'walkUp' | 'walkDown' | 'attack1' | 'attack2' | undefined>();
+  const [opponentAnimation, setOpponentAnimation] = useState<'walkRight' | 'walkLeft' | 'walkUp' | 'walkDown' | 'attack1' | 'attack2' | undefined>();
   const [initialLoading, setInitialLoading] = useState(true);
   const [isUpdating, setIsUpdating] = useState(false);
   const theme = currentTheme(darkMode);
   const navigate = useNavigate();
 
+  // Memoized comparison function to prevent unnecessary updates
+  const hasBattleChanged = useCallback((oldBattle: ActiveBattle | null, newBattle: ActiveBattle | null) => {
+    if (!oldBattle || !newBattle) return true;
+    
+    // Compare relevant battle data excluding status
+    const oldData = {
+      player: { ...oldBattle.player, status: undefined },
+      opponent: { ...oldBattle.opponent, status: undefined },
+      turns: oldBattle.turns,
+      moveCounts: oldBattle.moveCounts
+    };
+    
+    const newData = {
+      player: { ...newBattle.player, status: undefined },
+      opponent: { ...newBattle.opponent, status: undefined },
+      turns: newBattle.turns,
+      moveCounts: newBattle.moveCounts
+    };
+    
+    return JSON.stringify(oldData) !== JSON.stringify(newData);
+  }, []);
+
   // Effect to handle initial load and polling
   useEffect(() => {
     let mounted = true;
+    let pollInterval: NodeJS.Timeout | null = null;
     
     const checkBattleStatus = async () => {
-      if (!wallet?.address || !mounted) return;
+      if (!wallet?.address || !mounted || isUpdating) return;
       
       try {
-        if (!initialLoading) {
-          setIsUpdating(true);
-        }
         const info = await getBattleManagerInfo(wallet.address);
         if (!mounted) return;
         setBattleManagerInfo(info);
@@ -74,14 +92,21 @@ export const ActiveBattlePage: React.FC = (): JSX.Element => {
         if (battle) {
           if (!activeBattle) {
             // Initial battle load
-            setActiveBattle(battle);
-            setPreviousBattle(battle);
-          } else {
-            // Only update if there are changes
-            if (JSON.stringify(battle) !== JSON.stringify(activeBattle)) {
-              setPreviousBattle(activeBattle);
-              setActiveBattle(battle);
-            }
+            setActiveBattle({
+              ...battle,
+              status: 'active'
+            });
+            setPreviousBattle({
+              ...battle,
+              status: 'active'
+            });
+          } else if (hasBattleChanged(activeBattle, battle)) {
+            // Only update if there are meaningful changes
+            setPreviousBattle(activeBattle);
+            setActiveBattle({
+              ...battle,
+              status: activeBattle.status
+            });
           }
         } else {
           // No battle at all
@@ -91,21 +116,26 @@ export const ActiveBattlePage: React.FC = (): JSX.Element => {
         console.error('Error checking battle status:', error);
       } finally {
         setInitialLoading(false);
-        setIsUpdating(false);
       }
     };
 
     checkBattleStatus();
-    const interval = setInterval(checkBattleStatus, 10000); // Poll less frequently
+    
+    // Only start polling after initial load
+    if (!initialLoading) {
+      pollInterval = setInterval(checkBattleStatus, 10000);
+    }
     
     return () => {
       mounted = false;
-      clearInterval(interval);
+      if (pollInterval) {
+        clearInterval(pollInterval);
+      }
     };
-  }, [wallet?.address, navigate, activeBattle]);
+  }, [wallet?.address, navigate, activeBattle, hasBattleChanged, initialLoading, isUpdating]);
 
   const handleAttack = async (moveName: string) => {
-    if (!wallet?.address || !activeBattle) return;
+    if (!wallet?.address || !activeBattle || isUpdating) return;
     try {
       setIsUpdating(true);
       const response = await executeAttack(wallet, activeBattle.id, moveName);
@@ -114,10 +144,12 @@ export const ActiveBattlePage: React.FC = (): JSX.Element => {
           // Battle is over
           const result = response.data as BattleResult;
           setBattleManagerInfo(result.session);
-          setActiveBattle({
-            ...activeBattle,
-            status: 'ended'
-          });
+          if (activeBattle) {
+            setActiveBattle({
+              ...activeBattle,
+              status: 'ended'
+            });
+          }
         } else {
           // Battle continues - process new turns
           const battleData = response.data as ActiveBattle;
@@ -146,18 +178,34 @@ export const ActiveBattlePage: React.FC = (): JSX.Element => {
                   moveName: turn.move
                 });
 
-                // Set appropriate sprite animation
-                const attackAnim = Math.random() < 0.5 ? 'attack1' : 'attack2' as const;
+                // Sequence: move in (1s) -> pause (1s) -> move out (1s)
                 if (turn.attacker === 'player') {
-                  setPlayerAnimation(attackAnim);
+                  // Move in (1s)
+                  setPlayerAnimation('walkRight');
+                  await new Promise(resolve => setTimeout(resolve, 1000));
+                  
+                  // Stop walking animation but stay in position (1s)
+                  setPlayerAnimation('attack1');
+                  await new Promise(resolve => setTimeout(resolve, 1250));
+                  
+                  // Move back (1s)
+                  setPlayerAnimation('walkLeft');
+                  await new Promise(resolve => setTimeout(resolve, 1250));
                 } else {
-                  setOpponentAnimation(attackAnim);
+                  // Move in (1s)
+                  setOpponentAnimation('walkRight');
+                  await new Promise(resolve => setTimeout(resolve, 1250));
+                  
+                  // Stop walking animation but stay in position (1s)
+                  setOpponentAnimation('attack1');
+                  await new Promise(resolve => setTimeout(resolve, 1250));
+                  
+                  // Move back (1s)
+                  setOpponentAnimation('walkLeft');
+                  await new Promise(resolve => setTimeout(resolve, 1250));
                 }
 
-                // Wait for animation to complete (5 seconds)
-                await new Promise(resolve => setTimeout(resolve, 5000));
-
-                // Clear animations
+                // Clear all animations
                 setAttackAnimation(null);
                 setPlayerAnimation(undefined);
                 setOpponentAnimation(undefined);
@@ -195,7 +243,7 @@ export const ActiveBattlePage: React.FC = (): JSX.Element => {
                 setPreviousBattle(updatedBattle);
 
                 // Small delay before next turn
-                await new Promise(resolve => setTimeout(resolve, 500));
+                await new Promise(resolve => setTimeout(resolve, 1000));
                 processNextTurn(turnIndex + 1, updatedBattle);
               };
 
@@ -216,7 +264,7 @@ export const ActiveBattlePage: React.FC = (): JSX.Element => {
   };
 
   const handleReturnToBattleManager = async () => {
-    if (!wallet?.address) return;
+    if (!wallet?.address || isUpdating) return;
     try {
       setIsUpdating(true);
       const response = await returnFromBattle(wallet);
@@ -231,7 +279,7 @@ export const ActiveBattlePage: React.FC = (): JSX.Element => {
   };
 
   const handleEndBattle = async () => {
-    if (!wallet?.address || !activeBattle) return;
+    if (!wallet?.address || !activeBattle || isUpdating) return;
     try {
       setIsUpdating(true);
       const response = await endBattle(wallet, activeBattle.id);
@@ -294,114 +342,15 @@ export const ActiveBattlePage: React.FC = (): JSX.Element => {
                 </div>
                 
                 <div className={`p-4 rounded-lg ${theme.container} bg-opacity-20 mb-4 transition-all duration-300`}>
-                  {/* Monster Sprites */}
-                  <div className="flex justify-between items-center mb-6">
-                    <div 
-                      className={`flex flex-col items-center p-4 rounded-lg transition-all duration-500 ${
-                        activeBattle.status === 'ended' && activeBattle.player.healthPoints > 0 
-                          ? 'bg-yellow-500/20 shadow-[0_0_15px_rgba(234,179,8,0.5)]' 
-                          : ''
-                      }`}
-                    >
-                      <MonsterSpriteView
-                        spriteId={playerSpriteId}
-                        currentAnimation={playerAnimation}
-                        onAnimationComplete={() => {}}
-                      />
-                    </div>
-                    <div 
-                      className={`flex flex-col items-center p-4 rounded-lg transition-all duration-500 ${
-                        activeBattle.status === 'ended' && activeBattle.opponent.healthPoints > 0 
-                          ? 'bg-yellow-500/20 shadow-[0_0_15px_rgba(234,179,8,0.5)]' 
-                          : ''
-                      }`}
-                    >
-                      <MonsterSpriteView
-                        spriteId={opponentSpriteId}
-                        currentAnimation={opponentAnimation}
-                        onAnimationComplete={() => {}}
-                        isOpponent
-                      />
-                    </div>
-                  </div>
-                  <h3 className={`text-lg font-bold mb-4 ${theme.text}`}>Battle Status</h3>
-                  <div className="grid grid-cols-2 gap-6">
-                    {/* Player Status */}
-                    <div className="space-y-3">
-                      <div className="flex items-center space-x-2">
-                        <span className="text-xl">🦾</span>
-                        <p className="font-semibold">Your Monster</p>
-                      </div>
-                      <div className="space-y-2">
-                        <div>
-                          <div className="flex justify-between text-sm mb-1">
-                            <span>HP</span>
-                            <span>{activeBattle.player.healthPoints}/{activeBattle.player.health * 10}</span>
-                          </div>
-                          <div className="w-full h-2 bg-gray-200 dark:bg-gray-700 rounded-full overflow-hidden">
-                            <div 
-                              className="h-full bg-green-500 transition-all duration-500"
-                              style={{ 
-                                width: `${(activeBattle.player.healthPoints / (activeBattle.player.health * 10)) * 100}%` 
-                              }}
-                            />
-                          </div>
-                        </div>
-                        <div>
-                          <div className="flex justify-between text-sm mb-1">
-                            <span>Shield</span>
-                            <span>{activeBattle.player.shield}/{activeBattle.player.defense}</span>
-                          </div>
-                          <div className="w-full h-2 bg-gray-200 dark:bg-gray-700 rounded-full overflow-hidden">
-                            <div 
-                              className="h-full bg-blue-500 transition-all duration-500"
-                              style={{ 
-                                width: `${(activeBattle.player.shield / activeBattle.player.defense) * 100}%` 
-                              }}
-                            />
-                          </div>
-                        </div>
-                      </div>
-                    </div>
-                    
-                    {/* Opponent Status */}
-                    <div className="space-y-3">
-                      <div className="flex items-center space-x-2">
-                        <span className="text-xl">👾</span>
-                        <p className="font-semibold">Opponent</p>
-                      </div>
-                      <div className="space-y-2">
-                        <div>
-                          <div className="flex justify-between text-sm mb-1">
-                            <span>HP</span>
-                            <span>{activeBattle.opponent.healthPoints}/{activeBattle.opponent.health * 10}</span>
-                          </div>
-                          <div className="w-full h-2 bg-gray-200 dark:bg-gray-700 rounded-full overflow-hidden">
-                            <div 
-                              className="h-full bg-red-500 transition-all duration-500"
-                              style={{ 
-                                width: `${(activeBattle.opponent.healthPoints / (activeBattle.opponent.health * 10)) * 100}%` 
-                              }}
-                            />
-                          </div>
-                        </div>
-                        <div>
-                          <div className="flex justify-between text-sm mb-1">
-                            <span>Shield</span>
-                            <span>{activeBattle.opponent.shield}/{activeBattle.opponent.defense}</span>
-                          </div>
-                          <div className="w-full h-2 bg-gray-200 dark:bg-gray-700 rounded-full overflow-hidden">
-                            <div 
-                              className="h-full bg-blue-500 transition-all duration-500"
-                              style={{ 
-                                width: `${(activeBattle.opponent.shield / activeBattle.opponent.defense) * 100}%` 
-                              }}
-                            />
-                          </div>
-                        </div>
-                      </div>
-                    </div>
-                  </div>
+                  {/* Battle Scene */}
+                  <BattleScene
+                    player={activeBattle.player}
+                    opponent={activeBattle.opponent}
+                    playerAnimation={playerAnimation}
+                    opponentAnimation={opponentAnimation}
+                    onPlayerAnimationComplete={() => {}}
+                    onOpponentAnimationComplete={() => {}}
+                  />
                 </div>
 
                 <div className="mt-6">
