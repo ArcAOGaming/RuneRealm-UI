@@ -28,6 +28,42 @@ const AttackAnimation: React.FC<{
   );
 };
 
+// Shield restoration animation component
+const ShieldRestorationAnimation: React.FC<{
+  onComplete: () => void;
+}> = ({ onComplete }): JSX.Element => {
+  useEffect(() => {
+    const timer = setTimeout(onComplete, 2000);
+    return () => clearTimeout(timer);
+  }, [onComplete]);
+
+  return (
+    <div className="fixed top-0 left-0 w-full h-full flex items-center justify-center z-40 pointer-events-none">
+      <div className="text-2xl font-bold text-blue-500 transform scale-100 animate-pulse">
+        Shields Restoring...
+      </div>
+    </div>
+  );
+};
+
+// End of Round animation component
+const EndOfRoundAnimation: React.FC<{
+  onComplete: () => void;
+}> = ({ onComplete }): JSX.Element => {
+  useEffect(() => {
+    const timer = setTimeout(onComplete, 3000);
+    return () => clearTimeout(timer);
+  }, [onComplete]);
+
+  return (
+    <div className="fixed top-0 left-0 w-full h-full flex items-center justify-center z-40 pointer-events-none">
+      <div className="text-3xl font-bold text-yellow-500 transform scale-100 animate-pulse">
+        End of Round
+      </div>
+    </div>
+  );
+};
+
 // Small loading indicator for updates
 const UpdateIndicator: React.FC = () => (
   <div className="fixed bottom-4 right-4 bg-blue-500 text-white px-3 py-1 rounded-full text-sm animate-pulse">
@@ -44,6 +80,9 @@ export const ActiveBattlePage: React.FC = (): JSX.Element => {
     attacker: 'player' | 'opponent';
     moveName: string;
   } | null>(null);
+  const [shieldRestoring, setShieldRestoring] = useState(false);
+  const [showEndOfRound, setShowEndOfRound] = useState(false);
+  const [movesDisabled, setMovesDisabled] = useState(false);
   const [playerAnimation, setPlayerAnimation] = useState<'walkRight' | 'walkLeft' | 'walkUp' | 'walkDown' | 'attack1' | 'attack2' | undefined>();
   const [opponentAnimation, setOpponentAnimation] = useState<'walkRight' | 'walkLeft' | 'walkUp' | 'walkDown' | 'attack1' | 'attack2' | undefined>();
   const [initialLoading, setInitialLoading] = useState(true);
@@ -73,13 +112,12 @@ export const ActiveBattlePage: React.FC = (): JSX.Element => {
     return JSON.stringify(oldData) !== JSON.stringify(newData);
   }, []);
 
-  // Effect to handle initial load and polling
+  // Effect to handle initial load
   useEffect(() => {
     let mounted = true;
-    let pollInterval: NodeJS.Timeout | null = null;
     
     const checkBattleStatus = async () => {
-      if (!wallet?.address || !mounted || isUpdating) return;
+      if (!wallet?.address || !mounted || isUpdating || movesDisabled) return;
       
       try {
         const info = await getBattleManagerInfo(wallet.address);
@@ -100,8 +138,8 @@ export const ActiveBattlePage: React.FC = (): JSX.Element => {
               ...battle,
               status: 'active'
             });
-          } else if (hasBattleChanged(activeBattle, battle)) {
-            // Only update if there are meaningful changes
+          } else if (!movesDisabled && hasBattleChanged(activeBattle, battle)) {
+            // Only update if there are meaningful changes and not during animations
             setPreviousBattle(activeBattle);
             setActiveBattle({
               ...battle,
@@ -121,23 +159,25 @@ export const ActiveBattlePage: React.FC = (): JSX.Element => {
 
     checkBattleStatus();
     
-    // Only start polling after initial load
-    if (!initialLoading) {
-      pollInterval = setInterval(checkBattleStatus, 10000);
-    }
-    
     return () => {
       mounted = false;
-      if (pollInterval) {
-        clearInterval(pollInterval);
-      }
     };
   }, [wallet?.address, navigate, activeBattle, hasBattleChanged, initialLoading, isUpdating]);
 
   const handleAttack = async (moveName: string) => {
-    if (!wallet?.address || !activeBattle || isUpdating) return;
+    if (!wallet?.address || !activeBattle || isUpdating || movesDisabled) return;
     try {
+      // Disable moves immediately
+      setMovesDisabled(true);
       setIsUpdating(true);
+
+      // Save current state before update
+      const previousState = {
+        player: { ...activeBattle.player },
+        opponent: { ...activeBattle.opponent }
+      };
+      setPreviousBattle({ ...activeBattle });
+
       const response = await executeAttack(wallet, activeBattle.id, moveName);
       if (response.status === 'success') {
         if ('result' in response.data!) {
@@ -150,6 +190,7 @@ export const ActiveBattlePage: React.FC = (): JSX.Element => {
               status: 'ended'
             });
           }
+          setMovesDisabled(false);
         } else {
           // Battle continues - process new turns
           const battleData = response.data as ActiveBattle;
@@ -157,19 +198,41 @@ export const ActiveBattlePage: React.FC = (): JSX.Element => {
           const newTurns = battleData.turns.length;
           
           if (newTurns > previousTurns) {
-            // Process turns in sequence
-            const processNextTurn = async (turnIndex: number, currentBattle: ActiveBattle) => {
+            // Determine turn order based on speed
+            const turns = battleData.turns.slice(previousTurns);
+            const sortedTurns = [...turns].sort((a, b) => {
+              const speedA = a.attacker === 'player' ? previousState.player.speed : previousState.opponent.speed;
+              const speedB = b.attacker === 'player' ? previousState.player.speed : previousState.opponent.speed;
+              return speedB - speedA;
+            });
+
+            // Process turns in sequence based on speed
+            const processNextTurn = async (turnIndex: number) => {
               if (turnIndex >= newTurns) {
-                // All turns processed
-                setActiveBattle(battleData);
-                setPreviousBattle(battleData);
-                getBattleManagerInfo(wallet.address).then(info => {
-                  if (info) setBattleManagerInfo(info);
-                });
+                // Show "End of Round"
+                setShowEndOfRound(true);
+                await new Promise(resolve => setTimeout(resolve, 3000));
+                setShowEndOfRound(false);
+                
+                // Show shield restoration message
+                setShieldRestoring(true);
+                await new Promise(resolve => setTimeout(resolve, 2000));
+                setShieldRestoring(false);
+
+                // Now apply final stats from the saved battleData
+                const finalBattle = {
+                  ...battleData,
+                  status: activeBattle.status
+                };
+                setActiveBattle(finalBattle);
+                setPreviousBattle(finalBattle);
+                
+                // Re-enable moves and status checks
+                setMovesDisabled(false);
                 return;
               }
 
-              const turn = battleData.turns[turnIndex];
+              const turn = sortedTurns[turnIndex - previousTurns];
               
               const processTurnEffects = async () => {
                 // Show attack animation
@@ -178,49 +241,68 @@ export const ActiveBattlePage: React.FC = (): JSX.Element => {
                   moveName: turn.move
                 });
 
-                // Sequence: move in (1s) -> pause (1s) -> move out (1s)
-                if (turn.attacker === 'player') {
-                  // Move in (1s)
-                  setPlayerAnimation('walkRight');
-                  await new Promise(resolve => setTimeout(resolve, 1000));
-                  
-                  // Stop walking animation but stay in position (1s)
-                  setPlayerAnimation('attack1');
-                  await new Promise(resolve => setTimeout(resolve, 1250));
-                  
-                  // Move back (1s)
-                  setPlayerAnimation('walkLeft');
-                  await new Promise(resolve => setTimeout(resolve, 1250));
+                // Determine if this is an attack move or heal/boost move
+                const isAttackMove = turn.healthDamage > 0 || turn.shieldDamage > 0;
+                
+                if (isAttackMove) {
+                  // Attack sequence: move in -> attack -> move out
+                  if (turn.attacker === 'player') {
+                    setPlayerAnimation('walkRight');
+                    await new Promise(resolve => setTimeout(resolve, 1000));
+                    
+                    setPlayerAnimation('attack1');
+                    await new Promise(resolve => setTimeout(resolve, 1250));
+                    
+                    setPlayerAnimation('walkLeft');
+                    await new Promise(resolve => setTimeout(resolve, 1250));
+                  } else {
+                    setOpponentAnimation('walkRight');
+                    await new Promise(resolve => setTimeout(resolve, 1250));
+                    
+                    setOpponentAnimation('attack1');
+                    await new Promise(resolve => setTimeout(resolve, 1250));
+                    
+                    setOpponentAnimation('walkLeft');
+                    await new Promise(resolve => setTimeout(resolve, 1250));
+                  }
                 } else {
-                  // Move in (1s)
-                  setOpponentAnimation('walkRight');
-                  await new Promise(resolve => setTimeout(resolve, 1250));
-                  
-                  // Stop walking animation but stay in position (1s)
-                  setOpponentAnimation('attack1');
-                  await new Promise(resolve => setTimeout(resolve, 1250));
-                  
-                  // Move back (1s)
-                  setOpponentAnimation('walkLeft');
-                  await new Promise(resolve => setTimeout(resolve, 1250));
+                  // Heal/Boost sequence: up -> left -> down
+                  if (turn.attacker === 'player') {
+                    setPlayerAnimation('walkUp');
+                    await new Promise(resolve => setTimeout(resolve, 1000));
+                    
+                    setPlayerAnimation('walkLeft');
+                    await new Promise(resolve => setTimeout(resolve, 1000));
+                    
+                    setPlayerAnimation('walkDown');
+                    await new Promise(resolve => setTimeout(resolve, 1000));
+                  } else {
+                    setOpponentAnimation('walkUp');
+                    await new Promise(resolve => setTimeout(resolve, 1000));
+                    
+                    setOpponentAnimation('walkLeft');
+                    await new Promise(resolve => setTimeout(resolve, 1000));
+                    
+                    setOpponentAnimation('walkDown');
+                    await new Promise(resolve => setTimeout(resolve, 1000));
+                  }
                 }
 
-                // Clear all animations
+                // Clear animations
                 setAttackAnimation(null);
                 setPlayerAnimation(undefined);
                 setOpponentAnimation(undefined);
 
-                // Apply turn effects after animation completes
-                const updatedBattle = {...currentBattle};
+                // Apply this turn's changes to the previous state
+                const updatedBattle = {
+                  ...activeBattle,
+                  player: { ...previousState.player },
+                  opponent: { ...previousState.opponent }
+                };
+
                 const target = turn.attacker === 'player' ? 'opponent' : 'player';
                 
-                if (turn.healthDamage > 0) {
-                  updatedBattle[target].healthPoints = Math.max(
-                    0,
-                    updatedBattle[target].healthPoints - turn.healthDamage
-                  );
-                }
-                
+                // Apply effects in order
                 if (turn.shieldDamage > 0) {
                   updatedBattle[target].shield = Math.max(
                     0,
@@ -228,23 +310,28 @@ export const ActiveBattlePage: React.FC = (): JSX.Element => {
                   );
                 }
 
-                if (turn.statsChanged) {
-                  const stats = turn.statsChanged;
-                  const entity = turn.attacker === 'player' ? 'player' : 'opponent';
-                  updatedBattle[entity].speed += stats.speed || 0;
-                  updatedBattle[entity].shield = Math.min(
-                    (updatedBattle[entity].shield || 0) + (stats.defense || 0),
-                    updatedBattle[entity].defense
+                if (turn.healthDamage > 0) {
+                  updatedBattle[target].healthPoints = Math.max(
+                    0,
+                    updatedBattle[target].healthPoints - turn.healthDamage
                   );
                 }
 
-                // Update battle state
+                if (turn.statsChanged) {
+                  const stats = turn.statsChanged;
+                  updatedBattle[target].speed += stats.speed || 0;
+                  updatedBattle[target].defense += stats.defense || 0;
+                  // Add other stat changes as needed
+                }
+
+                // Update battle state with this turn's changes
                 setActiveBattle(updatedBattle);
-                setPreviousBattle(updatedBattle);
 
                 // Small delay before next turn
-                await new Promise(resolve => setTimeout(resolve, 1000));
-                processNextTurn(turnIndex + 1, updatedBattle);
+                await new Promise(resolve => setTimeout(resolve, 500));
+
+                // Process next turn
+                processNextTurn(turnIndex + 1);
               };
 
               // Start processing this turn's effects
@@ -252,12 +339,13 @@ export const ActiveBattlePage: React.FC = (): JSX.Element => {
             };
 
             // Start processing turns from the first new turn
-            processNextTurn(previousTurns, {...activeBattle});
+            processNextTurn(previousTurns);
           }
         }
       }
     } catch (error) {
       console.error('Error executing attack:', error);
+      setMovesDisabled(false);
     } finally {
       setIsUpdating(false);
     }
@@ -327,6 +415,16 @@ export const ActiveBattlePage: React.FC = (): JSX.Element => {
                     onComplete={() => setAttackAnimation(null)}
                   />
                 )}
+                {shieldRestoring && (
+                  <ShieldRestorationAnimation
+                    onComplete={() => setShieldRestoring(false)}
+                  />
+                )}
+                {showEndOfRound && (
+                  <EndOfRoundAnimation
+                    onComplete={() => setShowEndOfRound(false)}
+                  />
+                )}
                 {isUpdating && <UpdateIndicator />}
                 
                 <div className="flex justify-between items-center mb-6">
@@ -354,7 +452,56 @@ export const ActiveBattlePage: React.FC = (): JSX.Element => {
                 </div>
 
                 <div className="mt-6">
-                  <h3 className={`text-lg font-bold mb-4 ${theme.text}`}>Available Moves</h3>
+                  {/* Monster Stats */}
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
+                    {/* Player Monster Stats */}
+                    <div className={`p-4 rounded-lg ${theme.container} bg-opacity-20`}>
+                      <h4 className="text-md font-semibold mb-3">Your Monster</h4>
+                      <div className="space-y-2">
+                        <div className="flex justify-between items-center">
+                          <span className="font-medium">{activeBattle.player.name}</span>
+                          <span>Level {activeBattle.player.level}</span>
+                        </div>
+                        <div className="flex justify-between items-center">
+                          <span>Attack</span>
+                          <span>{activeBattle.player.attack}</span>
+                        </div>
+                        <div className="flex justify-between items-center">
+                          <span>Defense</span>
+                          <span>{activeBattle.player.defense}</span>
+                        </div>
+                        <div className="flex justify-between items-center">
+                          <span>Speed</span>
+                          <span>{activeBattle.player.speed}</span>
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Opponent Monster Stats */}
+                    <div className={`p-4 rounded-lg ${theme.container} bg-opacity-20`}>
+                      <h4 className="text-md font-semibold mb-3">Opponent's Monster</h4>
+                      <div className="space-y-2">
+                        <div className="flex justify-between items-center">
+                          <span className="font-medium">{activeBattle.opponent.name}</span>
+                          <span>Level {activeBattle.opponent.level}</span>
+                        </div>
+                        <div className="flex justify-between items-center">
+                          <span>Attack</span>
+                          <span>{activeBattle.opponent.attack}</span>
+                        </div>
+                        <div className="flex justify-between items-center">
+                          <span>Defense</span>
+                          <span>{activeBattle.opponent.defense}</span>
+                        </div>
+                        <div className="flex justify-between items-center">
+                          <span>Speed</span>
+                          <span>{activeBattle.opponent.speed}</span>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Moves */}
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                     {/* Player Moves */}
                     <div className={`p-4 rounded-lg ${theme.container} bg-opacity-20`}>
@@ -365,10 +512,10 @@ export const ActiveBattlePage: React.FC = (): JSX.Element => {
                           <button
                             key={moveName}
                             onClick={() => handleAttack(moveName)}
-                            disabled={isUpdating || activeBattle.status === 'ended' || move.count === 0}
+                            disabled={isUpdating || movesDisabled || activeBattle.status === 'ended' || move.count === 0}
                             className={`w-full p-3 rounded-lg font-medium text-left transition-all duration-300 
                               ${moveName === 'attack' ? 'bg-red-500 hover:bg-red-600' : 'bg-blue-500 hover:bg-blue-600'} 
-                              ${activeBattle.status === 'ended' || move.count === 0 ? 'opacity-50 cursor-not-allowed' : ''}
+                              ${activeBattle.status === 'ended' || movesDisabled || move.count === 0 ? 'opacity-50 cursor-not-allowed' : ''}
                               text-white relative overflow-hidden group`}
                           >
                             <div className="flex justify-between items-center">
@@ -399,10 +546,10 @@ export const ActiveBattlePage: React.FC = (): JSX.Element => {
                         {Object.values(activeBattle.player.moves).every(move => move.count === 0) && (
                           <button
                             onClick={() => handleAttack('struggle')}
-                            disabled={isUpdating || activeBattle.status === 'ended'}
+                            disabled={isUpdating || movesDisabled || activeBattle.status === 'ended'}
                             className={`w-full mt-4 p-3 rounded-lg font-medium text-left transition-all duration-300 
                               bg-purple-500 hover:bg-purple-600
-                              ${activeBattle.status === 'ended' ? 'opacity-50 cursor-not-allowed' : ''}
+                              ${activeBattle.status === 'ended' || movesDisabled ? 'opacity-50 cursor-not-allowed' : ''}
                               text-white relative overflow-hidden group`}
                           >
                             <div className="flex justify-between items-center">
