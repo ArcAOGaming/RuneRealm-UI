@@ -94,48 +94,61 @@ FACTION_BERRY_TYPES = {
     ["Inferno Blades"] = "fire"
 }
 
--- Attack pools for different types
+-- Enhanced Attack Pools with Rarity and Balanced Trade-offs
 FirePool = {
-  ["Firenado"] = {type="fire", count=2, damage=3, attack=0, speed=1, defense=0, health=0},
-  ["Campfire"] = {type="fire", count=3, damage=0, attack=1, speed=0, defense=2, health=2},
-  ["Inferno"] = {type="fire", count=1, damage=4, attack=2, speed=0, defense=0, health=0},
-  ["Flame Shield"] = {type="fire", count=2, damage=1, attack=0, speed=0, defense=3, health=1}
+  ["Firenado"] = {type="fire", rarity=1, count=2, damage=5, attack=0, speed=2, defense=-1, health=0},  
+  ["Campfire"] = {type="fire", rarity=2, count=3, damage=0, attack=2, speed=-1, defense=3, health=3},  
+  ["Inferno"] = {type="fire", rarity=2, count=1, damage=6, attack=3, speed=-1, defense=-2, health=0},  
+  ["Flame Shield"] = {type="fire", rarity=3, count=2, damage=2, attack=-1, speed=0, defense=4, health=2},  
+  ["Scorching Ash"] = {type="fire", rarity=3, count=2, damage=3, attack=1, speed=1, defense=-2, health=1},  
+  ["Phoenix Burst"] = {type="fire", rarity=3, count=1, damage=4, attack=0, speed=2, defense=0, health=-2}  
 }
 
 WaterPool = {
-  ["Tidal Wave"] = {type="water", count=2, damage=2, attack=1, speed=1, defense=1, health=0},
-  ["Whirlpool"] = {type="water", count=3, damage=1, attack=0, speed=2, defense=2, health=0},
-  ["Ice Spear"] = {type="water", count=1, damage=4, attack=1, speed=1, defense=0, health=0},
-  ["Ocean Mist"] = {type="water", count=2, damage=0, attack=0, speed=1, defense=3, health=1}
+  ["Tidal Wave"] = {type="water", rarity=1, count=2, damage=4, attack=2, speed=1, defense=-1, health=0},  
+  ["Whirlpool"] = {type="water", rarity=2, count=3, damage=2, attack=0, speed=3, defense=2, health=-2},  
+  ["Ice Spear"] = {type="water", rarity=2, count=1, damage=6, attack=2, speed=2, defense=-1, health=0},  
+  ["Ocean Mist"] = {type="water", rarity=3, count=2, damage=0, attack=0, speed=2, defense=4, health=2},  
+  ["Frostbite"] = {type="water", rarity=3, count=2, damage=3, attack=-1, speed=1, defense=2, health=0},  
+  ["Deep Current"] = {type="water", rarity=3, count=1, damage=3, attack=1, speed=3, defense=-1, health=-1}  
 }
 
 AirPool = {
-  ["Tornado"] = {type="air", count=2, damage=2, attack=0, speed=3, defense=0, health=0},
-  ["Wind Slash"] = {type="air", count=3, damage=1, attack=1, speed=2, defense=0, health=0},
-  ["Storm Cloud"] = {type="air", count=1, damage=3, attack=1, speed=1, defense=0, health=0},
-  ["Breeze"] = {type="air", count=2, damage=0, attack=0, speed=3, defense=1, health=1}
+  ["Tornado"] = {type="air", rarity=1, count=2, damage=4, attack=1, speed=4, defense=-1, health=0},  
+  ["Wind Slash"] = {type="air", rarity=2, count=3, damage=2, attack=2, speed=3, defense=-1, health=0},  
+  ["Storm Cloud"] = {type="air", rarity=2, count=1, damage=5, attack=2, speed=2, defense=-1, health=0},  
+  ["Breeze"] = {type="air", rarity=3, count=2, damage=0, attack=-1, speed=4, defense=2, health=2},  
+  ["Lightning Bolt"] = {type="air", rarity=3, count=2, damage=4, attack=2, speed=-1, defense=0, health=-2},  
+  ["Gale Force"] = {type="air", rarity=3, count=1, damage=3, attack=0, speed=5, defense=-2, health=0}  
 }
 
 RockPool = {
-  ["Boulder Crush"] = {type="rock", count=2, damage=3, attack=1, speed=0, defense=1, health=0},
-  ["Stone Wall"] = {type="rock", count=3, damage=0, attack=0, speed=0, defense=4, health=1},
-  ["Rock Slide"] = {type="rock", count=1, damage=4, attack=1, speed=0, defense=0, health=0},
-  ["Earth Shield"] = {type="rock", count=2, damage=1, attack=0, speed=0, defense=3, health=1}
+  ["Boulder Crush"] = {type="rock", rarity=1, count=2, damage=5, attack=3, speed=-2, defense=2, health=0},  
+  ["Stone Wall"] = {type="rock", rarity=2, count=3, damage=0, attack=-1, speed=-2, defense=6, health=2},  
+  ["Rock Slide"] = {type="rock", rarity=2, count=1, damage=7, attack=2, speed=-1, defense=-2, health=0},  
+  ["Earth Shield"] = {type="rock", rarity=3, count=2, damage=2, attack=0, speed=-1, defense=5, health=2},  
+  ["Seismic Slam"] = {type="rock", rarity=3, count=2, damage=4, attack=3, speed=0, defense=-1, health=-1},  
+  ["Granite Barrier"] = {type="rock", rarity=3, count=1, damage=1, attack=0, speed=-2, defense=6, health=3}  
 }
 
 BoostPool = {
-  ["Power Up"] = {type="boost", count=2, damage=0, attack=3, speed=1, defense=0, health=0},
-  ["Iron Skin"] = {type="boost", count=2, damage=0, attack=0, speed=0, defense=3, health=1},
-  ["Swift Wind"] = {type="boost", count=2, damage=0, attack=1, speed=3, defense=0, health=0},
-  ["Battle Cry"] = {type="boost", count=2, damage=0, attack=2, speed=2, defense=0, health=0}
+  ["Power Up"] = {type="boost", rarity=1, count=2, damage=0, attack=5, speed=2, defense=-2, health=0},  
+  ["Iron Skin"] = {type="boost", rarity=2, count=2, damage=0, attack=-1, speed=0, defense=5, health=2},  
+  ["Swift Wind"] = {type="boost", rarity=2, count=2, damage=0, attack=2, speed=5, defense=-1, health=-1},  
+  ["Battle Cry"] = {type="boost", rarity=3, count=2, damage=0, attack=4, speed=3, defense=-2, health=-1},  
+  ["Warrior's Resolve"] = {type="boost", rarity=3, count=2, damage=0, attack=3, speed=2, defense=0, health=-2},  
+  ["Adrenaline Surge"] = {type="boost", rarity=3, count=1, damage=0, attack=6, speed=-1, defense=0, health=-3}  
 }
 
 HealPool = {
-  ["Heal"] = {type="heal", count=2, damage=0, attack=0, speed=0, defense=0, health=3},
-  ["Regenerate"] = {type="heal", count=3, damage=0, attack=0, speed=0, defense=1, health=2},
-  ["Life Surge"] = {type="heal", count=1, damage=0, attack=1, speed=0, defense=0, health=4},
-  ["Recovery"] = {type="heal", count=2, damage=0, attack=0, speed=1, defense=0, health=3}
+  ["Heal"] = {type="heal", rarity=1, count=2, damage=0, attack=-1, speed=0, defense=0, health=6},  
+  ["Regenerate"] = {type="heal", rarity=2, count=3, damage=0, attack=-2, speed=0, defense=2, health=5},  
+  ["Life Surge"] = {type="heal", rarity=2, count=1, damage=0, attack=1, speed=0, defense=0, health=8},  
+  ["Recovery"] = {type="heal", rarity=3, count=2, damage=0, attack=0, speed=2, defense=0, health=5},  
+  ["Vital Essence"] = {type="heal", rarity=3, count=2, damage=0, attack=0, speed=-2, defense=4, health=7},  
+  ["Healing Winds"] = {type="heal", rarity=3, count=1, damage=0, attack=1, speed=3, defense=0, health=4}  
 }
+
 
 -- Function to randomly distribute 10 points across stats
 function RandomizeStartingStats()
@@ -166,24 +179,28 @@ end
 
 monstersMAP = {
   ["Sky Nomads"] = {
+      name = "Airbud",
       berry = "XJjSdWaorbQ2q0YkaQSmylmuADWH1fh2PvgfdLmXlzA",
       element = "air",
       image = "XD4tSBeekM1ETZMflAANDfkW6pVWaQIXgSdSiwfwVqw",
       sprite = "0_gQ7rNpxD8S4wZBE_DZs3adWfZMsBIuo8fwvH3SwL0"
   },
   ["Aqua Guardians"] = {
+      name = "WaterDoge",
       berry = "twFZ4HTvL_0XAIOMPizxs_S3YH5J5yGvJ8zKiMReWF0",
       element = "water",
       image = "w_-mPdemSXZ1G-Q6fMEu6wTDJYFnJM9XePjGf_ZChgo",
       sprite = "p90BYY1O3BS3VVzdZETr-hG6jkA3kwo8l0h3aQ2UFoc"
   },
   ["Stone Titans"] = {
+      name ="Rockpup",
       berry = "2NoNsZNyHMWOzTqeQUJW9Xvcga3iTonocFIsgkWIiPM",
       element = "rock",
       image = "WhdcUkIGYZG4M5kq00TnUwaIt5OCGz3Q4u6_fZNktvQ",
       sprite = "Zt8LmHGVIziXhzjqBhEAWLuGetcDitFKbfaJROkyZks"
   },
   ["Inferno Blades"] = {
+      name ="FireFox",
       berry = "30cPTQXrHN76YZ3bLfNAePIEYDb5Xo1XnbQ-xmLMOM0",
       element = "fire",
       image = "lnYr9oTtkRHiheQFwH4ns50mrQE6AQR-8Bvl4VfXb0o",

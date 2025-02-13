@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import MonsterSpriteView from './MonsterSpriteView';
 import { MonsterStats } from '../utils/aoHelpers';
+import BattleStatus from './BattleStatus';
 
 interface BattleSceneProps {
   player: MonsterStats;
@@ -9,6 +10,15 @@ interface BattleSceneProps {
   opponentAnimation?: 'walkRight' | 'walkLeft' | 'walkUp' | 'walkDown' | 'attack1' | 'attack2';
   onPlayerAnimationComplete?: () => void;
   onOpponentAnimationComplete?: () => void;
+  attackAnimation: {
+    attacker: 'player' | 'opponent';
+    moveName: string;
+  } | null;
+  shieldRestoring: boolean;
+  showEndOfRound: boolean;
+  onAttackComplete: () => void;
+  onShieldComplete: () => void;
+  onRoundComplete: () => void;
 }
 
 const BattleScene: React.FC<BattleSceneProps> = ({
@@ -17,7 +27,13 @@ const BattleScene: React.FC<BattleSceneProps> = ({
   playerAnimation,
   opponentAnimation,
   onPlayerAnimationComplete,
-  onOpponentAnimationComplete
+  onOpponentAnimationComplete,
+  attackAnimation,
+  shieldRestoring,
+  showEndOfRound,
+  onAttackComplete,
+  onShieldComplete,
+  onRoundComplete
 }) => {
   const [playerPosition, setPlayerPosition] = useState<'home' | 'attack'>('home');
   const [opponentPosition, setOpponentPosition] = useState<'home' | 'attack'>('home');
@@ -125,6 +141,18 @@ const BattleScene: React.FC<BattleSceneProps> = ({
           isOpponent
         />
       </div>
+
+      {/* Battle Status Overlay */}
+      <BattleStatus
+        attackAnimation={attackAnimation}
+        shieldRestoring={shieldRestoring}
+        showEndOfRound={showEndOfRound}
+        onAttackComplete={onAttackComplete}
+        onShieldComplete={onShieldComplete}
+        onRoundComplete={onRoundComplete}
+        playerMonsterName={player.name}
+        opponentMonsterName={opponent.name}
+      />
     </div>
   );
 };

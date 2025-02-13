@@ -7,62 +7,7 @@ import Footer from '../components/Footer';
 import Loading from '../components/Loading';
 import { useNavigate } from 'react-router-dom';
 import BattleScene from '../components/BattleScene';
-
-// Attack animation component
-const AttackAnimation: React.FC<{
-  attacker: 'player' | 'opponent';
-  moveName: string;
-  onComplete: () => void;
-}> = ({ attacker, moveName, onComplete }): JSX.Element => {
-  useEffect(() => {
-    const timer = setTimeout(onComplete, 2000);
-    return () => clearTimeout(timer);
-  }, [onComplete]);
-
-  return (
-    <div className="fixed top-0 left-0 w-full h-full flex items-center justify-center z-40 pointer-events-none">
-      <div className={`text-2xl font-bold ${attacker === 'player' ? 'text-blue-500' : 'text-red-500'} transform scale-100 animate-pulse`}>
-        {attacker === 'player' ? 'Your Monster' : 'Opponent'} using {moveName}...
-      </div>
-    </div>
-  );
-};
-
-// Shield restoration animation component
-const ShieldRestorationAnimation: React.FC<{
-  onComplete: () => void;
-}> = ({ onComplete }): JSX.Element => {
-  useEffect(() => {
-    const timer = setTimeout(onComplete, 2000);
-    return () => clearTimeout(timer);
-  }, [onComplete]);
-
-  return (
-    <div className="fixed top-0 left-0 w-full h-full flex items-center justify-center z-40 pointer-events-none">
-      <div className="text-2xl font-bold text-blue-500 transform scale-100 animate-pulse">
-        Shields Restoring...
-      </div>
-    </div>
-  );
-};
-
-// End of Round animation component
-const EndOfRoundAnimation: React.FC<{
-  onComplete: () => void;
-}> = ({ onComplete }): JSX.Element => {
-  useEffect(() => {
-    const timer = setTimeout(onComplete, 3000);
-    return () => clearTimeout(timer);
-  }, [onComplete]);
-
-  return (
-    <div className="fixed top-0 left-0 w-full h-full flex items-center justify-center z-40 pointer-events-none">
-      <div className="text-3xl font-bold text-yellow-500 transform scale-100 animate-pulse">
-        End of Round
-      </div>
-    </div>
-  );
-};
+import BattleStatus from '../components/BattleStatus';
 
 // Small loading indicator for updates
 const UpdateIndicator: React.FC = () => (
@@ -408,23 +353,6 @@ export const ActiveBattlePage: React.FC = (): JSX.Element => {
               </div>
             ) : (
               <div className={`p-6 rounded-xl ${theme.container} border ${theme.border} backdrop-blur-md`}>
-                {attackAnimation && (
-                  <AttackAnimation
-                    attacker={attackAnimation.attacker}
-                    moveName={attackAnimation.moveName}
-                    onComplete={() => setAttackAnimation(null)}
-                  />
-                )}
-                {shieldRestoring && (
-                  <ShieldRestorationAnimation
-                    onComplete={() => setShieldRestoring(false)}
-                  />
-                )}
-                {showEndOfRound && (
-                  <EndOfRoundAnimation
-                    onComplete={() => setShowEndOfRound(false)}
-                  />
-                )}
                 {isUpdating && <UpdateIndicator />}
                 
                 <div className="flex justify-between items-center mb-6">
@@ -448,6 +376,12 @@ export const ActiveBattlePage: React.FC = (): JSX.Element => {
                     opponentAnimation={opponentAnimation}
                     onPlayerAnimationComplete={() => {}}
                     onOpponentAnimationComplete={() => {}}
+                    attackAnimation={attackAnimation}
+                    shieldRestoring={shieldRestoring}
+                    showEndOfRound={showEndOfRound}
+                    onAttackComplete={() => setAttackAnimation(null)}
+                    onShieldComplete={() => setShieldRestoring(false)}
+                    onRoundComplete={() => setShowEndOfRound(false)}
                   />
                 </div>
 

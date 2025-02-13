@@ -85,21 +85,25 @@ local function calculateDamage(move, attacker, defender)
         attacker.attack = 1
     end
     
-    if move.damage <= 0 then 
-        print("Move damage is 0 or less")
-        return 0, 1 
+    -- Handle negative damage (self-damage)
+    if move.damage < 0 then
+        print("Self-damage move")
+        return math.abs(move.damage), 1
+    elseif move.damage == 0 then
+        print("Move damage is 0")
+        return 0, 1
     end
     
-    -- Base damage from move
+    -- Base damage from move (positive damage targets enemy)
     local damage = move.damage
     print("Base damage:", damage)
     
-    -- Add random bonus based on attacker's base attack
+    -- Add random bonus based on attacker's base attack only for enemy-targeting moves
     local bonus = getRandom(1, attacker.attack)
     damage = damage + bonus
     print("Damage after attack bonus:", damage)
     
-    -- Apply type effectiveness
+    -- Apply type effectiveness only for enemy-targeting moves
     local effectiveness = getTypeEffectiveness(move.type, defender.elementType)
     damage = damage * effectiveness
     print("Final damage after type effectiveness:", damage)
@@ -109,11 +113,18 @@ local function calculateDamage(move, attacker, defender)
 end
 
 -- Apply damage considering shields
-local function applyDamage(target, damage)
+local function applyDamage(target, damage, isSelfDamage)
     local shieldDamage = 0
     local healthDamage = 0
     
-    -- Damage shield first
+    -- For self-damage, bypass shield and directly affect health
+    if isSelfDamage then
+        healthDamage = damage
+        target.healthPoints = math.max(0, target.healthPoints - healthDamage)
+        return 0, healthDamage
+    end
+    
+    -- For enemy damage, shield takes damage first
     if target.shield > 0 then
         shieldDamage = math.min(damage, target.shield)
         target.shield = target.shield - shieldDamage
@@ -147,18 +158,28 @@ local function applyStatChanges(target, move)
     
     -- Defense/shield modification
     if move.defense ~= 0 then
+        -- Update max shield and current shield
         target.defense = math.max(1, target.defense + move.defense)
-        target.shield = math.min(target.defense, target.shield + move.defense)
+        if move.defense > 0 then
+            -- For positive defense changes, increase shield by that amount
+            target.shield = target.shield + move.defense
+        else
+            -- For negative defense changes, reduce max shield and current shield
+            target.shield = math.max(0, target.shield + move.defense)
+        end
         changes.defense = move.defense
     end
     
-    -- Health modification (healing)
-    if move.health > 0 then
-        local maxHealth = target.health * 10
-        target.healthPoints = math.min(maxHealth, target.healthPoints + move.health)
-        changes.health = move.health
-    elseif move.health < 0 then
-        target.healthPoints = math.max(0, target.healthPoints + move.health)
+    -- Health modification
+    if move.health ~= 0 then
+        local maxHealth = target.health * 10 -- Max health is 10x base health
+        if move.health > 0 then
+            -- Healing can't exceed max health
+            target.healthPoints = math.min(maxHealth, target.healthPoints + move.health)
+        else
+            -- Damage can't reduce below 0
+            target.healthPoints = math.max(0, target.healthPoints + move.health)
+        end
         changes.health = move.health
     end
     
@@ -331,30 +352,36 @@ local function processBattleTurn(battleId, playerMove, npcMove)
   print("Monsters:", json.encode({player = battle.player, opponent = battle.opponent}))
   local turnResult = processTurn(battle.player, battle.opponent, playerMove, npcMove)
   
-  -- Regenerate shields if haven't used struggle
-  if not battle.hasUsedStruggle.player then
-    battle.player.shield = battle.player.defense
-    print("Regenerated player shield to:", battle.player.shield)
-  end
-  if not battle.hasUsedStruggle.opponent then
-    battle.opponent.shield = battle.opponent.defense
-    print("Regenerated opponent shield to:", battle.opponent.shield)
-  end
-  
-  -- Convert turn result to battle turns format
+  -- Convert turn result to battle turns format with enhanced state tracking
   for _, action in ipairs(turnResult.actions) do
     local isPlayer = action.attacker == battle.player.name
     local turnInfo = {
       attacker = isPlayer and "player" or "opponent",
       move = action.move,
+      moveName = action.moveName,
+      moveRarity = action.moveRarity,
       missed = action.missed,
       shieldDamage = action.shieldDamage,
       healthDamage = action.healthDamage,
       statsChanged = action.changes,
       superEffective = action.superEffective,
-      notEffective = action.notEffective
+      notEffective = action.notEffective,
+      attackerState = action.attackerState,
+      defenderState = action.defenderState
     }
     table.insert(battle.turns, turnInfo)
+  end
+  
+  -- Regenerate shields at end of turn based on current defense stat
+  if not battle.hasUsedStruggle.player then
+    local shieldRegen = math.floor(battle.player.defense / 2)
+    battle.player.shield = math.min(battle.player.defense, battle.player.shield + shieldRegen)
+    print("Regenerated player shield by", shieldRegen, "to:", battle.player.shield)
+  end
+  if not battle.hasUsedStruggle.opponent then
+    local shieldRegen = math.floor(battle.opponent.defense / 2)
+    battle.opponent.shield = math.min(battle.opponent.defense, battle.opponent.shield + shieldRegen)
+    print("Regenerated opponent shield by", shieldRegen, "to:", battle.opponent.shield)
   end
   
   -- Update battle logs

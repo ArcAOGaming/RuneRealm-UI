@@ -61,16 +61,21 @@ end
 
 -- Calculate damage including random bonus
 local function calculateDamage(move, attacker, defender)
-    if move.damage <= 0 then return 0 end
+    -- Handle negative damage (self-damage)
+    if move.damage < 0 then
+        return math.abs(move.damage), 1 -- Return absolute value for self-damage
+    elseif move.damage == 0 then 
+        return 0, 1
+    end
     
-    -- Base damage from move
+    -- Base damage from move (positive damage targets enemy)
     local damage = move.damage
     
-    -- Add random bonus based on attacker's base attack
+    -- Add random bonus based on attacker's base attack only for enemy-targeting moves
     local bonus = getRandom(1, attacker.attack)
     damage = damage + bonus
     
-    -- Apply type effectiveness
+    -- Apply type effectiveness only for enemy-targeting moves
     local effectiveness = getTypeEffectiveness(move.type, defender.elementType)
     damage = damage * effectiveness
     
@@ -78,11 +83,18 @@ local function calculateDamage(move, attacker, defender)
 end
 
 -- Apply damage considering shields
-local function applyDamage(target, damage)
+local function applyDamage(target, damage, isSelfDamage)
     local shieldDamage = 0
     local healthDamage = 0
     
-    -- Damage shield first
+    -- For self-damage, bypass shield and directly affect health
+    if isSelfDamage then
+        healthDamage = damage
+        target.healthPoints = math.max(0, target.healthPoints - healthDamage)
+        return 0, healthDamage
+    end
+    
+    -- For enemy damage, shield takes damage first
     if target.shield > 0 then
         shieldDamage = math.min(damage, target.shield)
         target.shield = target.shield - shieldDamage
@@ -116,18 +128,28 @@ local function applyStatChanges(target, move)
     
     -- Defense/shield modification
     if move.defense ~= 0 then
+        -- Update max shield and current shield
         target.defense = math.max(1, target.defense + move.defense)
-        target.shield = math.min(target.defense, target.shield + move.defense)
+        if move.defense > 0 then
+            -- For positive defense changes, increase shield by that amount
+            target.shield = target.shield + move.defense
+        else
+            -- For negative defense changes, reduce max shield and current shield
+            target.shield = math.max(0, target.shield + move.defense)
+        end
         changes.defense = move.defense
     end
     
-    -- Health modification (healing)
-    if move.health > 0 then
-        local maxHealth = target.health * 10
-        target.healthPoints = math.min(maxHealth, target.healthPoints + move.health)
-        changes.health = move.health
-    elseif move.health < 0 then
-        target.healthPoints = math.max(0, target.healthPoints + move.health)
+    -- Health modification
+    if move.health ~= 0 then
+        local maxHealth = target.health * 10 -- Max health is 10x base health
+        if move.health > 0 then
+            -- Healing can't exceed max health
+            target.healthPoints = math.min(maxHealth, target.healthPoints + move.health)
+        else
+            -- Damage can't reduce below 0
+            target.healthPoints = math.max(0, target.healthPoints + move.health)
+        end
         changes.health = move.health
     end
     
@@ -141,32 +163,72 @@ local function processAttack(attacker, defender, move)
         move.count = move.count - 1
     end
     
-    -- Check if attack hits
-    local hits = doesAttackHit(attacker.speed, defender.speed)
+    -- Check if attack hits (only for enemy-targeting moves)
+    local hits = move.damage > 0 and doesAttackHit(attacker.speed, defender.speed) or true
     if not hits then
         return {
             missed = true,
             attacker = attacker.name,
-            move = move.name
+            move = move.name,
+            attackerState = {
+                health = attacker.healthPoints,
+                shield = attacker.shield,
+                attack = attacker.attack,
+                defense = attacker.defense,
+                speed = attacker.speed
+            },
+            defenderState = {
+                health = defender.healthPoints,
+                shield = defender.shield,
+                attack = defender.attack,
+                defense = defender.defense,
+                speed = defender.speed
+            }
         }
     end
     
-    -- Calculate and apply damage
+    -- Calculate damage
     local damage, effectiveness = calculateDamage(move, attacker, defender)
-    local shieldDamage, healthDamage = applyDamage(defender, damage)
+    
+    -- Apply damage based on whether it's self-damage or enemy damage
+    local shieldDamage, healthDamage
+    if move.damage < 0 then
+        -- Self-damage
+        shieldDamage, healthDamage = applyDamage(attacker, damage, true)
+    else
+        -- Enemy damage
+        shieldDamage, healthDamage = applyDamage(defender, damage, false)
+    end
     
     -- Apply stat changes to attacker
     local statChanges = applyStatChanges(attacker, move)
     
+    -- Return detailed battle log including monster states
     return {
         missed = false,
         attacker = attacker.name,
         move = move.name,
+        moveName = move.name,
+        moveRarity = move.rarity,
         shieldDamage = shieldDamage,
         healthDamage = healthDamage,
         changes = statChanges,
         superEffective = effectiveness > 1,
-        notEffective = effectiveness < 1
+        notEffective = effectiveness < 1,
+        attackerState = {
+            health = attacker.healthPoints,
+            shield = attacker.shield,
+            attack = attacker.attack,
+            defense = attacker.defense,
+            speed = attacker.speed
+        },
+        defenderState = {
+            health = defender.healthPoints,
+            shield = defender.shield,
+            attack = defender.attack,
+            defense = defender.defense,
+            speed = defender.speed
+        }
     }
 end
 
