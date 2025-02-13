@@ -8,6 +8,29 @@ import Loading from '../components/Loading';
 import { useNavigate } from 'react-router-dom';
 import BattleScene from '../components/BattleScene';
 import BattleStatus from '../components/BattleStatus';
+import BattleOverlays from '../components/BattleOverlays';
+
+// Function to determine move color based on type
+const getMoveColor = (moveName: string, move: any) => {
+  console.log('Move:', moveName, move);
+  
+  if (moveName === 'struggle') return 'bg-purple-500';
+  
+  // Determine move type based on effects
+  if (move.health > 0) return 'bg-green-500';  // Heal move
+  if (move.defense > 0) return 'bg-amber-700'; // Defense/earth move
+  if (move.speed > 0) return 'bg-yellow-500';  // Boost move
+  
+  // Determine type based on name
+  const name = moveName.toLowerCase();
+  if (name.includes('fire') || name.includes('burn')) return 'bg-red-500';
+  if (name.includes('water') || name.includes('splash')) return 'bg-blue-500';
+  if (name.includes('air') || name.includes('wind')) return 'bg-slate-200';
+  if (name.includes('earth') || name.includes('rock')) return 'bg-amber-700';
+  
+  // Default to red for attack moves
+  return 'bg-red-500';
+};
 
 // Small loading indicator for updates
 const UpdateIndicator: React.FC = () => (
@@ -17,7 +40,7 @@ const UpdateIndicator: React.FC = () => (
 );
 
 export const ActiveBattlePage: React.FC = (): JSX.Element => {
-  const { wallet, darkMode, setDarkMode } = useWallet();
+  const { wallet, walletStatus, darkMode, connectWallet, setDarkMode, refreshTrigger, triggerRefresh } = useWallet();
   const [battleManagerInfo, setBattleManagerInfo] = useState<BattleManagerInfo | null>(null);
   const [activeBattle, setActiveBattle] = useState<ActiveBattle | null>(null);
   const [previousBattle, setPreviousBattle] = useState<ActiveBattle | null>(null);
@@ -32,6 +55,7 @@ export const ActiveBattlePage: React.FC = (): JSX.Element => {
   const [opponentAnimation, setOpponentAnimation] = useState<'walkRight' | 'walkLeft' | 'walkUp' | 'walkDown' | 'attack1' | 'attack2' | undefined>();
   const [initialLoading, setInitialLoading] = useState(true);
   const [isUpdating, setIsUpdating] = useState(false);
+  const [showBattleLog, setShowBattleLog] = useState(true);
   const theme = currentTheme(darkMode);
   const navigate = useNavigate();
 
@@ -300,10 +324,7 @@ export const ActiveBattlePage: React.FC = (): JSX.Element => {
     if (!wallet?.address || isUpdating) return;
     try {
       setIsUpdating(true);
-      const response = await returnFromBattle(wallet);
-      if (response.status === 'success') {
-        navigate('/battle');
-      }
+      navigate('/battle');
     } catch (error) {
       console.error('Error returning from battle:', error);
     } finally {
@@ -334,6 +355,18 @@ export const ActiveBattlePage: React.FC = (): JSX.Element => {
           darkMode={darkMode}
           onDarkModeToggle={() => setDarkMode(!darkMode)}
         />
+
+        {/* Battle Overlays */}
+        {walletStatus?.isUnlocked && activeBattle && (
+          <BattleOverlays
+            turns={activeBattle.turns}
+            showBattleLog={showBattleLog}
+            onToggleBattleLog={() => setShowBattleLog(!showBattleLog)}
+            theme={theme}
+            playerName={activeBattle.player.name}
+            opponentName={activeBattle.opponent.name}
+          />
+        )}
         
         <div className={`container mx-auto px-6 py-8 flex-1 ${theme.text}`}>
           <div className="max-w-4xl mx-auto">
@@ -440,150 +473,142 @@ export const ActiveBattlePage: React.FC = (): JSX.Element => {
                     {/* Player Moves */}
                     <div className={`p-4 rounded-lg ${theme.container} bg-opacity-20`}>
                       <h4 className="text-md font-semibold mb-3">Your Moves</h4>
-                      <div className="space-y-2">
+                      <div className="relative">
                         {/* Regular moves */}
-                        {Object.entries(activeBattle.player.moves).map(([moveName, move]) => (
-                          <button
-                            key={moveName}
-                            onClick={() => handleAttack(moveName)}
-                            disabled={isUpdating || movesDisabled || activeBattle.status === 'ended' || move.count === 0}
-                            className={`w-full p-3 rounded-lg font-medium text-left transition-all duration-300 
-                              ${moveName === 'attack' ? 'bg-red-500 hover:bg-red-600' : 'bg-blue-500 hover:bg-blue-600'} 
-                              ${activeBattle.status === 'ended' || movesDisabled || move.count === 0 ? 'opacity-50 cursor-not-allowed' : ''}
-                              text-white relative overflow-hidden group`}
-                          >
-                            <div className="flex justify-between items-center">
-                              <span className="capitalize">{moveName}</span>
-                              <span className="text-sm opacity-75">
-                                {move.count} uses left
-                              </span>
-                            </div>
-                            <div className="text-sm mt-1 space-x-3">
-                              {move.damage > 0 && (
-                                <span>⚔️ +{move.damage}</span>
+                        <div className="grid grid-cols-2 gap-2 relative">
+                          {Object.entries(activeBattle.player.moves).map(([moveName, move]) => (
+                            <button
+                              key={moveName}
+                              onClick={() => handleAttack(moveName)}
+                              disabled={isUpdating || movesDisabled || activeBattle.status === 'ended' || move.count === 0}
+                              className={`w-full p-3 rounded-lg font-medium text-left transition-all duration-300 
+                                ${getMoveColor(moveName, move)} hover:brightness-110
+                                ${activeBattle.status === 'ended' || movesDisabled || move.count === 0 ? 'opacity-50 cursor-not-allowed' : ''}
+                                text-white relative overflow-hidden group`}
+                            >
+                              {move.count === 0 && (
+                                <div className="absolute inset-0 bg-black/50">
+                                  <div className="absolute inset-0 flex items-center">
+                                    <div className="w-full h-0.5 bg-red-500 transform rotate-12"></div>
+                                  </div>
+                                </div>
                               )}
-                              {move.defense > 0 && (
-                                <span>🛡️ +{move.defense}</span>
-                              )}
-                              {move.speed > 0 && (
-                                <span>⚡ +{move.speed}</span>
-                              )}
-                              {move.health > 0 && (
-                                <span>❤️ +{move.health}</span>
-                              )}
-                            </div>
-                            <div className="absolute inset-0 bg-white opacity-0 group-hover:opacity-10 transition-opacity duration-300"></div>
-                          </button>
-                        ))}
+                              <div className="flex justify-between items-center">
+                                <span className="capitalize">{moveName}</span>
+                                <span className="text-sm opacity-75">
+                                  {move.count}
+                                </span>
+                              </div>
+                              <div className="text-sm mt-1">
+                                <div className="grid grid-cols-2 gap-2 max-w-[200px]">
+                                  {move.damage > 0 && (
+                                    <span>⚔️ +{move.damage}</span>
+                                  )}
+                                  {move.defense > 0 && (
+                                    <span>🛡️ +{move.defense}</span>
+                                  )}
+                                  {move.speed > 0 && (
+                                    <span>⚡ +{move.speed}</span>
+                                  )}
+                                  {move.health > 0 && (
+                                    <span>❤️ +{move.health}</span>
+                                  )}
+                                </div>
+                              </div>
+                              <div className="absolute inset-0 bg-white opacity-0 group-hover:opacity-10 transition-opacity duration-300"></div>
+                            </button>
+                          ))}
 
-                        {/* Struggle button - only show when all moves have 0 uses */}
-                        {Object.values(activeBattle.player.moves).every(move => move.count === 0) && (
-                          <button
-                            onClick={() => handleAttack('struggle')}
-                            disabled={isUpdating || movesDisabled || activeBattle.status === 'ended'}
-                            className={`w-full mt-4 p-3 rounded-lg font-medium text-left transition-all duration-300 
-                              bg-purple-500 hover:bg-purple-600
-                              ${activeBattle.status === 'ended' || movesDisabled ? 'opacity-50 cursor-not-allowed' : ''}
-                              text-white relative overflow-hidden group`}
-                          >
-                            <div className="flex justify-between items-center">
-                              <span className="capitalize">Struggle</span>
-                              <span className="text-sm opacity-75">Last Resort</span>
-                            </div>
-                            <div className="text-sm mt-1 space-x-3">
-                              <span>⚔️ +1</span>
-                            </div>
-                            <div className="absolute inset-0 bg-white opacity-0 group-hover:opacity-10 transition-opacity duration-300"></div>
-                          </button>
-                        )}
+                          {/* Struggle button - show when all moves have 0 uses */}
+                          {Object.values(activeBattle.player.moves).every(move => move.count === 0) && (
+                            <button
+                              onClick={() => handleAttack('struggle')}
+                              disabled={isUpdating || movesDisabled || activeBattle.status === 'ended'}
+                              className={`absolute inset-0 m-auto w-3/4 h-3/4 p-3 rounded-lg font-medium text-left transition-all duration-300 
+                                bg-purple-500 hover:brightness-110 z-10
+                                ${activeBattle.status === 'ended' || movesDisabled ? 'opacity-50 cursor-not-allowed' : ''}
+                                text-white overflow-hidden group`}
+                            >
+                              <div className="flex justify-between items-center">
+                                <span className="capitalize">Struggle</span>
+                                <span className="text-sm opacity-75">Last Resort</span>
+                              </div>
+                              <div className="text-sm mt-1">
+                                <div className="grid grid-cols-2 gap-2 max-w-[200px]">
+                                  <span>⚔️ +1</span>
+                                </div>
+                              </div>
+                            </button>
+                          )}
+                        </div>
                       </div>
                     </div>
                     
                     {/* Opponent Moves */}
                     <div className={`p-4 rounded-lg ${theme.container} bg-opacity-20`}>
                       <h4 className="text-md font-semibold mb-3">Opponent's Moves</h4>
-                      <div className="space-y-2">
-                        {Object.entries(activeBattle.opponent.moves).map(([moveName, move]) => (
-                          <div
-                            key={moveName}
-                            className={`w-full p-3 rounded-lg font-medium text-left
-                              ${moveName === 'attack' ? 'bg-red-500/50' : 'bg-blue-500/50'} 
-                              text-white`}
-                          >
-                            <div className="flex justify-between items-center">
-                              <span className="capitalize">{moveName}</span>
-                              <span className="text-sm opacity-75">
-                                {move.count} uses left
-                              </span>
+                      <div className="relative">
+                        {/* Regular moves */}
+                        <div className="grid grid-cols-2 gap-2 relative">
+                          {Object.entries(activeBattle.opponent.moves).map(([moveName, move]) => (
+                            <div
+                              key={moveName}
+                              className={`w-full p-3 rounded-lg font-medium text-left
+                                ${getMoveColor(moveName, move)} brightness-75
+                                text-white relative overflow-hidden`}
+                            >
+                              {move.count === 0 && (
+                                <div className="absolute inset-0 bg-black/50">
+                                  <div className="absolute inset-0 flex items-center">
+                                    <div className="w-full h-0.5 bg-red-500 transform rotate-12"></div>
+                                  </div>
+                                </div>
+                              )}
+                              <div className="flex justify-between items-center">
+                                <span className="capitalize">{moveName}</span>
+                                <span className="text-sm opacity-75">
+                                  {move.count}
+                                </span>
+                              </div>
+                              <div className="text-sm mt-1">
+                                <div className="grid grid-cols-2 gap-2 max-w-[200px]">
+                                  {move.damage > 0 && (
+                                    <span>⚔️ +{move.damage}</span>
+                                  )}
+                                  {move.defense > 0 && (
+                                    <span>🛡️ +{move.defense}</span>
+                                  )}
+                                  {move.speed > 0 && (
+                                    <span>⚡ +{move.speed}</span>
+                                  )}
+                                  {move.health > 0 && (
+                                    <span>❤️ +{move.health}</span>
+                                  )}
+                                </div>
+                              </div>
                             </div>
-                            <div className="text-sm mt-1 space-x-3">
-                              {move.damage > 0 && (
-                                <span>⚔️ +{move.damage}</span>
-                              )}
-                              {move.defense > 0 && (
-                                <span>🛡️ +{move.defense}</span>
-                              )}
-                              {move.speed > 0 && (
-                                <span>⚡ +{move.speed}</span>
-                              )}
-                              {move.health > 0 && (
-                                <span>❤️ +{move.health}</span>
-                              )}
+                          ))}
+
+                          {/* Opponent Struggle - show when all moves have 0 uses */}
+                          {Object.values(activeBattle.opponent.moves).every(move => move.count === 0) && (
+                            <div className={`absolute inset-0 m-auto w-3/4 h-3/4 p-3 rounded-lg font-medium text-left bg-purple-500 brightness-75 text-white z-10`}>
+                              <div className="flex justify-between items-center">
+                                <span className="capitalize">Struggle</span>
+                                <span className="text-sm opacity-75">Last Resort</span>
+                              </div>
+                              <div className="text-sm mt-1">
+                                <div className="grid grid-cols-2 gap-2 max-w-[200px]">
+                                  <span>⚔️ +1</span>
+                                </div>
+                              </div>
                             </div>
-                          </div>
-                        ))}
+                          )}
+                        </div>
                       </div>
                     </div>
                   </div>
-                  {/* Battle Log */}
-                  <div className="mt-8">
-                    <h3 className={`text-lg font-bold mb-4 ${theme.text}`}>Battle Log</h3>
-                    <div className="space-y-4 max-h-96 overflow-y-auto p-4 rounded-lg bg-gray-100 dark:bg-gray-800">
-                      {activeBattle.turns.map((turn, index) => (
-                        <div
-                          key={index}
-                          className={`flex ${turn.attacker === 'player' ? 'justify-start' : 'justify-end'}`}
-                        >
-                          <div
-                            className={`max-w-[80%] p-3 rounded-lg ${
-                              turn.attacker === 'player'
-                                ? 'bg-blue-500 rounded-tr-lg'
-                                : 'bg-red-500 rounded-tl-lg'
-                            } text-white`}
-                          >
-                            <div className="font-medium mb-1">
-                              {turn.attacker === 'player' ? 'Your Monster' : 'Opponent'} used {turn.move}
-                            </div>
-                            <div className="text-sm space-x-2">
-                              {turn.healthDamage > 0 && (
-                                <span>⚔️ {turn.healthDamage} damage</span>
-                              )}
-                              {turn.shieldDamage > 0 && (
-                                <span>🛡️ {turn.shieldDamage} shield damage</span>
-                              )}
-                              {turn.missed && (
-                                <span>❌ Missed!</span>
-                              )}
-                              {turn.statsChanged && (
-                                <>
-                                  {turn.statsChanged.speed && (
-                                    <span>⚡ {turn.statsChanged.speed > 0 ? '+' : ''}{turn.statsChanged.speed} speed</span>
-                                  )}
-                                  {turn.statsChanged.defense && (
-                                    <span>🛡️ {turn.statsChanged.defense > 0 ? '+' : ''}{turn.statsChanged.defense} defense</span>
-                                  )}
-                                  {turn.statsChanged.health && (
-                                    <span>❤️ {turn.statsChanged.health > 0 ? '+' : ''}{turn.statsChanged.health} health</span>
-                                  )}
-                                </>
-                              )}
-                            </div>
-                          </div>
-                        </div>
-                      ))}
-                    </div>
-                  </div>
 
+                  {/* Return to Battle Manager Button */}
                   <button
                     onClick={handleReturnToBattleManager}
                     className={`w-full mt-4 px-6 py-3 rounded-lg font-bold transition-all duration-300 ${theme.buttonBg} ${theme.buttonHover} ${theme.text}`}

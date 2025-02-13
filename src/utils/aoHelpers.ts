@@ -60,19 +60,32 @@ export interface BattleManagerResponse {
 }
 
 
+export interface MonsterState {
+    health: number;
+    shield: number;
+    attack: number;
+    defense: number;
+    speed: number;
+}
+
 export interface BattleTurn {
     attacker: 'player' | 'opponent';
     move: string;
+    moveName: string;
+    moveRarity: number;
     missed: boolean;
     shieldDamage: number;
     healthDamage: number;
-    remainingShield: number;
-    remainingHealth: number;
     statsChanged: {
+        attack?: number;
         speed?: number;
         defense?: number;
         health?: number;
     };
+    superEffective: boolean;
+    notEffective: boolean;
+    attackerState: MonsterState;
+    defenderState: MonsterState;
 }
 
 export interface MonsterStats {
