@@ -65,6 +65,12 @@ const BattleLog: React.FC<BattleLogProps> = ({ turns, isOpen, onClose, playerNam
                   )}
                   {turn.statsChanged && (
                     <div className="space-y-2">
+                      {turn.statsChanged.attack && (
+                        <div className="flex items-center gap-2">
+                          <span className="text-xl">💪</span>
+                          <span>{turn.statsChanged.attack > 0 ? '+' : ''}{turn.statsChanged.attack} attack</span>
+                        </div>
+                      )}
                       {turn.statsChanged.speed && (
                         <div className="flex items-center gap-2">
                           <span className="text-xl">⚡</span>
