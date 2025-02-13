@@ -14,19 +14,15 @@ import BattleOverlays from '../components/BattleOverlays';
 const getMoveColor = (moveName: string, move: any) => {
   console.log('Move:', moveName, move);
   
-  if (moveName === 'struggle') return 'bg-purple-500';
-  
-  // Determine move type based on effects
-  if (move.health > 0) return 'bg-green-500';  // Heal move
-  if (move.defense > 0) return 'bg-amber-700'; // Defense/earth move
-  if (move.speed > 0) return 'bg-yellow-500';  // Boost move
-  
+  if (moveName === 'struggle') return 'bg-purple-500';  
   // Determine type based on name
-  const name = moveName.toLowerCase();
-  if (name.includes('fire') || name.includes('burn')) return 'bg-red-500';
-  if (name.includes('water') || name.includes('splash')) return 'bg-blue-500';
-  if (name.includes('air') || name.includes('wind')) return 'bg-slate-200';
-  if (name.includes('earth') || name.includes('rock')) return 'bg-amber-700';
+  const type = move.type.toLowerCase();
+  if (type == 'heal') return 'bg-green-500';
+  if (type == 'boost') return 'bg-yellow-500';
+  if (type == 'fire') return 'bg-red-500';
+  if (type == 'water') return 'bg-blue-500';
+  if (type == 'air') return 'bg-slate-200';
+  if (type == 'rock') return 'bg-amber-700';
   
   // Default to red for attack moves
   return 'bg-red-500';

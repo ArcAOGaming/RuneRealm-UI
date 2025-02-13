@@ -165,6 +165,7 @@ local function applyStatChanges(target, move)
             target.shield = target.shield + move.defense
         else
             -- For negative defense changes, reduce max shield and current shield
+            -- For negative defense changes, reduce shield but never below 0
             target.shield = math.max(0, target.shield + move.defense)
         end
         changes.defense = move.defense
@@ -374,12 +375,12 @@ local function processBattleTurn(battleId, playerMove, npcMove)
   
   -- Regenerate shields at end of turn based on current defense stat
   if not battle.hasUsedStruggle.player then
-    local shieldRegen = math.floor(battle.player.defense / 2)
+    local shieldRegen = math.ceil(battle.player.defense / 4)
     battle.player.shield = math.min(battle.player.defense, battle.player.shield + shieldRegen)
     print("Regenerated player shield by", shieldRegen, "to:", battle.player.shield)
   end
   if not battle.hasUsedStruggle.opponent then
-    local shieldRegen = math.floor(battle.opponent.defense / 2)
+    local shieldRegen = math.ceil(battle.opponent.defense / 4)
     battle.opponent.shield = math.min(battle.opponent.defense, battle.opponent.shield + shieldRegen)
     print("Regenerated opponent shield by", shieldRegen, "to:", battle.opponent.shield)
   end
@@ -605,10 +606,6 @@ Handlers.add(
       startTime = os.time() * 1000,
       turns = {},
       stats = battles[userId], -- Store battle stats in active battle
-      moveCounts = {
-        player = {},
-        opponent = {}
-      },
       hasUsedStruggle = { player = false, opponent = false }, -- Track struggle usage
       status = "battling" -- Add status field
     }
@@ -631,13 +628,40 @@ Handlers.add(
     print("Battle initialized with moves - Player:", json.encode(battle.player.moves))
     print("Battle initialized with moves - Opponent:", json.encode(battle.opponent.moves))
     
-    -- No need to initialize move counts as we'll use the count property in each move
+    -- Ensure moves have type field from their pool definitions
+    for name, move in pairs(battle.player.moves) do
+        if not move.type then
+            -- Look up move in appropriate pool based on name
+            local moveType = nil
+            for _, pool in pairs({FirePool, WaterPool, AirPool, RockPool, BoostPool, HealPool}) do
+                if pool[name] then
+                    moveType = pool[name].type
+                    break
+                end
+            end
+            move.type = moveType or battle.player.elementType
+        end
+    end
+
+    for name, move in pairs(battle.opponent.moves) do
+        if not move.type then
+            -- Look up move in appropriate pool based on name
+            local moveType = nil
+            for _, pool in pairs({FirePool, WaterPool, AirPool, RockPool, BoostPool, HealPool}) do
+                if pool[name] then
+                    moveType = pool[name].type
+                    break
+                end
+            end
+            move.type = moveType or battle.opponent.elementType
+        end
+    end
     
     battle.player.address = userId
     battle.player.healthPoints = battle.player.health * 10
-    battle.player.shield = battle.player.defense
+    battle.player.shield = math.max(0, battle.player.defense)
     battle.opponent.healthPoints = battle.opponent.health * 10
-    battle.opponent.shield = battle.opponent.defense
+    battle.opponent.shield = math.max(0, battle.opponent.defense)
     
     activeBattles[battleId] = battle
     battleLogs[battleId] = {} -- Initialize empty battle logs
@@ -781,15 +805,6 @@ Handlers.add(
         })
       })
       return
-    end
-    
-    -- Initialize moveCounts if it doesn't exist
-    if not battle.moveCounts then
-      print("Initializing moveCounts")
-      battle.moveCounts = {
-        player = {},
-        opponent = {}
-      }
     end
     
     -- Check if all moves are depleted
