@@ -496,7 +496,7 @@ export const ActiveBattlePage: React.FC = (): JSX.Element => {
                                 </div>
                               )}
                               <div className="text-sm mt-1">
-                                <div className="grid grid-cols-2 gap-1 max-w-[200px] min-h-[32px]">
+                                <div className="grid grid-cols-3 grid-rows-2 gap-1 max-w-[200px] min-h-[32px]">
                                   {move.damage !== 0 && (
                                     <span>⚔️ {move.damage > 0 ? '+' : ''}{move.damage}</span>
                                   )}
@@ -512,8 +512,8 @@ export const ActiveBattlePage: React.FC = (): JSX.Element => {
                                   {move.health !== 0 && (
                                     <span>❤️ {move.health > 0 ? '+' : ''}{move.health}</span>
                                   )}
-                                  {/* Add empty spans to maintain grid layout */}
-                                  {[...Array(2 - [move.damage, move.attack, move.defense, move.speed, move.health].filter(v => v !== 0).length % 2)].map((_, i) => (
+                                  {/* Add empty spans to maintain 3x2 grid layout */}
+                                  {[...Array(6 - [move.damage, move.attack, move.defense, move.speed, move.health].filter(v => v !== 0).length)].map((_, i) => (
                                     <span key={i} className="invisible">placeholder</span>
                                   ))}
                                 </div>
@@ -527,20 +527,14 @@ export const ActiveBattlePage: React.FC = (): JSX.Element => {
                             <button
                               onClick={() => handleAttack('struggle')}
                               disabled={isUpdating || movesDisabled || activeBattle.status === 'ended'}
-                              className={`absolute inset-0 m-auto w-3/4 h-3/4 p-2 rounded-lg font-medium text-left transition-all duration-300 
+                              className={`absolute inset-0 m-auto w-32 h-32 p-2 rounded-lg font-medium transition-all duration-300 
                                 bg-purple-500 hover:brightness-110 z-10
                                 ${activeBattle.status === 'ended' || movesDisabled ? 'opacity-50 cursor-not-allowed' : ''}
-                                text-white overflow-hidden group`}
+                                text-white overflow-hidden group flex flex-col justify-center items-center`}
                             >
-                              <div className="flex justify-between items-center">
-                                <span className="capitalize">Struggle</span>
-                                <span className="text-sm opacity-75">Last Resort</span>
-                              </div>
-                              <div className="text-sm mt-1">
-                                <div className="grid grid-cols-2 gap-1 max-w-[200px] min-h-[32px]">
-                                  <span>⚔️ +1</span>
-                                </div>
-                              </div>
+                              <span className="capitalize text-lg mb-1">Struggle</span>
+                              <span className="text-sm opacity-75 mb-2">Last Resort</span>
+                              <span className="text-sm">⚔️ +1</span>
                             </button>
                           )}
                         </div>
@@ -551,14 +545,13 @@ export const ActiveBattlePage: React.FC = (): JSX.Element => {
                     <div className={`p-4 rounded-lg ${theme.container} bg-opacity-20`}>
                       <h4 className="text-md font-semibold mb-3">Opponent's Moves</h4>
                       <div className="relative">
-                        {/* Regular moves */}
                         <div className="grid grid-cols-2 gap-2 relative">
                           {Object.entries(activeBattle.opponent.moves).map(([moveName, move]) => (
                             <div
                               key={moveName}
-                              className={`w-full p-2 rounded-lg font-medium text-left min-h-[80px]
-                                ${getMoveColor(moveName, move)} brightness-75
-                                text-white relative overflow-hidden flex flex-col justify-between`}
+                              className={`w-full p-2 rounded-lg font-medium text-left transition-all duration-300 min-h-[80px]
+                                ${getMoveColor(moveName, move)} opacity-75 cursor-default
+                                text-white relative overflow-hidden group flex flex-col justify-between`}
                             >
                               <div className="flex justify-between items-center relative">
                                 <span className="capitalize">{moveName}</span>
@@ -574,7 +567,7 @@ export const ActiveBattlePage: React.FC = (): JSX.Element => {
                                 </div>
                               )}
                               <div className="text-sm mt-1">
-                                <div className="grid grid-cols-2 gap-1 max-w-[200px] min-h-[32px]">
+                                <div className="grid grid-cols-3 grid-rows-2 gap-1 max-w-[200px] min-h-[32px]">
                                   {move.damage !== 0 && (
                                     <span>⚔️ {move.damage > 0 ? '+' : ''}{move.damage}</span>
                                   )}
@@ -590,8 +583,8 @@ export const ActiveBattlePage: React.FC = (): JSX.Element => {
                                   {move.health !== 0 && (
                                     <span>❤️ {move.health > 0 ? '+' : ''}{move.health}</span>
                                   )}
-                                  {/* Add empty spans to maintain grid layout */}
-                                  {[...Array(2 - [move.damage, move.attack, move.defense, move.speed, move.health].filter(v => v !== 0).length % 2)].map((_, i) => (
+                                  {/* Add empty spans to maintain 3x2 grid layout */}
+                                  {[...Array(6 - [move.damage, move.attack, move.defense, move.speed, move.health].filter(v => v !== 0).length)].map((_, i) => (
                                     <span key={i} className="invisible">placeholder</span>
                                   ))}
                                 </div>
@@ -599,18 +592,15 @@ export const ActiveBattlePage: React.FC = (): JSX.Element => {
                             </div>
                           ))}
 
-                          {/* Opponent Struggle - show when all moves have 0 uses */}
                           {Object.values(activeBattle.opponent.moves).every(move => move.count === 0) && (
-                            <div className={`absolute inset-0 m-auto w-3/4 h-3/4 p-2 rounded-lg font-medium text-left bg-purple-500 brightness-75 text-white z-10`}>
-                              <div className="flex justify-between items-center">
-                                <span className="capitalize">Struggle</span>
-                                <span className="text-sm opacity-75">Last Resort</span>
-                              </div>
-                              <div className="text-sm mt-1">
-                                <div className="grid grid-cols-2 gap-1 max-w-[200px] min-h-[32px]">
-                                  <span>⚔️ +1</span>
-                                </div>
-                              </div>
+                            <div
+                              className={`absolute inset-0 m-auto w-32 h-32 p-2 rounded-lg font-medium transition-all duration-300
+                                bg-purple-500 opacity-75 cursor-default z-10
+                                text-white overflow-hidden group flex flex-col justify-center items-center`}
+                            >
+                              <span className="capitalize text-lg mb-1">Struggle</span>
+                              <span className="text-sm opacity-75 mb-2">Last Resort</span>
+                              <span className="text-sm">⚔️ +1</span>
                             </div>
                           )}
                         </div>

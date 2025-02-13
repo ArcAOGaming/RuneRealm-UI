@@ -33,15 +33,27 @@ end
 
 -- Determine if attack hits based on speed difference
 local function calculateHitChance(attackerSpeed, defenderSpeed)
-    local speedDiff = attackerSpeed - defenderSpeed
-    local baseHitChance = 0.8 -- 80% base hit chance
+    -- Ensure speeds are non-negative
+    attackerSpeed = math.max(0, attackerSpeed)
+    defenderSpeed = math.max(0, defenderSpeed)
     
-    -- Adjust hit chance based on speed difference
-    local hitChanceModifier = speedDiff * 0.05 -- 5% per point of speed difference
+    local speedDiff = attackerSpeed - defenderSpeed
+    local baseHitChance = 0.7 -- 70% base hit chance
+    
+    -- Enhanced hit chance calculation based on speed difference
+    local hitChanceModifier = 0
+    if speedDiff > 0 then
+        -- Attacker is faster: bonus increases more significantly
+        hitChanceModifier = math.min(0.25, speedDiff * 0.08) -- Up to +25% bonus, 8% per speed point
+    else
+        -- Attacker is slower: penalty increases more severely
+        hitChanceModifier = math.max(-0.4, speedDiff * 0.1) -- Up to -40% penalty, 10% per speed point
+    end
+    
     local finalHitChance = baseHitChance + hitChanceModifier
     
-    -- Clamp hit chance between 0.5 (50%) and 0.95 (95%)
-    return math.max(0.5, math.min(0.95, finalHitChance))
+    -- Clamp hit chance between 0.3 (30%) and 0.95 (95%)
+    return math.max(0.3, math.min(0.95, finalHitChance))
 end
 
 -- Determine if attack hits
@@ -146,25 +158,24 @@ local function applyStatChanges(target, move)
     
     -- Attack modification
     if move.attack ~= 0 then
-        target.attack = math.max(1, target.attack + move.attack)
+        target.attack = math.max(0, target.attack + move.attack)
         changes.attack = move.attack
     end
     
     -- Speed modification
     if move.speed ~= 0 then
-        target.speed = math.max(1, target.speed + move.speed)
+        target.speed = math.max(0, target.speed + move.speed)
         changes.speed = move.speed
     end
     
     -- Defense/shield modification
     if move.defense ~= 0 then
         -- Update max shield and current shield
-        target.defense = math.max(1, target.defense + move.defense)
+        target.defense = math.max(0, target.defense + move.defense)
         if move.defense > 0 then
             -- For positive defense changes, increase shield by that amount
             target.shield = target.shield + move.defense
         else
-            -- For negative defense changes, reduce max shield and current shield
             -- For negative defense changes, reduce shield but never below 0
             target.shield = math.max(0, target.shield + move.defense)
         end
