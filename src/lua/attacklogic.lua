@@ -1,54 +1,47 @@
--- Attack Logic Module
 
--- Type effectiveness table
-local typeEffectiveness = {
-    fire = { weak = "water", strong = "air" },
-    water = { weak = "earth", strong = "fire" },
-    earth = { weak = "air", strong = "water" },
-    air = { weak = "fire", strong = "earth" }
-}
-
--- Random number generation function
-local function getRandom(min, max)
-    return math.random(min, max)
-end
-
--- Calculate type effectiveness multiplier
-local function getTypeEffectiveness(attackerType, defenderType)
-    if not attackerType or not defenderType then return 1 end
+-- Calculate type effectiveness multiplier using EffectivenessChart
+function getTypeEffectiveness(moveType, defenderType)
+    if not moveType or not defenderType then return 1 end
     
-    local effectiveness = typeEffectiveness[attackerType]
-    if not effectiveness then return 1 end
+    local effectivenessRow = EffectivenessChart[moveType]
+    if not effectivenessRow then return 1 end
     
-    if effectiveness.weak == defenderType then
-        return 0.5 -- Not very effective
-    elseif effectiveness.strong == defenderType then
-        return 2 -- Super effective
-    end
-    return 1 -- Normal effectiveness
+    return effectivenessRow[defenderType] or 1
 end
 
 -- Determine if attack hits based on speed difference
-local function calculateHitChance(attackerSpeed, defenderSpeed)
-    local speedDiff = attackerSpeed - defenderSpeed
-    local baseHitChance = 0.8 -- 80% base hit chance
+function calculateHitChance(attackerSpeed, defenderSpeed)
+    -- Ensure speeds are non-negative
+    attackerSpeed = math.max(0, attackerSpeed)
+    defenderSpeed = math.max(0, defenderSpeed)
     
-    -- Adjust hit chance based on speed difference
-    local hitChanceModifier = speedDiff * 0.05 -- 5% per point of speed difference
+    local speedDiff = attackerSpeed - defenderSpeed
+    local baseHitChance = 0.7 -- 70% base hit chance
+    
+    -- Enhanced hit chance calculation based on speed difference
+    local hitChanceModifier = 0
+    if speedDiff > 0 then
+        -- Attacker is faster: bonus increases more significantly
+        hitChanceModifier = math.min(0.25, speedDiff * 0.08) -- Up to +25% bonus, 8% per speed point
+    else
+        -- Attacker is slower: penalty increases more severely
+        hitChanceModifier = math.max(-0.4, speedDiff * 0.1) -- Up to -40% penalty, 10% per speed point
+    end
+    
     local finalHitChance = baseHitChance + hitChanceModifier
     
-    -- Clamp hit chance between 0.5 (50%) and 0.95 (95%)
-    return math.max(0.5, math.min(0.95, finalHitChance))
+    -- Clamp hit chance between 0.3 (30%) and 0.95 (95%)
+    return math.max(0.3, math.min(0.95, finalHitChance))
 end
 
 -- Determine if attack hits
-local function doesAttackHit(attackerSpeed, defenderSpeed)
+function doesAttackHit(attackerSpeed, defenderSpeed)
     local hitChance = calculateHitChance(attackerSpeed, defenderSpeed)
     return getRandom(1, 100) <= hitChance * 100
 end
 
 -- Determine turn order based on speed
-local function determineTurnOrder(attacker, defender)
+function determineTurnOrder(attacker, defender)
     local attackerRoll = attacker.speed + getRandom(1, 5)
     local defenderRoll = defender.speed + getRandom(1, 5)
     
@@ -60,30 +53,57 @@ local function determineTurnOrder(attacker, defender)
 end
 
 -- Calculate damage including random bonus
-local function calculateDamage(move, attacker, defender)
+function calculateDamage(move, attacker, defender)
+    print("Calculating damage for move:", json.encode(move))
+    print("Attacker:", json.encode(attacker))
+    print("Defender:", json.encode(defender))
+
+    if not move then
+        print("Error: move is nil")
+        return 0, 1
+    end
+    if not move.damage then
+        print("Error: move.damage is nil")
+        return 0, 1
+    end
+    if not attacker then
+        print("Error: attacker is nil")
+        return 0, 1
+    end
+    if not attacker.attack then
+        print("Error: attacker.attack is nil")
+        attacker.attack = 1
+    end
+    
     -- Handle negative damage (self-damage)
     if move.damage < 0 then
-        return math.abs(move.damage), 1 -- Return absolute value for self-damage
-    elseif move.damage == 0 then 
+        print("Self-damage move")
+        return math.abs(move.damage), 1
+    elseif move.damage == 0 then
+        print("Move damage is 0")
         return 0, 1
     end
     
     -- Base damage from move (positive damage targets enemy)
     local damage = move.damage
+    print("Base damage:", damage)
     
     -- Add random bonus based on attacker's base attack only for enemy-targeting moves
     local bonus = getRandom(1, attacker.attack)
     damage = damage + bonus
+    print("Damage after attack bonus:", damage)
     
     -- Apply type effectiveness only for enemy-targeting moves
     local effectiveness = getTypeEffectiveness(move.type, defender.elementType)
     damage = damage * effectiveness
+    print("Final damage after type effectiveness:", damage)
+    print("Type effectiveness:", effectiveness)
     
     return math.floor(damage), effectiveness
 end
 
 -- Apply damage considering shields
-local function applyDamage(target, damage, isSelfDamage)
+function applyDamage(target, damage, isSelfDamage)
     local shieldDamage = 0
     local healthDamage = 0
     
@@ -111,30 +131,30 @@ local function applyDamage(target, damage, isSelfDamage)
 end
 
 -- Apply stat changes
-local function applyStatChanges(target, move)
+function applyStatChanges(target, move)
     local changes = {}
     
     -- Attack modification
     if move.attack ~= 0 then
-        target.attack = math.max(1, target.attack + move.attack)
+        target.attack = math.max(0, target.attack + move.attack)
         changes.attack = move.attack
     end
     
     -- Speed modification
     if move.speed ~= 0 then
-        target.speed = math.max(1, target.speed + move.speed)
+        target.speed = math.max(0, target.speed + move.speed)
         changes.speed = move.speed
     end
     
     -- Defense/shield modification
     if move.defense ~= 0 then
         -- Update max shield and current shield
-        target.defense = math.max(1, target.defense + move.defense)
+        target.defense = math.max(0, target.defense + move.defense)
         if move.defense > 0 then
             -- For positive defense changes, increase shield by that amount
             target.shield = target.shield + move.defense
         else
-            -- For negative defense changes, reduce max shield and current shield
+            -- For negative defense changes, reduce shield but never below 0
             target.shield = math.max(0, target.shield + move.defense)
         end
         changes.defense = move.defense
@@ -154,124 +174,4 @@ local function applyStatChanges(target, move)
     end
     
     return changes
-end
-
--- Process a single attack
-local function processAttack(attacker, defender, move)
-    -- Decrement move count
-    if move.count then
-        move.count = move.count - 1
-    end
-    
-    -- Check if attack hits (only for enemy-targeting moves)
-    local hits = move.damage > 0 and doesAttackHit(attacker.speed, defender.speed) or true
-    if not hits then
-        return {
-            missed = true,
-            attacker = attacker.name,
-            move = move.name,
-            attackerState = {
-                health = attacker.healthPoints,
-                shield = attacker.shield,
-                attack = attacker.attack,
-                defense = attacker.defense,
-                speed = attacker.speed
-            },
-            defenderState = {
-                health = defender.healthPoints,
-                shield = defender.shield,
-                attack = defender.attack,
-                defense = defender.defense,
-                speed = defender.speed
-            }
-        }
-    end
-    
-    -- Calculate damage
-    local damage, effectiveness = calculateDamage(move, attacker, defender)
-    
-    -- Apply damage based on whether it's self-damage or enemy damage
-    local shieldDamage, healthDamage
-    if move.damage < 0 then
-        -- Self-damage
-        shieldDamage, healthDamage = applyDamage(attacker, damage, true)
-    else
-        -- Enemy damage
-        shieldDamage, healthDamage = applyDamage(defender, damage, false)
-    end
-    
-    -- Apply stat changes to attacker
-    local statChanges = applyStatChanges(attacker, move)
-    
-    -- Return detailed battle log including monster states
-    return {
-        missed = false,
-        attacker = attacker.name,
-        move = move.name,
-        moveName = move.name,
-        moveRarity = move.rarity,
-        shieldDamage = shieldDamage,
-        healthDamage = healthDamage,
-        changes = statChanges,
-        superEffective = effectiveness > 1,
-        notEffective = effectiveness < 1,
-        attackerState = {
-            health = attacker.healthPoints,
-            shield = attacker.shield,
-            attack = attacker.attack,
-            defense = attacker.defense,
-            speed = attacker.speed
-        },
-        defenderState = {
-            health = defender.healthPoints,
-            shield = defender.shield,
-            attack = defender.attack,
-            defense = defender.defense,
-            speed = defender.speed
-        }
-    }
-end
-
--- Create struggle move for when all moves are depleted
-function createStruggleMove(monster)
-    return {
-        name = "Struggle",
-        type = monster.elementType or "normal", -- Fallback to normal type if none exists
-        count = 999,
-        damage = 1,
-        attack = 0,
-        speed = 0,
-        defense = 0,
-        health = 0,
-        healthDamage = 0,  -- Initialize battle-specific fields
-        shieldDamage = 0,
-        missed = false,
-        changes = {}, -- For stat changes
-        superEffective = false,
-        notEffective = false
-    }
-end
-
--- Process a full turn (both monsters attack)
-function processTurn(attacker, defender, attackerMove, defenderMove)
-    local actions = {}
-    local attackerFirst = determineTurnOrder(attacker, defender)
-    
-    if attackerFirst then
-        -- Attacker goes first
-        table.insert(actions, processAttack(attacker, defender, attackerMove))
-        if defender.healthPoints > 0 then
-            table.insert(actions, processAttack(defender, attacker, defenderMove))
-        end
-    else
-        -- Defender goes first
-        table.insert(actions, processAttack(defender, attacker, defenderMove))
-        if attacker.healthPoints > 0 then
-            table.insert(actions, processAttack(attacker, defender, attackerMove))
-        end
-    end
-    
-    return {
-        actions = actions
-    }
 end

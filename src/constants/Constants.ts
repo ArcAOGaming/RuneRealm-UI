@@ -5,7 +5,7 @@ export interface SpriteCategory {
   options: string[];
 }
 export const AdminSkinChanger = "j7NcraZUL6GZlgdPEoph12Q5rk_dydvQDecLNxYi8rI"
-export const TARGET_BATTLE_PID = "8hnue8PYCrgOB4OKHB6HS-ujbPOVuikOaTyICQjQJYQ"
+export const TARGET_BATTLE_PID = "jwHa1wqb1BtfyEA_onfW_Dx3yzcOPKpPuzaig_G87Bw"
 export const Alter = "GhNl98tr7ZQxIJHx4YcVdGh7WkT9dD7X4kmQOipvePQ"
 export const DefaultAtlasTxID = "sVIX0l_PFC6M7lYpuEOGJ_f5ESOkMxd5f5xCQSUH_2g"
 export const Gateway = "https://arweave.net/"

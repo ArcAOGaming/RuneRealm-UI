@@ -1,140 +1,46 @@
 -- Battle Manager
 -- 8hnue8PYCrgOB4OKHB6HS-ujbPOVuikOaTyICQjQJYQ
--- iB5C_0GQiu851DOX7AOFmIQ6ccDJDFXIFro7T6sSx_g
--- ZfeIygN2Uz4ayFKKWOvasWMZDOpBQyITc0BLDFH_mow
-local json = require("json")
+json = require("json")
+-- require("globals")
+-- require("attacklogic")
+
 
 -- Attack Logic
 -- Type effectiveness table
-local EffectivenessChart = {
-  Fire = { Fire = 1.0, Water = 0.5, Air = 2.0, Rock = 1.0 },
-  Water = { Fire = 2.0, Water = 1.0, Air = 1.0, Rock = 0.5 },
-  Air = { Fire = 0.5, Water = 2.0, Air = 1.0, Rock = 1.0 },
-  Rock = { Fire = 1.0, Water = 1.0, Air = 0.5, Rock = 2.0 }
+local typeEffectiveness = {
+    fire = { weak = "water", strong = "air" },
+    water = { weak = "earth", strong = "fire" },
+    earth = { weak = "air", strong = "water" },
+    air = { weak = "fire", strong = "earth" }
 }
-
+local EffectivenessChart = {
+    fire = { fire = 1.0, water = 0.5, air = 2.0, rock = 1.0 },
+    water = { fire = 2.0, water = 1.0, air = 1.0, rock = 0.5 },
+    air = { fire = 0.5, water = 2.0, air = 1.0, rock = 1.0 },
+    rock = { fire = 1.0, water = 1.0, air = 0.5, rock = 2.0 }
+  }
 
 -- Battle session data
 battles = battles or {}
 activeBattles = activeBattles or {}
 UserMonsters = UserMonsters or {}
 battleLogs = battleLogs or {} -- Store battle logs persistently
--- Random number generation function
-local function getRandom(min, max)
-  return math.random(min, max)
-end
-local function clamp(val, min)
-  return clamp(min, val)
-end
 
-local function initializeMoves(monster)
-  local movesCopy = {}
-  for name, move in pairs(monster.moves or {}) do
-      movesCopy[name] = sanitizeMove({
-          name = move.name or name,
-          count = move.count,
-          damage = move.damage,
-          attack = move.attack,
-          speed = move.speed,
-          defense = move.defense,
-          health = move.health,
-          type = move.type or monster.elementType
-      })
-  end
-  return movesCopy
-end
 
--- Helper: Ensure a move has default values for all fields
-local function sanitizeMove(name, move)
-  return {
-    name = move.name or name,
-    damage = move.damage or 0,
-    attack = move.attack or 0,
-    speed = move.speed or 0,
-    defense = move.defense or 0,
-    health = move.health or 0,
-    count = move.count or 1,
-    type = move.type -- may be nil; will be set later if needed
-  }
-end
-
--- Helper: Send error response
-local function sendError(target, message)
-  ao.send({
-    Target = target,
-    Data = json.encode({
-      status = "error",
-      message = message
-    })
-  })
-end
-
--- Calculate type effectiveness multiplier
-local function getTypeEffectiveness(attackerType, defenderType)
-  return (EffectivenessChart[attackerType] and EffectivenessChart[attackerType][defenderType]) or 1.0
-end
-
--- Determine if attack hits based on speed difference
-local function calculateHitChance(attackerSpeed, defenderSpeed)
-  local speedDiff = clamp(0, (attackerSpeed or 0) - (defenderSpeed or 0))
-  local baseHitChance = 0.8 -- 80% base hit chance
-  local hitChanceModifier = speedDiff * 0.05 -- 5% per point of speed difference
-  return clamp(0.5, math.min(0.95, baseHitChance + hitChanceModifier))
-end
-
-local function doesAttackHit(attackerSpeed, defenderSpeed)
-  return getRandom(1, 100) <= calculateHitChance(attackerSpeed, defenderSpeed) * 100
-end
-
--- Determine turn order based on speed
-local function determineTurnOrder(attacker, defender)
-  if not attacker or not defender then return false end
-  local attackerRoll = (attacker.speed or 0) + getRandom(0, 5)
-  local defenderRoll = (defender.speed or 0) + getRandom(0, 5)
-  return attackerRoll > defenderRoll
-end
-
--- Calculate damage with stat validation
-local function calculateDamage(move, attacker, defender)
-  if not move or not attacker or not defender then return 0 end
-  local baseDamage = clamp(0, move.damage or 0)
-  local attackBonus = attacker.attack and attacker.attack > 0 and getRandom(0, attacker.attack) or 0
-  local damage = baseDamage + attackBonus
-  return math.floor(damage * getTypeEffectiveness(move.type, defender.elementType))
-end
-
--- Apply damage with shields (ensures stats never go below zero)
-local function applyDamage(target, damage)
-  if not target then return 0, 0 end
-  local shieldDamage = math.min(damage, target.shield or 0)
-  local healthDamage = clamp(0, damage - shieldDamage)
-  target.shield = clamp(0, (target.shield or 0) - shieldDamage)
-  target.healthPoints = clamp(0, (target.healthPoints or 0) - healthDamage)
-  return shieldDamage, healthDamage
-end
-
--- Apply stat changes (ensures stats never go below zero)
-local function applyStatChanges(target, move)
-  if not target or not move then return end
-  target.attack = clamp(0, (target.attack or 0) + (move.attack or 0))
-  target.speed = clamp(0, (target.speed or 0) + (move.speed or 0))
-  target.defense = clamp(0, (target.defense or 0) + (move.defense or 0))
-  target.shield = clamp(0, (target.shield or 0) + (move.defense or 0))
-  target.healthPoints = clamp(0, (target.healthPoints or 0) + (move.health or 0))
-end
-
--- Create struggle move
+-- Create struggle move for when all moves are depleted
 local function createStruggleMove(monster)
-  return {
-      name = "Struggle", type = monster and monster.elementType or "normal", damage = 1, count = 999
-  }
+    return {
+        name = "Struggle",
+        type = monster.elementType or "normal", -- Fallback to normal type if none exists
+        count = 999,
+        damage = 1,
+    }
 end
 
--- Process a single attack
 local function processAttack(attacker, defender, move)
-  -- Decrement move count
+  -- Ensure moves have a count field
   if move.count then
-      move.count = move.count - 1
+      move.count = math.max(0, move.count - 1) -- Ensure it doesn't go below 0
   end
   
   -- Check if attack hits (only for enemy-targeting moves)
@@ -144,20 +50,8 @@ local function processAttack(attacker, defender, move)
           missed = true,
           attacker = attacker.name,
           move = move.name,
-          attackerState = {
-              health = attacker.healthPoints,
-              shield = attacker.shield,
-              attack = attacker.attack,
-              defense = attacker.defense,
-              speed = attacker.speed
-          },
-          defenderState = {
-              health = defender.healthPoints,
-              shield = defender.shield,
-              attack = defender.attack,
-              defense = defender.defense,
-              speed = defender.speed
-          }
+          attackerState = json.decode(json.encode(attacker)), -- Deep copy state
+          defenderState = json.decode(json.encode(defender))  -- Deep copy state
       }
   end
   
@@ -167,10 +61,8 @@ local function processAttack(attacker, defender, move)
   -- Apply damage based on whether it's self-damage or enemy damage
   local shieldDamage, healthDamage
   if move.damage < 0 then
-      -- Self-damage
       shieldDamage, healthDamage = applyDamage(attacker, damage, true)
   else
-      -- Enemy damage
       shieldDamage, healthDamage = applyDamage(defender, damage, false)
   end
   
@@ -182,29 +74,18 @@ local function processAttack(attacker, defender, move)
       missed = false,
       attacker = attacker.name,
       move = move.name,
-      moveName = move.name,
       moveRarity = move.rarity,
       shieldDamage = shieldDamage,
       healthDamage = healthDamage,
       changes = statChanges,
       superEffective = effectiveness > 1,
       notEffective = effectiveness < 1,
-      attackerState = {
-          health = attacker.healthPoints,
-          shield = attacker.shield,
-          attack = attacker.attack,
-          defense = attacker.defense,
-          speed = attacker.speed
-      },
-      defenderState = {
-          health = defender.healthPoints,
-          shield = defender.shield,
-          attack = defender.attack,
-          defense = defender.defense,
-          speed = defender.speed
-      }
+      attackerState = json.decode(json.encode(attacker)), -- Deep copy state
+      defenderState = json.decode(json.encode(defender))  -- Deep copy state
   }
 end
+
+
 
 -- Process a full turn (both monsters attack)
 local function processTurn(attacker, defender, attackerMove, defenderMove)
@@ -230,9 +111,10 @@ local function processTurn(attacker, defender, attackerMove, defenderMove)
     }
 end
 
+
 -- Initialize a battle session
-local function initBattleSession(wallet)
-  battles[wallet] = {
+local function initBattleSession(userId)
+  battles[userId] = {
     battlesRemaining = 4,
     wins = 0,
     losses = 0,
@@ -245,24 +127,13 @@ local function getBattleSession(userId)
   return battles[userId]
 end
 
-local function deepCopy(original)
-  local copy = {}
-  for key, value in pairs(original) do
-      if type(value) == "table" then
-          copy[key] = deepCopy(value)
-      else
-          copy[key] = value
-      end
-  end
-  return copy
-end
-
+-- Refresh monster move counts from stored data
 local function refreshMonsterCounts(userId)
   local storedMonster = UserMonsters[userId]
   if not storedMonster or not storedMonster.moves then
-      return nil
+    return nil
   end
-
+  
   -- Create a deep copy of the moves with their original counts
   local refreshedMoves = {}
   for name, move in pairs(storedMonster.moves) do
@@ -276,39 +147,39 @@ local function refreshMonsterCounts(userId)
       health = move.health
     }
   end
-
+  
   return refreshedMoves
-end  
+end
 
-
--- Create a level 1 opponent monster with fresh moves
 local function createOpponent()
-  -- Randomly select a faction
-  local factionIndex = math.random(1, #AvailableFactions)
+  local factionIndex = getRandom(1, #AvailableFactions)
   local faction = AvailableFactions[factionIndex]
   
   -- Create a level 1 monster
   local opponent = CreateDefaultMonster(faction.name, os.time() * 1000)
   opponent.level = 1
   
-  --Create a deep copy of the moves to avoid reference issues
+  -- Create a deep copy of the moves to ensure they have count values
   local freshMoves = {}
   for name, move in pairs(opponent.moves) do
-    freshMoves[name] = {
-      name = move.name,
-      count = move.count, -- This should be from the default move count
-      damage = move.damage,
-      attack = move.attack,
-      speed = move.speed,
-      defense = move.defense,
-      health = move.health
-    }
+      freshMoves[name] = {
+          name = move.name,
+          count = move.count or 1,  -- Ensure moves have at least 1 use
+          damage = move.damage or 0,
+          attack = move.attack or 0,
+          speed = move.speed or 0,
+          defense = move.defense or 0,
+          health = move.health or 0,
+          type = move.type or opponent.elementType  -- Ensure move type is set
+      }
   end
   opponent.moves = freshMoves
   
-  print("Created opponent:", json.encode(opponent))
+  print("Created opponent with moves:", json.encode(opponent.moves))
   return opponent
 end
+
+
 
 -- Record battle result
 local function recordBattle(wallet, won)
@@ -682,7 +553,6 @@ Handlers.add(
   end
 )
 
-
 Handlers.add(
   "Attack",
   Handlers.utils.hasMatchingTag("Action", "Attack"),
@@ -866,33 +736,31 @@ Handlers.add(
       end
     end
     
-    -- Get list of NPC moves that have uses remaining
-    local availableNpcMoves = {}
-    print("Opponent moves table:", json.encode(battle.opponent.moves))
-    
-    -- Build array of valid moves with deep copies
-    for name, move in pairs(battle.opponent.moves) do
-        print("Checking move:", name)
-        print("Move details:", json.encode(move))
-        if move and type(move) == "table" and (move.count or 0) > 0 then
-            -- Create a deep copy of the move
-            local moveCopy = {
-                name = name,
-                count = move.count,
-                damage = move.damage or 0,
-                attack = move.attack or 0,
-                speed = move.speed or 0,
-                defense = move.defense or 0,
-                health = move.health or 0,
-                type = move.type or battle.opponent.elementType
-            }
-            print("Adding move to available list:", name)
-            print("Move copy:", json.encode(moveCopy))
-            table.insert(availableNpcMoves, moveCopy)
-        end
+-- Get list of NPC moves that have uses remaining
+local availableNpcMoves = {}
+for name, move in pairs(battle.opponent.moves) do
+    if move.count and move.count > 0 then
+        table.insert(availableNpcMoves, move)
     end
+end
+
+-- Get list of NPC moves that have uses remaining
+local availableNpcMoves = {}
+print("Opponent moves table:", json.encode(battle.opponent.moves))
+
+-- Build array of valid moves without deep copies
+for name, move in pairs(battle.opponent.moves) do
+    print("Checking move:", name)
+    print("Move details:", json.encode(move))
+    if move and type(move) == "table" and (move.count or 0) > 0 then
+        -- Ensure the move has a name by adding it explicitly
+        move.name = name
+        print("Adding move to available list:", name)
+        table.insert(availableNpcMoves, move) -- Directly referencing the existing move
+    end
+end
+
     
-    print("Available NPC moves array:", json.encode(availableNpcMoves))
     
     -- Check if all NPC moves are used up
     local npcMove
@@ -901,7 +769,7 @@ Handlers.add(
         npcMove = createStruggleMove(battle.opponent)
     else
         -- Get random move from available moves array
-        local selectedIndex = math.random(#availableNpcMoves)
+        local selectedIndex = getRandom(#availableNpcMoves)
         npcMove = availableNpcMoves[selectedIndex]
         print("Selected move index:", selectedIndex)
         print("Selected move:", json.encode(npcMove))
@@ -911,6 +779,7 @@ Handlers.add(
             npcMove = createStruggleMove(battle.opponent)
         end
     end
+
     
     
     if not playerMove or not playerMove.name then
@@ -997,7 +866,6 @@ Handlers.add(
     end
   end
 )
-
 
 Handlers.add(
   "EndBattle",

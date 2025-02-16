@@ -45,6 +45,16 @@ const BattleLog: React.FC<BattleLogProps> = ({ turns, isOpen, onClose, playerNam
                   {turn.attacker === 'player' ? `🦸‍♂️ ${playerName}` : `👾 ${opponentName}`} used {turn.move}
                 </div>
                 <div className="space-y-2 text-md">
+                  {(turn.healthDamage > 0 || turn.shieldDamage > 0) && (
+                    <div className="flex items-center gap-2">
+                      <span className="text-xl">💥</span>
+                      <span>
+                        {turn.healthDamage + turn.shieldDamage} total damage
+                        {turn.superEffective && <span className="ml-1 text-yellow-300">⭐ Super Effective!</span>}
+                        {turn.notEffective && <span className="ml-1 text-gray-300">💫 Not Very Effective...</span>}
+                      </span>
+                    </div>
+                  )}
                   {turn.healthDamage > 0 && (
                     <div className="flex items-center gap-2">
                       <span className="text-xl">⚔️</span>

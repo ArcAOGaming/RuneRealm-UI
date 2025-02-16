@@ -913,7 +913,7 @@ Handlers.add(
     end
 
     -- Create and assign monster with current timestamp
-    UserMonsters[msg.From] = CreateDefaultMonster(factionDetails.name, factionDetails.mascot, msg.Timestamp)
+    UserMonsters[msg.From] = CreateDefaultMonster(factionDetails.name, msg.Timestamp)
     
     -- Send confirmation back to the user
     ao.send({

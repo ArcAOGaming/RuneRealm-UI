@@ -2,7 +2,7 @@ Initialized = Initialized or nil
 
 TARGET_WORLD_PID = "lA4WPP5v9iUowzLJtCjZsSH_m6WV2FUbGlPSlG7KbnM"
 TARGET_PREMPASS_PID = "j7NcraZUL6GZlgdPEoph12Q5rk_dydvQDecLNxYi8rI"
-TARGET_BATTLE_PID = "8hnue8PYCrgOB4OKHB6HS-ujbPOVuikOaTyICQjQJYQ"
+TARGET_BATTLE_PID = "jwHa1wqb1BtfyEA_onfW_Dx3yzcOPKpPuzaig_G87Bw"
 BaseSprite = '2wRFNJg9XlCcG6jKNpDAMxX1vnHZoub998KkR0qfDjE'
 BaseSpriteAtlas = 'sVIX0l_PFC6M7lYpuEOGJ_f5ESOkMxd5f5xCQSUH_2g'
 BaseSpriteScale = 1.75
@@ -94,6 +94,13 @@ FACTION_BERRY_TYPES = {
     ["Inferno Blades"] = "fire"
 }
 
+EffectivenessChart = {
+  Fire = { Fire = 1.0, Water = 0.5, Air = 2.0, Rock = 1.0 },
+  Water = { Fire = 2.0, Water = 1.0, Air = 1.0, Rock = 0.5 },
+  Air = { Fire = 0.5, Water = 2.0, Air = 1.0, Rock = 1.0 },
+  Rock = { Fire = 1.0, Water = 1.0, Air = 0.5, Rock = 2.0 }
+}
+
 -- Enhanced Attack Pools with Rarity and Balanced Trade-offs
 FirePool = {
   ["Firenado"] = {type="fire", rarity=1, count=2, damage=5, attack=0, speed=2, defense=-1, health=0},  
@@ -149,6 +156,20 @@ HealPool = {
   ["Healing Winds"] = {type="heal", rarity=3, count=1, damage=0, attack=1, speed=3, defense=0, health=4}  
 }
 
+NormalPool = {
+  ["Body Slam"] = {type="normal", rarity=1, count=2, damage=5, attack=3, speed=0, defense=1, health=0},  
+  ["Quick Jab"] = {type="normal", rarity=2, count=3, damage=3, attack=2, speed=4, defense=-1, health=0},  
+  ["Heavy Strike"] = {type="normal", rarity=2, count=1, damage=6, attack=4, speed=-2, defense=2, health=0},  
+  ["Guard Break"] = {type="normal", rarity=3, count=2, damage=4, attack=2, speed=-1, defense=-2, health=1},  
+  ["Frenzy Blows"] = {type="normal", rarity=3, count=2, damage=2, attack=3, speed=2, defense=-1, health=-1},  
+  ["Momentum Shift"] = {type="normal", rarity=3, count=1, damage=0, attack=0, speed=5, defense=-3, health=3}  
+}
+
+
+-- Random number generation function
+function getRandom(min, max)
+  return math.random(min, max)
+end
 
 -- Function to randomly distribute 10 points across stats
 function RandomizeStartingStats()
@@ -157,7 +178,7 @@ function RandomizeStartingStats()
   local statNames = {"attack", "defense", "speed", "health"}
   
   while remainingPoints > 0 do
-    local stat = statNames[math.random(1, #statNames)]
+    local stat = statNames[getRandom(1, #statNames)]
     if stats[stat] < 5 then  -- Max 5 points per stat
       stats[stat] = stats[stat] + 1
       remainingPoints = remainingPoints - 1
@@ -173,7 +194,7 @@ function GetRandomMove(pool)
   for name, _ in pairs(pool) do
     table.insert(moves, name)
   end
-  local index = math.random(1, #moves)
+  local index = getRandom(1, #moves)
   return moves[index]
 end
 
@@ -209,36 +230,7 @@ monstersMAP = {
 }
 
 -- Monster template structure
-function CreateDefaultMonster(factionName, mascotTxId, timestamp)
-  -- Map faction names to berry process IDs
-  -- local berryMap = {
-  --   ["Sky Nomads"] = "XJjSdWaorbQ2q0YkaQSmylmuADWH1fh2PvgfdLmXlzA",
-  --   ["Aqua Guardians"] = "twFZ4HTvL_0XAIOMPizxs_S3YH5J5yGvJ8zKiMReWF0",
-  --   ["Stone Titans"] = "2NoNsZNyHMWOzTqeQUJW9Xvcga3iTonocFIsgkWIiPM",
-  --   ["Inferno Blades"] = "30cPTQXrHN76YZ3bLfNAePIEYDb5Xo1XnbQ-xmLMOM0"
-  -- }
-
-  -- local elementTypeMap = {
-  --   ["Sky Nomads"] = "air",
-  --   ["Aqua Guardians"] = "water",
-  --   ["Stone Titans"] = "rock",
-  --   ["Inferno Blades"] = "fire"
-  -- }
-
-  -- local imageMap = {
-  --   ["Sky Nomads"] = "XD4tSBeekM1ETZMflAANDfkW6pVWaQIXgSdSiwfwVqw",
-  --   ["Aqua Guardians"] = "w_-mPdemSXZ1G-Q6fMEu6wTDJYFnJM9XePjGf_ZChgo",
-  --   ["Stone Titans"] = "WhdcUkIGYZG4M5kq00TnUwaIt5OCGz3Q4u6_fZNktvQ",
-  --   ["Inferno Blades"] = "lnYr9oTtkRHiheQFwH4ns50mrQE6AQR-8Bvl4VfXb0o"
-  -- }
-
-  -- local spriteMap = {
-  --   ["Sky Nomads"] = "0_gQ7rNpxD8S4wZBE_DZs3adWfZMsBIuo8fwvH3SwL0",
-  --   ["Aqua Guardians"] = "p90BYY1O3BS3VVzdZETr-hG6jkA3kwo8l0h3aQ2UFoc",
-  --   ["Stone Titans"] = "Zt8LmHGVIziXhzjqBhEAWLuGetcDitFKbfaJROkyZks",
-  --   ["Inferno Blades"] = "wUo47CacsMRFFizJqUhSj75Rczg3f_MvHs4ytfPtCjQ"
-  -- }
-
+function CreateDefaultMonster(factionName, timestamp)
   -- Get type-specific pool based on faction
   local typePool
   if factionName == "Sky Nomads" then
