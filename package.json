@@ -11,11 +11,9 @@
     "preview": "vite preview"
   },
   "dependencies": {
-    "@permaweb/ao-client": "^0.0.6",
-    "@permaweb/ao-process-clients": "^0.0.1",
     "@ardrive/turbo-sdk": "^1.21.0",
     "@permaweb/aoconnect": "^0.0.62",
-    "ao-process-clients": "^4.1.9",
+    "ao-process-clients": "^3.8.4",
     "arweave": "^1.15.5",
     "chart.js": "^4.4.7",
     "crypto-browserify": "^3.12.1",

@@ -1,5 +1,27 @@
 import { message as aoMessage, createDataItemSigner, dryrun, result } from "../config/aoConnection";
 import { AdminSkinChanger, DefaultAtlasTxID, Alter, SUPPORTED_ASSET_IDS, WAITTIMEOUIT, ASSET_INFO, AssetInfo, TARGET_BATTLE_PID } from "../constants/Constants";
+import { ProfileClient } from 'ao-process-clients';
+
+export interface ProfileInfo {
+  name?: string;
+  bio?: string;
+  avatar?: string;
+  links?: { [key: string]: string };
+  [key: string]: any;
+}
+
+export const getProfileInfo = async (address: string): Promise<ProfileInfo | null> => {
+  try {
+    console.log(`[getProfileInfo] Fetching profile for address: ${address}`);
+    const client = await ProfileClient.createAutoConfigured();
+    const profileInfo = await client.getProfileInfo(address);
+    console.log(`[getProfileInfo] Profile info received:`, profileInfo);
+    return profileInfo;
+  } catch (error) {
+    console.error(`[getProfileInfo] Error getting profile info for ${address}:`, error);
+    return null;
+  }
+};
 
 // Wrap the original message function to include refresh callback
 export const message = async (params: any, refreshCallback?: () => void) => {

@@ -1,19 +1,38 @@
 import React, { useEffect, useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { useWallet } from '../hooks/useWallet';
-import { getFactionOptions, FactionOptions } from '../utils/aoHelpers';
+import { getFactionOptions, FactionOptions, ProfileInfo, getProfileInfo, getUserMonster, MonsterStats } from '../utils/aoHelpers';
 import { currentTheme } from '../constants/theme';
 import { Gateway, ACTIVITY_POINTS } from '../constants/Constants';
 import Header from '../components/Header';
 import LoadingAnimation from '../components/LoadingAnimation';
 import Footer from '../components/Footer';
+import { ProfileCard } from '../components/ProfileCard';
+import { ProfileDetail } from '../components/ProfileDetail';
+
+interface FactionMember {
+  id: string;
+  level: number;
+}
+
+interface MemberWithProfile extends FactionMember {
+  profile: ProfileInfo | null;
+  monster: MonsterStats | null;
+}
+
+interface FactionWithProfiles extends Omit<FactionOptions, 'members'> {
+  members: FactionMember[];
+}
 
 export const FactionDetailPage: React.FC = () => {
   const { factionId } = useParams();
   const navigate = useNavigate();
   const { darkMode, setDarkMode } = useWallet();
-  const [faction, setFaction] = useState<FactionOptions | null>(null);
+  const [faction, setFaction] = useState<FactionWithProfiles | null>(null);
   const [isLoading, setIsLoading] = useState(true);
+  const [selectedMember, setSelectedMember] = useState<MemberWithProfile | null>(null);
+  const [memberProfiles, setMemberProfiles] = useState<Record<string, ProfileInfo>>({});
+  const [memberMonsters, setMemberMonsters] = useState<Record<string, MonsterStats | null>>({});
   const theme = currentTheme(darkMode);
 
   const factionMap = {
@@ -34,8 +53,39 @@ export const FactionDetailPage: React.FC = () => {
           navigate('/factions');
           return;
         }
-        
+
+        // Set initial faction data
         setFaction(foundFaction);
+        setIsLoading(false);
+
+        // Load profiles and monsters one by one
+        for (const member of foundFaction.members) {
+          try {
+            // Load profile
+            console.log(`[FactionDetailPage] Fetching profile for member: ${member.id}`);
+            const profile = await getProfileInfo(member.id);
+            console.log(`[FactionDetailPage] Profile received for ${member.id}:`, profile);
+            
+            if (profile) {
+              setMemberProfiles(prev => ({
+                ...prev,
+                [member.id]: profile
+              }));
+            }
+
+            // Load monster
+            console.log(`[FactionDetailPage] Fetching monster for member: ${member.id}`);
+            const monster = await getUserMonster({ address: member.id });
+            console.log(`[FactionDetailPage] Monster received for ${member.id}:`, monster);
+            
+            setMemberMonsters(prev => ({
+              ...prev,
+              [member.id]: monster
+            }));
+          } catch (error) {
+            console.error(`Error fetching data for ${member.id}:`, error);
+          }
+        }
       } catch (error) {
         console.error('Error loading faction data:', error);
       } finally {
@@ -67,7 +117,7 @@ export const FactionDetailPage: React.FC = () => {
       />
       
       <div className={`container mx-auto px-6 py-8 flex-1 ${theme.text}`}>
-        <div className="max-w-6xl mx-auto">
+        <div className="max-w-7xl mx-auto">
           <div className="flex items-center mb-6">
             <button 
               onClick={() => navigate('/factions')}
@@ -78,33 +128,33 @@ export const FactionDetailPage: React.FC = () => {
             <h1 className="text-3xl font-bold">{faction.name}</h1>
           </div>
 
-          <div className={`grid grid-cols-1 md:grid-cols-2 gap-8 mb-8 p-6 rounded-xl ${theme.container} border ${theme.border} backdrop-blur-md`}>
-            <div>
-              {faction.mascot && (
-                <img
-                  src={`${Gateway}${faction.mascot}`}
-                  alt={`${faction.name} Mascot`}
-                  className="w-full rounded-lg object-contain mb-4 max-h-[400px]"
-                />
-              )}
-              <div className="space-y-4">
-                <h2 className="text-2xl font-bold mb-2">Description</h2>
-                <p className="text-lg">{faction.description}</p>
-                <div>
-                  <h3 className="text-xl font-bold mb-2">Perks</h3>
-                  <ul className="space-y-2">
-                    {faction.perks.map((perk, index) => (
-                      <li key={index} className="flex items-start">
-                        <span className="mr-2 text-blue-400">•</span>
-                        <span>{perk}</span>
-                      </li>
-                    ))}
-                  </ul>
+          <div className={`p-6 rounded-xl ${theme.container} border ${theme.border} backdrop-blur-md space-y-8`}>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+              <div>
+                {faction.mascot && (
+                  <img
+                    src={`${Gateway}${faction.mascot}`}
+                    alt={`${faction.name} Mascot`}
+                    className="w-full rounded-lg object-contain mb-4 max-h-[400px]"
+                  />
+                )}
+                <div className="space-y-4">
+                  <h2 className="text-2xl font-bold mb-2">Description</h2>
+                  <p className="text-lg">{faction.description}</p>
+                  <div>
+                    <h3 className="text-xl font-bold mb-2">Perks</h3>
+                    <ul className="space-y-2">
+                      {faction.perks.map((perk, index) => (
+                        <li key={index} className="flex items-start">
+                          <span className="mr-2 text-blue-400">•</span>
+                          <span>{perk}</span>
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
                 </div>
               </div>
-            </div>
 
-            <div className="space-y-6">
               <div className={`p-6 rounded-lg ${theme.container} bg-opacity-50`}>
                 <h2 className="text-2xl font-bold mb-4">Faction Statistics</h2>
                 <div className="grid grid-cols-2 gap-y-4">
@@ -136,32 +186,57 @@ export const FactionDetailPage: React.FC = () => {
                   </div>
                 </div>
               </div>
+            </div>
 
-              <div className={`p-6 rounded-lg ${theme.container} bg-opacity-50`}>
-                <h2 className="text-2xl font-bold mb-4">Members</h2>
-                <div className="max-h-[400px] overflow-y-auto">
-                  <table className="w-full">
-                    <thead className={`sticky top-0 ${theme.container}`}>
-                      <tr>
-                        <th className="text-left py-2">ID</th>
-                        <th className="text-right py-2">Level</th>
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y divide-gray-700">
-                      {faction.members.map((member, index) => (
-                        <tr key={index}>
-                          <td className="py-2">{member.id}</td>
-                          <td className="text-right py-2">{member.level}</td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
+            <div className={`p-6 rounded-lg ${theme.container} bg-opacity-50`}>
+              <h2 className="text-2xl font-bold mb-4">Members</h2>
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4 max-h-[600px] overflow-y-auto p-2">
+                {faction.members.map((member, index) => {
+                  const profile = memberProfiles[member.id];
+                  const monster = memberMonsters[member.id];
+                  return (
+                    <ProfileCard
+                      key={index}
+                      profile={{
+                        ProfileImage: profile?.Profile?.ProfileImage,
+                        UserName: profile?.Profile?.UserName || profile?.name,
+                        DisplayName: profile?.Profile?.DisplayName || profile?.name,
+                        Description: profile?.Profile?.Description || profile?.bio
+                      }}
+                      address={member.id}
+                      onClick={() => setSelectedMember({
+                        ...member,
+                        profile,
+                        monster
+                      })}
+                      assets={profile?.Assets}
+                      monster={monster}
+                    />
+                  );
+                })}
               </div>
             </div>
           </div>
         </div>
       </div>
+
+      {selectedMember && (
+        <ProfileDetail
+          profile={{
+            ProfileImage: selectedMember.profile?.Profile?.ProfileImage || selectedMember.profile?.avatar,
+            UserName: selectedMember.profile?.Profile?.UserName || selectedMember.profile?.name,
+            DisplayName: selectedMember.profile?.Profile?.DisplayName || selectedMember.profile?.name,
+            Description: selectedMember.profile?.Profile?.Description || selectedMember.profile?.bio,
+            CoverImage: selectedMember.profile?.Profile?.CoverImage,
+            DateCreated: selectedMember.profile?.Profile?.DateCreated,
+            DateUpdated: selectedMember.profile?.Profile?.DateUpdated
+          }}
+          address={selectedMember.id}
+          assets={selectedMember.profile?.Assets}
+          onClose={() => setSelectedMember(null)}
+        />
+      )}
+
       <Footer darkMode={darkMode} />
     </div>
   );
