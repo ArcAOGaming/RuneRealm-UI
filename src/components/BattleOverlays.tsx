@@ -22,10 +22,10 @@ const BattleOverlays: React.FC<BattleOverlaysProps> = ({
 }) => {
   return (
     <>
-      {/* Inventory */}
+      {/* Inventory
       <div className="fixed right-4 top-32">
         <Inventory />
-      </div>
+      </div> */}
 
       {/* Battle Log */}
       <BattleLogContainer

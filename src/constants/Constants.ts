@@ -10,6 +10,12 @@ export const Alter = "GhNl98tr7ZQxIJHx4YcVdGh7WkT9dD7X4kmQOipvePQ"
 export const DefaultAtlasTxID = "sVIX0l_PFC6M7lYpuEOGJ_f5ESOkMxd5f5xCQSUH_2g"
 export const Gateway = "https://arweave.net/"
 
+// Battle position constants
+export const BATTLE_POSITIONS = {
+  HOME_OFFSET: '15%',    // Distance from edge in home position
+  ATTACK_OFFSET: '55%',  // Distance from edge in attack position
+} as const;
+
 // Activity point values
 export const ACTIVITY_POINTS = {
   OFFERING: 10,

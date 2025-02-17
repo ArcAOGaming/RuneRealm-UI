@@ -9,15 +9,19 @@ interface BattleLogToggleProps {
 }
 
 const BattleLogToggle: React.FC<BattleLogToggleProps> = ({ turns, isOpen, onToggle, theme }) => {
+  if (isOpen) return null;
+  
   return (
-    <button
-      onClick={onToggle}
-      className={`fixed left-4 top-20 px-4 py-2 rounded-lg font-bold transition-all duration-300 
-        ${theme.buttonBg} ${theme.buttonHover} ${theme.text} flex items-center gap-2 z-50`}
-    >
-      <span>Battle Log</span>
-      <span className="text-sm">({turns.length} turns)</span>
-    </button>
+    <div style={{ top: '25vh' }} className="fixed left-4 z-50">
+      <button
+        onClick={onToggle}
+        className={`px-4 py-2 rounded-lg font-bold transition-all duration-300 
+          ${theme.buttonBg} ${theme.buttonHover} ${theme.text} flex items-center gap-2`}
+      >
+        <span>Battle Log</span>
+        <span className="text-sm">({turns.length} turns)</span>
+      </button>
+    </div>
   );
 };
 

@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import MonsterSpriteView from './MonsterSpriteView';
 import { MonsterStats } from '../utils/aoHelpers';
 import BattleStatus from './BattleStatus';
+import { BATTLE_POSITIONS } from '../constants/Constants';
 
 interface BattleSceneProps {
   player: MonsterStats;
@@ -56,7 +57,7 @@ const BattleScene: React.FC<BattleSceneProps> = ({
   }, [opponentAnimation]);
 
   return (
-    <div className="relative w-full h-[400px] overflow-hidden rounded-lg">
+    <div className="relative w-full h-full overflow-hidden rounded-lg">
       {/* Background */}
       <div 
         className="absolute inset-0 bg-cover bg-center"
@@ -65,9 +66,9 @@ const BattleScene: React.FC<BattleSceneProps> = ({
       
       {/* Player Monster */}
       <div 
-        className="absolute bottom-20 transition-all duration-[1000ms] ease-in-out"
+        className="absolute bottom-[15%] transition-all duration-[750ms] ease-in-out"
         style={{ 
-          left: playerPosition === 'attack' ? '200px' : '24px'
+          left: playerPosition === 'attack' ? BATTLE_POSITIONS.ATTACK_OFFSET : BATTLE_POSITIONS.HOME_OFFSET
         }}
       >
         {/* Stats Display */}
@@ -104,9 +105,9 @@ const BattleScene: React.FC<BattleSceneProps> = ({
       
       {/* Opponent Monster */}
       <div 
-        className="absolute bottom-20 transition-all duration-[1000ms] ease-in-out"
+        className="absolute bottom-[15%] transition-all duration-[750ms] ease-in-out"
         style={{ 
-          right: opponentPosition === 'attack' ? '200px' : '24px'
+          right: opponentPosition === 'attack' ? BATTLE_POSITIONS.ATTACK_OFFSET : BATTLE_POSITIONS.HOME_OFFSET
         }}
       >
         {/* Stats Display */}

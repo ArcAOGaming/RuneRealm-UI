@@ -14,8 +14,8 @@ const BattleLog: React.FC<BattleLogProps> = ({ turns, isOpen, onClose, playerNam
   if (!isOpen) return null;
 
   return (
-    <div className="fixed left-4 top-32 w-[400px] rounded-xl bg-gray-800 border border-gray-700 backdrop-blur-md shadow-lg z-50">
-      <div className="flex justify-between items-center p-4 border-b border-gray-200 dark:border-gray-700">
+    <div className="fixed left-4 w-[400px] rounded-xl bg-gray-800 border border-gray-700 backdrop-blur-md shadow-lg z-50" style={{ top: '25vh' }}>
+      <div className="flex justify-between items-center p-3 border-b border-gray-200 dark:border-gray-700">
         <h3 className="text-lg font-bold text-gray-900 dark:text-white">Battle Log</h3>
         <button
           onClick={onClose}
@@ -27,7 +27,7 @@ const BattleLog: React.FC<BattleLogProps> = ({ turns, isOpen, onClose, playerNam
         </button>
       </div>
       
-      <div className="overflow-y-auto p-4" style={{ maxHeight: '600px' }}>
+      <div className="overflow-y-auto p-3" style={{ maxHeight: '400px' }}>
         <div className="flex flex-col space-y-4 w-full">
           {turns.map((turn, index) => (
             <div

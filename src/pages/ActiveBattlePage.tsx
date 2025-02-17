@@ -7,8 +7,8 @@ import Footer from '../components/Footer';
 import Loading from '../components/Loading';
 import { useNavigate } from 'react-router-dom';
 import BattleScene from '../components/BattleScene';
-import BattleStatus from '../components/BattleStatus';
 import BattleOverlays from '../components/BattleOverlays';
+import BattleStats from '../components/BattleStats';
 
 // Function to determine move color based on type
 const getMoveColor = (moveName: string, move: any) => {
@@ -220,19 +220,19 @@ export const ActiveBattlePage: React.FC = (): JSX.Element => {
                     await new Promise(resolve => setTimeout(resolve, 1000));
                     
                     setPlayerAnimation('attack1');
-                    await new Promise(resolve => setTimeout(resolve, 1250));
+                    await new Promise(resolve => setTimeout(resolve, 1000));
                     
                     setPlayerAnimation('walkLeft');
-                    await new Promise(resolve => setTimeout(resolve, 1250));
+                    await new Promise(resolve => setTimeout(resolve, 1000));
                   } else {
                     setOpponentAnimation('walkRight');
-                    await new Promise(resolve => setTimeout(resolve, 1250));
+                    await new Promise(resolve => setTimeout(resolve, 1000));
                     
                     setOpponentAnimation('attack1');
-                    await new Promise(resolve => setTimeout(resolve, 1250));
+                    await new Promise(resolve => setTimeout(resolve, 1000));
                     
                     setOpponentAnimation('walkLeft');
-                    await new Promise(resolve => setTimeout(resolve, 1250));
+                    await new Promise(resolve => setTimeout(resolve, 1000));
                   }
                 } else {
                   // Heal/Boost sequence: up -> left -> down
@@ -324,18 +324,6 @@ export const ActiveBattlePage: React.FC = (): JSX.Element => {
     }
   };
 
-  const handleReturnToBattleManager = async () => {
-    if (!wallet?.address || isUpdating) return;
-    try {
-      setIsUpdating(true);
-      navigate('/battle');
-    } catch (error) {
-      console.error('Error returning from battle:', error);
-    } finally {
-      setIsUpdating(false);
-    }
-  };
-
   const handleEndBattle = async () => {
     if (!wallet?.address || !activeBattle || isUpdating) return;
     try {
@@ -372,8 +360,8 @@ export const ActiveBattlePage: React.FC = (): JSX.Element => {
           />
         )}
         
-        <div className={`container mx-auto px-6 py-8 flex-1 ${theme.text}`}>
-          <div className="max-w-4xl mx-auto">
+        <div className={`container mx-auto px-4 flex-1 ${theme.text}`}>
+          <div className="w-full mx-auto flex flex-col items-center" style={{ maxWidth: '95vw', height: 'calc(100vh - 180px)' }}>
             {!wallet?.address ? (
               <div className={`p-6 rounded-xl ${theme.container} border ${theme.border} backdrop-blur-md text-center`}>
                 <h2 className={`text-xl font-bold mb-4 ${theme.text}`}>Connect Wallet</h2>
@@ -389,91 +377,44 @@ export const ActiveBattlePage: React.FC = (): JSX.Element => {
                 <p className={`mb-4 ${theme.text}`}>Returning to battle manager...</p>
               </div>
             ) : (
-              <div className={`p-6 rounded-xl ${theme.container} border ${theme.border} backdrop-blur-md`}>
+              <div className={`rounded-xl ${theme.container} border ${theme.border} backdrop-blur-md`}>
                 {isUpdating && <UpdateIndicator />}
-                
-                <div className="flex justify-between items-center mb-6">
-                  <h2 className={`text-2xl font-bold ${theme.text}`}>Active Battle</h2>
-                  {activeBattle.status === 'ended' && (
-                    <button
-                      onClick={handleEndBattle}
-                      className="px-4 py-2 bg-red-500 hover:bg-red-600 text-white rounded-lg font-bold transition-all duration-300"
-                    >
-                      Exit Battle
-                    </button>
-                  )}
-                </div>
-                
-                <div className={`p-4 rounded-lg ${theme.container} bg-opacity-20 mb-4 transition-all duration-300`}>
+                {activeBattle.status === 'ended' && (
+                  <button
+                    onClick={handleEndBattle}
+                    className="absolute top-4 right-4 z-20 px-4 py-2 bg-red-500 hover:bg-red-600 text-white rounded-lg font-bold transition-all duration-300"
+                  >
+                    Exit Battle
+                  </button>
+                )}
+                <div className={`rounded-lg ${theme.container} bg-opacity-20 transition-all duration-300 overflow-hidden`}>
                   {/* Battle Scene */}
-                  <BattleScene
-                    player={activeBattle.player}
-                    opponent={activeBattle.opponent}
-                    playerAnimation={playerAnimation}
-                    opponentAnimation={opponentAnimation}
-                    onPlayerAnimationComplete={() => {}}
-                    onOpponentAnimationComplete={() => {}}
-                    attackAnimation={attackAnimation}
-                    shieldRestoring={shieldRestoring}
-                    showEndOfRound={showEndOfRound}
-                    onAttackComplete={() => setAttackAnimation(null)}
-                    onShieldComplete={() => setShieldRestoring(false)}
-                    onRoundComplete={() => setShowEndOfRound(false)}
-                  />
+                  <div className="relative mx-auto" style={{ 
+                    height: 'min(65vh, calc(100vh - 280px))', 
+                    width: 'min(calc((100vh - 280px) * 1.7777), calc(95vw))',
+                    maxHeight: '800px'
+                  }}>
+                    <BattleScene
+                      player={activeBattle.player}
+                      opponent={activeBattle.opponent}
+                      playerAnimation={playerAnimation}
+                      opponentAnimation={opponentAnimation}
+                      onPlayerAnimationComplete={() => {}}
+                      onOpponentAnimationComplete={() => {}}
+                      attackAnimation={attackAnimation}
+                      shieldRestoring={shieldRestoring}
+                      showEndOfRound={showEndOfRound}
+                      onAttackComplete={() => setAttackAnimation(null)}
+                      onShieldComplete={() => setShieldRestoring(false)}
+                      onRoundComplete={() => setShowEndOfRound(false)}
+                    />
+                    <BattleStats battle={activeBattle} theme={theme} />
+                  </div>
                 </div>
 
-                <div className="mt-6">
-                  {/* Monster Stats */}
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
-                    {/* Player Monster Stats */}
-                    <div className={`p-4 rounded-lg ${theme.container} bg-opacity-20`}>
-                      <h4 className="text-md font-semibold mb-3">Your Monster</h4>
-                      <div className="space-y-2">
-                        <div className="flex justify-between items-center">
-                          <span className="font-medium">{activeBattle.player.name}</span>
-                          <span>Level {activeBattle.player.level}</span>
-                        </div>
-                        <div className="flex justify-between items-center">
-                          <span>Attack</span>
-                          <span>{activeBattle.player.attack}</span>
-                        </div>
-                        <div className="flex justify-between items-center">
-                          <span>Defense</span>
-                          <span>{activeBattle.player.defense}</span>
-                        </div>
-                        <div className="flex justify-between items-center">
-                          <span>Speed</span>
-                          <span>{activeBattle.player.speed}</span>
-                        </div>
-                      </div>
-                    </div>
-
-                    {/* Opponent Monster Stats */}
-                    <div className={`p-4 rounded-lg ${theme.container} bg-opacity-20`}>
-                      <h4 className="text-md font-semibold mb-3">Opponent's Monster</h4>
-                      <div className="space-y-2">
-                        <div className="flex justify-between items-center">
-                          <span className="font-medium">{activeBattle.opponent.name}</span>
-                          <span>Level {activeBattle.opponent.level}</span>
-                        </div>
-                        <div className="flex justify-between items-center">
-                          <span>Attack</span>
-                          <span>{activeBattle.opponent.attack}</span>
-                        </div>
-                        <div className="flex justify-between items-center">
-                          <span>Defense</span>
-                          <span>{activeBattle.opponent.defense}</span>
-                        </div>
-                        <div className="flex justify-between items-center">
-                          <span>Speed</span>
-                          <span>{activeBattle.opponent.speed}</span>
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-
+                <div className="mt-2">
                   {/* Moves */}
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4 px-4 pb-4">
                     {/* Player Moves */}
                     <div className={`p-4 rounded-lg ${theme.container} bg-opacity-20`}>
                       <h4 className="text-md font-semibold mb-3">Your Moves</h4>
@@ -615,14 +556,6 @@ export const ActiveBattlePage: React.FC = (): JSX.Element => {
                       </div>
                     </div>
                   </div>
-
-                  {/* Return to Battle Manager Button */}
-                  <button
-                    onClick={handleReturnToBattleManager}
-                    className={`w-full mt-4 px-6 py-3 rounded-lg font-bold transition-all duration-300 ${theme.buttonBg} ${theme.buttonHover} ${theme.text}`}
-                  >
-                    Return to Battle Manager
-                  </button>
                 </div>
               </div>
             )}
