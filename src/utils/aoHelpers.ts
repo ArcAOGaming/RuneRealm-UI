@@ -66,6 +66,7 @@ export interface MonsterState {
     attack: number;
     defense: number;
     speed: number;
+    healthPoints: number
 }
 
 export interface BattleTurn {

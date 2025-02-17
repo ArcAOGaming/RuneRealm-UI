@@ -12,7 +12,7 @@ import BattleOverlays from '../components/BattleOverlays';
 
 // Function to determine move color based on type
 const getMoveColor = (moveName: string, move: any) => {
-  console.log('Move:', moveName, move);
+  //console.log('Move:', moveName, move);
   
   if (moveName === 'struggle') return 'bg-purple-500';  
   // Determine type based on name
@@ -95,6 +95,7 @@ export const ActiveBattlePage: React.FC = (): JSX.Element => {
         if (battle) {
           if (!activeBattle) {
             // Initial battle load
+            console.log("Initial battle load")
             setActiveBattle({
               ...battle,
               status: 'active'
@@ -106,6 +107,7 @@ export const ActiveBattlePage: React.FC = (): JSX.Element => {
           } else if (!movesDisabled && hasBattleChanged(activeBattle, battle)) {
             // Only update if there are meaningful changes and not during animations
             setPreviousBattle(activeBattle);
+            console.log("Initial battle load 2")
             setActiveBattle({
               ...battle,
               status: activeBattle.status
@@ -150,6 +152,7 @@ export const ActiveBattlePage: React.FC = (): JSX.Element => {
           const result = response.data as BattleResult;
           setBattleManagerInfo(result.session);
           if (activeBattle) {
+            console.log("intermidiate battle load")
             setActiveBattle({
               ...activeBattle,
               status: 'ended'
@@ -189,6 +192,7 @@ export const ActiveBattlePage: React.FC = (): JSX.Element => {
                   ...battleData,
                   status: activeBattle.status
                 };
+                console.log("attack battle load")
                 setActiveBattle(finalBattle);
                 setPreviousBattle(finalBattle);
                 
@@ -261,35 +265,39 @@ export const ActiveBattlePage: React.FC = (): JSX.Element => {
                 // Apply this turn's changes to the previous state
                 const updatedBattle = {
                   ...activeBattle,
-                  player: { ...previousState.player },
-                  opponent: { ...previousState.opponent }
+                  player: { ...activeBattle.player },
+                  opponent: { ...activeBattle.opponent }
                 };
+                console.log(turn.attackerState)
+                console.log(turn.defenderState)
 
-                const target = turn.attacker === 'player' ? 'opponent' : 'player';
-                
-                // Apply effects in order
-                if (turn.shieldDamage > 0) {
-                  updatedBattle[target].shield = Math.max(
-                    0,
-                    updatedBattle[target].shield - turn.shieldDamage
-                  );
+                if(turn.attacker =="player"){
+                  updatedBattle.player.attack = turn.attackerState.attack
+                  updatedBattle.player.defense = turn.attackerState.defense
+                  updatedBattle.player.speed = turn.attackerState.speed
+                  updatedBattle.player.shield = turn.attackerState.shield
+                 updatedBattle.player.healthPoints = turn.attackerState.healthPoints
+
+                  updatedBattle.opponent.attack = turn.defenderState.attack
+                  updatedBattle.opponent.defense = turn.defenderState.defense
+                  updatedBattle.opponent.speed = turn.defenderState.speed
+                  updatedBattle.opponent.shield = turn.defenderState.shield
+                  updatedBattle.opponent.healthPoints = turn.defenderState.healthPoints
+                }else{
+                  updatedBattle.opponent.attack = turn.attackerState.attack
+                  updatedBattle.opponent.defense = turn.attackerState.defense
+                  updatedBattle.opponent.speed = turn.attackerState.speed
+                  updatedBattle.opponent.shield = turn.attackerState.shield
+                  updatedBattle.opponent.healthPoints = turn.attackerState.healthPoints
+
+                  updatedBattle.player.attack = turn.defenderState.attack
+                  updatedBattle.player.defense = turn.defenderState.defense
+                  updatedBattle.player.speed = turn.defenderState.speed
+                  updatedBattle.player.shield = turn.defenderState.shield
+                  updatedBattle.player.healthPoints = turn.defenderState.healthPoints
                 }
-
-                if (turn.healthDamage > 0) {
-                  updatedBattle[target].healthPoints = Math.max(
-                    0,
-                    updatedBattle[target].healthPoints - turn.healthDamage
-                  );
-                }
-
-                if (turn.statsChanged) {
-                  const stats = turn.statsChanged;
-                  updatedBattle[target].speed += stats.speed || 0;
-                  updatedBattle[target].defense += stats.defense || 0;
-                  // Add other stat changes as needed
-                }
-
                 // Update battle state with this turn's changes
+                console.log("Turn battle load")
                 setActiveBattle(updatedBattle);
 
                 // Small delay before next turn
