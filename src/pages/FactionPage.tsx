@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { useWallet } from '../hooks/useWallet';
+import { useNavigate } from 'react-router-dom';
 import { getFactionOptions, FactionOptions, setFaction, purchaseAccess, TokenOption, getTotalOfferings, OfferingStats, getUserOfferings } from '../utils/aoHelpers';
 import { currentTheme } from '../constants/theme';
 import { Gateway, ACTIVITY_POINTS } from '../constants/Constants';
@@ -11,7 +12,15 @@ import LoadingAnimation from '../components/LoadingAnimation';
 import Inventory from '../components/Inventory';
 import Footer from '../components/Footer';
 
+const FACTION_TO_PATH = {
+  'Sky Nomads': 'air',
+  'Aqua Guardians': 'water',
+  'Inferno Blades': 'fire',
+  'Stone Titans': 'rock'
+};
+
 export const FactionPage: React.FC = () => {
+  const navigate = useNavigate();
   const { wallet, walletStatus, darkMode, connectWallet, setDarkMode, refreshTrigger, triggerRefresh } = useWallet();
   const [factions, setFactions] = useState<FactionOptions[]>([]);
   const [isPurchaseModalOpen, setIsPurchaseModalOpen] = useState(false);
@@ -46,14 +55,12 @@ export const FactionPage: React.FC = () => {
   }, []);
 
   // Function to load data
-  const loadAllData = async (isInitialLoading = false) => {
+  const loadAllData = async () => {
     if (!wallet?.address) {
-      if (isInitialLoading) {
-        setFactions([]);
-        setOfferingStats(null);
-        setUserOfferings(0);
-        setIsInitialLoad(false);
-      }
+      setFactions([]);
+      setOfferingStats(null);
+      setUserOfferings(0);
+      setIsInitialLoad(false);
       return;
     }
 
@@ -64,27 +71,20 @@ export const FactionPage: React.FC = () => {
         getUserOfferings(wallet.address)
       ]);
 
-      // Update state while preserving existing data if available
-      setFactions(prevFactions => factionData || prevFactions);
-      setOfferingStats(prevStats => totalStats || prevStats);
-      setUserOfferings(prevOfferings => userStats || prevOfferings);
+      if (factionData) setFactions(factionData);
+      if (totalStats) setOfferingStats(totalStats);
+      if (userStats !== undefined) setUserOfferings(userStats);
     } catch (error) {
       console.error('Error loading faction data:', error);
     } finally {
-      if (isInitialLoading) {
-        setIsInitialLoad(false);
-      }
+      setIsInitialLoad(false);
     }
   };
 
-  // Initial load and refresh on trigger
+  // Load data when wallet changes or refresh is triggered
   useEffect(() => {
-    if (isInitialLoad) {
-      loadAllData(true);
-    } else {
-      loadAllData(false);
-    }
-  }, [wallet?.address, refreshTrigger, isInitialLoad]);
+    loadAllData();
+  }, [wallet?.address, refreshTrigger]);
 
   const handleJoinFaction = async (factionName: string) => {
     try {
@@ -200,40 +200,45 @@ export const FactionPage: React.FC = () => {
                         Offer praise to the altar of your team once daily. Build streaks to earn RUNE rewards - consistency is key!
                       </p>
                       <div className="grid grid-cols-2 gap-4">
-                        <div className={`space-y-2 p-3 rounded-lg ${theme.container} bg-opacity-50 mb-4`}>
-                          <div className={`text-sm ${theme.text}`}>
-                            <span className="opacity-70">Your Offerings:</span>
-                            <span className="float-right font-semibold">{userOfferings}</span>
+                        <div className={`grid grid-cols-2 gap-4 p-3 rounded-lg ${theme.container} bg-opacity-50 mb-4`}>
+                          <div>
+                            <div className={`text-sm ${theme.text}`}>
+                              <span className="opacity-70">Your Offerings:</span>
+                              <span className="float-right font-semibold">{userOfferings}</span>
+                            </div>
+                            <div className={`text-sm ${theme.text}`}>
+                              <span className="opacity-70">Times Fed:</span>
+                              <span className="float-right font-semibold">{walletStatus?.monster?.totalTimesFed || 0}</span>
+                            </div>
+                            <div className={`text-sm ${theme.text}`}>
+                              <span className="opacity-70">Times Played:</span>
+                              <span className="float-right font-semibold">{walletStatus?.monster?.totalTimesPlay || 0}</span>
+                            </div>
+                            <div className={`text-sm ${theme.text}`}>
+                              <span className="opacity-70">Missions:</span>
+                              <span className="float-right font-semibold">{walletStatus?.monster?.totalTimesMission || 0}</span>
+                            </div>
+                            <div className={`text-sm ${theme.text} font-bold pt-2 border-t border-gray-600`}>
+                              <span>Total Points:</span>
+                              <span className="float-right">
+                                {(userOfferings * ACTIVITY_POINTS.OFFERING) +
+                                 ((walletStatus?.monster?.totalTimesFed || 0) * ACTIVITY_POINTS.FEED) +
+                                 ((walletStatus?.monster?.totalTimesPlay || 0) * ACTIVITY_POINTS.PLAY) +
+                                 ((walletStatus?.monster?.totalTimesMission || 0) * ACTIVITY_POINTS.MISSION)}
+                              </span>
+                            </div>
                           </div>
-                          <div className={`text-sm ${theme.text}`}>
-                            <span className="opacity-70">Times Fed:</span>
-                            <span className="float-right font-semibold">{walletStatus?.monster?.totalTimesFed || 0}</span>
-                          </div>
-                          <div className={`text-sm ${theme.text}`}>
-                            <span className="opacity-70">Times Played:</span>
-                            <span className="float-right font-semibold">{walletStatus?.monster?.totalTimesPlay || 0}</span>
-                          </div>
-                          <div className={`text-sm ${theme.text}`}>
-                            <span className="opacity-70">Missions Completed:</span>
-                            <span className="float-right font-semibold">{walletStatus?.monster?.totalTimesMission || 0}</span>
-                          </div>
-                          <div className={`text-sm ${theme.text} font-bold pt-2 border-t border-gray-600`}>
-                            <span>Total Points:</span>
-                            <span className="float-right">
-                              {(userOfferings * ACTIVITY_POINTS.OFFERING) +
-                               ((walletStatus?.monster?.totalTimesFed || 0) * ACTIVITY_POINTS.FEED) +
-                               ((walletStatus?.monster?.totalTimesPlay || 0) * ACTIVITY_POINTS.PLAY) +
-                               ((walletStatus?.monster?.totalTimesMission || 0) * ACTIVITY_POINTS.MISSION)}
-                            </span>
-                          </div>
-                        </div>
-                        <div className={`p-3 rounded-lg ${theme.container} bg-opacity-50 mb-4`}>
-                          <h4 className={`text-sm font-bold ${theme.text} mb-2`}>Point Values</h4>
-                          <div className={`space-y-1 text-sm ${theme.text} opacity-80`}>
-                            <div>Offering: {ACTIVITY_POINTS.OFFERING}pts</div>
-                            <div>Feed: {ACTIVITY_POINTS.FEED}pt</div>
-                            <div>Play: {ACTIVITY_POINTS.PLAY}pts</div>
-                            <div>Mission: {ACTIVITY_POINTS.MISSION}pts</div>
+                          <div>
+                            <div className={`text-sm ${theme.text} mb-2`}>
+                              <span className="opacity-70">Avg Level:</span>
+                              <span className="float-right font-semibold">{currentFaction.averageLevel ? Math.round(currentFaction.averageLevel * 10) / 10 : 0}</span>
+                            </div>
+                            <div className={`text-sm ${theme.text} opacity-80`}>
+                              <div>Offering: {ACTIVITY_POINTS.OFFERING}pts</div>
+                              <div>Feed: {ACTIVITY_POINTS.FEED}pt</div>
+                              <div>Play: {ACTIVITY_POINTS.PLAY}pts</div>
+                              <div>Mission: {ACTIVITY_POINTS.MISSION}pts</div>
+                            </div>
                           </div>
                         </div>
                       </div>
@@ -258,11 +263,11 @@ export const FactionPage: React.FC = () => {
           )}
 
           {/* Loading State or Content */}
-          {isInitialLoad ? (
+          {isInitialLoad && !factions.length ? (
             <div className="flex justify-center items-center min-h-[400px]">
               <LoadingAnimation />
             </div>
-          ) : (
+          ) : factions.length > 0 && (
             <div 
               className={`grid gap-3 max-w-5xl mx-auto ${
                 factions.length <= 3 
@@ -275,7 +280,8 @@ export const FactionPage: React.FC = () => {
               {factions.map((faction) => (
                 <div
                   key={faction.name}
-                  className={`flex flex-col h-full p-2.5 rounded-xl ${theme.container} border ${theme.border} backdrop-blur-md transform transition-all duration-300 hover:scale-[1.02] hover:shadow-xl min-h-[480px]`}
+                  onClick={() => navigate(`/factions/${FACTION_TO_PATH[faction.name as keyof typeof FACTION_TO_PATH]}`)}
+                  className={`flex flex-col h-full p-2.5 rounded-xl ${theme.container} border ${theme.border} backdrop-blur-md transform transition-all duration-300 hover:scale-[1.02] hover:shadow-xl min-h-[480px] cursor-pointer`}
                 >
                   <div className="relative rounded-lg overflow-hidden bg-black/5">
                     {faction.mascot && (
@@ -301,47 +307,49 @@ export const FactionPage: React.FC = () => {
                           </ul>
                         )}
                       </div>
-                        <div className={`grid grid-cols-1 gap-2 p-2 rounded-lg ${theme.container} bg-opacity-50`}>
-                          <div className={`text-sm ${theme.text}`}>
-                            <span className="opacity-70">Current members:</span>
-                            <span className="float-right font-semibold">{faction.memberCount}</span>
+                          <div className={`grid grid-cols-2 gap-4 p-4 rounded-lg ${theme.container} bg-opacity-50`}>
+                          <div className="space-y-4">
+                            <div className={`text-sm ${theme.text} mb-2`}>
+                              <span className="opacity-70">Members:</span>
+                              <span className="float-right font-semibold">{faction.memberCount}</span>
+                            </div>
+                            <div className={`text-sm ${theme.text} mb-2`}>
+                              <span className="opacity-70">Monsters:</span>
+                              <span className="float-right font-semibold">{faction.monsterCount}</span>
+                            </div>
+                            <div className={`text-sm ${theme.text} mb-2`}>
+                              <span className="opacity-70">Avg Level:</span>
+                              <span className="float-right font-semibold">{faction.averageLevel ? Math.round(faction.averageLevel * 10) / 10 : 0}</span>
+                            </div>
+                            <div className={`text-sm ${theme.text} mb-2`}>
+                              <span className="opacity-70">Offerings:</span>
+                              <span className="float-right font-semibold">
+                                {offeringStats?.[faction.name as keyof OfferingStats] || 0}
+                              </span>
+                            </div>
                           </div>
-                          <div className={`text-sm ${theme.text}`}>
-                            <span className="opacity-70">Total monsters adopted:</span>
-                            <span className="float-right font-semibold">{faction.monsterCount}</span>
-                          </div>
-                          <div className={`text-sm ${theme.text}`}>
-                            <span className="opacity-70">Total offerings:</span>
-                            <span className="float-right font-semibold">
-                              {offeringStats?.[faction.name as keyof OfferingStats] || 0}
-                            </span>
-                          </div>
-                          <div className={`text-sm ${theme.text}`}>
-                            <span className="opacity-70">Total times fed:</span>
-                            <span className="float-right font-semibold">
-                              {faction.totalTimesFed || 0}
-                            </span>
-                          </div>
-                          <div className={`text-sm ${theme.text}`}>
-                            <span className="opacity-70">Total times played:</span>
-                            <span className="float-right font-semibold">
-                              {faction.totalTimesPlay || 0}
-                            </span>
-                          </div>
-                          <div className={`text-sm ${theme.text}`}>
-                            <span className="opacity-70">Total missions:</span>
-                            <span className="float-right font-semibold">
-                              {faction.totalTimesMission || 0}
-                            </span>
-                          </div>
-                          <div className={`text-sm ${theme.text} font-bold pt-2 border-t border-gray-600`}>
-                            <span>Total Points:</span>
-                            <span className="float-right">
-                              {(offeringStats?.[faction.name as keyof OfferingStats] || 0) * ACTIVITY_POINTS.OFFERING +
-                               (faction.totalTimesFed || 0) * ACTIVITY_POINTS.FEED +
-                               (faction.totalTimesPlay || 0) * ACTIVITY_POINTS.PLAY +
-                               (faction.totalTimesMission || 0) * ACTIVITY_POINTS.MISSION}
-                            </span>
+                          <div className="space-y-4">
+                            <div className={`text-sm ${theme.text} mb-2`}>
+                              <span className="opacity-70">Times Fed:</span>
+                              <span className="float-right font-semibold">{faction.totalTimesFed || 0}</span>
+                            </div>
+                            <div className={`text-sm ${theme.text} mb-2`}>
+                              <span className="opacity-70">Times Played:</span>
+                              <span className="float-right font-semibold">{faction.totalTimesPlay || 0}</span>
+                            </div>
+                            <div className={`text-sm ${theme.text} mb-2`}>
+                              <span className="opacity-70">Missions:</span>
+                              <span className="float-right font-semibold">{faction.totalTimesMission || 0}</span>
+                            </div>
+                            <div className={`text-sm ${theme.text} font-bold mt-4`}>
+                              <span>Points:</span>
+                              <span className="float-right">
+                                {(offeringStats?.[faction.name as keyof OfferingStats] || 0) * ACTIVITY_POINTS.OFFERING +
+                                 (faction.totalTimesFed || 0) * ACTIVITY_POINTS.FEED +
+                                 (faction.totalTimesPlay || 0) * ACTIVITY_POINTS.PLAY +
+                                 (faction.totalTimesMission || 0) * ACTIVITY_POINTS.MISSION}
+                              </span>
+                            </div>
                           </div>
                       </div>
                     </div>

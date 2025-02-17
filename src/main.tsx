@@ -9,6 +9,7 @@ import MonsterTest from './pages/MonsterTest'
 import { WalletProvider } from './context/WalletContext'
 import './index.css'
 import { FactionPage } from './pages/FactionPage'
+import { FactionDetailPage } from './pages/FactionDetailPage'
 import { BattlePage } from './pages/BattlePage'
 import { handleReferralLink } from './utils/aoHelpers'
 import { ActiveBattlePage } from './pages/ActiveBattlePage'
@@ -26,6 +27,7 @@ const App = () => {
           <Route path="/" element={<PurchaseInfo />} />
           <Route path="/customize" element={<SpriteCustomizer />} />
           <Route path="/factions" element={<FactionPage />} />
+          <Route path="/factions/:factionId" element={<FactionDetailPage />} />
           <Route path="/monsters" element={<MonsterManagement />} />
           <Route path="/admin" element={<Admin />} />
           <Route path="/battle" element={<BattlePage />} />
