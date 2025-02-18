@@ -33,7 +33,7 @@ const MonsterSpriteView: React.FC<MonsterSpriteViewProps> = ({
   // Load sprite sheet from local assets
   useEffect(() => {
     const img = new Image();
-    img.src = `/src/assets/sprites/${sprite}.png`;
+    img.src = new URL(`../assets/sprites/${sprite}.png`, import.meta.url).href;
     img.onload = () => setSpriteImage(img);
     return () => {
       img.onload = null;

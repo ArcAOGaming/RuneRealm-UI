@@ -117,7 +117,7 @@ export const FactionDetailPage: React.FC = () => {
       />
       
       <div className={`container mx-auto px-6 py-8 flex-1 ${theme.text}`}>
-        <div className="max-w-7xl mx-auto">
+        <div className="max-w-[1920px] mx-auto">
           <div className="flex items-center mb-6">
             <button 
               onClick={() => navigate('/factions')}
@@ -190,7 +190,7 @@ export const FactionDetailPage: React.FC = () => {
 
             <div className={`p-6 rounded-lg ${theme.container} bg-opacity-50`}>
               <h2 className="text-2xl font-bold mb-4">Members</h2>
-              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4 max-h-[600px] overflow-y-auto p-2">
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 xl:grid-cols-5 2xl:grid-cols-6 gap-3 max-h-[600px] overflow-y-auto px-1">
                 {faction.members.map((member, index) => {
                   const profile = memberProfiles[member.id];
                   const monster = memberMonsters[member.id];

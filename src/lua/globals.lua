@@ -188,14 +188,80 @@ function RandomizeStartingStats()
   return stats
 end
 
--- Function to get random moves from a pool
-function GetRandomMove(pool)
-  local moves = {}
-  for name, _ in pairs(pool) do
-    table.insert(moves, name)
+-- Function to get random moves based on element type
+function GetRandomMoves(elementType)
+  -- Get the appropriate element pool
+  local elementPool
+  if elementType == "air" then
+    elementPool = AirPool
+  elseif elementType == "water" then
+    elementPool = WaterPool
+  elseif elementType == "rock" then
+    elementPool = RockPool
+  elseif elementType == "fire" then
+    elementPool = FirePool
   end
-  local index = getRandom(1, #moves)
-  return moves[index]
+
+  -- Get available moves from each pool
+  local elementMoves = {}
+  local boostMoves = {}
+  local healMoves = {}
+  local normalMoves = {}
+
+  for name, _ in pairs(elementPool) do
+    table.insert(elementMoves, name)
+  end
+  for name, _ in pairs(BoostPool) do
+    table.insert(boostMoves, name)
+  end
+  for name, _ in pairs(HealPool) do
+    table.insert(healMoves, name)
+  end
+  for name, _ in pairs(NormalPool) do
+    table.insert(normalMoves, name)
+  end
+
+  -- Always get one element move
+  local selectedMoves = {}
+  local moveData = {}
+  local index = getRandom(1, #elementMoves)
+  local elementMove1 = elementMoves[index]
+  selectedMoves[elementMove1] = elementPool[elementMove1]
+  
+  -- 25% chance for second element move
+  local remainingPools = {}
+  if getRandom(1, 100) <= 25 then
+    -- Get second element move
+    table.remove(elementMoves, index)
+    if #elementMoves > 0 then
+      local index2 = getRandom(1, #elementMoves)
+      local elementMove2 = elementMoves[index2]
+      selectedMoves[elementMove2] = elementPool[elementMove2]
+    end
+    -- Add two random moves from remaining pools
+    table.insert(remainingPools, {moves = boostMoves, pool = BoostPool})
+    table.insert(remainingPools, {moves = healMoves, pool = HealPool})
+    table.insert(remainingPools, {moves = normalMoves, pool = NormalPool})
+    -- Randomly select 2 different pools
+    for i = 1, 2 do
+      local poolIndex = getRandom(1, #remainingPools)
+      local movePool = remainingPools[poolIndex]
+      local moveIndex = getRandom(1, #movePool.moves)
+      local moveName = movePool.moves[moveIndex]
+      selectedMoves[moveName] = movePool.pool[moveName]
+      table.remove(remainingPools, poolIndex)
+    end
+  else
+    -- Get one move each from boost, heal, and normal pools
+    local boostMove = boostMoves[getRandom(1, #boostMoves)]
+    local healMove = healMoves[getRandom(1, #healMoves)]
+    local normalMove = normalMoves[getRandom(1, #normalMoves)]
+    selectedMoves[boostMove] = BoostPool[boostMove]
+    selectedMoves[healMove] = HealPool[healMove]
+    selectedMoves[normalMove] = NormalPool[normalMove]
+  end
+
+  return selectedMoves
 end
 
 monstersMAP = {
@@ -243,22 +309,14 @@ function CreateDefaultMonster(factionName, timestamp)
     typePool = FirePool
   end
 
-  -- Get 2 random moves from type pool
-  local move1 = GetRandomMove(typePool)
-  local move2 = GetRandomMove(typePool)
-  while move2 == move1 do
-    move2 = GetRandomMove(typePool)
-  end
-
-  -- Get 1 move from boost pool and 1 from heal pool
-  local boostMove = GetRandomMove(BoostPool)
-  local healMove = GetRandomMove(HealPool)
+  -- Get random moves based on element type
+  local moves = GetRandomMoves(monstersMAP[factionName].element)
 
   -- Get random starting stats
   local startingStats = RandomizeStartingStats()
 
   return {
-    name = factionName .. " Monster",
+    name = monstersMAP[factionName].name,
     image = monstersMAP[factionName].image,
     sprite = monstersMAP[factionName].sprite,
     attack = startingStats.attack,
@@ -274,12 +332,7 @@ function CreateDefaultMonster(factionName, timestamp)
     totalTimesFed = 0,
     totalTimesPlay = 0,
     totalTimesMission = 0,
-    moves = {
-      [move1] = typePool[move1],
-      [move2] = typePool[move2],
-      [boostMove] = BoostPool[boostMove],
-      [healMove] = HealPool[healMove]
-    },
+    moves = moves,
     status = {
       type = "Home",
       since = timestamp,

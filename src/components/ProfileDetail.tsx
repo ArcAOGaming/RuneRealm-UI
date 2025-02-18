@@ -1,7 +1,9 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { Gateway } from '../constants/Constants';
+import Arweave from 'arweave';
 
 interface ProfileDetailProps {
+  wallet?: any;
   profile: {
     ProfileImage?: string;
     CoverImage?: string;

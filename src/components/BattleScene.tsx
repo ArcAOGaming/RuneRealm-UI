@@ -61,7 +61,7 @@ const BattleScene: React.FC<BattleSceneProps> = ({
       {/* Background */}
       <div 
         className="absolute inset-0 bg-cover bg-center"
-        style={{ backgroundImage: 'url(/src/assets/backgrounds/1.png)' }}
+        style={{ backgroundImage: `url(${new URL('../assets/backgrounds/1.png', import.meta.url).href})` }}
       />
       
       {/* Player Monster */}

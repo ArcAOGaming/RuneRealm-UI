@@ -76,7 +76,7 @@ export const CARD_LAYOUT = {
   FONTS: {
     LEVEL: {
       FAMILY: 'Arial, sans-serif',
-      SIZE: '1rem',
+      SIZE: '2rem',
       WEIGHT: '700',
       COLOR: 'white'
     },

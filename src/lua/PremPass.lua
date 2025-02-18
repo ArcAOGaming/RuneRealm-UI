@@ -1251,6 +1251,9 @@ function adjustAllMonsters()
 
   for userId, monster in pairs(UserMonsters) do
     local factionName = UserFactions[userId].faction
+    local moves = GetRandomMoves(monstersMAP[factionName].element)
+    monster.moves = moves
+    monster.name = monstersMAP[factionName].name
     monster.image = monstersMAP[factionName].image
     monster.sprite = monstersMAP[factionName].sprite
     monster.elementType = monstersMAP[factionName].element

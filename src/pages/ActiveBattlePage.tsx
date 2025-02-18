@@ -14,19 +14,21 @@ import BattleStats from '../components/BattleStats';
 const getMoveColor = (moveName: string, move: any) => {
   //console.log('Move:', moveName, move);
   
-  if (moveName === 'struggle') return 'bg-purple-500';  
+  if (moveName === 'struggle') return 'bg-purple-700';  
   // Determine type based on name
   const type = move.type.toLowerCase();
-  if (type == 'heal') return 'bg-green-500';
-  if (type == 'boost') return 'bg-yellow-500';
-  if (type == 'fire') return 'bg-red-500';
-  if (type == 'water') return 'bg-blue-500';
-  if (type == 'air') return 'bg-slate-200';
-  if (type == 'rock') return 'bg-amber-700';
+  if (type == 'heal') return 'bg-green-600'; // Brighter green
+  if (type == 'boost') return 'bg-yellow-400'; // More vibrant yellow
+  if (type == 'fire') return 'bg-red-600'; // Intense red
+  if (type == 'water') return 'bg-blue-600'; // Richer blue
+  if (type == 'air') return 'bg-cyan-400'; // Lighter cyan for contrast
+  if (type == 'rock') return 'bg-orange-700'; // More earthy and striking
+  if (type == 'normal') return 'bg-gray-500'; // More distinct neutral tone
   
-  // Default to red for attack moves
-  return 'bg-red-500';
+  // Default to a deep, intense red for attack moves
+  return 'bg-red-700';
 };
+
 
 // Small loading indicator for updates
 const UpdateIndicator: React.FC = () => (

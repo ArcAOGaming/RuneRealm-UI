@@ -1,6 +1,6 @@
 import { message as aoMessage, createDataItemSigner, dryrun, result } from "../config/aoConnection";
 import { AdminSkinChanger, DefaultAtlasTxID, Alter, SUPPORTED_ASSET_IDS, WAITTIMEOUIT, ASSET_INFO, AssetInfo, TARGET_BATTLE_PID } from "../constants/Constants";
-import { ProfileClient } from 'ao-process-clients';
+import { ProfilesService } from 'ao-process-clients';
 
 export interface ProfileInfo {
   name?: string;
@@ -10,15 +10,24 @@ export interface ProfileInfo {
   [key: string]: any;
 }
 
-export const getProfileInfo = async (address: string): Promise<ProfileInfo | null> => {
+export const getProfileInfo = async (address: string | string[]): Promise<ProfileInfo | ProfileInfo[] | null> => {
   try {
-    console.log(`[getProfileInfo] Fetching profile for address: ${address}`);
-    const client = await ProfileClient.createAutoConfigured();
-    const profileInfo = await client.getProfileInfo(address);
-    console.log(`[getProfileInfo] Profile info received:`, profileInfo);
-    return profileInfo;
+    console.log(`[getProfileInfo] Fetching profile(s) for:`, address);
+    const profileService = ProfilesService.getInstance();
+    
+    if (Array.isArray(address)) {
+      // Use the new batch method for arrays
+      const profileInfos = await profileService.getProfileInfosByWalletAddress(address);
+      console.log(`[getProfileInfo] Profile infos received:`, profileInfos);
+      return profileInfos;
+    } else {
+      // For single address, use the same method with a single-element array
+      const profileInfos = await profileService.getProfileInfosByWalletAddress([address]);
+      console.log(`[getProfileInfo] Profile info received:`, profileInfos[0]);
+      return profileInfos[0] || null;
+    }
   } catch (error) {
-    console.error(`[getProfileInfo] Error getting profile info for ${address}:`, error);
+    console.error(`[getProfileInfo] Error getting profile info:`, error);
     return null;
   }
 };
@@ -130,6 +139,7 @@ export interface MonsterStats {
     totalTimesPlay: number;
     totalTimesMission: number;
     status: MonsterStatus;
+    elementType: string;
     moves: {
         [key: string]: MonsterMove;
     };

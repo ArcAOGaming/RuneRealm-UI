@@ -1,7 +1,96 @@
-import React, { useState, useCallback } from 'react';
+import React, { useState, useCallback, useEffect, useRef } from 'react';
 import { MonsterStats } from '../utils/aoHelpers';
 import { Gateway } from '../constants/Constants';
 import { CARD_LAYOUT, CARD_ZOOM } from '../constants/CardLayout';
+
+// Card dimensions and layout
+const CARD = {
+  DIMENSIONS: {
+    WIDTH: 648,
+    HEIGHT: 1065,
+    ASPECT_RATIO: '648/1065'
+  },
+  MONSTER: {
+    TARGET_SIZE: {
+      WIDTH: 500,
+      HEIGHT: 750
+    },
+    POSITION: {
+      TOP_RATIO: 0.02,
+      CENTER: true
+    }
+  },
+  LEVEL: {
+    FONT: {
+      FAMILY: 'Arial, sans-serif',
+      WEIGHT: '900',
+      SIZE_RATIO: 0.03,
+      COLOR: 'white'
+    },
+    POSITION: {
+      LEFT_RATIO: 0.075,
+      TOP_RATIO: 0.05,
+      OFFSET_X: 10,
+      OFFSET_Y: 10
+    }
+  },
+  STATS: {
+    FONT: {
+      FAMILY: 'Courier New, monospace',
+      WEIGHT: '600',
+      SIZE_RATIO: 0.035,
+      COLOR: 'white'
+    },
+    POSITION: {
+      START_X_RATIO: 0.26,
+      TOP_RATIO: 0.55,
+      OFFSET_Y: 50,
+      SPACING_RATIO: 0.20
+    }
+  },
+  NAME: {
+    FONT: {
+      FAMILY: 'Arial, sans-serif',
+      WEIGHT: '900',
+      SIZE_RATIO: 0.045,
+      COLOR: 'white'
+    },
+    POSITION: {
+      TOP_RATIO: 0.05,
+      CENTER: true
+    }
+  },
+  MOVES: {
+    FONT: {
+      NAME: {
+        FAMILY: 'Arial, sans-serif',
+        WEIGHT: '800',
+        SIZE_RATIO: 0.035,
+        COLOR: 'white'
+      },
+      STATS: {
+        FAMILY: 'Arial, sans-serif',
+        WEIGHT: '600',
+        SIZE_RATIO: 0.035,
+        COLOR: 'white'
+      }
+    },
+    POSITION: {
+      BOTTOM_RATIO: 0.25, // Start from bottom 25%
+      GRID: {
+        ROWS: 2,
+        COLS: 2,
+        GAP_RATIO: 0.04
+      }
+    },
+    EMOJIS: {
+      attack: '⚔️',
+      speed: '⚡',
+      defense: '🛡️',
+      health: '❤️'
+    }
+  }
+} as const;
 
 interface MonsterCardDisplayProps {
   monster: MonsterStats;
@@ -10,7 +99,7 @@ interface MonsterCardDisplayProps {
 
 export const MonsterCardDisplay: React.FC<MonsterCardDisplayProps> = ({ monster, className = '' }) => {
   const [isZoomed, setIsZoomed] = useState(false);
-  const basePath = '/src/assets/Monsters/cards';
+  const basePath = '../assets/Monsters/cards';
 
   const handleClick = useCallback((e: React.MouseEvent) => {
     e.stopPropagation();
@@ -25,6 +114,196 @@ export const MonsterCardDisplay: React.FC<MonsterCardDisplayProps> = ({ monster,
   const elementType = monster.elementType?.toLowerCase() as keyof typeof CARD_LAYOUT.ELEMENT_IMAGES || 'air';
   const elementImages = CARD_LAYOUT.ELEMENT_IMAGES[elementType];
 
+  const canvasRef = useRef<HTMLCanvasElement>(null);
+  const [cardImage, setCardImage] = useState<string | null>(null);
+
+  const renderToCanvas = async () => {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return;
+
+    // Set canvas dimensions
+    canvas.width = CARD.DIMENSIONS.WIDTH;
+    canvas.height = CARD.DIMENSIONS.HEIGHT;
+    
+    // Clear canvas
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+    // Load and draw images in order
+    const loadImage = (src: string): Promise<HTMLImageElement> => {
+      return new Promise((resolve) => {
+        const img = new Image();
+        img.crossOrigin = "anonymous";
+        img.onload = () => resolve(img);
+        img.src = src;
+      });
+    };
+
+    try {
+      // Prepare all image loading promises
+      const imagePromises = [
+        // Background
+        loadImage(new URL(`${basePath}/${CARD_LAYOUT.LAYERS.BACKGROUND}/${elementImages.background}`, import.meta.url).href),
+        // Frame
+        loadImage(new URL(`${basePath}/${CARD_LAYOUT.LAYERS.FRAME}/${elementImages.frame}`, import.meta.url).href),
+        // Element Type
+        loadImage(new URL(`${basePath}/${CARD_LAYOUT.LAYERS.ELEMENT}/${elementImages.type}`, import.meta.url).href),
+        // Level Image
+        loadImage(new URL(`${basePath}/${CARD_LAYOUT.LAYERS.LEVEL}/${elementImages.level}`, import.meta.url).href),
+      ];
+
+      // Add monster image if available
+      if (monster.image) {
+        imagePromises.push(loadImage(`${Gateway}${monster.image}`));
+      }
+
+      // Load all images in parallel
+      const [
+        bgImg,
+        frameImg,
+        elementImg,
+        levelImg,
+        monsterImg
+      ] = await Promise.all(imagePromises);
+
+      // Draw background
+      ctx.drawImage(bgImg, 0, 0, canvas.width, canvas.height);
+      // Draw frame
+      ctx.drawImage(frameImg, 0, 0, canvas.width, canvas.height);
+      // Draw element type
+      ctx.drawImage(elementImg, 0, 0, canvas.width, canvas.height);
+      // Draw level image
+      ctx.drawImage(levelImg, 0, 0, canvas.width, canvas.height);
+
+      // Draw level text
+      ctx.font = `${CARD.LEVEL.FONT.WEIGHT} ${Math.floor(canvas.height * CARD.LEVEL.FONT.SIZE_RATIO)}px ${CARD.LEVEL.FONT.FAMILY}`;
+      ctx.fillStyle = CARD.LEVEL.FONT.COLOR;
+      ctx.textAlign = 'center';
+      const levelX = canvas.width * CARD.LEVEL.POSITION.LEFT_RATIO + CARD.LEVEL.POSITION.OFFSET_X;
+      const levelY = canvas.height * CARD.LEVEL.POSITION.TOP_RATIO + CARD.LEVEL.POSITION.OFFSET_Y;
+      ctx.fillText(`Lv.${monster.level}`, levelX, levelY);
+
+      // Draw monster image if available
+      if (monsterImg) {
+        const scale = Math.min(
+          CARD.MONSTER.TARGET_SIZE.WIDTH / monsterImg.width,
+          CARD.MONSTER.TARGET_SIZE.HEIGHT / monsterImg.height
+        );
+        const scaledWidth = monsterImg.width * scale;
+        const scaledHeight = monsterImg.height * scale;
+        
+        const monsterX = CARD.MONSTER.POSITION.CENTER ? (canvas.width - scaledWidth) / 2 : 0;
+        const monsterY = canvas.height * CARD.MONSTER.POSITION.TOP_RATIO;
+        
+        ctx.drawImage(monsterImg, monsterX, monsterY, scaledWidth, scaledHeight);
+      }
+
+      // Draw stats
+      ctx.font = `${CARD.STATS.FONT.WEIGHT} ${Math.floor(canvas.height * CARD.STATS.FONT.SIZE_RATIO)}px ${CARD.STATS.FONT.FAMILY}`;
+      ctx.fillStyle = CARD.STATS.FONT.COLOR;
+      ctx.textAlign = 'left';
+      
+      const statsY = canvas.height * CARD.STATS.POSITION.TOP_RATIO + CARD.STATS.POSITION.OFFSET_Y;
+      const statsX = canvas.width * CARD.STATS.POSITION.START_X_RATIO;
+      const spacing = canvas.width * CARD.STATS.POSITION.SPACING_RATIO;
+      
+      const stats = [monster.attack, monster.speed, monster.defense, monster.health];
+      stats.forEach((stat, index) => {
+        const x = statsX + (spacing * index);
+        ctx.fillText(stat.toString(), x, statsY);
+      });
+
+      // Draw monster name text
+      ctx.font = `${CARD.NAME.FONT.WEIGHT} ${Math.floor(canvas.height * CARD.NAME.FONT.SIZE_RATIO)}px ${CARD.NAME.FONT.FAMILY}`;
+      ctx.fillStyle = CARD.NAME.FONT.COLOR;
+      ctx.textAlign = 'center';
+      const nameX = canvas.width / 2;
+      const nameY = canvas.height * CARD.NAME.POSITION.TOP_RATIO;
+      ctx.fillText(monster.name || 'Unknown Monster', nameX, nameY);
+
+      // Draw moves in 2x2 grid
+      // Convert moves object to array to show all moves
+      const moves = Object.entries(monster.moves || {}).map(([name, moveData]) => ({
+        name,
+        stats: {
+          attack: moveData.attack,
+          speed: moveData.speed,
+          defense: moveData.defense,
+          health: moveData.health
+        }
+      }));
+
+      // Draw moves in 2x2 grid
+      const moveStartY = canvas.height * 0.78; // Start at 78% from top
+      const gridHeight = canvas.height * 0.18; // Grid takes up 18% of card height
+      const cellHeight = gridHeight / 2; // Each cell is half of grid height
+      const cellWidth = canvas.width * 0.4; // Each cell is 40% of card width
+      const moveNameOffset = canvas.height * 0.035; // Increased space between name and stats
+      const horizontalOffset = canvas.width * 0.1; // 10% offset from edges
+
+      moves.forEach((move, index) => {
+        const row = Math.floor(index / 2); // 0 for first row, 1 for second row
+        const col = index % 2; // 0 for left column, 1 for right column
+        
+        // Center moves with adjusted spacing
+        const x = horizontalOffset + (col * cellWidth) + (cellWidth / 2);
+        const y = moveStartY + (row * cellHeight); // Top of cell + row offset
+
+        // Draw move name
+        ctx.font = `${CARD.MOVES.FONT.NAME.WEIGHT} ${Math.floor(canvas.height * CARD.MOVES.FONT.NAME.SIZE_RATIO)}px ${CARD.MOVES.FONT.NAME.FAMILY}`;
+        ctx.fillStyle = CARD.MOVES.FONT.NAME.COLOR;
+        ctx.textAlign = 'center';
+        ctx.fillText(move.name, x, y);
+
+        // Draw move stats with emojis
+        ctx.font = `${CARD.MOVES.FONT.STATS.WEIGHT} ${Math.floor(canvas.height * CARD.MOVES.FONT.STATS.SIZE_RATIO)}px ${CARD.MOVES.FONT.STATS.FAMILY}`;
+        ctx.fillStyle = CARD.MOVES.FONT.STATS.COLOR;
+        
+        const statEntries = Object.entries(move.stats).filter(([_, value]) => value && value > 0);
+        const statsText = statEntries.map(([stat, value]) => `${CARD.MOVES.EMOJIS[stat as keyof typeof CARD.MOVES.EMOJIS]}${value}`).join(' ');
+        
+        ctx.fillText(statsText, x, y + moveNameOffset);
+      });
+
+      // Store the final image
+      setCardImage(canvas.toDataURL('image/png'));
+    } catch (error) {
+      console.error('Error rendering card:', error);
+    }
+  };
+
+  useEffect(() => {
+    renderToCanvas();
+  }, [monster, elementType]);
+
+  const exportCard = async () => {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    
+    try {
+      const blob = await new Promise<Blob>((resolve, reject) => {
+        canvas.toBlob((blob) => {
+          if (blob) resolve(blob);
+          else reject(new Error('Failed to create blob'));
+        }, 'image/png');
+      });
+
+      // Create download link
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = `${monster.name || 'monster'}-card.png`;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      URL.revokeObjectURL(url);
+    } catch (error) {
+      console.error('Error exporting card:', error);
+    }
+  };
+
   const renderCard = (scale = 1) => (
     <div 
       className={`relative w-full aspect-[2.5/3.5] ${className}`}
@@ -34,125 +313,47 @@ export const MonsterCardDisplay: React.FC<MonsterCardDisplayProps> = ({ monster,
         transformOrigin: 'center center'
       }}
     >
-      {/* Background */}
-      <img
-        src={`${basePath}/${CARD_LAYOUT.LAYERS.BACKGROUND}/${elementImages.background}`}
-        alt="Card Background"
-        className="absolute inset-0 w-full h-full object-contain"
-        style={{ zIndex: CARD_LAYOUT.Z_INDEX.BACKGROUND }}
-      />
-
-      {/* Frame */}
-      <img
-        src={`${basePath}/${CARD_LAYOUT.LAYERS.FRAME}/${elementImages.frame}`}
-        alt="Card Frame"
-        className="absolute inset-0 w-full h-full object-contain"
-        style={{ zIndex: CARD_LAYOUT.Z_INDEX.FRAME }}
-      />
-
-      {/* Element Type */}
-      <img
-        src={`${basePath}/${CARD_LAYOUT.LAYERS.ELEMENT}/${elementImages.type}`}
-        alt="Element Type"
-        className="absolute inset-0 w-full h-full object-contain"
-        style={{ zIndex: CARD_LAYOUT.Z_INDEX.ELEMENT }}
-      />
-
-      {/* Level Image */}
-      <img
-        src={`${basePath}/${CARD_LAYOUT.LAYERS.LEVEL}/${elementImages.level}`}
-        alt="Level Background"
-        className="absolute inset-0 w-full h-full object-contain"
-        style={{ zIndex: CARD_LAYOUT.Z_INDEX.LEVEL_IMAGE }}
-      />
-
-      {/* Level Text */}
-      <div
-        className="absolute flex items-center justify-center text-white"
-        style={{
-          top: CARD_LAYOUT.POSITIONS.LEVEL.TOP,
-          left: CARD_LAYOUT.POSITIONS.LEVEL.LEFT,
-          width: CARD_LAYOUT.POSITIONS.LEVEL.WIDTH,
-          zIndex: CARD_LAYOUT.Z_INDEX.LEVEL_TEXT,
-          fontFamily: CARD_LAYOUT.FONTS.LEVEL.FAMILY,
-          fontSize: CARD_LAYOUT.FONTS.LEVEL.SIZE,
-          fontWeight: CARD_LAYOUT.FONTS.LEVEL.WEIGHT,
-          color: CARD_LAYOUT.FONTS.LEVEL.COLOR
+      {/* Export Button - Commented out for now but keep for future use
+      <button
+        onClick={(e) => {
+          e.stopPropagation();
+          exportCard();
         }}
+        className="absolute top-2 right-2 px-2 py-1 bg-blue-600 text-white rounded text-sm hover:bg-blue-700 transition-colors z-50"
       >
-        Lv.{monster.level}
-      </div>
-
-      {/* Monster Image */}
-      {monster.image && (
+        Export
+      </button>
+      */}
+      <canvas
+        ref={canvasRef}
+        className={isZoomed ? "hidden" : "w-full h-full"}
+        style={{ 
+          aspectRatio: CARD.DIMENSIONS.ASPECT_RATIO,
+          objectFit: 'contain'
+        }}
+      />
+      {isZoomed && cardImage && (
         <img
-          src={`${Gateway}${monster.image}`}
-          alt={monster.name}
-          className="absolute object-contain"
-          style={{
-            top: CARD_LAYOUT.POSITIONS.MONSTER.TOP,
-            left: CARD_LAYOUT.POSITIONS.MONSTER.LEFT,
-            width: CARD_LAYOUT.POSITIONS.MONSTER.WIDTH,
-            zIndex: CARD_LAYOUT.Z_INDEX.MONSTER
-          }}
+          src={cardImage}
+          alt={monster.name || 'Monster Card'}
+          className="w-full h-full object-contain"
         />
       )}
-
-      {/* Stats */}
-      <div
-        className="absolute flex justify-between"
-        style={{
-          top: CARD_LAYOUT.POSITIONS.STATS.TOP,
-          left: CARD_LAYOUT.POSITIONS.STATS.LEFT,
-          width: CARD_LAYOUT.POSITIONS.STATS.WIDTH,
-          zIndex: CARD_LAYOUT.Z_INDEX.STATS,
-          fontFamily: CARD_LAYOUT.FONTS.STATS.FAMILY,
-          fontSize: CARD_LAYOUT.FONTS.STATS.SIZE,
-          fontWeight: CARD_LAYOUT.FONTS.STATS.WEIGHT,
-          color: CARD_LAYOUT.FONTS.STATS.COLOR
-        }}
-      >
-        <span>{monster.attack}</span>
-        <span>{monster.speed}</span>
-        <span>{monster.defense}</span>
-        <span>{monster.health}</span>
-      </div>
-
-      {/* Regular Move */}
-      <img
-        src={`${basePath}/${CARD_LAYOUT.LAYERS.MOVES}/regular/${CARD_LAYOUT.INITIAL_IMAGES.MOVES.regular}`}
-        alt="Regular Move"
-        className="absolute inset-0 w-full h-full object-contain"
-        style={{ zIndex: CARD_LAYOUT.Z_INDEX.MOVES }}
-      />
-
-      {/* Signature Move */}
-      <img
-        src={`${basePath}/${CARD_LAYOUT.LAYERS.MOVES}/signature/${CARD_LAYOUT.INITIAL_IMAGES.MOVES.signature}`}
-        alt="Signature Move"
-        className="absolute inset-0 w-full h-full object-contain"
-        style={{ zIndex: CARD_LAYOUT.Z_INDEX.MOVES }}
-      />
-
-      {/* Monster Name */}
-      <img
-        src={`${basePath}/${CARD_LAYOUT.LAYERS.NAME}/${CARD_LAYOUT.INITIAL_IMAGES.NAME}`}
-        alt="Monster Name"
-        className="absolute inset-0 w-full h-full object-contain"
-        style={{ zIndex: CARD_LAYOUT.Z_INDEX.NAME }}
-      />
     </div>
   );
 
   if (isZoomed) {
     return (
       <div 
-        className="fixed inset-0 flex items-center justify-center bg-black bg-opacity-80"
+        className="fixed inset-0 flex items-center justify-center bg-black bg-opacity-50 cursor-pointer"
         style={{ zIndex: CARD_ZOOM.Z_INDEX }}
         onClick={handleClose}
       >
-        <div className="max-w-2xl w-full p-4">
-          {renderCard(CARD_ZOOM.SCALE)}
+        <div 
+          className="max-w-[500px] w-full p-4"
+          onClick={(e) => e.stopPropagation()}
+        >
+          {renderCard(1.5)}
         </div>
       </div>
     );
