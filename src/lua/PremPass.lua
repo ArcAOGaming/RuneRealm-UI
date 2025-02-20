@@ -154,9 +154,6 @@ function UnlockedSkin(value)
   return false
 end
 
-function IsAdmin(userId)
-  return userId == ADMIN_WALLET or userId == TARGET_BATTLE_PID
-end
 
 function UpdateSkin(userId, spriteTxId)
   print('Changing ' .. userId .. "'s Skin to " .. (spriteTxId or BaseSprite))
@@ -704,17 +701,7 @@ Handlers.add(
   'BulkImportAddresses',
   Handlers.utils.hasMatchingTag('Action', 'BulkImportAddresses'),
   function(msg)
-    -- Check if sender is admin
-    if not IsAdmin(msg.From) then
-      ao.send({
-        Target = msg.From,
-        Data = json.encode({
-          type = "error",
-          error = "Unauthorized access"
-        })
-      })
-      return
-    end
+    if not ensureAdmin(msg) then return end
 
     local data = json.decode(msg.Data)
     if not data or not data.addresses or type(data.addresses) ~= "table" then
@@ -810,17 +797,7 @@ Handlers.add(
     'RemoveUser',
     Handlers.utils.hasMatchingTag('Action', 'RemoveUser'),
     function(msg)
-      -- Check if sender is admin
-      if not IsAdmin(msg.From) then
-        ao.send({
-          Target = msg.From,
-          Data = json.encode({
-            type = "error",
-            error = "Unauthorized access"
-          })
-        })
-        return
-      end
+      if not ensureAdmin(msg) then return end
   
       local userId = msg.Tags.UserId
       if not userId then
@@ -1099,17 +1076,7 @@ Handlers.add(
   'SetUserStats',
   Handlers.utils.hasMatchingTag('Action', 'SetUserStats'),
   function(msg)
-    -- Check if sender is admin
-    if not IsAdmin(msg.From) then
-      ao.send({
-        Target = msg.From,
-        Data = json.encode({
-          status = "error",
-          message = "Unauthorized access - Admin only"
-        })
-      })
-      return
-    end
+    if not ensureAdmin(msg) then return end
 
     local targetWallet = msg.Tags.Wallet
     if not targetWallet then
@@ -1300,17 +1267,7 @@ Handlers.add(
   "AdjustAllMonsters",
   Handlers.utils.hasMatchingTag("Action", "AdjustAllMonsters"),
   function(msg)
-    -- Check if sender is admin
-    if not IsAdmin(msg.From) then
-      ao.send({
-        Target = msg.From,
-        Data = json.encode({
-          status = "error",
-          message = "Unauthorized access - Admin only"
-        })
-      })
-      return
-    end
+    if not ensureAdmin(msg) then return end
 
     adjustAllMonsters()
     
@@ -1329,17 +1286,7 @@ Handlers.add(
   "ReturnFromBattle",
   Handlers.utils.hasMatchingTag("Action", "ReturnFromBattle"),
   function(msg)
-
-    if not IsAdmin(msg.From) then
-      ao.send({
-        Target = msg.From,
-        Data = json.encode({
-          type = "error",
-          error = "Unauthorized access"
-        })
-      })
-      return
-    end
+    if not ensureAdmin(msg) then return end
 
     print("Returning from battle")
     local userId = msg.Tags.UserId

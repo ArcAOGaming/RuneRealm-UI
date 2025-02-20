@@ -1,30 +1,177 @@
 import { message as aoMessage, createDataItemSigner, dryrun, result } from "../config/aoConnection";
-import { AdminSkinChanger, DefaultAtlasTxID, Alter, SUPPORTED_ASSET_IDS, WAITTIMEOUIT, ASSET_INFO, AssetInfo, TARGET_BATTLE_PID } from "../constants/Constants";
-import { ProfilesService } from 'ao-process-clients';
 
-export interface ProfileInfo {
-  name?: string;
-  bio?: string;
-  avatar?: string;
-  links?: { [key: string]: string };
-  [key: string]: any;
+interface CachedData<T> {
+  data: T;
+  timestamp: number;
 }
 
-export const getProfileInfo = async (address: string | string[]): Promise<ProfileInfo | ProfileInfo[] | null> => {
+const ONE_DAY_MS = 24 * 60 * 60 * 1000; // 24 hours in milliseconds
+
+const isCacheValid = (timestamp: number): boolean => {
+  return Date.now() - timestamp < ONE_DAY_MS;
+};
+
+const getCachedData = <T>(key: string): CachedData<T> | null => {
   try {
-    console.log(`[getProfileInfo] Fetching profile(s) for:`, address);
-    const profileService = ProfilesService.getInstance();
+    const cached = localStorage.getItem(key);
+    if (!cached) return null;
     
+    const parsedCache = JSON.parse(cached) as CachedData<T>;
+    if (!parsedCache || !parsedCache.data || !parsedCache.timestamp) {
+      localStorage.removeItem(key);
+      return null;
+    }
+
+    if (!isCacheValid(parsedCache.timestamp)) {
+      localStorage.removeItem(key);
+      return null;
+    }
+
+    console.log(`[Cache] Retrieved data for key ${key}:`, parsedCache);
+    return parsedCache;
+  } catch (error) {
+    console.error(`[Cache] Error retrieving data for key ${key}:`, error);
+    localStorage.removeItem(key);
+    return null;
+  }
+};
+
+const setCachedData = <T>(key: string, data: T): void => {
+  try {
+    if (!data) {
+      console.warn(`[Cache] Attempted to cache null/undefined data for key ${key}`);
+      return;
+    }
+
+    const cacheData: CachedData<T> = {
+      data,
+      timestamp: Date.now()
+    };
+
+    const serialized = JSON.stringify(cacheData);
+    localStorage.setItem(key, serialized);
+    console.log(`[Cache] Stored data for key ${key}:`, cacheData);
+  } catch (error) {
+    console.error(`[Cache] Error storing data for key ${key}:`, error);
+  }
+};
+import { AdminSkinChanger, DefaultAtlasTxID, Alter, SUPPORTED_ASSET_IDS, WAITTIMEOUIT, ASSET_INFO, AssetInfo, TARGET_BATTLE_PID } from "../constants/Constants";
+import { ProfileInfo, ProfilesService } from 'ao-process-clients';
+import { ActiveBattle, AssetBalance, BattleManagerInfo, BattleResponse, FactionOptions, MonsterStats, ResultType, TokenOption, UserInfo, WalletStatus } from "./interefaces";
+export type { 
+  AssetInfo 
+} from '../constants/Constants';
+export type {
+  TokenOption,
+  MonsterStats,
+  BattleManagerInfo,
+  ActiveBattle,
+  FactionOptions,
+  ProfileInfo,
+  WalletStatus,
+  BattleResponse
+};
+
+export const getProfileInfo = async (
+  address: string | string[],
+  useCache: boolean = false
+): Promise<ProfileInfo | ProfileInfo[] | null> => {
+  try {
     if (Array.isArray(address)) {
-      // Use the new batch method for arrays
-      const profileInfos = await profileService.getProfileInfosByWalletAddress(address);
-      console.log(`[getProfileInfo] Profile infos received:`, profileInfos);
-      return profileInfos;
+      // For arrays, create a cache key using all addresses
+      const cacheKey = `getProfileInfo-${address.join('-')}`;
+      
+      if (useCache) {
+        const cached = getCachedData<ProfileInfo[]>(cacheKey);
+        if (cached) {
+          console.log(`[getProfileInfo] Using cached profiles for:`, address);
+          return cached.data;
+        }
+      }
+
+      console.log(`[getProfileInfo] Fetching profiles for:`, address);
+      const profileService = ProfilesService.getInstance();
+      try {
+        const profileInfos = await profileService.getProfileInfosByWalletAddress(address);
+        console.log(`[getProfileInfo] Raw profile infos received:`, profileInfos);
+        
+        // Validate and sanitize profile infos
+        if (!profileInfos || !Array.isArray(profileInfos)) {
+          console.warn(`[getProfileInfo] Invalid profile data structure for addresses:`, address);
+          return [];
+        }
+
+        // Filter out invalid profiles and ensure Profile object exists
+        const validProfiles = profileInfos.filter(p => {
+          try {
+            return p && typeof p === 'object' && p.Profile && 
+                   typeof p.Profile === 'object' && 
+                   typeof p.Profile.UserName === 'string';
+          } catch (e) {
+            console.warn(`[getProfileInfo] Invalid profile structure:`, p, e);
+            return false;
+          }
+        });
+
+        if (validProfiles.length > 0) {
+          console.log(`[getProfileInfo] Valid profiles found:`, validProfiles);
+          setCachedData(cacheKey, validProfiles);
+          return validProfiles;
+        } else {
+          console.warn(`[getProfileInfo] No valid profiles found for addresses:`, address);
+          return [];
+        }
+      } catch (error) {
+        console.error(`[getProfileInfo] Error fetching profiles:`, error);
+        if (error instanceof SyntaxError) {
+          console.error(`[getProfileInfo] JSON parsing error:`, error.message);
+        }
+        return [];
+      }
     } else {
-      // For single address, use the same method with a single-element array
-      const profileInfos = await profileService.getProfileInfosByWalletAddress([address]);
-      console.log(`[getProfileInfo] Profile info received:`, profileInfos[0]);
-      return profileInfos[0] || null;
+      // For single address
+      const cacheKey = `getProfileInfo-${address}`;
+      
+      if (useCache) {
+        const cached = getCachedData<ProfileInfo>(cacheKey);
+        if (cached) {
+          console.log(`[getProfileInfo] Using cached profile for:`, address);
+          return cached.data;
+        }
+      }
+
+      console.log(`[getProfileInfo] Fetching profile for:`, address);
+      const profileService = ProfilesService.getInstance();
+      try {
+        const profileInfos = await profileService.getProfileInfosByWalletAddress([address]);
+        console.log(`[getProfileInfo] Raw profile info received:`, profileInfos);
+        
+        // Validate array structure
+        if (!profileInfos || !Array.isArray(profileInfos)) {
+          console.warn(`[getProfileInfo] Invalid profile data structure for address:`, address);
+          return null;
+        }
+
+        const result = profileInfos[0];
+        
+        // Validate profile structure
+        if (result && typeof result === 'object' && result.Profile && 
+            typeof result.Profile === 'object' && 
+            typeof result.Profile.UserName === 'string') {
+          console.log(`[getProfileInfo] Valid profile found:`, result);
+          setCachedData(cacheKey, result);
+          return result;
+        } else {
+          console.warn(`[getProfileInfo] Invalid profile structure for address:`, address, result);
+          return null;
+        }
+      } catch (error) {
+        console.error(`[getProfileInfo] Error fetching profile:`, error);
+        if (error instanceof SyntaxError) {
+          console.error(`[getProfileInfo] JSON parsing error:`, error.message);
+        }
+        return null;
+      }
     }
   } catch (error) {
     console.error(`[getProfileInfo] Error getting profile info:`, error);
@@ -42,247 +189,25 @@ export const message = async (params: any, refreshCallback?: () => void) => {
   return response;
 };
 
-interface ResultType {
-    Messages?: Array<{
-        Data: string;
-        Tags?: Array<{
-            name: string;
-            value: string;
-        }>;
-    }>;
-}
 
-// Define supported asset type
-// Interface for wallet status
-export type { AssetInfo } from '../constants/Constants';
-
-export interface AssetBalance {
-    info: AssetInfo;
-    balance: number;
-}
-
-export interface MonsterStatus {
-  type: 'Home' | 'Play' | 'Mission' | 'Battle';
-  since: number;  // timestamp
-  until_time: number;  // timestamp
-}
-
-export interface MonsterMove {
-    type: string;
-    count: number;
-    damage: number;
-    attack: number;
-    speed: number;
-    defense: number;
-    health: number;
-}
-
-export interface BattleManagerInfo {
-    battlesRemaining: number;
-    wins: number;
-    losses: number;
-    startTime: number;
-}
-
-export interface BattleManagerResponse {
-    status: 'success' | 'not_found' | 'error';
-    message: string;
-    data?: BattleManagerInfo;
-}
-
-
-export interface MonsterState {
-    health: number;
-    shield: number;
-    attack: number;
-    defense: number;
-    speed: number;
-    healthPoints: number
-}
-
-export interface BattleTurn {
-    attacker: 'player' | 'opponent';
-    move: string;
-    moveName: string;
-    moveRarity: number;
-    missed: boolean;
-    shieldDamage: number;
-    healthDamage: number;
-    statsChanged: {
-        attack?: number;
-        speed?: number;
-        defense?: number;
-        health?: number;
-    };
-    superEffective: boolean;
-    notEffective: boolean;
-    attackerState: MonsterState;
-    defenderState: MonsterState;
-}
-
-export interface MonsterStats {
-    name: string;
-    image: string;
-    sprite: string;
-    attack: number;
-    defense: number;
-    speed: number;
-    health: number;
-    healthPoints?: number;
-    shield?: number;
-    energy: number;
-    level: number;
-    exp: number;
-    berryType: string;
-    happiness: number;
-    totalTimesFed: number;
-    totalTimesPlay: number;
-    totalTimesMission: number;
-    status: MonsterStatus;
-    elementType: string;
-    moves: {
-        [key: string]: MonsterMove;
-    };
-    battleSession?: BattleManagerInfo;
-    activities: {
-        mission: {
-            cost: {
-                token: string;
-                amount: number;
-            };
-            duration: number;
-            energyCost: number;
-            happinessCost: number;
-        };
-        play: {
-            cost: {
-                token: string;
-                amount: number;
-            };
-            duration: number;
-            energyCost: number;
-            happinessGain: number;
-        };
-        feed: {
-            cost: {
-                token: string;
-                amount: number;
-            };
-            energyGain: number;
-        };
-        battle: {
-            cost: {
-                token: string;
-                amount: number;
-            };
-            energyCost: number;
-            happinessCost: number;
-        };
-    };
-}
-
-
-export interface UserInfo {
-    isUnlocked: boolean;
-    skin: string | null;
-    faction: string | null;
-    monster: MonsterStats | null;
-    activityStatus: {
-        isPlayComplete: boolean;
-        isMissionComplete: boolean;
-    };
-}
-
-export interface WalletStatus {
-    isUnlocked: boolean;
-    currentSkin: string | null;
-    faction: string | null;
-    monster: MonsterStats | null;
-    error?: string;
-    contractName?: string;
-    contractIcon?: string;
-    payments?: Array<{
-      token: string;
-      amount: string;
-      name: string;
-      icon?: string;
-    }>;
-}
-
-interface WalletInfo {
-    address: string;
-}
-
-// Interface for purchase options
-export interface TokenOption {
-    token: string;
-    amount: string;
-    name: string;
-    icon?: string;
-    denomination: number;
-}
-
-interface FactionMember {
-    id: string;
-    level: number;
-}
-
-export interface FactionOptions {
-    name: string;
-    description: string;
-    mascot: string;
-    perks: string[];
-    memberCount: number;
-    monsterCount: number;
-    members: FactionMember[];
-    averageLevel: number;
-    totalTimesFed: number;
-    totalTimesPlay: number;
-    totalTimesMission: number;
-}
-
-interface ContractResponse {
-  result: {
-    name: string;
-    version: string;
-    icon?: string;
-    payments: TokenOption[];
-  };
-}
-
-
-
-export interface ActiveBattle {
-    id: string;
-    player: MonsterStats;
-    opponent: MonsterStats;
-    startTime: number;
-    status: 'active' | 'ended';
-    turns: BattleTurn[];
-    moveCounts: {
-        player: { [key: string]: number };
-        opponent: { [key: string]: number };
-    };
-}
-
-export interface BattleResult {
-    result: 'win' | 'loss';
-    session: BattleManagerInfo;
-}
-
-export interface BattleResponse {
-    status: 'success' | 'error';
-    message: string;
-    data?: ActiveBattle | BattleResult | BattleManagerInfo;
-}
 // Check wallet status and current skin
-export const checkWalletStatus = async (walletInfo?: { address: string }): Promise<WalletStatus> => {
+export const checkWalletStatus = async (
+  walletInfo?: { address: string },
+  useCache: boolean = false
+): Promise<WalletStatus> => {
     try {
-        // If no wallet info provided, get the active address
         const address = walletInfo?.address || await window.arweaveWallet.getActiveAddress();
-        console.log("Checking wallet status for address:", address);
+        const cacheKey = `checkWalletStatus-${address}`;
         
-        // Run all checks in parallel
+        if (useCache) {
+          const cached = getCachedData<WalletStatus>(cacheKey);
+          if (cached) {
+            console.log(`[checkWalletStatus] Using cached status for:`, address);
+            return cached.data;
+          }
+        }
+        
+        console.log("Checking wallet status for address:", address);
         const [unlockResult, skinResult, factionResult, monsterResult] = await Promise.all([
             // Check if user is unlocked
             dryrun({
@@ -350,7 +275,7 @@ export const checkWalletStatus = async (walletInfo?: { address: string }): Promi
             }
         }
 
-        return {
+        const status = {
             isUnlocked,
             currentSkin: skinTxId,
             faction: faction,
@@ -358,6 +283,10 @@ export const checkWalletStatus = async (walletInfo?: { address: string }): Promi
             contractIcon: "hqg-Em9DdYHYmMysyVi8LuTGF8IF_F7ZacgjYiSpj0k",
             contractName: "Sprite Customizer"
         };
+        
+        // Cache the result
+        setCachedData(cacheKey, status);
+        return status;
     } catch (error) {
         console.error("Error checking wallet status:", error);
         return {
@@ -566,13 +495,13 @@ export const getFactionOptions = async (): Promise<FactionOptions[]> => {
                 description: option.description,
                 mascot: option.mascot,
                 perks: option.perks,
-                memberCount: option.memberCount,
-                monsterCount: option.monsterCount,
+                memberCount: Number(option.memberCount) || 0,
+                monsterCount: Number(option.monsterCount) || 0,
                 members: option.members,
-                averageLevel: option.averageLevel,
-                totalTimesFed: option.totalTimesFed || 0,
-                totalTimesPlay: option.totalTimesPlay || 0,
-                totalTimesMission: option.totalTimesMission || 0
+                averageLevel: Number(option.averageLevel) || 0,
+                totalTimesFed: Number(option.totalTimesFed) || 0,
+                totalTimesPlay: Number(option.totalTimesPlay) || 0,
+                totalTimesMission: Number(option.totalTimesMission) || 0
             };
         });
     } catch (error) {
@@ -755,14 +684,23 @@ export const adoptMonster = async (wallet: any, refreshCallback?: () => void) =>
 };
 
 // Get user's monster
-export const getUserMonster = async (wallet: any): Promise<MonsterStats | null> => {
+export const getUserMonster = async (wallet: any, useCache: boolean = false): Promise<MonsterStats | null> => {
     if (!wallet?.address) {
         throw new Error("No wallet connected");
     }
 
     try {
         console.log("Getting monster for wallet:", wallet.address);
-        
+        const cacheKey = `getUserMonster-${wallet.address}`;
+
+        if (useCache) {
+            const cached = getCachedData<MonsterStats>(cacheKey);
+            if (cached) {
+                console.log(`[getUserMonster] Using cached monster for:`, wallet.address);
+                return cached.data;
+            }
+        }
+
         const dryRunResult = await dryrun({
             process: AdminSkinChanger,
             tags: [
@@ -777,7 +715,13 @@ export const getUserMonster = async (wallet: any): Promise<MonsterStats | null> 
         }
 
         const response = JSON.parse(dryRunResult.Messages[0].Data);
-        return response.status === "success" ? response.monster : null;
+        const monster = response.status === "success" ? response.monster : null;
+
+        if (monster) {
+            setCachedData(cacheKey, monster);
+        }
+
+        return monster;
     } catch (error) {
         console.error("Error in getUserMonster:", error);
         return null;

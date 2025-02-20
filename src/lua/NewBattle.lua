@@ -249,17 +249,6 @@ local function processBattleTurn(battleId, playerMove, npcMove)
     table.insert(battle.turns, turnInfo)
   end
   
-  -- Regenerate shields at end of turn based on current defense stat
-  if not battle.hasUsedStruggle.player then
-    local shieldRegen = math.ceil(battle.player.defense / 4)
-    battle.player.shield = math.min(battle.player.defense, battle.player.shield + shieldRegen)
-    print("Regenerated player shield by", shieldRegen, "to:", battle.player.shield)
-  end
-  if not battle.hasUsedStruggle.opponent then
-    local shieldRegen = math.ceil(battle.opponent.defense / 4)
-    battle.opponent.shield = math.min(battle.opponent.defense, battle.opponent.shield + shieldRegen)
-    print("Regenerated opponent shield by", shieldRegen, "to:", battle.opponent.shield)
-  end
   
   -- Update battle logs
   battleLogs[battleId] = battle.turns
@@ -274,6 +263,18 @@ local function processBattleTurn(battleId, playerMove, npcMove)
       playerWon = playerWon
     }
   end
+
+    -- Regenerate shields at end of turn based on current defense stat
+    if not battle.hasUsedStruggle.player then
+      local shieldRegen = math.ceil(battle.player.defense / 4)
+      battle.player.shield = math.min(battle.player.defense, battle.player.shield + shieldRegen)
+      print("Regenerated player shield by", shieldRegen, "to:", battle.player.shield)
+    end
+    if not battle.hasUsedStruggle.opponent then
+      local shieldRegen = math.ceil(battle.opponent.defense / 4)
+      battle.opponent.shield = math.min(battle.opponent.defense, battle.opponent.shield + shieldRegen)
+      print("Regenerated opponent shield by", shieldRegen, "to:", battle.opponent.shield)
+    end
   
   return {
     battleOver = false
@@ -983,6 +984,8 @@ Handlers.add(
   "AdminReturnFromBattle",
   Handlers.utils.hasMatchingTag("Action", "AdminReturnFromBattle"),
   function(msg)
+    if not ensureAdmin(msg) then return end
+    
     local userId = msg.Tags.UserId
     if not userId then
       ao.send({

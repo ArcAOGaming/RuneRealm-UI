@@ -2,7 +2,7 @@ Initialized = Initialized or nil
 
 TARGET_WORLD_PID = "lA4WPP5v9iUowzLJtCjZsSH_m6WV2FUbGlPSlG7KbnM"
 TARGET_PREMPASS_PID = "j7NcraZUL6GZlgdPEoph12Q5rk_dydvQDecLNxYi8rI"
-TARGET_BATTLE_PID = "jwHa1wqb1BtfyEA_onfW_Dx3yzcOPKpPuzaig_G87Bw"
+TARGET_BATTLE_PID = "W111mH0QHpqVMQ6z3ayHEQWC94xqETy2G8qceQUaFRQ"
 BaseSprite = '2wRFNJg9XlCcG6jKNpDAMxX1vnHZoub998KkR0qfDjE'
 BaseSpriteAtlas = 'sVIX0l_PFC6M7lYpuEOGJ_f5ESOkMxd5f5xCQSUH_2g'
 BaseSpriteScale = 1.75
@@ -375,4 +375,20 @@ function CreateDefaultMonster(factionName, timestamp)
       }
     }
   }
+end
+
+
+function ensureAdmin(msg)
+  if not IsAdmin(msg.From) then
+    ao.send({
+      Target = msg.From,
+      Data = json.encode({ type = "error", error = "Unauthorized access" })
+    })
+    return false
+  end
+  return true
+end
+
+function IsAdmin(userId)
+  return userId == ADMIN_WALLET or userId == TARGET_BATTLE_PID
 end

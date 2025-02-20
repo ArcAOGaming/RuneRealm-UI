@@ -3,7 +3,7 @@ import { useParams, useNavigate } from 'react-router-dom';
 import { useWallet } from '../hooks/useWallet';
 import { getFactionOptions, FactionOptions, ProfileInfo, getProfileInfo, getUserMonster, MonsterStats } from '../utils/aoHelpers';
 import { currentTheme } from '../constants/theme';
-import { Gateway, ACTIVITY_POINTS } from '../constants/Constants';
+import { Gateway } from '../constants/Constants';
 import Header from '../components/Header';
 import LoadingAnimation from '../components/LoadingAnimation';
 import Footer from '../components/Footer';
@@ -20,8 +20,18 @@ interface MemberWithProfile extends FactionMember {
   monster: MonsterStats | null;
 }
 
-interface FactionWithProfiles extends Omit<FactionOptions, 'members'> {
+interface FactionWithProfiles {
+  name: string;
+  description: string;
+  mascot: string;
+  perks: string[];
+  memberCount: number;
+  monsterCount: number;
   members: FactionMember[];
+  averageLevel: number;
+  totalTimesFed: number;
+  totalTimesPlay: number;
+  totalTimesMission: number;
 }
 
 export const FactionDetailPage: React.FC = () => {
@@ -54,28 +64,41 @@ export const FactionDetailPage: React.FC = () => {
           return;
         }
 
-        // Set initial faction data
-        setFaction(foundFaction);
+        // Set initial faction data with type conversion
+        const typedFaction: FactionWithProfiles = {
+          name: foundFaction.name,
+          description: foundFaction.description,
+          mascot: foundFaction.mascot,
+          perks: foundFaction.perks,
+          members: foundFaction.members,
+          averageLevel: foundFaction.averageLevel,
+          memberCount: Number(foundFaction.memberCount),
+          monsterCount: Number(foundFaction.monsterCount),
+          totalTimesFed: Number(foundFaction.totalTimesFed),
+          totalTimesPlay: Number(foundFaction.totalTimesPlay),
+          totalTimesMission: Number(foundFaction.totalTimesMission)
+        };
+        setFaction(typedFaction);
         setIsLoading(false);
 
         // Load profiles and monsters one by one
         for (const member of foundFaction.members) {
           try {
-            // Load profile
+            // Load profile with caching
             console.log(`[FactionDetailPage] Fetching profile for member: ${member.id}`);
-            const profile = await getProfileInfo(member.id);
+            const profile = await getProfileInfo(member.id, true); // Enable caching
             console.log(`[FactionDetailPage] Profile received for ${member.id}:`, profile);
             
-            if (profile) {
+            if (profile && !Array.isArray(profile)) {
               setMemberProfiles(prev => ({
                 ...prev,
                 [member.id]: profile
               }));
             }
 
-            // Load monster
+            // Load monster with caching
             console.log(`[FactionDetailPage] Fetching monster for member: ${member.id}`);
-            const monster = await getUserMonster({ address: member.id });
+            const monster = await getUserMonster({ address: member.id }, true); // Enable caching
             console.log(`[FactionDetailPage] Monster received for ${member.id}:`, monster);
             
             setMemberMonsters(prev => ({
@@ -83,7 +106,7 @@ export const FactionDetailPage: React.FC = () => {
               [member.id]: monster
             }));
           } catch (error) {
-            console.error(`Error fetching data for ${member.id}:`, error);
+            console.error(`[FactionDetailPage] Error loading data for ${member.id}:`, error);
           }
         }
       } catch (error) {
@@ -169,7 +192,7 @@ export const FactionDetailPage: React.FC = () => {
                   <div>
                     <div className="text-sm opacity-70">Average Level</div>
                     <div className="text-xl font-bold">
-                      {faction.averageLevel ? Math.round(faction.averageLevel * 10) / 10 : 0}
+                      {typeof faction.averageLevel === 'number' ? Math.round(faction.averageLevel * 10) / 10 : 0}
                     </div>
                   </div>
                   <div>
@@ -199,9 +222,9 @@ export const FactionDetailPage: React.FC = () => {
                       key={index}
                       profile={{
                         ProfileImage: profile?.Profile?.ProfileImage,
-                        UserName: profile?.Profile?.UserName || profile?.name,
-                        DisplayName: profile?.Profile?.DisplayName || profile?.name,
-                        Description: profile?.Profile?.Description || profile?.bio
+                        UserName: profile?.Profile?.UserName || 'Unknown',
+                        DisplayName: profile?.Profile?.DisplayName || 'Unknown',
+                        Description: profile?.Profile?.Description || ''
                       }}
                       address={member.id}
                       onClick={() => setSelectedMember({
@@ -223,10 +246,10 @@ export const FactionDetailPage: React.FC = () => {
       {selectedMember && (
         <ProfileDetail
           profile={{
-            ProfileImage: selectedMember.profile?.Profile?.ProfileImage || selectedMember.profile?.avatar,
-            UserName: selectedMember.profile?.Profile?.UserName || selectedMember.profile?.name,
-            DisplayName: selectedMember.profile?.Profile?.DisplayName || selectedMember.profile?.name,
-            Description: selectedMember.profile?.Profile?.Description || selectedMember.profile?.bio,
+            ProfileImage: selectedMember.profile?.Profile?.ProfileImage || '',
+            UserName: selectedMember.profile?.Profile?.UserName || 'Unknown',
+            DisplayName: selectedMember.profile?.Profile?.DisplayName || 'Unknown',
+            Description: selectedMember.profile?.Profile?.Description || '',
             CoverImage: selectedMember.profile?.Profile?.CoverImage,
             DateCreated: selectedMember.profile?.Profile?.DateCreated,
             DateUpdated: selectedMember.profile?.Profile?.DateUpdated

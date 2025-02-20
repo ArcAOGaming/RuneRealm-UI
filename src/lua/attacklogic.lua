@@ -85,11 +85,11 @@ function calculateDamage(move, attacker, defender)
     end
     
     -- Base damage from move (positive damage targets enemy)
-    local damage = move.damage
+    local damage = (move.damage * 5)
     print("Base damage:", damage)
     
     -- Add random bonus based on attacker's base attack only for enemy-targeting moves
-    local bonus = getRandom(1, attacker.attack)
+    local bonus = getRandom(0, attacker.attack)
     damage = damage + bonus
     print("Damage after attack bonus:", damage)
     
@@ -165,10 +165,10 @@ function applyStatChanges(target, move)
         local maxHealth = target.health * 10 -- Max health is 10x base health
         if move.health > 0 then
             -- Healing can't exceed max health
-            target.healthPoints = math.min(maxHealth, target.healthPoints + move.health)
+            target.healthPoints = math.min(maxHealth, target.healthPoints + (move.health * 10))
         else
-            -- Damage can't reduce below 0
-            target.healthPoints = math.max(0, target.healthPoints + move.health)
+            -- Damage can't reduce below 1
+            target.healthPoints = math.max(1, target.healthPoints + (move.health *10))
         end
         changes.health = move.health
     end

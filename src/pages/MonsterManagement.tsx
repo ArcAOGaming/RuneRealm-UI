@@ -1,11 +1,13 @@
 import React, { useEffect, useState } from 'react';
+import '../styles/MonsterManagement.css';
 import { useNavigate } from 'react-router-dom';
 import { useWallet } from '../hooks/useWallet';
-import { getFactionOptions, purchaseAccess, TokenOption, adoptMonster, getAssetBalances, AssetBalance, MonsterStats } from '../utils/aoHelpers';
+import { getFactionOptions, purchaseAccess, TokenOption, adoptMonster, getAssetBalances, MonsterStats } from '../utils/aoHelpers';
+import { AssetBalance } from '../utils/interefaces';
 import { createDataItemSigner } from '../config/aoConnection';
 import { message } from '../utils/aoHelpers';
 import { currentTheme } from '../constants/theme';
-import { Gateway } from '../constants/Constants';
+import { Gateway, TARGET_BATTLE_PID } from '../constants/Constants';
 import PurchaseModal from '../components/PurchaseModal';
 import Inventory from '../components/Inventory';
 import StatAllocationModal from '../components/StatAllocationModal';
@@ -69,30 +71,48 @@ export const MonsterManagement: React.FC = (): JSX.Element => {
   const handleBattle = async () => {
     if (!walletStatus?.monster || !wallet?.address) return;
 
+    const isBattleTime = walletStatus.monster.status.type === 'Battle';
+    const canReturn = isBattleTime && Date.now() > walletStatus.monster.status.until_time;
+
     try {
       setIsInBattle(true);
-      console.log('Starting battle');
+      console.log('Handling battle');
       
       const signer = createDataItemSigner(window.arweaveWallet);
-      const battleConfig = walletStatus.monster.activities.battle;
-      const fuelAsset = assetBalances.find(a => a.info.processId === battleConfig.cost.token);
-      
-      if (!fuelAsset || fuelAsset.balance < battleConfig.cost.amount) {
-        console.error('Not enough battle fuel');
-        return;
-      }
 
-      await message({
-        process: battleConfig.cost.token,
-        tags: [
-          { name: "Action", value: "Transfer" },
-          { name: "Quantity", value: battleConfig.cost.amount.toString() },
-          { name: "Recipient", value: "j7NcraZUL6GZlgdPEoph12Q5rk_dydvQDecLNxYi8rI" },
-          { name: "X-Action", value: "Battle" }
-        ],
-        signer,
-        data: ""
-      }, triggerRefresh);
+      if (canReturn) {
+        await message({
+          process: TARGET_BATTLE_PID,
+          tags: [
+            { name: "Action", value: "ReturnFromBattle" }
+          ],
+          signer,
+          data: ""
+        }, triggerRefresh);
+      } else {
+        const battleConfig = walletStatus.monster.activities.battle;
+        const fuelAsset = assetBalances.find(a => a.info.processId === battleConfig.cost.token);
+        
+        if (!fuelAsset || fuelAsset.balance < battleConfig.cost.amount) {
+          console.error('Not enough battle fuel');
+          return;
+        }
+
+        await message({
+          process: battleConfig.cost.token,
+          tags: [
+            { name: "Action", value: "Transfer" },
+            { name: "Quantity", value: battleConfig.cost.amount.toString() },
+            { name: "Recipient", value: "j7NcraZUL6GZlgdPEoph12Q5rk_dydvQDecLNxYi8rI" },
+            { name: "X-Action", value: "Battle" }
+          ],
+          signer,
+          data: ""
+        }, triggerRefresh);
+
+        // Navigate to battle page
+        navigate('/battle');
+      }
 
       await loadAssetBalances();
       // Start cooldown period after transaction confirms
@@ -100,11 +120,8 @@ export const MonsterManagement: React.FC = (): JSX.Element => {
       setTimeout(() => {
         setBattleCooldown(false);
       }, 5000);
-
-      // Navigate to battle page
-      navigate('/battle');
     } catch (error) {
-      console.error('Error starting battle:', error);
+      console.error('Error with battle:', error);
     } finally {
       setIsInBattle(false);
     }
@@ -458,13 +475,13 @@ export const MonsterManagement: React.FC = (): JSX.Element => {
   const renderMonsterCard = React.useMemo(() => {
     if (!walletStatus?.monster) {
       return (
-        <div className={`p-6 rounded-xl ${theme.container} border ${theme.border} backdrop-blur-md text-center`}>
-          <h2 className={`text-xl font-bold mb-4 ${theme.text}`}>No Monster Yet</h2>
-          <p className={`mb-4 ${theme.text}`}>Ready to begin your journey? Adopt your first monster!</p>
+      <div className={`no-monster-card ${theme.container} border ${theme.border} backdrop-blur-md`}>
+          <h2 className={`no-monster-title ${theme.text}`}>No Monster Yet</h2>
+          <p className={`no-monster-text ${theme.text}`}>Ready to begin your journey? Adopt your first monster!</p>
           <button
             onClick={handleAdoptMonster}
             disabled={isAdopting}
-            className={`px-6 py-3 rounded-lg font-bold transition-all duration-300 ${theme.buttonBg} ${theme.buttonHover} ${theme.text}`}
+            className={`adopt-button ${theme.buttonBg} ${theme.buttonHover} ${theme.text}`}
           >
             {isAdopting ? 'Adopting...' : 'Adopt Monster'}
           </button>
@@ -509,22 +526,25 @@ export const MonsterManagement: React.FC = (): JSX.Element => {
                       monster.happiness >= activities.mission.happinessCost) ||
                       (monster.status.type === 'Mission' && timeUp);
 
-    const canBattle = monster.status.type === 'Home' && 
+    const isBattleTime = monster.status.type === 'Battle';
+    const canReturn = isBattleTime && Date.now() > monster.status.until_time;
+    const canBattle = (monster.status.type === 'Home' && 
                      fuelBalance >= activities.battle.cost.amount && 
                      monster.energy >= activities.battle.energyCost && 
-                     monster.happiness >= activities.battle.happinessCost;
+                     monster.happiness >= activities.battle.happinessCost) ||
+                     (monster.status.type === 'Battle' && canReturn);
 
     return (
-      <div className={`p-6 rounded-xl ${theme.container} border ${theme.border} backdrop-blur-md w-[95%] mx-auto`}>
-        <div className="flex justify-between items-center mb-4">
-          <div className={`${theme.text} text-xl font-bold`}>
+      <div className={`monster-card ${theme.container} border ${theme.border} backdrop-blur-md`}>
+        <div className="monster-card-header">
+          <div className={`monster-level ${theme.text}`}>
             Level {monster.level}
           </div>
           <div className="flex gap-2">
             <button
               onClick={handleLevelUp}
               disabled={isLevelingUp || monster.status.type !== 'Home' || monster.exp < getFibonacciExp(monster.level)}
-              className={`px-4 py-2 rounded-lg font-medium transition-all duration-300 ${theme.buttonBg} ${theme.buttonHover} ${theme.text} ${(isLevelingUp || monster.status.type !== 'Home' || monster.exp < getFibonacciExp(monster.level)) ? 'opacity-50 cursor-not-allowed' : ''}`}
+              className={`adopt-button ${theme.buttonBg} ${theme.buttonHover} ${theme.text} ${(isLevelingUp || monster.status.type !== 'Home' || monster.exp < getFibonacciExp(monster.level)) ? 'opacity-50 cursor-not-allowed' : ''}`}
             >
               {isLevelingUp ? 'Leveling Up...' : 'Level Up'}
             </button>
@@ -539,33 +559,26 @@ export const MonsterManagement: React.FC = (): JSX.Element => {
           <h2 className={`text-2xl font-bold mb-4 ${theme.text}`}>{monster.name}</h2>
           
           {/* Moves Display */}
-          <div className="w-full mb-6">
-            <h3 className={`text-xl font-bold mb-2 ${theme.text}`}>Moves</h3>
-            <div className="grid grid-cols-2 gap-2">
+          <div className="moves-section">
+            <h3 className={`moves-title ${theme.text}`}>Moves</h3>
+            <div className="moves-grid">
               {Object.entries(monster.moves).map(([name, move]) => (
                 <div 
                   key={name} 
-                  className={`p-2 rounded-lg ${
-                    move.type === 'fire' ? 'bg-red-500' :
-                    move.type === 'water' ? 'bg-blue-500' :
-                    move.type === 'air' ? 'bg-gray-300' :
-                    move.type === 'rock' ? 'bg-yellow-700' :
-                    move.type === 'boost' ? 'bg-purple-500' :
-                    'bg-green-500' // heal type
-                  } bg-opacity-20`}
+                  className={`move-card ${move.type}`}
                 >
-                  <div className={`font-semibold ${theme.text}`}>{name}</div>
-                  <div className={`text-sm ${theme.text}`}>Type: {move.type}</div>
+                  <div className={`move-name ${theme.text}`}>{name}</div>
+                  <div className={`move-type ${theme.text}`}>Type: {move.type}</div>
                 </div>
               ))}
             </div>
           </div>
           
           {/* Stats Grid */}
-          <div className="w-full grid grid-cols-2 gap-4">
+          <div className="stats-grid">
             {/* Status */}
-            <div className="col-span-2 mb-4">
-              <div className="flex justify-between mb-1">
+            <div className="status-bar">
+              <div className="status-header">
                 <span className={`${theme.text} text-sm`}>Status: {monster.status.type}</span>
                 {monster.status.type !== 'Home' && (
                   <span className={`${theme.text} text-sm`}>
@@ -574,9 +587,9 @@ export const MonsterManagement: React.FC = (): JSX.Element => {
                 )}
               </div>
               {monster.status.type !== 'Home' && (
-                <div className="w-full bg-gray-200 rounded-full h-2.5">
+                <div className="progress-bar">
                   <div 
-                    className="bg-yellow-600 h-2.5 rounded-full transition-all duration-1000" 
+                    className="progress-bar-fill activity" 
                     style={{ 
                       width: `${calculateProgress(monster.status.since, monster.status.until_time)}%` 
                     }}
@@ -586,69 +599,69 @@ export const MonsterManagement: React.FC = (): JSX.Element => {
             </div>
 
             {/* Energy Bar */}
-            <div className="col-span-2">
-              <div className="flex justify-between mb-1">
+            <div className="status-bar">
+              <div className="status-header">
                 <span className={`${theme.text} text-sm`}>Energy</span>
                 <span className={`${theme.text} text-sm`}>{monster.energy}/100</span>
               </div>
-              <div className="w-full bg-gray-200 rounded-full h-2.5">
+              <div className="progress-bar">
                 <div 
-                  className="bg-blue-600 h-2.5 rounded-full" 
+                  className="progress-bar-fill energy" 
                   style={{ width: `${monster.energy}%` }}
                 ></div>
               </div>
             </div>
 
             {/* Happiness Bar */}
-            <div className="col-span-2">
-              <div className="flex justify-between mb-1">
+            <div className="status-bar">
+              <div className="status-header">
                 <span className={`${theme.text} text-sm`}>Happiness</span>
                 <span className={`${theme.text} text-sm`}>{monster.happiness}/100</span>
               </div>
-              <div className="w-full bg-gray-200 rounded-full h-2.5">
+              <div className="progress-bar">
                 <div 
-                  className="bg-pink-600 h-2.5 rounded-full" 
+                  className="progress-bar-fill happiness" 
                   style={{ width: `${monster.happiness}%` }}
                 ></div>
               </div>
             </div>
 
             {/* Experience Bar */}
-            <div className="col-span-2">
-              <div className="flex justify-between mb-1">
+            <div className="status-bar">
+              <div className="status-header">
                 <span className={`${theme.text} text-sm`}>Experience</span>
                 <span className={`${theme.text} text-sm`}>{monster.exp}/{getFibonacciExp(monster.level)}</span>
               </div>
-              <div className="w-full bg-gray-200 rounded-full h-2.5">
+              <div className="progress-bar">
                 <div 
-                  className="bg-purple-600 h-2.5 rounded-full" 
+                  className="progress-bar-fill experience" 
                   style={{ width: `${Math.min((monster.exp / getFibonacciExp(monster.level)) * 100, 100)}%` }}
                 ></div>
               </div>
             </div>
 
             {/* Stats Display */}
-            <div className="col-span-2 flex gap-4 mt-4">
-              {/* Stats Grid */}
-              <div className="flex-1 space-y-2">
+            <div className="stats-display">
+              {/* Stats List */}
+              <div className="stats-list">
                 <h3 className={`text-xl font-bold mb-4 ${theme.text}`}>Stats</h3>
-                <div className={`${theme.text} p-2 rounded bg-opacity-20 ${theme.container}`}>
+                <div className={`stat-item ${theme.container}`}>
                   <span className="font-semibold">Attack:</span> {monster.attack}/{5 + (monster.level * 5)}
                 </div>
-                <div className={`${theme.text} p-2 rounded bg-opacity-20 ${theme.container}`}>
+                <div className={`stat-item ${theme.container}`}>
                   <span className="font-semibold">Defense:</span> {monster.defense}/{5 + (monster.level * 5)}
                 </div>
-                <div className={`${theme.text} p-2 rounded bg-opacity-20 ${theme.container}`}>
+                <div className={`stat-item ${theme.container}`}>
                   <span className="font-semibold">Speed:</span> {monster.speed}/{5 + (monster.level * 5)}
                 </div>
-                <div className={`${theme.text} p-2 rounded bg-opacity-20 ${theme.container}`}>
+                <div className={`stat-item ${theme.container}`}>
                   <span className="font-semibold">Health:</span> {monster.health}/{5 + (monster.level * 5)}
                 </div>
               </div>
               
               {/* Radar Chart */}
-              <div className="flex-1 px-8">
-                <div className="w-full h-[300px] flex items-center justify-center">
+              <div className="radar-chart-container">
+                <div className="radar-chart-wrapper">
                   <Radar
                     data={{
                       labels: ['Attack', 'Defense', 'Speed', 'Health'],
@@ -719,33 +732,30 @@ export const MonsterManagement: React.FC = (): JSX.Element => {
             </div>
 
             {/* Action Buttons */}
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 mt-6 col-span-2 px-4">
+            <div className="action-buttons-grid">
               {/* Feed Button */}
-              <div className={`rounded-lg overflow-hidden ${theme.container} border ${theme.border}`}>
-                <div className="bg-black text-white px-4 py-2 text-center font-bold">
+              <div className={`action-card ${theme.container} border ${theme.border}`}>
+                <div className="action-card-header">
                   INSTANT
                 </div>
-                <div className="p-6 flex flex-col h-[300px] relative">
-                  <div className="flex-1 flex justify-between items-start">
-                    <div className="w-1/2 pr-4 relative">
-                      <div className="absolute top-0 right-0 w-px h-[calc(100%-48px)] bg-gray-300"></div>
-                      <div className="text-sm font-bold mb-3 text-gray-400">COSTS</div>
-                      <div className="flex flex-wrap gap-2 max-h-[210px] overflow-y-auto">
-                        <div className={`px-3 py-1.5 rounded-full flex items-center gap-2 ${
-                          berryBalance >= activities.feed.cost.amount ? 
-                          'bg-gray-700/50 text-black font-medium' : 
-                          'bg-gray-800/50 text-gray-400 border-2 border-red-500/70 shadow-[0_0_10px_-3px_rgba(239,68,68,0.6)]'
-                        } ${monster.status.type === 'Home' ? '' : 'opacity-50'}`}>
+                <div className="action-card-content">
+                  <div className="action-card-body">
+                    <div className="costs-section">
+                      <div className="section-title">COSTS</div>
+                      <div className="costs-list">
+                        <div className={`cost-item ${
+                          berryBalance >= activities.feed.cost.amount ? 'available' : 'unavailable'
+                        } ${monster.status.type === 'Home' ? '' : 'disabled'}`}>
                           <img src={`${Gateway}${assetBalances.find(a => a.info.processId === activities.feed.cost.token)?.info.logo}`} 
-                               alt="Berry" className="w-4 h-4 rounded-full" />
+                               alt="Berry" className="cost-icon" />
                           <span>-{activities.feed.cost.amount}</span>
                         </div>
                       </div>
                     </div>
-                    <div className="w-1/2 pl-4">
-                      <div className="text-sm font-bold mb-3 text-gray-400">REWARDS</div>
-                      <div className="flex flex-wrap gap-2">
-                        <div className="px-3 py-1 rounded-full bg-blue-500/30 text-black font-medium">
+                    <div className="rewards-section">
+                      <div className="section-title">REWARDS</div>
+                      <div className="rewards-list">
+                        <div className="reward-item energy">
                           +{activities.feed.energyGain} Energy
                         </div>
                       </div>
@@ -754,7 +764,7 @@ export const MonsterManagement: React.FC = (): JSX.Element => {
                   <button
                     onClick={handleFeedMonster}
                     disabled={isFeeding || feedingCooldown || !canFeed}
-                    className={`w-full px-4 py-2 rounded-lg font-bold text-lg transition-all duration-300 bg-gradient-to-br from-blue-500 to-blue-700 hover:from-blue-400 hover:to-blue-600 text-white ${
+                    className={`action-button feed ${
                       (isFeeding || feedingCooldown || !canFeed) ? 'opacity-50 cursor-not-allowed' : ''
                     }`}
                   >
@@ -764,38 +774,33 @@ export const MonsterManagement: React.FC = (): JSX.Element => {
               </div>
 
               {/* Play Button */}
-              <div className={`rounded-lg overflow-hidden ${theme.container} border ${theme.border}`}>
-                <div className="bg-black text-white px-4 py-2 text-center font-bold">
+              <div className={`action-card ${theme.container} border ${theme.border}`}>
+                <div className="action-card-header">
                   {activities.play.duration / 60000} MIN
                 </div>
-                <div className="p-6 flex flex-col h-[300px] relative">
-                  <div className="flex-1 flex justify-between items-start">
-                    <div className="w-1/2 pr-4 relative">
-                      <div className="absolute top-0 right-0 w-px h-[calc(100%-48px)] bg-gray-300"></div>
-                      <div className="text-sm font-bold mb-3 text-gray-400">COSTS</div>
-                      <div className="flex flex-wrap gap-2 max-h-[210px] overflow-y-auto">
-                        <div className={`px-3 py-1 rounded-full flex items-center gap-2 ${
-                          berryBalance >= activities.play.cost.amount ? 
-                          'bg-gray-700/50 text-black font-medium' : 
-                          'bg-gray-800/50 text-gray-400 border-2 border-red-500/70 shadow-[0_0_10px_-3px_rgba(239,68,68,0.6)]'
-                        } ${monster.status.type === 'Home' || (monster.status.type === 'Play' && timeUp) ? '' : 'opacity-50'}`}>
+                <div className="action-card-content">
+                  <div className="action-card-body">
+                    <div className="costs-section">
+                      <div className="section-title">COSTS</div>
+                      <div className="costs-list">
+                        <div className={`cost-item ${
+                          berryBalance >= activities.play.cost.amount ? 'available' : 'unavailable'
+                        } ${monster.status.type === 'Home' || (monster.status.type === 'Play' && timeUp) ? '' : 'disabled'}`}>
                           <img src={`${Gateway}${assetBalances.find(a => a.info.processId === activities.play.cost.token)?.info.logo}`} 
-                               alt="Berry" className="w-4 h-4 rounded-full" />
+                               alt="Berry" className="cost-icon" />
                           <span>-{activities.play.cost.amount}</span>
                         </div>
-                        <div className={`px-3 py-1.5 rounded-full ${
-                          monster.energy >= activities.play.energyCost ? 
-                          'bg-blue-500/30 text-black font-medium' : 
-                          'bg-gray-800/50 text-gray-400 border-2 border-red-500/70 shadow-[0_0_10px_-3px_rgba(239,68,68,0.6)]'
-                        } ${monster.status.type === 'Home' || (monster.status.type === 'Play' && timeUp) ? '' : 'opacity-50'}`}>
+                        <div className={`cost-item ${
+                          monster.energy >= activities.play.energyCost ? 'available' : 'unavailable'
+                        } ${monster.status.type === 'Home' || (monster.status.type === 'Play' && timeUp) ? '' : 'disabled'}`}>
                           -{activities.play.energyCost} Energy
                         </div>
                       </div>
                     </div>
-                    <div className="w-1/2 pl-4">
-                      <div className="text-sm font-bold mb-3 text-gray-400">REWARDS</div>
-                      <div className="flex flex-wrap gap-2">
-                        <div className="px-3 py-1 rounded-full bg-yellow-500/30 text-black font-medium">
+                    <div className="rewards-section">
+                      <div className="section-title">REWARDS</div>
+                      <div className="rewards-list">
+                        <div className="reward-item happiness">
                           +{activities.play.happinessGain} Happy
                         </div>
                       </div>
@@ -804,7 +809,7 @@ export const MonsterManagement: React.FC = (): JSX.Element => {
                   <button
                     onClick={handlePlayMonster}
                     disabled={isPlaying || playingCooldown || !canPlay || (monster.status.type !== 'Home' && monster.status.type !== 'Play')}
-                    className={`w-full px-4 py-2 rounded-lg font-bold text-lg transition-all duration-300 bg-gradient-to-br from-yellow-500 to-yellow-700 hover:from-yellow-400 hover:to-yellow-600 text-white ${
+                    className={`action-button play ${
                       (isPlaying || playingCooldown || !canPlay || (monster.status.type !== 'Home' && monster.status.type !== 'Play')) ? 'opacity-50 cursor-not-allowed' : ''
                     }`}
                   >
@@ -815,45 +820,38 @@ export const MonsterManagement: React.FC = (): JSX.Element => {
               </div>
 
               {/* Battle Button */}
-              <div className={`rounded-lg overflow-hidden ${theme.container} border ${theme.border}`}>
-                <div className="bg-black text-white px-4 py-2 text-center font-bold">
+              <div className={`action-card ${theme.container} border ${theme.border}`}>
+                <div className="action-card-header">
                   BATTLE
                 </div>
-                <div className="p-6 flex flex-col h-[300px] relative">
-                  <div className="flex-1 flex justify-between items-start">
-                    <div className="w-1/2 pr-4 relative">
-                      <div className="absolute top-0 right-0 w-px h-[calc(100%-48px)] bg-gray-300"></div>
-                      <div className="text-sm font-bold mb-3 text-gray-400">COSTS</div>
-                      <div className="flex flex-wrap gap-2 max-h-[210px] overflow-y-auto">
-                        <div className={`px-3 py-1 rounded-full flex items-center gap-2 ${
-                          fuelBalance >= activities.battle.cost.amount ? 
-                          'bg-gray-700/50 text-black font-medium' : 
-                          'bg-gray-800/50 text-gray-400 border-2 border-red-500/70 shadow-[0_0_10px_-3px_rgba(239,68,68,0.6)]'
-                        } ${monster.status.type === 'Home' ? '' : 'opacity-50'}`}>
+                <div className="action-card-content">
+                  <div className="action-card-body">
+                    <div className="costs-section">
+                      <div className="section-title">COSTS</div>
+                      <div className="costs-list">
+                        <div className={`cost-item ${
+                          fuelBalance >= activities.battle.cost.amount ? 'available' : 'unavailable'
+                        } ${monster.status.type === 'Home' ? '' : 'disabled'}`}>
                           <img src={`${Gateway}${assetBalances.find(a => a.info.processId === activities.battle.cost.token)?.info.logo}`} 
-                               alt="TRUNK" className="w-4 h-4 rounded-full" />
+                               alt="TRUNK" className="cost-icon" />
                           <span>-{activities.battle.cost.amount}</span>
                         </div>
-                        <div className={`px-3 py-1 rounded-full ${
-                          monster.energy >= activities.battle.energyCost ? 
-                          'bg-blue-500/30 text-black font-medium' : 
-                          'bg-gray-800/50 text-gray-400 border-2 border-red-500/70 shadow-[0_0_10px_-3px_rgba(239,68,68,0.6)]'
-                        } ${monster.status.type === 'Home' ? '' : 'opacity-50'}`}>
+                        <div className={`cost-item ${
+                          monster.energy >= activities.battle.energyCost ? 'available' : 'unavailable'
+                        } ${monster.status.type === 'Home' ? '' : 'disabled'}`}>
                           -{activities.battle.energyCost} Energy
                         </div>
-                        <div className={`px-3 py-1.5 rounded-full ${
-                          monster.happiness >= activities.battle.happinessCost ? 
-                          'bg-yellow-500/30 text-black font-medium' : 
-                          'bg-gray-800/50 text-gray-400 border-2 border-red-500/70 shadow-[0_0_10px_-3px_rgba(239,68,68,0.6)]'
-                        } ${monster.status.type === 'Home' ? '' : 'opacity-50'}`}>
+                        <div className={`cost-item ${
+                          monster.happiness >= activities.battle.happinessCost ? 'available' : 'unavailable'
+                        } ${monster.status.type === 'Home' ? '' : 'disabled'}`}>
                           -{activities.battle.happinessCost} Happy
                         </div>
                       </div>
                     </div>
-                    <div className="w-1/2 pl-4">
-                      <div className="text-sm font-bold mb-3 text-gray-400">REWARDS</div>
-                      <div className="flex flex-wrap gap-2">
-                        <div className="px-3 py-1 rounded-full bg-emerald-500/30 text-black font-medium">
+                    <div className="rewards-section">
+                      <div className="section-title">REWARDS</div>
+                      <div className="rewards-list">
+                        <div className="reward-item exp">
                           4 Battles
                         </div>
                       </div>
@@ -861,56 +859,50 @@ export const MonsterManagement: React.FC = (): JSX.Element => {
                   </div>
                   <button
                     onClick={handleBattle}
-                    disabled={isInBattle || battleCooldown || !canBattle || monster.status.type !== 'Home'}
-                    className={`w-full px-4 py-2 rounded-lg font-bold text-lg transition-all duration-300 bg-gradient-to-br from-red-500 to-red-700 hover:from-red-400 hover:to-red-600 text-white ${
-                      (isInBattle || battleCooldown || !canBattle || monster.status.type !== 'Home') ? 'opacity-50 cursor-not-allowed' : ''
+                    disabled={isInBattle || battleCooldown || !canBattle || (monster.status.type !== 'Home' && monster.status.type !== 'Battle')}
+                    className={`action-button battle ${
+                      (isInBattle || battleCooldown || !canBattle || (monster.status.type !== 'Home' && monster.status.type !== 'Battle')) ? 'opacity-50 cursor-not-allowed' : ''
                     }`}
                   >
-                    {isInBattle || battleCooldown ? 'In Battle...' : 'Start Battle'}
+                    {isInBattle || battleCooldown ? 'In Battle...' : 
+                     (monster.status.type === 'Battle' && canReturn) ? 'Return from Battle' : 'Start Battle'}
                   </button>
                 </div>
               </div>
 
               {/* Mission Button */}
-              <div className={`rounded-lg overflow-hidden ${theme.container} border ${theme.border}`}>
-                <div className="bg-black text-white px-4 py-2 text-center font-bold">
+              <div className={`action-card ${theme.container} border ${theme.border}`}>
+                <div className="action-card-header">
                   {activities.mission.duration / 3600000} HOUR
                 </div>
-                <div className="p-6 flex flex-col h-[300px] relative">
-                  <div className="flex-1 flex justify-between items-start">
-                    <div className="w-1/2 pr-4 relative">
-                      <div className="absolute top-0 right-0 w-px h-[calc(100%-48px)] bg-gray-300"></div>
-                      <div className="text-sm font-bold mb-3 text-gray-400">COSTS</div>
-                      <div className="flex flex-wrap gap-2 max-h-[210px] overflow-y-auto">
-                        <div className={`px-3 py-1 rounded-full flex items-center gap-2 ${
-                          fuelBalance >= activities.mission.cost.amount ? 
-                          'bg-gray-700/50 text-black font-medium' : 
-                          'bg-gray-800/50 text-gray-400 border-2 border-red-500/70 shadow-[0_0_10px_-3px_rgba(239,68,68,0.6)]'
-                        } ${monster.status.type === 'Home' || (monster.status.type === 'Mission' && timeUp) ? '' : 'opacity-50'}`}>
+                <div className="action-card-content">
+                  <div className="action-card-body">
+                    <div className="costs-section">
+                      <div className="section-title">COSTS</div>
+                      <div className="costs-list">
+                        <div className={`cost-item ${
+                          fuelBalance >= activities.mission.cost.amount ? 'available' : 'unavailable'
+                        } ${monster.status.type === 'Home' || (monster.status.type === 'Mission' && timeUp) ? '' : 'disabled'}`}>
                           <img src={`${Gateway}${assetBalances.find(a => a.info.processId === activities.mission.cost.token)?.info.logo}`} 
-                               alt="TRUNK" className="w-4 h-4 rounded-full" />
+                               alt="TRUNK" className="cost-icon" />
                           <span>-{activities.mission.cost.amount}</span>
                         </div>
-                        <div className={`px-3 py-1 rounded-full ${
-                          monster.energy >= activities.mission.energyCost ? 
-                          'bg-blue-500/30 text-black font-medium' : 
-                          'bg-gray-800/50 text-gray-400 border-2 border-red-500/70 shadow-[0_0_10px_-3px_rgba(239,68,68,0.6)]'
-                        } ${monster.status.type === 'Home' || (monster.status.type === 'Mission' && timeUp) ? '' : 'opacity-50'}`}>
+                        <div className={`cost-item ${
+                          monster.energy >= activities.mission.energyCost ? 'available' : 'unavailable'
+                        } ${monster.status.type === 'Home' || (monster.status.type === 'Mission' && timeUp) ? '' : 'disabled'}`}>
                           -{activities.mission.energyCost} Energy
                         </div>
-                        <div className={`px-3 py-1.5 rounded-full ${
-                          monster.happiness >= activities.mission.happinessCost ? 
-                          'bg-yellow-500/30 text-black font-medium' : 
-                          'bg-gray-800/50 text-gray-400 border-2 border-red-500/70 shadow-[0_0_10px_-3px_rgba(239,68,68,0.6)]'
-                        } ${monster.status.type === 'Home' || (monster.status.type === 'Mission' && timeUp) ? '' : 'opacity-50'}`}>
+                        <div className={`cost-item ${
+                          monster.happiness >= activities.mission.happinessCost ? 'available' : 'unavailable'
+                        } ${monster.status.type === 'Home' || (monster.status.type === 'Mission' && timeUp) ? '' : 'disabled'}`}>
                           -{activities.mission.happinessCost} Happy
                         </div>
                       </div>
                     </div>
-                    <div className="w-1/2 pl-4">
-                      <div className="text-sm font-bold mb-3 text-gray-400">REWARDS</div>
-                      <div className="flex flex-wrap gap-2">
-                        <div className="px-3 py-1 rounded-full bg-emerald-500/30 text-black font-medium">
+                    <div className="rewards-section">
+                      <div className="section-title">REWARDS</div>
+                      <div className="rewards-list">
+                        <div className="reward-item exp">
                           +1 EXP
                         </div>
                       </div>
@@ -919,7 +911,7 @@ export const MonsterManagement: React.FC = (): JSX.Element => {
                   <button
                     onClick={handleMission}
                     disabled={isOnMission || missionCooldown || !canMission || (monster.status.type !== 'Home' && monster.status.type !== 'Mission')}
-                    className={`w-full px-4 py-2 rounded-lg font-bold text-lg transition-all duration-300 bg-gradient-to-br from-emerald-500 to-emerald-700 hover:from-emerald-400 hover:to-emerald-600 text-white ${
+                    className={`action-button mission ${
                       (isOnMission || missionCooldown || !canMission || (monster.status.type !== 'Home' && monster.status.type !== 'Mission')) ? 'opacity-50 cursor-not-allowed' : ''
                     }`}
                   >
@@ -966,8 +958,8 @@ export const MonsterManagement: React.FC = (): JSX.Element => {
   ]);
 
   return (
-    <div className="min-h-screen flex flex-col overflow-hidden relative">
-      <div className={`min-h-screen flex flex-col ${theme.bg}`}>
+    <div className="monster-management-container">
+      <div className={`monster-management-inner ${theme.bg}`}>
         <Header
           theme={theme}
           darkMode={darkMode}
@@ -997,26 +989,26 @@ export const MonsterManagement: React.FC = (): JSX.Element => {
           contractName="Eternal Pass"
         />
 
-        <div className={`container mx-auto px-6 py-8 flex-1 overflow-y-auto ${theme.text} pr-72 md:pr-80`}>
-          <div className="max-w-6xl mx-auto mb-8">
-            <h1 className={`text-3xl font-bold mb-4 ${theme.text}`}>Monster Management</h1>
+        <div className={`monster-management-content ${theme.text}`}>
+          <div className="monster-management-wrapper">
+            <h1 className={`monster-management-title ${theme.text}`}>Monster Management</h1>
             
             {!walletStatus?.isUnlocked ? (
-              <div className={`p-6 rounded-xl ${theme.container} border ${theme.border} backdrop-blur-md text-center`}>
-                <h2 className={`text-xl font-bold mb-4 ${theme.text}`}>Unlock Access to Manage Monsters</h2>
+              <div className={`no-monster-card ${theme.container} border ${theme.border} backdrop-blur-md`}>
+                <h2 className={`no-monster-title ${theme.text}`}>Unlock Access to Manage Monsters</h2>
                 <button
                   onClick={() => setIsPurchaseModalOpen(true)}
-                  className={`px-6 py-3 rounded-lg font-bold transition-all duration-300 ${theme.buttonBg} ${theme.buttonHover} ${theme.text}`}
+                  className={`adopt-button ${theme.buttonBg} ${theme.buttonHover} ${theme.text}`}
                 >
                   Purchase Access
                 </button>
               </div>
             ) : !walletStatus?.faction ? (
-              <div className={`p-6 rounded-xl ${theme.container} border ${theme.border} backdrop-blur-md text-center`}>
-                <h2 className={`text-xl font-bold mb-4 ${theme.text}`}>Join a Faction First</h2>
+              <div className={`no-monster-card ${theme.container} border ${theme.border} backdrop-blur-md`}>
+                <h2 className={`no-monster-title ${theme.text}`}>Join a Faction First</h2>
                 <a
                   href="/faction"
-                  className={`px-6 py-3 rounded-lg font-bold transition-all duration-300 ${theme.buttonBg} ${theme.buttonHover} ${theme.text}`}
+                  className={`adopt-button ${theme.buttonBg} ${theme.buttonHover} ${theme.text}`}
                 >
                   Choose Your Faction
                 </a>

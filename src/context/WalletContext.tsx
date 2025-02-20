@@ -16,10 +16,7 @@ const WalletContext = createContext<WalletContextType | undefined>(undefined);
 
 export const WalletProvider: React.FC<{ children: React.ReactNode }> = ({ children }): JSX.Element => {
   const [wallet, setWallet] = useState<any | null>(null);
-  const [walletStatus, setWalletStatus] = useState<WalletStatus | null>(() => {
-    const cached = localStorage.getItem('walletStatus');
-    return cached ? JSON.parse(cached) : null;
-  });
+  const [walletStatus, setWalletStatus] = useState<WalletStatus | null>(null);
   const [isCheckingStatus, setIsCheckingStatus] = useState<boolean>(false);
   const [darkMode, setDarkMode] = useState<boolean>(
     localStorage.getItem('darkMode') === 'true'
@@ -62,24 +59,18 @@ export const WalletProvider: React.FC<{ children: React.ReactNode }> = ({ childr
       const walletObj = { address: activeAddress, dispatch: window.arweaveWallet.dispatch };
       setWallet(walletObj);
 
-      // Use cached status if available and not forced
-      if (!force && localStorage.getItem('walletStatus')) {
-        const cachedStatus = JSON.parse(localStorage.getItem('walletStatus')!);
-        console.log('[WalletContext] Using cached status', cachedStatus);
-        setWalletStatus(cachedStatus);
-        setLastCheck(now);
-        return cachedStatus.isUnlocked;
+      // Use our new caching system in checkWalletStatus
+      const status = await checkWalletStatus({ address: activeAddress }, false);
+      if (!status) {
+        console.error('[WalletContext] Failed to get wallet status');
+        return false;
       }
-
-      // Only fetch new status if forced or no cache
-      const status = await checkWalletStatus({ address: activeAddress });
       console.log('[WalletContext] Wallet status updated:', status);
       // Only update if we got valid data
       if (status) {
         setWalletStatus(status);
       }
       setLastCheck(now);
-      localStorage.setItem('walletStatus', JSON.stringify(status));
       return status.isUnlocked;
     } catch (error) {
       console.error('[WalletContext] Error checking wallet status:', error);
@@ -126,7 +117,6 @@ export const WalletProvider: React.FC<{ children: React.ReactNode }> = ({ childr
       console.log('[WalletContext] Wallet disconnected');
       setWallet(null);
       setWalletStatus(null);
-      localStorage.removeItem('walletStatus');
     };
 
     // @ts-ignore

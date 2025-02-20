@@ -1,6 +1,7 @@
 import React, { useEffect, useState, useCallback } from 'react';
 import { useWallet } from '../hooks/useWallet';
-import { getBattleManagerInfo, getActiveBattle, executeAttack, endBattle, returnFromBattle, BattleManagerInfo, ActiveBattle, BattleResult } from '../utils/aoHelpers';
+import { getBattleManagerInfo, getActiveBattle, executeAttack, endBattle, returnFromBattle } from '../utils/aoHelpers';
+import type { BattleManagerInfo, ActiveBattle, BattleResult } from '../utils/interefaces';
 import { currentTheme } from '../constants/theme';
 import Header from '../components/Header';
 import Footer from '../components/Footer';
@@ -48,6 +49,7 @@ export const ActiveBattlePage: React.FC = (): JSX.Element => {
   } | null>(null);
   const [shieldRestoring, setShieldRestoring] = useState(false);
   const [showEndOfRound, setShowEndOfRound] = useState(false);
+  const [showWinnerAnnouncement, setShowWinnerAnnouncement] = useState<{winner: string} | null>(null);
   const [movesDisabled, setMovesDisabled] = useState(false);
   const [playerAnimation, setPlayerAnimation] = useState<'walkRight' | 'walkLeft' | 'walkUp' | 'walkDown' | 'attack1' | 'attack2' | undefined>();
   const [opponentAnimation, setOpponentAnimation] = useState<'walkRight' | 'walkLeft' | 'walkUp' | 'walkDown' | 'attack1' | 'attack2' | undefined>();
@@ -98,21 +100,27 @@ export const ActiveBattlePage: React.FC = (): JSX.Element => {
           if (!activeBattle) {
             // Initial battle load
             console.log("Initial battle load")
+            // Check if battle is over by checking health points
+            const isEnded = battle.player.healthPoints <= 0 || battle.opponent.healthPoints <= 0;
+            const status = isEnded ? 'ended' : 'active';
+            
             setActiveBattle({
               ...battle,
-              status: 'active'
+              status
             });
             setPreviousBattle({
               ...battle,
-              status: 'active'
+              status
             });
           } else if (!movesDisabled && hasBattleChanged(activeBattle, battle)) {
             // Only update if there are meaningful changes and not during animations
             setPreviousBattle(activeBattle);
             console.log("Initial battle load 2")
+            // Preserve ended status if battle was already ended
+            const status = activeBattle.status === 'ended' ? 'ended' : 'active';
             setActiveBattle({
               ...battle,
-              status: activeBattle.status
+              status
             });
           }
         } else {
@@ -153,13 +161,92 @@ export const ActiveBattlePage: React.FC = (): JSX.Element => {
           // Battle is over
           const result = response.data as BattleResult;
           setBattleManagerInfo(result.session);
-          if (activeBattle) {
-            console.log("intermidiate battle load")
-            setActiveBattle({
-              ...activeBattle,
-              status: 'ended'
-            });
+          
+          // Process the final attack animation
+          const battleData = response.data as ActiveBattle;
+          const turn = battleData.turns[battleData.turns.length - 1];
+          
+          // Update battle state with final turn data
+          const updatedBattle = {
+            ...activeBattle,
+            player: { ...activeBattle.player },
+            opponent: { ...activeBattle.opponent }
+          };
+
+          if(turn.attacker === "player") {
+            updatedBattle.player.attack = turn.attackerState.attack;
+            updatedBattle.player.defense = turn.attackerState.defense;
+            updatedBattle.player.speed = turn.attackerState.speed;
+            updatedBattle.player.shield = turn.attackerState.shield;
+            updatedBattle.player.healthPoints = turn.attackerState.healthPoints;
+
+            updatedBattle.opponent.attack = turn.defenderState.attack;
+            updatedBattle.opponent.defense = turn.defenderState.defense;
+            updatedBattle.opponent.speed = turn.defenderState.speed;
+            updatedBattle.opponent.shield = turn.defenderState.shield;
+            updatedBattle.opponent.healthPoints = turn.defenderState.healthPoints;
+          } else {
+            updatedBattle.opponent.attack = turn.attackerState.attack;
+            updatedBattle.opponent.defense = turn.attackerState.defense;
+            updatedBattle.opponent.speed = turn.attackerState.speed;
+            updatedBattle.opponent.shield = turn.attackerState.shield;
+            updatedBattle.opponent.healthPoints = turn.attackerState.healthPoints;
+
+            updatedBattle.player.attack = turn.defenderState.attack;
+            updatedBattle.player.defense = turn.defenderState.defense;
+            updatedBattle.player.speed = turn.defenderState.speed;
+            updatedBattle.player.shield = turn.defenderState.shield;
+            updatedBattle.player.healthPoints = turn.defenderState.healthPoints;
           }
+
+          // Update battle state before animations
+          setActiveBattle(updatedBattle);
+          
+          // Show attack animation
+          setAttackAnimation({
+            attacker: turn.attacker,
+            moveName: turn.move
+          });
+
+          // Play the attack animation sequence
+          if (turn.attacker === 'player') {
+            setPlayerAnimation('walkRight');
+            await new Promise(resolve => setTimeout(resolve, 1000));
+            
+            setPlayerAnimation('attack1');
+            await new Promise(resolve => setTimeout(resolve, 1000));
+            
+            setPlayerAnimation('walkLeft');
+            await new Promise(resolve => setTimeout(resolve, 1000));
+          } else {
+            setOpponentAnimation('walkRight');
+            await new Promise(resolve => setTimeout(resolve, 1000));
+            
+            setOpponentAnimation('attack1');
+            await new Promise(resolve => setTimeout(resolve, 1000));
+            
+            setOpponentAnimation('walkLeft');
+            await new Promise(resolve => setTimeout(resolve, 1000));
+          }
+
+          // Clear animations
+          setAttackAnimation(null);
+          setPlayerAnimation(undefined);
+          setOpponentAnimation(undefined);
+
+          // Set battle status to ended to show the Exit button
+          setActiveBattle(prev => ({
+            ...prev,
+            status: 'ended'
+          }));
+          
+          // Show winner announcement
+          const playerWon = updatedBattle.player.healthPoints > 0;
+          const winnerName = playerWon ? updatedBattle.player.name : updatedBattle.opponent.name;
+          setShowWinnerAnnouncement({ winner: winnerName });
+          await new Promise(resolve => setTimeout(resolve, 3000));
+          setShowWinnerAnnouncement(null);
+          
           setMovesDisabled(false);
         } else {
           // Battle continues - process new turns
@@ -360,6 +447,16 @@ export const ActiveBattlePage: React.FC = (): JSX.Element => {
             playerName={activeBattle.player.name}
             opponentName={activeBattle.opponent.name}
           />
+        )}
+        
+        {/* Winner Announcement Overlay */}
+        {showWinnerAnnouncement && (
+          <div className="fixed inset-0 flex items-center justify-center z-50 bg-black bg-opacity-50">
+            <div className={`${theme.container} border ${theme.border} backdrop-blur-md p-8 rounded-xl animate-fade-in text-center`}>
+              <h2 className="text-3xl font-bold mb-4 text-yellow-400">Battle Complete!</h2>
+              <p className="text-xl text-white">{showWinnerAnnouncement.winner} has won the battle!</p>
+            </div>
+          </div>
         )}
         
         <div className={`container mx-auto px-4 flex-1 ${theme.text}`}>
@@ -568,5 +665,3 @@ export const ActiveBattlePage: React.FC = (): JSX.Element => {
     </div>
   );
 };
-
-export default ActiveBattlePage;
