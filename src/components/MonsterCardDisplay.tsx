@@ -92,6 +92,33 @@ const CARD = {
   }
 } as const;
 
+const CardImages = {
+  air:{
+    backgrounds: "S9ME1vtSmYqS8v5ygzX5CMpvYYVZ-nsV1kselavUDeM",
+    cardframe: "AsRyajmJKrIFvmc6k3H-GKYveWb1TDvgIPg7HVH1B9k",
+    elementtypes: "ts_msM47WJdKVkDphg3TwKgwi_r0Cx6N10qxa8cHhbo",
+    level: "Bnvgn5yi9_6iRsRlKD9rhQvH5i0XhXvEeDTKu3LhJOI"
+  },
+  rock:{
+    backgrounds: "arPti-7FScNGuPAzcaypGYv_aKk6v5Xk2TBbSeTq9Vc",
+    cardframe: "m1GudORk0Q_46kkF0Z_SYvP9EVz3r9EvDMckn7XmwgA",
+    elementtypes: "1UFstD_6bOFGMiABZiCDzDNFotifkBuaLnZmsfHYPmk",
+    level: "whQ3nCw8fNrO3gPCSlBOTOlQ2WmLBZH3FeSogwtXmFg"
+  },
+  fire:{
+    backgrounds: "_c3YdO2buD9WYhjst7XiaNRu5CsJ2_dZtSGISB_naQs",
+    cardframe: "leecHc-g-zitMPrrMuO_P22ovyFc9OjW3u_F2rFkmSM",
+    elementtypes: "sbvdpFgWUEFahcItD3zvzNEV34GYYcIKyC2TXOZCU5A",
+    level: "qlKFPHcG5xCWkrcFNeHGdKVv4qGS4NyTPOT-CYkmVsY"
+  },
+  water:{
+    backgrounds: "cHmLdp4ozWmhMfnjhGe5noaMB7Jl9ieSg2cGnkovb7Y",
+    cardframe: "ts_msM47WJdKVkDphg3TwKgwi_r0Cx6N10qxa8cHhbo",
+    elementtypes: "cGSU419k3xnkfgpsmmR9UT-uo8OsnnfkFbAsJRm_9aw",
+    level: "3UgHQfCa56XJ1kyuosld3ZxrpivEljjez_OcfSjcmbc"
+  },
+}
+
 interface MonsterCardDisplayProps {
   monster: MonsterStats;
   className?: string;
@@ -99,7 +126,6 @@ interface MonsterCardDisplayProps {
 
 export const MonsterCardDisplay: React.FC<MonsterCardDisplayProps> = ({ monster, className = '' }) => {
   const [isZoomed, setIsZoomed] = useState(false);
-  const basePath = '../assets/Monsters/cards';
 
   const handleClick = useCallback((e: React.MouseEvent) => {
     e.stopPropagation();
@@ -145,13 +171,13 @@ export const MonsterCardDisplay: React.FC<MonsterCardDisplayProps> = ({ monster,
       // Prepare all image loading promises
       const imagePromises = [
         // Background
-        loadImage(new URL(`${basePath}/${CARD_LAYOUT.LAYERS.BACKGROUND}/${elementImages.background}`, import.meta.url).href),
+        loadImage(`${Gateway}${CardImages[elementType].backgrounds}`),
         // Frame
-        loadImage(new URL(`${basePath}/${CARD_LAYOUT.LAYERS.FRAME}/${elementImages.frame}`, import.meta.url).href),
+        loadImage(`${Gateway}${CardImages[elementType].cardframe}`),
         // Element Type
-        loadImage(new URL(`${basePath}/${CARD_LAYOUT.LAYERS.ELEMENT}/${elementImages.type}`, import.meta.url).href),
+        loadImage(`${Gateway}${CardImages[elementType].elementtypes}`),
         // Level Image
-        loadImage(new URL(`${basePath}/${CARD_LAYOUT.LAYERS.LEVEL}/${elementImages.level}`, import.meta.url).href),
+        loadImage(`${Gateway}${CardImages[elementType].level}`),
       ];
 
       // Add monster image if available
