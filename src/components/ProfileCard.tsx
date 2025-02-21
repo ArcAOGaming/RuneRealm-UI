@@ -63,11 +63,11 @@ export const ProfileCard: React.FC<ProfileCardProps> = ({ profile, address, onCl
             </h3>
             <p className="text-gray-400 text-sm font-mono">{shortenAddress(address)}</p>
           </div>
-          {assets && assets.length > 0 && (
+          {/* {assets && assets.length > 0 && (
             <div className="ml-4 text-gray-400 text-sm">
               <span>{assets.length} Assets</span>
             </div>
-          )}
+          )} */}
         </div>
 
         {/* Monster Section */}

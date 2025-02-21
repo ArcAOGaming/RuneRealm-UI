@@ -192,6 +192,14 @@ const PurchaseInfo: React.FC = () => {
                   >
                     Battle
                   </Link>
+                  <Link
+                    to="https://runerealm_game.ar.io/"
+                    className={`px-6 py-3 rounded-xl text-lg font-medium transition-all duration-300 transform hover:scale-105
+                      ${theme.buttonBg} ${theme.buttonHover} ${theme.text} 
+                      backdrop-blur-md shadow-lg hover:shadow-xl border ${theme.border}`}
+                  >
+                    Rune Realm
+                  </Link>
                 </div>
                 {/* Referral Link Button */}
                 <div className="flex justify-center mt-4">

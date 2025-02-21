@@ -86,7 +86,7 @@ export const ProfileDetail: React.FC<ProfileDetailProps> = ({
             </div>
           )}
 
-          {assets && assets.length > 0 && (
+          {/* {assets && assets.length > 0 && (
             <div className="mb-6">
               <h3 className="text-lg font-semibold text-white mb-2">Assets</h3>
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -101,7 +101,7 @@ export const ProfileDetail: React.FC<ProfileDetailProps> = ({
                 ))}
               </div>
             </div>
-          )}
+          )} */}
 
           <div className="text-gray-400 text-sm">
             <p>Member since: {formatDate(profile.DateCreated)}</p>
