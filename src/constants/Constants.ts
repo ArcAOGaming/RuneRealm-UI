@@ -94,6 +94,10 @@ export const SUPPORTED_ASSET_IDS = [
     "2NoNsZNyHMWOzTqeQUJW9Xvcga3iTonocFIsgkWIiPM",  // Rock berries
     "30cPTQXrHN76YZ3bLfNAePIEYDb5Xo1XnbQ-xmLMOM0",  // Fire berries
     "4sKr4cf3kvbzFyhM6HmUsYG_Jz9bFZoNUrUX5KoVe0Q",  // Rune
+    "f1KnnMFYR125aQo0zYKgL0PzgJL__fO8JOtDfuIDdHo",  // Scroll
+    "C19KuCwx1VRH4WItj9wYUu1DIkdvareU3aMmojVZJf4",  // Emerald
+    "rNVB_bYcNLk6OgcbyG8MEmxjGo76oj3gFzLBCWOhqXI",  // Ruby
+    "R5UGOfFboMv-zlaSSDgRqxRILmGgPPe5BlnPf5F4i3A",  // Topaz
     "wOrb8b_V8QixWyXZub48Ki5B6OIDyf_p1ngoonsaRpQ",  // TRUNK token
     "OsK9Vgjxo0ypX_HLz2iJJuh4hp3I80yA9KArsJjIloU"   // NAB token
 ] as const;
@@ -105,6 +109,7 @@ export interface AssetInfo {
     logo: string;
     name: string;
     ticker: string;
+    denomination: number;
 }
 
 export const ASSET_INFO: Partial<Record<SupportedAssetId, AssetInfo>> = {
@@ -112,13 +117,15 @@ export const ASSET_INFO: Partial<Record<SupportedAssetId, AssetInfo>> = {
         processId: "wOrb8b_V8QixWyXZub48Ki5B6OIDyf_p1ngoonsaRpQ",
         logo: "hqg-Em9DdYHYmMysyVi8LuTGF8IF_F7ZacgjYiSpj0k",
         name: "TRUNK Token",
-        ticker: "TRUNK"
+        ticker: "TRUNK",
+        denomination: 3
     },
     "OsK9Vgjxo0ypX_HLz2iJJuh4hp3I80yA9KArsJjIloU": {
         processId: "OsK9Vgjxo0ypX_HLz2iJJuh4hp3I80yA9KArsJjIloU",
         logo: "LQ4crOHN9qO6JsLNs253AaTch6MgAMbM8PKqBxs4hgI",
         name: "NAB Token",
-        ticker: "NAB"
+        ticker: "NAB",
+        denomination: 8
     }
 };
 

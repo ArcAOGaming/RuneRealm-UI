@@ -2,7 +2,7 @@ import React, { useEffect, useState } from 'react';
 import '../styles/MonsterManagement.css';
 import { useNavigate } from 'react-router-dom';
 import { useWallet } from '../hooks/useWallet';
-import { getFactionOptions, purchaseAccess, TokenOption, adoptMonster, getAssetBalances, MonsterStats } from '../utils/aoHelpers';
+import { getFactionOptions, purchaseAccess, TokenOption, adoptMonster, getAssetBalances, MonsterStats, formatTokenAmount } from '../utils/aoHelpers';
 import { AssetBalance } from '../utils/interefaces';
 import { createDataItemSigner } from '../config/aoConnection';
 import { message } from '../utils/aoHelpers';
@@ -748,7 +748,7 @@ export const MonsterManagement: React.FC = (): JSX.Element => {
                         } ${monster.status.type === 'Home' ? '' : 'disabled'}`}>
                           <img src={`${Gateway}${assetBalances.find(a => a.info.processId === activities.feed.cost.token)?.info.logo}`} 
                                alt="Berry" className="cost-icon" />
-                          <span>-{activities.feed.cost.amount}</span>
+                          <span>-{formatTokenAmount(activities.feed.cost.amount.toString(), assetBalances.find(a => a.info.processId === activities.feed.cost.token)?.info.denomination || 0)}</span>
                         </div>
                       </div>
                     </div>
@@ -788,7 +788,7 @@ export const MonsterManagement: React.FC = (): JSX.Element => {
                         } ${monster.status.type === 'Home' || (monster.status.type === 'Play' && timeUp) ? '' : 'disabled'}`}>
                           <img src={`${Gateway}${assetBalances.find(a => a.info.processId === activities.play.cost.token)?.info.logo}`} 
                                alt="Berry" className="cost-icon" />
-                          <span>-{activities.play.cost.amount}</span>
+                          <span>-{formatTokenAmount(activities.play.cost.amount.toString(), assetBalances.find(a => a.info.processId === activities.play.cost.token)?.info.denomination || 0)}</span>
                         </div>
                         <div className={`cost-item ${
                           monster.energy >= activities.play.energyCost ? 'available' : 'unavailable'
@@ -834,7 +834,7 @@ export const MonsterManagement: React.FC = (): JSX.Element => {
                         } ${monster.status.type === 'Home' ? '' : 'disabled'}`}>
                           <img src={`${Gateway}${assetBalances.find(a => a.info.processId === activities.battle.cost.token)?.info.logo}`} 
                                alt="TRUNK" className="cost-icon" />
-                          <span>-{activities.battle.cost.amount}</span>
+                          <span>-{formatTokenAmount(activities.battle.cost.amount.toString(), assetBalances.find(a => a.info.processId === activities.battle.cost.token)?.info.denomination || 0)}</span>
                         </div>
                         <div className={`cost-item ${
                           monster.energy >= activities.battle.energyCost ? 'available' : 'unavailable'
@@ -885,7 +885,7 @@ export const MonsterManagement: React.FC = (): JSX.Element => {
                         } ${monster.status.type === 'Home' || (monster.status.type === 'Mission' && timeUp) ? '' : 'disabled'}`}>
                           <img src={`${Gateway}${assetBalances.find(a => a.info.processId === activities.mission.cost.token)?.info.logo}`} 
                                alt="TRUNK" className="cost-icon" />
-                          <span>-{activities.mission.cost.amount}</span>
+                          <span>-{formatTokenAmount(activities.mission.cost.amount.toString(), assetBalances.find(a => a.info.processId === activities.mission.cost.token)?.info.denomination || 0)}</span>
                         </div>
                         <div className={`cost-item ${
                           monster.energy >= activities.mission.energyCost ? 'available' : 'unavailable'

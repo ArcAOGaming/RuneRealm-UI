@@ -19,6 +19,21 @@ const FACTION_TO_PATH = {
   'Stone Titans': 'rock'
 };
 
+interface OfferingData {
+  LastOffering: number;
+  IndividualOfferings: number;
+  Streak: number;
+}
+
+// Type guard function to check if a value is an OfferingData object
+const isOfferingData = (value: unknown): value is OfferingData => {
+  return typeof value === 'object' && 
+         value !== null && 
+         'LastOffering' in value &&
+         'IndividualOfferings' in value &&
+         'Streak' in value;
+};
+
 export const FactionPage: React.FC = () => {
   const navigate = useNavigate();
   const { wallet, walletStatus, darkMode, connectWallet, setDarkMode, refreshTrigger, triggerRefresh } = useWallet();
@@ -28,38 +43,59 @@ export const FactionPage: React.FC = () => {
   const [isInitialLoad, setIsInitialLoad] = useState(true);
   const [showConfetti, setShowConfetti] = useState(false);
   const [offeringStats, setOfferingStats] = useState<OfferingStats | null>(null);
-  const [userOfferings, setUserOfferings] = useState<number>(0);
+  const [userOfferings, setUserOfferings] = useState<OfferingData | null>(null);
   const [nextOfferingTime, setNextOfferingTime] = useState<string>('');
   const theme = currentTheme(darkMode);
 
   useEffect(() => {
     const updateNextOfferingTime = () => {
-      const now = new Date();
-      const midnight = new Date();
-      midnight.setUTCHours(24, 0, 0, 0);
-      
-      if (midnight.getTime() <= now.getTime()) {
-        midnight.setUTCDate(midnight.getUTCDate() + 1);
+      if (!userOfferings?.LastOffering) {
+        const now = new Date();
+        const midnight = new Date();
+        midnight.setUTCHours(24, 0, 0, 0);
+        
+        if (midnight.getTime() <= now.getTime()) {
+          midnight.setUTCDate(midnight.getUTCDate() + 1);
+        }
+
+        const hours = Math.floor((midnight.getTime() - now.getTime()) / (1000 * 60 * 60));
+        const minutes = Math.floor(((midnight.getTime() - now.getTime()) % (1000 * 60 * 60)) / (1000 * 60));
+        const seconds = Math.floor(((midnight.getTime() - now.getTime()) % (1000 * 60)) / 1000);
+
+        setNextOfferingTime(`${hours}h ${minutes}m ${seconds}s`);
+      } else {
+        const lastOffering = new Date(userOfferings.LastOffering * 1000);
+        const nextOffering = new Date(lastOffering);
+        nextOffering.setUTCDate(nextOffering.getUTCDate() + 1);
+        nextOffering.setUTCHours(0, 0, 0, 0);
+
+        const now = new Date();
+        const diff = nextOffering.getTime() - now.getTime();
+
+        if (diff <= 0) {
+          setNextOfferingTime('');
+          return;
+        }
+
+        const hours = Math.floor(diff / (1000 * 60 * 60));
+        const minutes = Math.floor((diff % (1000 * 60 * 60)) / (1000 * 60));
+        const seconds = Math.floor((diff % (1000 * 60)) / 1000);
+
+        setNextOfferingTime(`${hours}h ${minutes}m ${seconds}s`);
       }
-
-      const hours = Math.floor((midnight.getTime() - now.getTime()) / (1000 * 60 * 60));
-      const minutes = Math.floor(((midnight.getTime() - now.getTime()) % (1000 * 60 * 60)) / (1000 * 60));
-      const seconds = Math.floor(((midnight.getTime() - now.getTime()) % (1000 * 60)) / 1000);
-
-      setNextOfferingTime(`${hours}h ${minutes}m ${seconds}s`);
     };
 
     updateNextOfferingTime();
     const interval = setInterval(updateNextOfferingTime, 1000);
     return () => clearInterval(interval);
-  }, []);
+  }, [userOfferings?.LastOffering]);
 
   // Function to load data
   const loadAllData = async () => {
     if (!wallet?.address) {
       setFactions([]);
       setOfferingStats(null);
-      setUserOfferings(0);
+      setUserOfferings(null);
       setIsInitialLoad(false);
       return;
     }
@@ -73,7 +109,11 @@ export const FactionPage: React.FC = () => {
 
       if (factionData) setFactions(factionData);
       if (totalStats) setOfferingStats(totalStats);
-      if (userStats !== undefined) setUserOfferings(userStats);
+      if (userStats && isOfferingData(userStats)) {
+        setUserOfferings(userStats);
+      } else {
+        setUserOfferings(null);
+      }
     } catch (error) {
       console.error('Error loading faction data:', error);
     } finally {
@@ -109,6 +149,24 @@ export const FactionPage: React.FC = () => {
       console.error('Purchase failed:', error);
       throw error;
     }
+  };
+
+  // Calculate total points for a faction
+  const calculateFactionPoints = (faction: FactionOptions) => {
+    const offeringPoints = Number(offeringStats?.[faction.name as keyof OfferingStats] || 0) * ACTIVITY_POINTS.OFFERING;
+    const feedPoints = Number(faction.totalTimesFed || 0) * ACTIVITY_POINTS.FEED;
+    const playPoints = Number(faction.totalTimesPlay || 0) * ACTIVITY_POINTS.PLAY;
+    const missionPoints = Number(faction.totalTimesMission || 0) * ACTIVITY_POINTS.MISSION;
+    return offeringPoints + feedPoints + playPoints + missionPoints;
+  };
+
+  // Calculate user's total points
+  const calculateUserPoints = () => {
+    const offeringPoints = Number(userOfferings?.IndividualOfferings || 0) * ACTIVITY_POINTS.OFFERING;
+    const feedPoints = Number(walletStatus?.monster?.totalTimesFed || 0) * ACTIVITY_POINTS.FEED;
+    const playPoints = Number(walletStatus?.monster?.totalTimesPlay || 0) * ACTIVITY_POINTS.PLAY;
+    const missionPoints = Number(walletStatus?.monster?.totalTimesMission || 0) * ACTIVITY_POINTS.MISSION;
+    return offeringPoints + feedPoints + playPoints + missionPoints;
   };
 
   const currentFaction = factions.find(f => f.name === walletStatus?.faction);
@@ -204,7 +262,7 @@ export const FactionPage: React.FC = () => {
                           <div>
                             <div className={`text-sm ${theme.text}`}>
                               <span className="opacity-70">Your Offerings:</span>
-                              <span className="float-right font-semibold">{userOfferings}</span>
+                              <span className="float-right font-semibold">{userOfferings?.IndividualOfferings || 0}</span>
                             </div>
                             <div className={`text-sm ${theme.text}`}>
                               <span className="opacity-70">Times Fed:</span>
@@ -220,12 +278,7 @@ export const FactionPage: React.FC = () => {
                             </div>
                             <div className={`text-sm ${theme.text} font-bold pt-2 border-t border-gray-600`}>
                               <span>Total Points:</span>
-                              <span className="float-right">
-                                {(userOfferings * ACTIVITY_POINTS.OFFERING) +
-                                 ((walletStatus?.monster?.totalTimesFed || 0) * ACTIVITY_POINTS.FEED) +
-                                 ((walletStatus?.monster?.totalTimesPlay || 0) * ACTIVITY_POINTS.PLAY) +
-                                 ((walletStatus?.monster?.totalTimesMission || 0) * ACTIVITY_POINTS.MISSION)}
-                              </span>
+                              <span className="float-right">{calculateUserPoints()}</span>
                             </div>
                           </div>
                           <div>
@@ -243,10 +296,12 @@ export const FactionPage: React.FC = () => {
                         </div>
                       </div>
                       <div className="flex items-center gap-4">
-                        <CheckInButton />
-                        <div className={`text-sm ${theme.text} opacity-80`}>
-                          Next offering in: {nextOfferingTime}
-                        </div>
+                        <CheckInButton onOfferingComplete={loadAllData} />
+                        {nextOfferingTime && (
+                          <div className={`text-sm ${theme.text} opacity-80`}>
+                            Next offering in: {nextOfferingTime}
+                          </div>
+                        )}
                       </div>
                     </div>
                   </div>
@@ -343,12 +398,7 @@ export const FactionPage: React.FC = () => {
                             </div>
                             <div className={`text-sm ${theme.text} font-bold mt-4`}>
                               <span>Points:</span>
-                              <span className="float-right">
-                                {(offeringStats?.[faction.name as keyof OfferingStats] || 0) * ACTIVITY_POINTS.OFFERING +
-                                 (faction.totalTimesFed || 0) * ACTIVITY_POINTS.FEED +
-                                 (faction.totalTimesPlay || 0) * ACTIVITY_POINTS.PLAY +
-                                 (faction.totalTimesMission || 0) * ACTIVITY_POINTS.MISSION}
-                              </span>
+                              <span className="float-right">{calculateFactionPoints(faction)}</span>
                             </div>
                           </div>
                       </div>

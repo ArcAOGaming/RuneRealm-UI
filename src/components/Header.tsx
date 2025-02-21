@@ -2,6 +2,8 @@ import React from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Theme } from '../constants/theme';
 import { useWallet } from '../hooks/useWallet';
+import CheckInButton from './CheckInButton';
+import CopyReferralLink from './CopyReferralLink';
 
 interface HeaderProps {
   theme: Theme;
@@ -18,7 +20,6 @@ const Header: React.FC<HeaderProps> = ({
 }) => {
   const navigate = useNavigate();
   const { wallet, walletStatus, isCheckingStatus, connectWallet } = useWallet();
-
   // Use cached wallet status
   const isConnected = !!wallet?.address;
   const handleConnect = async () => {
@@ -54,20 +55,31 @@ const Header: React.FC<HeaderProps> = ({
 
       {/* Right side */}
       <div className="flex-1 flex items-center justify-end gap-3">
-        <button
-          onClick={handleConnect}
-          className={`px-6 py-3 ${theme.buttonBg} ${theme.buttonHover} ${theme.text} rounded-xl border ${theme.border} transition-all duration-300 hover:scale-105`}
-        >
-          {!isConnected ? (
-            'Connect Wallet'
-          ) : isCheckingStatus ? (
-            <span>Connected (Loading...)</span>
-          ) : walletStatus?.isUnlocked ? (
-            <span>Connected (Premium User)</span>
-          ) : (
-            <span>Connected (Basic User)</span>
+        {/* Show CheckInButton only for premium users */}
+        {isConnected && walletStatus?.isUnlocked && !isCheckingStatus && (
+          <div className="flex items-center">
+            <CheckInButton />
+          </div>
+        )}
+        <div className="flex flex-col gap-2">
+          <button
+            onClick={handleConnect}
+            className={`px-4 py-2 ${theme.buttonBg} ${theme.buttonHover} ${theme.text} rounded-xl border ${theme.border} transition-all duration-300 hover:scale-105 text-sm`}
+          >
+            {!isConnected ? (
+              'Connect Wallet'
+            ) : isCheckingStatus ? (
+              <span>Loading...</span>
+            ) : walletStatus?.isUnlocked ? (
+              <span>Premium User</span>
+            ) : (
+              <span>Basic User</span>
+            )}
+          </button>
+          {isConnected && (
+            <CopyReferralLink theme={theme} />
           )}
-        </button>
+        </div>
         <button
           onClick={onDarkModeToggle}
           className={`px-4 py-3 ${theme.buttonBg} ${theme.buttonHover} ${theme.text} rounded-xl border ${theme.border} transition-all duration-300 hover:scale-105`}

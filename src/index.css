@@ -1,51 +1,39 @@
-@tailwind base;
-@tailwind components;
-@tailwind utilities;
+@import 'tailwindcss/base';
+@import 'tailwindcss/components';
+@import 'tailwindcss/utilities';
 
-:root {
-  font-family: Inter, system-ui, Avenir, Helvetica, Arial, sans-serif;
-  line-height: 1.5;
-  font-weight: 400;
-  font-synthesis: none;
-  text-rendering: optimizeLegibility;
-  -webkit-font-smoothing: antialiased;
-  -moz-osx-font-smoothing: grayscale;
+/* Minecraft message styling */
+.minecraft-message {
+  font-family: monospace;
+  text-shadow: 2px 2px rgba(0, 0, 0, 0.7);
+  transform: rotate(-20deg) skew(-5deg);
+  animation: float 3s ease-in-out infinite;
+  font-size: 1.1em;
+  font-style: italic;
+  position: relative;
+  display: inline-block;
+  white-space: nowrap;
 }
 
-/* Hide scrollbar for Chrome, Safari and Opera */
-.scrollbar-hide::-webkit-scrollbar {
-  display: none;
+/* Floating animation */
+@keyframes float {
+  0% {
+    transform: rotate(-20deg) skew(-5deg) translateY(0px);
+  }
+  50% {
+    transform: rotate(-20deg) skew(-5deg) translateY(-8px);
+  }
+  100% {
+    transform: rotate(-20deg) skew(-5deg) translateY(0px);
+  }
 }
 
-/* Hide scrollbar for IE, Edge and Firefox */
-.scrollbar-hide {
-  -ms-overflow-style: none;  /* IE and Edge */
-  scrollbar-width: none;  /* Firefox */
+/* Color transition */
+.minecraft-message {
+  transition: color 1s ease;
 }
 
-/* Custom scrollbar for non-hidden scrollbars */
-::-webkit-scrollbar {
-  width: 8px;
-}
-
-::-webkit-scrollbar-track {
-  background: transparent;
-}
-
-::-webkit-scrollbar-thumb {
-  background-color: rgba(156, 163, 175, 0.5);
-  border-radius: 4px;
-}
-
-::-webkit-scrollbar-thumb:hover {
-  background-color: rgba(156, 163, 175, 0.7);
-}
-
-/* Dark mode scrollbar */
-.dark ::-webkit-scrollbar-thumb {
-  background-color: rgba(75, 85, 99, 0.5);
-}
-
-.dark ::-webkit-scrollbar-thumb:hover {
-  background-color: rgba(75, 85, 99, 0.7);
+/* Ensure text remains readable */
+.minecraft-message {
+  filter: drop-shadow(0 0 2px rgba(0, 0, 0, 0.8));
 }

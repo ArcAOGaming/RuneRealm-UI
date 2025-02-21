@@ -159,47 +159,67 @@ const PurchaseInfo: React.FC = () => {
                     contractName="Eternal Pass"
                   />
                 )}
-                <div className="flex flex-col sm:flex-row gap-4 justify-center mt-8">
-                  <Link
-                    to="/customize"
-                    className={`px-6 py-3 rounded-xl text-lg font-medium transition-all duration-300 transform hover:scale-105
-                      ${theme.buttonBg} ${theme.buttonHover} ${theme.text} 
-                      backdrop-blur-md shadow-lg hover:shadow-xl border ${theme.border}`}
-                  >
-                    Sprite Customization
-                  </Link>
-                  <Link
-                    to="/factions"
-                    className={`px-6 py-3 rounded-xl text-lg font-medium transition-all duration-300 transform hover:scale-105
-                      ${theme.buttonBg} ${theme.buttonHover} ${theme.text} 
-                      backdrop-blur-md shadow-lg hover:shadow-xl border ${theme.border}`}
-                  >
-                    Factions
-                  </Link>
-                  <Link
-                    to="/monsters"
-                    className={`px-6 py-3 rounded-xl text-lg font-medium transition-all duration-300 transform hover:scale-105
-                      ${theme.buttonBg} ${theme.buttonHover} ${theme.text} 
-                      backdrop-blur-md shadow-lg hover:shadow-xl border ${theme.border}`}
-                  >
-                    Monster Training
-                  </Link>
-                  <Link
-                    to="/battle"
-                    className={`px-6 py-3 rounded-xl text-lg font-medium transition-all duration-300 transform hover:scale-105
-                      ${theme.buttonBg} ${theme.buttonHover} ${theme.text} 
-                      backdrop-blur-md shadow-lg hover:shadow-xl border ${theme.border}`}
-                  >
-                    Battle
-                  </Link>
-                  <Link
-                    to="https://runerealm_game.ar.io/"
-                    className={`px-6 py-3 rounded-xl text-lg font-medium transition-all duration-300 transform hover:scale-105
-                      ${theme.buttonBg} ${theme.buttonHover} ${theme.text} 
-                      backdrop-blur-md shadow-lg hover:shadow-xl border ${theme.border}`}
-                  >
-                    Rune Realm
-                  </Link>
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mt-8">
+                  {/* Rune Realm and Sprite Creator Section */}
+                  <div className={`md:col-span-1 p-6 rounded-xl bg-[#814E33]/10 border border-[#F4860A]/30 flex flex-col`}>
+                    <h3 className={`text-xl font-bold mb-6 text-center ${theme.text}`}>Game & Customization</h3>
+                    <div className="flex flex-col gap-4 flex-grow">
+                      <Link
+                        to="https://runerealm_game.ar.io/"
+                        className={`w-full px-6 py-3 rounded-xl text-lg font-medium transition-all duration-300 transform hover:scale-105
+                          ${theme.buttonBg} ${theme.buttonHover} ${theme.text} 
+                          backdrop-blur-md shadow-lg hover:shadow-xl border ${theme.border} text-center`}
+                      >
+                        Rune Realm
+                      </Link>
+                      <Link
+                        to="/customize"
+                        className={`w-full px-6 py-3 rounded-xl text-lg font-medium transition-all duration-300 transform hover:scale-105
+                          ${theme.buttonBg} ${theme.buttonHover} ${theme.text} 
+                          backdrop-blur-md shadow-lg hover:shadow-xl border ${theme.border} text-center`}
+                      >
+                        Sprite Customization
+                      </Link>
+                    </div>
+                  </div>
+
+                  {/* Monster Section */}
+                  <div className={`md:col-span-1 p-6 rounded-xl bg-[#814E33]/10 border border-[#F4860A]/30 flex flex-col`}>
+                    <h3 className={`text-xl font-bold mb-6 text-center ${theme.text}`}>Monster Management</h3>
+                    <div className="flex flex-col gap-4 flex-grow">
+                      <Link
+                        to="/monsters"
+                        className={`w-full px-6 py-3 rounded-xl text-lg font-medium transition-all duration-300 transform hover:scale-105
+                          ${theme.buttonBg} ${theme.buttonHover} ${theme.text} 
+                          backdrop-blur-md shadow-lg hover:shadow-xl border ${theme.border} text-center`}
+                      >
+                        Monster Training
+                      </Link>
+                      <Link
+                        to="/battle"
+                        className={`w-full px-6 py-3 rounded-xl text-lg font-medium transition-all duration-300 transform hover:scale-105
+                          ${theme.buttonBg} ${theme.buttonHover} ${theme.text} 
+                          backdrop-blur-md shadow-lg hover:shadow-xl border ${theme.border} text-center`}
+                      >
+                        Battle
+                      </Link>
+                    </div>
+                  </div>
+
+                  {/* Factions Section */}
+                  <div className={`md:col-span-1 p-6 rounded-xl bg-[#814E33]/10 border border-[#F4860A]/30 flex flex-col`}>
+                    <h3 className={`text-xl font-bold mb-6 text-center ${theme.text}`}>Factions</h3>
+                    <div className="flex flex-col gap-4 flex-grow">
+                      <Link
+                        to="/factions"
+                        className={`w-full px-6 py-3 rounded-xl text-lg font-medium transition-all duration-300 transform hover:scale-105
+                          ${theme.buttonBg} ${theme.buttonHover} ${theme.text} 
+                          backdrop-blur-md shadow-lg hover:shadow-xl border ${theme.border} text-center`}
+                      >
+                        Factions
+                      </Link>
+                    </div>
+                  </div>
                 </div>
                 {/* Referral Link Button */}
                 <div className="flex justify-center mt-4">

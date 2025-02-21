@@ -781,12 +781,13 @@ export const getAssetBalances = async (wallet: any): Promise<AssetBalance[]> => 
                     const logo = infoTags.find(t => t.name === "Logo")?.value;
                     const name = infoTags.find(t => t.name === "Name")?.value;
                     const ticker = infoTags.find(t => t.name === "Ticker")?.value;
+                    const denomination = parseInt(infoTags.find(t => t.name === "Denomination")?.value);
 
                     if (!logo || !name || !ticker) {
                         return null;
                     }
 
-                    assetInfo = { processId, logo, name, ticker };
+                    assetInfo = { processId, logo, name, ticker, denomination };
                 } else {
                     return null;
                 }
@@ -1041,7 +1042,13 @@ export const getTotalOfferings = async (): Promise<OfferingStats> => {
     }
 };
 
-export const getUserOfferings = async (userId: string): Promise<number> => {
+export interface OfferingData {
+    LastOffering: number;
+    IndividualOfferings: number;
+    Streak: number;
+}
+
+export const getUserOfferings = async (userId: string): Promise<OfferingData | null> => {
     try {
         const dryRunResult = await dryrun({
             process: Alter,
@@ -1053,14 +1060,17 @@ export const getUserOfferings = async (userId: string): Promise<number> => {
         }) as ResultType;
 
         if (!dryRunResult.Messages || dryRunResult.Messages.length === 0) {
-            return 0;
+            return null;
         }
 
         const result = JSON.parse(dryRunResult.Messages[0].Data);
-        return typeof result === 'number' ? result : 0;
+        if (result && typeof result === 'object' && 'LastOffering' in result) {
+            return result as OfferingData;
+        }
+        return null;
     } catch (error) {
         console.error("Error getting user offerings:", error);
-        return 0;
+        return null;
     }
 };
 

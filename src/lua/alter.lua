@@ -4,15 +4,12 @@
 local json = require("json")
 
 FactionProcess = 'j7NcraZUL6GZlgdPEoph12Q5rk_dydvQDecLNxYi8rI'
-
 RuneProcess = '4sKr4cf3kvbzFyhM6HmUsYG_Jz9bFZoNUrUX5KoVe0Q'
 
 Name = 'Alter'
 
 LastOffering = LastOffering or {}
-
 IndividualOfferings = IndividualOfferings or {}
-
 TotalOfferings = TotalOfferings or {
     ["Sky Nomads"] = 0,
     ["Aqua Guardians"] = 0,
@@ -20,12 +17,14 @@ TotalOfferings = TotalOfferings or {
     ["Inferno Blades"] = 0
 }
 
+-- Table to track user streaks
+Streak = Streak or {}
+
 function GetTimeDisplay(total_seconds)
     local hours = math.floor(total_seconds / 3600)
     local minutes = math.floor((total_seconds % 3600) / 60)
     local seconds = math.floor(total_seconds % 60)
 
-    -- Create the display message based on hours, minutes, and seconds
     local time_display = ""
 
     if hours > 0 then
@@ -46,7 +45,6 @@ function GetTimeDisplay(total_seconds)
         time_display = time_display .. seconds .. " second" .. (seconds > 1 and "s" or "")
     end
 
-    -- Handle cases where time is exactly zero minutes or seconds
     if time_display == "" then
         time_display = "0 seconds"
     end
@@ -56,11 +54,8 @@ end
 
 -- Function to get the current day from a Unix timestamp
 function GetDay(timestamp)
-    --Convert Timestamp to seconds
     local unix_timestamp = timestamp / 1000
-    -- Number of seconds in a day
     local seconds_in_a_day = 86400
-    -- Calculate the number of days since Unix epoch
     local current_day = math.floor(unix_timestamp / seconds_in_a_day)
     local remaining_seconds = unix_timestamp % seconds_in_a_day
     return current_day, math.ceil((seconds_in_a_day - remaining_seconds))
@@ -108,25 +103,46 @@ Handlers.add(
             IndividualOfferings[userId] = 0
         end
 
+        -- Check if this is a new day
         if LastOffering[userId] < day then
+            print("New day offering Praise")
+            -- If user offered yesterday, increase streak; otherwise reset to 1
+            if LastOffering[userId] == day - 1 then
+                Streak[userId] = (Streak[userId] or 0) + 1
+            else
+                Streak[userId] = 1
+            end
+
             LastOffering[userId] = day
             IndividualOfferings[userId] = IndividualOfferings[userId] + 1
 
             TotalOfferings[faction] = TotalOfferings[faction] + 1
+
+            -- Determine how many runes to grant based on current streak
+            local quantity = 1
+            if Streak[userId] >= 10 then
+                quantity = 3
+            elseif Streak[userId] >= 3 then
+                quantity = 2
+            end
+
             ao.send({
-                Target = FactionProcess,
+                Target = userId,
                 Tags = {
                     Action = "Offered-Praise",
-                    TotalOfferings = tostring(TotalOfferings[faction])
+                    TotalOfferings = tostring(TotalOfferings[faction]),
+                    RunesGranted = tostring(quantity),
                 }
             })
+
             ao.send({
                 Target = RuneProcess,
                 Action = "Grant",
-                Quantity = "1",
+                Quantity = tostring(quantity),
                 Recipient = userId,
             })
         else
+            print("User already offered today.")
             ao.send({
                 Target = userId,
                 Tags = {
@@ -139,19 +155,34 @@ Handlers.add(
         end
     end
 )
-
 Handlers.add(
     'GetUserOfferings',
     Handlers.utils.hasMatchingTag('Action', 'GetUserOfferings'),
     function(msg)
         print('GetUserOfferings')
         local userId = msg.Tags.UserId
+
+        -- Get the current day to check for any missed day
+        local currentDay, _ = GetDay(msg.Timestamp)
+        local lastOfferingDay = LastOffering[userId] or 0
+
+        -- Default streak display is 0, will set to Streak if no missed day
+        local displayedStreak = 0
+
+        if lastOfferingDay >= currentDay - 1 then
+            displayedStreak = Streak[userId] or 1
+        end
+
         ao.send({
             Target = msg.From,
             Tags = {
                 Action = "GetUserOfferings-Response",
             },
-            Data = json.encode(IndividualOfferings[userId])
+            Data = json.encode({
+                Streak = displayedStreak,
+                LastOffering = lastOfferingDay,
+                IndividualOfferings = IndividualOfferings[userId] or 0,
+            })
         })
     end
 )
@@ -170,4 +201,5 @@ Handlers.add(
         })
     end
 )
+
 print("Alter initialized")
