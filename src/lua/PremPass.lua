@@ -1304,6 +1304,18 @@ Handlers.add(
       return
     end
 
+    if monster.status.type ~= "Battle" then
+      print("Monster is not on Battle:", monster.status.type)
+      ao.send({
+        Target = msg.From,
+        Data = json.encode({
+          status = "error",
+          message = "Monster is not on Battle"
+        })
+      })
+      return
+    end
+
     -- Return monster home
     monster.status = {
       type = "Home",

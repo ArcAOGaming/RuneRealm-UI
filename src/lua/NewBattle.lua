@@ -940,17 +940,6 @@ Handlers.add(
     local userId = msg.From
     local session = getBattleSession(userId)
     
-    if not session then
-      ao.send({
-        Target = msg.From,
-        Data = json.encode({
-          status = "error",
-          message = "No active battle session"
-        })
-      })
-      return
-    end
-    
     -- End battle session but keep battle logs
     battles[userId] = nil
     activeBattles[userId] = nil
