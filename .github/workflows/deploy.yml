@@ -10,22 +10,26 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Checkout repository with submodules
-        uses: actions/checkout@v2
-        with:
-          submodules: true  # Ensures submodules are initialized and updated
-          fetch-depth: 0  # Needed for proper submodule handling
+      - uses: actions/checkout@v2
+
+
+      - name: Manually initialize submodules
+        run: |
+          git submodule init
+          git submodule update --recursive --remote
+
+      - name: Verify submodule content
+        run: ls -al src/assets/Monsters  # Check if it's there
 
       - name: Setup Node.js environment
         uses: actions/setup-node@v2
         with:
           node-version: "20"
 
-      - name: Install dependencies
-        run: npm install
-
       - name: Run deployment script
         env:
           DEPLOY_KEY: ${{ secrets.DEPLOY_KEY }}
-          DEPLOY_ANT_PROCESS: ${{ secrets.DEPLOY_ANT_PROCESS }}
-        run: npm run deploy
+          DEPLOY_ANT_PROCESS: ${{ secrets.DEPLOY_ANT_PROCESS}}
+        run: |
+          npm install
+          npm run deploy
