@@ -113,7 +113,7 @@ const Inventory = () => {
   if (!wallet?.address) return null;
 
   return (
-    <div className={`fixed right-4 top-32 ${theme.container} border ${theme.border} backdrop-blur-md transition-all duration-300 rounded-xl z-40 inventory-container`}>
+    <div className={`fixed right-4 top-32 ${theme.container} border ${theme.border} backdrop-blur-md transition-all duration-300 rounded-xl z-40 inventory-container max-w-[280px]`}>
       <div 
         className={`flex items-center justify-between p-3 cursor-pointer ${theme.text}`} 
         onClick={() => toggleSection('main')}
@@ -131,7 +131,7 @@ const Inventory = () => {
           ›
         </span>
       </div>
-      <div className={`overflow-hidden transition-all duration-300 ${openSections.main ? 'max-h-[500px] w-56 p-3' : 'max-h-0 w-0 p-0'}`}>
+      <div className={`overflow-hidden transition-all duration-300 ${openSections.main ? 'max-h-fit w-full p-3' : 'max-h-0 w-0 p-0'}`}>
         <div className="space-y-3">
           {INVENTORY_SECTIONS.map((section) => (
             <div key={section.title} className="border-b border-[#F4860A]/30 last:border-b-0 pb-3 last:pb-0">

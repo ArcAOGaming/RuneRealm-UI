@@ -13,35 +13,8 @@ import StatAllocationModal from '../components/StatAllocationModal';
 import Header from '../components/Header';
 import Footer from '../components/Footer';
 import Confetti from 'react-confetti';
-import { Radar } from 'react-chartjs-2';
-import {
-  Chart as ChartJS,
-  RadialLinearScale,
-  PointElement,
-  LineElement,
-  Filler,
-  Tooltip,
-  Legend
-} from 'chart.js';
-
-ChartJS.register(
-  RadialLinearScale,
-  PointElement,
-  LineElement,
-  Filler,
-  Tooltip,
-  Legend
-);
-
-interface WalletStatus {
-  isUnlocked: boolean;
-  monster: MonsterStats | null;
-  faction: string | null;
-}
-
-interface Wallet {
-  address: string;
-}
+import { MonsterCardDisplay } from '../components/MonsterCardDisplay';
+import { ActivityCard } from '../components/ActivityCard';
 
 export const MonsterManagement: React.FC = (): JSX.Element => {
   const navigate = useNavigate();
@@ -59,6 +32,16 @@ export const MonsterManagement: React.FC = (): JSX.Element => {
   const [localMonster, setLocalMonster] = useState<MonsterStats | null>(null);
   const theme = currentTheme(darkMode);
   const [, setForceUpdate] = useState({});
+
+  const loadAssetBalances = async () => {
+    try {
+      const balances = await getAssetBalances(wallet);
+      console.log('Current asset balances:', balances);
+      setAssetBalances(balances);
+    } catch (error) {
+      console.error('Error loading asset balances:', error);
+    }
+  };
 
   // Add cooldown states
   const [feedingCooldown, setFeedingCooldown] = useState(false);
@@ -123,74 +106,6 @@ export const MonsterManagement: React.FC = (): JSX.Element => {
       console.error('Error with battle:', error);
     } finally {
       setIsInBattle(false);
-    }
-  };
-
-  // Handle timer updates for progress bars and countdowns
-  useEffect(() => {
-    if (!localMonster || localMonster.status.type === 'Home') {
-      console.log('[MonsterManagement] No timer needed - monster is home or null');
-      return;
-    }
-
-    console.log('[MonsterManagement] Starting progress timer');
-    // Update every second for smooth progress
-    const timer = setInterval(() => {
-      const now = Date.now();
-      if (now >= localMonster.status.until_time) {
-        console.log('[MonsterManagement] Activity complete, clearing timer');
-        clearInterval(timer);
-        // Force one final update to ensure UI shows 100%
-        setForceUpdate({});
-        // Trigger a refresh to update the monster state
-        triggerRefresh();
-      } else {
-        setForceUpdate({});
-      }
-    }, 1000);
-
-    return () => {
-      console.log('[MonsterManagement] Cleaning up progress timer');
-      clearInterval(timer);
-    };
-  }, [localMonster?.status.type, localMonster?.status.until_time, triggerRefresh]);
-
-  // Update local monster and load assets when wallet status changes
-  useEffect(() => {
-    const updateData = async () => {
-      console.log('[MonsterManagement] Checking for updates', {
-        hasWallet: !!wallet?.address,
-        hasMonster: !!walletStatus?.monster,
-        refreshTrigger
-      });
-
-      if (wallet?.address) {
-        await loadAssetBalances();
-      }
-      
-      if (walletStatus?.monster) {
-        const monsterChanged = JSON.stringify(walletStatus.monster) !== JSON.stringify(localMonster);
-        if (monsterChanged) {
-          console.log('[MonsterManagement] Monster state updated:', {
-            old: localMonster,
-            new: walletStatus.monster
-          });
-          setLocalMonster(walletStatus.monster);
-        } else {
-          console.log('[MonsterManagement] Monster state unchanged');
-        }
-      }
-    };
-    updateData();
-  }, [wallet?.address, walletStatus?.monster, refreshTrigger]);
-
-  const loadAssetBalances = async () => {
-    try {
-      const balances = await getAssetBalances(wallet);
-      console.log('Current asset balances:', balances);
-      setAssetBalances(balances);
-    } catch (error) {
-      console.error('Error loading asset balances:', error);
     }
   };
 
@@ -474,7 +389,7 @@ export const MonsterManagement: React.FC = (): JSX.Element => {
   const renderMonsterCard = React.useMemo(() => {
     if (!walletStatus?.monster) {
       return (
-      <div className={`no-monster-card ${theme.container} border ${theme.border} backdrop-blur-md`}>
+        <div className={`no-monster-card ${theme.container} border ${theme.border} backdrop-blur-md`}>
           <h2 className={`no-monster-title ${theme.text}`}>No Monster Yet</h2>
           <p className={`no-monster-text ${theme.text}`}>Ready to begin your journey? Adopt your first monster!</p>
           <button
@@ -489,14 +404,6 @@ export const MonsterManagement: React.FC = (): JSX.Element => {
     }
 
     const monster = localMonster || walletStatus.monster;
-    console.log('[MonsterManagement] Rendering monster card', {
-      level: monster.level,
-      status: monster.status,
-      energy: monster.energy,
-      happiness: monster.happiness,
-      exp: monster.exp
-    });
-
     const isPlaytime = monster.status.type === 'Play';
     const isMissionTime = monster.status.type === 'Mission';
     const now = Date.now();
@@ -534,393 +441,229 @@ export const MonsterManagement: React.FC = (): JSX.Element => {
                      (monster.status.type === 'Battle' && canReturn);
 
     return (
-      <div className={`monster-card ${theme.container} border ${theme.border} backdrop-blur-md`}>
-        <div className="monster-card-header">
-          <div className={`monster-level ${theme.text}`}>
-            Level {monster.level}
-          </div>
-          <div className="flex gap-2">
-            <button
-              onClick={handleLevelUp}
-              disabled={isLevelingUp || monster.status.type !== 'Home' || monster.exp < getFibonacciExp(monster.level)}
-              className={`adopt-button ${theme.buttonBg} ${theme.buttonHover} ${theme.text} ${(isLevelingUp || monster.status.type !== 'Home' || monster.exp < getFibonacciExp(monster.level)) ? 'opacity-50 cursor-not-allowed' : ''}`}
-            >
-              {isLevelingUp ? 'Leveling Up...' : 'Level Up'}
-            </button>
-          </div>
-        </div>
-        <div className="flex flex-col items-center">
-          <img 
-            src={`${Gateway}${monster.image}`}
-            alt={monster.name}
-            className="w-64 h-64 object-cover rounded-lg mb-4"
-          />
-          <h2 className={`text-2xl font-bold mb-4 ${theme.text}`}>{monster.name}</h2>
-          
-          {/* Moves Display */}
-          <div className="moves-section">
-            <h3 className={`moves-title ${theme.text}`}>Moves</h3>
-            <div className="moves-grid">
-              {Object.entries(monster.moves).map(([name, move]) => (
-                <div 
-                  key={name} 
-                  className={`move-card ${move.type}`}
-                >
-                  <div className={`move-name ${theme.text}`}>{name}</div>
-                  <div className={`move-type ${theme.text}`}>Type: {move.type}</div>
-                </div>
-              ))}
+      <div className={`monster-card ${theme.container} border ${theme.border} backdrop-blur-md p-6`}>
+        <div className="flex flex-col md:flex-row gap-8">
+          {/* Left Column - Monster Card and Basic Info */}
+          <div className="flex flex-col items-center md:w-1/2">
+            <div className="monster-card-header w-full flex justify-between items-center mb-4">
+              <div className={`monster-level ${theme.text}`}>
+                Level {monster.level}
+              </div>
+              <button
+                onClick={handleLevelUp}
+                disabled={isLevelingUp || monster.status.type !== 'Home' || monster.exp < getFibonacciExp(monster.level)}
+                className={`px-4 py-2 ${theme.buttonBg} ${theme.buttonHover} ${theme.text} rounded-lg ${(isLevelingUp || monster.status.type !== 'Home' || monster.exp < getFibonacciExp(monster.level)) ? 'opacity-50 cursor-not-allowed' : ''}`}
+              >
+                {isLevelingUp ? 'Leveling Up...' : 'Level Up'}
+              </button>
             </div>
+            
+            <MonsterCardDisplay 
+              monster={monster}
+              className="w-full max-w-md mb-4"
+            />
+            <h2 className={`text-2xl font-bold ${theme.text}`}>{monster.name}</h2>
           </div>
-          
-          {/* Stats Grid */}
-          <div className="stats-grid">
-            {/* Status */}
-            <div className="status-bar">
-              <div className="status-header">
-                <span className={`${theme.text} text-sm`}>Status: {monster.status.type}</span>
+
+          {/* Right Column - Stats and Info */}
+          <div className="flex flex-col md:w-1/2 space-y-6">
+            {/* Moves Display */}
+            <div className="moves-section">
+              <h3 className={`moves-title ${theme.text} mb-2`}>Moves</h3>
+              <div className="grid grid-cols-2 gap-2">
+                {Object.entries(monster.moves).map(([name, move]) => (
+                  <div 
+                    key={name} 
+                    className={`move-card ${move.type} p-2 rounded-lg bg-opacity-20 backdrop-blur-sm`}
+                  >
+                    <div className={`move-name ${theme.text} font-bold`}>{name}</div>
+                    <div className={`move-type ${theme.text} text-sm`}>Type: {move.type}</div>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            {/* Status Bars */}
+            <div className="space-y-3">
+              {/* Status */}
+              <div className="status-bar">
+                <div className="status-header flex justify-between">
+                  <span className={`${theme.text} text-sm`}>Status: {monster.status.type}</span>
+                  {monster.status.type !== 'Home' && (
+                    <span className={`${theme.text} text-sm`}>
+                      Time Remaining: {formatTimeRemaining(monster.status.until_time)}
+                    </span>
+                  )}
+                </div>
                 {monster.status.type !== 'Home' && (
-                  <span className={`${theme.text} text-sm`}>
-                    Time Remaining: {formatTimeRemaining(monster.status.until_time)}
-                  </span>
+                  <div className="progress-bar mt-1 bg-gray-200 rounded-full overflow-hidden">
+                    <div 
+                      className="progress-bar-fill activity bg-blue-500 h-2" 
+                      style={{ 
+                        width: `${calculateProgress(monster.status.since, monster.status.until_time)}%` 
+                      }}
+                    ></div>
+                  </div>
                 )}
               </div>
-              {monster.status.type !== 'Home' && (
-                <div className="progress-bar">
+
+              {/* Energy Bar */}
+              <div className="status-bar">
+                <div className="status-header flex justify-between">
+                  <span className={`${theme.text} text-sm`}>Energy</span>
+                  <span className={`${theme.text} text-sm`}>{monster.energy}/100</span>
+                </div>
+                <div className="progress-bar mt-1 bg-gray-200 rounded-full overflow-hidden">
                   <div 
-                    className="progress-bar-fill activity" 
-                    style={{ 
-                      width: `${calculateProgress(monster.status.since, monster.status.until_time)}%` 
-                    }}
+                    className="progress-bar-fill energy bg-yellow-500 h-2" 
+                    style={{ width: `${monster.energy}%` }}
                   ></div>
                 </div>
-              )}
-            </div>
+              </div>
 
-            {/* Energy Bar */}
-            <div className="status-bar">
-              <div className="status-header">
-                <span className={`${theme.text} text-sm`}>Energy</span>
-                <span className={`${theme.text} text-sm`}>{monster.energy}/100</span>
+              {/* Happiness Bar */}
+              <div className="status-bar">
+                <div className="status-header flex justify-between">
+                  <span className={`${theme.text} text-sm`}>Happiness</span>
+                  <span className={`${theme.text} text-sm`}>{monster.happiness}/100</span>
+                </div>
+                <div className="progress-bar mt-1 bg-gray-200 rounded-full overflow-hidden">
+                  <div 
+                    className="progress-bar-fill happiness bg-pink-500 h-2" 
+                    style={{ width: `${monster.happiness}%` }}
+                  ></div>
+                </div>
               </div>
-              <div className="progress-bar">
-                <div 
-                  className="progress-bar-fill energy" 
-                  style={{ width: `${monster.energy}%` }}
-                ></div>
-              </div>
-            </div>
 
-            {/* Happiness Bar */}
-            <div className="status-bar">
-              <div className="status-header">
-                <span className={`${theme.text} text-sm`}>Happiness</span>
-                <span className={`${theme.text} text-sm`}>{monster.happiness}/100</span>
+              {/* Experience Bar */}
+              <div className="status-bar">
+                <div className="status-header flex justify-between">
+                  <span className={`${theme.text} text-sm`}>Experience</span>
+                  <span className={`${theme.text} text-sm`}>{monster.exp}/{getFibonacciExp(monster.level)}</span>
+                </div>
+                <div className="progress-bar mt-1 bg-gray-200 rounded-full overflow-hidden">
+                  <div 
+                    className="progress-bar-fill experience bg-purple-500 h-2" 
+                    style={{ width: `${Math.min((monster.exp / getFibonacciExp(monster.level)) * 100, 100)}%` }}
+                  ></div>
+                </div>
               </div>
-              <div className="progress-bar">
-                <div 
-                  className="progress-bar-fill happiness" 
-                  style={{ width: `${monster.happiness}%` }}
-                ></div>
-              </div>
-            </div>
 
-            {/* Experience Bar */}
-            <div className="status-bar">
-              <div className="status-header">
-                <span className={`${theme.text} text-sm`}>Experience</span>
-                <span className={`${theme.text} text-sm`}>{monster.exp}/{getFibonacciExp(monster.level)}</span>
-              </div>
-              <div className="progress-bar">
-                <div 
-                  className="progress-bar-fill experience" 
-                  style={{ width: `${Math.min((monster.exp / getFibonacciExp(monster.level)) * 100, 100)}%` }}
-                ></div>
-              </div>
-            </div>
-
-            {/* Stats Display */}
-            <div className="stats-display">
-              {/* Stats List */}
-              <div className="stats-list">
-                <h3 className={`text-xl font-bold mb-4 ${theme.text}`}>Stats</h3>
-                <div className={`stat-item ${theme.container}`}>
-                  <span className="font-semibold">Attack:</span> {monster.attack}/{5 + (monster.level * 5)}
-                </div>
-                <div className={`stat-item ${theme.container}`}>
-                  <span className="font-semibold">Defense:</span> {monster.defense}/{5 + (monster.level * 5)}
-                </div>
-                <div className={`stat-item ${theme.container}`}>
-                  <span className="font-semibold">Speed:</span> {monster.speed}/{5 + (monster.level * 5)}
-                </div>
-                <div className={`stat-item ${theme.container}`}>
-                  <span className="font-semibold">Health:</span> {monster.health}/{5 + (monster.level * 5)}
-                </div>
-              </div>
-              
-              {/* Radar Chart */}
-              <div className="radar-chart-container">
-                <div className="radar-chart-wrapper">
-                  <Radar
-                    data={{
-                      labels: ['Attack', 'Defense', 'Speed', 'Health'],
-                      datasets: [
-                        {
-                          label: 'Stats',
-                          data: [monster.attack, monster.defense, monster.speed, monster.health],
-                          backgroundColor: darkMode ? 'rgba(147, 197, 253, 0.2)' : 'rgba(59, 130, 246, 0.2)',
-                          borderColor: darkMode ? 'rgba(147, 197, 253, 1)' : 'rgba(59, 130, 246, 1)',
-                          borderWidth: 2,
-                          pointBackgroundColor: darkMode ? 'rgba(244, 134, 10, 1)' : 'rgba(129, 78, 51, 1)',
-                          pointBorderColor: darkMode ? '#FCF5D8' : '#2A1912',
-                          pointHoverBackgroundColor: darkMode ? '#FCF5D8' : '#2A1912',
-                          pointHoverBorderColor: darkMode ? 'rgba(244, 134, 10, 1)' : 'rgba(129, 78, 51, 1)',
-                        },
-                      ],
-                    }}
-                    options={{
-                      scales: {
-                        r: {
-                          beginAtZero: true,
-                          min: 0,
-                          max: 5 + (monster.level * 5),
-                          ticks: {
-                            stepSize: 1,
-                            color: darkMode ? '#FCF5D8' : '#2A1912',
-                            font: {
-                              size: 12
-                            }
-                          },
-                          grid: {
-                            color: darkMode ? 'rgba(252, 245, 216, 0.2)' : 'rgba(42, 25, 18, 0.2)',
-                          },
-                          angleLines: {
-                            color: darkMode ? 'rgba(252, 245, 216, 0.2)' : 'rgba(42, 25, 18, 0.2)',
-                          },
-                          pointLabels: {
-                            color: darkMode ? '#FCF5D8' : '#2A1912',
-                            font: {
-                              size: 16,
-                              weight: 'bold'
-                            },
-                            padding: 20
-                          }
-                        }
-                      },
-                      plugins: {
-                        legend: {
-                          display: false
-                        }
-                      },
-                      maintainAspectRatio: true,
-                      responsive: true,
-                      aspectRatio: 1,
-                      devicePixelRatio: 0.85, // Makes the chart 15% smaller
-                      layout: {
-                        padding: {
-                          top: 20,
-                          bottom: 20,
-                          left: 20,
-                          right: 20
-                        }
-                      }
-                    }}
-                  />
-                </div>
-              </div>
-            </div>
-
-            {/* Action Buttons */}
-            <div className="action-buttons-grid">
-              {/* Feed Button */}
-              <div className={`action-card ${theme.container} border ${theme.border}`}>
-                <div className="action-card-header">
-                  INSTANT
-                </div>
-                <div className="action-card-content">
-                  <div className="action-card-body">
-                    <div className="costs-section">
-                      <div className="section-title">COSTS</div>
-                      <div className="costs-list">
-                        <div className={`cost-item ${
-                          berryBalance >= activities.feed.cost.amount ? 'available' : 'unavailable'
-                        } ${monster.status.type === 'Home' ? '' : 'disabled'}`}>
-                          <img src={`${Gateway}${assetBalances.find(a => a.info.processId === activities.feed.cost.token)?.info.logo}`} 
-                               alt="Berry" className="cost-icon" />
-                          <span>-{formatTokenAmount(activities.feed.cost.amount.toString(), assetBalances.find(a => a.info.processId === activities.feed.cost.token)?.info.denomination || 0)}</span>
-                        </div>
-                      </div>
-                    </div>
-                    <div className="rewards-section">
-                      <div className="section-title">REWARDS</div>
-                      <div className="rewards-list">
-                        <div className="reward-item energy">
-                          +{activities.feed.energyGain} Energy
-                        </div>
-                      </div>
-                    </div>
+              {/* Stats Display */}
+              <div className="stats-display mt-4">
+                <h3 className={`text-xl font-bold mb-2 ${theme.text}`}>Stats</h3>
+                <div className="grid grid-cols-2 gap-2">
+                  <div className={`stat-item p-2 rounded-lg ${theme.container}`}>
+                    <span className="font-semibold">Attack:</span> {monster.attack}/{5 + (monster.level * 5)}
                   </div>
-                  <button
-                    onClick={handleFeedMonster}
-                    disabled={isFeeding || feedingCooldown || !canFeed}
-                    className={`action-button feed ${
-                      (isFeeding || feedingCooldown || !canFeed) ? 'opacity-50 cursor-not-allowed' : ''
-                    }`}
-                  >
-                    {isFeeding || feedingCooldown ? 'Feeding...' : 'Feed'}
-                  </button>
-                </div>
-              </div>
-
-              {/* Play Button */}
-              <div className={`action-card ${theme.container} border ${theme.border}`}>
-                <div className="action-card-header">
-                  {activities.play.duration / 60000} MIN
-                </div>
-                <div className="action-card-content">
-                  <div className="action-card-body">
-                    <div className="costs-section">
-                      <div className="section-title">COSTS</div>
-                      <div className="costs-list">
-                        <div className={`cost-item ${
-                          berryBalance >= activities.play.cost.amount ? 'available' : 'unavailable'
-                        } ${monster.status.type === 'Home' || (monster.status.type === 'Play' && timeUp) ? '' : 'disabled'}`}>
-                          <img src={`${Gateway}${assetBalances.find(a => a.info.processId === activities.play.cost.token)?.info.logo}`} 
-                               alt="Berry" className="cost-icon" />
-                          <span>-{formatTokenAmount(activities.play.cost.amount.toString(), assetBalances.find(a => a.info.processId === activities.play.cost.token)?.info.denomination || 0)}</span>
-                        </div>
-                        <div className={`cost-item ${
-                          monster.energy >= activities.play.energyCost ? 'available' : 'unavailable'
-                        } ${monster.status.type === 'Home' || (monster.status.type === 'Play' && timeUp) ? '' : 'disabled'}`}>
-                          -{activities.play.energyCost} Energy
-                        </div>
-                      </div>
-                    </div>
-                    <div className="rewards-section">
-                      <div className="section-title">REWARDS</div>
-                      <div className="rewards-list">
-                        <div className="reward-item happiness">
-                          +{activities.play.happinessGain} Happy
-                        </div>
-                      </div>
-                    </div>
+                  <div className={`stat-item p-2 rounded-lg ${theme.container}`}>
+                    <span className="font-semibold">Defense:</span> {monster.defense}/{5 + (monster.level * 5)}
                   </div>
-                  <button
-                    onClick={handlePlayMonster}
-                    disabled={isPlaying || playingCooldown || !canPlay || (monster.status.type !== 'Home' && monster.status.type !== 'Play')}
-                    className={`action-button play ${
-                      (isPlaying || playingCooldown || !canPlay || (monster.status.type !== 'Home' && monster.status.type !== 'Play')) ? 'opacity-50 cursor-not-allowed' : ''
-                    }`}
-                  >
-                    {isPlaying || playingCooldown ? 'Playing...' : 
-                     (monster.status.type === 'Play' && timeUp) ? 'Return from Play' : 'Play'}
-                  </button>
-                </div>
-              </div>
-
-              {/* Battle Button */}
-              <div className={`action-card ${theme.container} border ${theme.border}`}>
-                <div className="action-card-header">
-                  BATTLE
-                </div>
-                <div className="action-card-content">
-                  <div className="action-card-body">
-                    <div className="costs-section">
-                      <div className="section-title">COSTS</div>
-                      <div className="costs-list">
-                        <div className={`cost-item ${
-                          fuelBalance >= activities.battle.cost.amount ? 'available' : 'unavailable'
-                        } ${monster.status.type === 'Home' ? '' : 'disabled'}`}>
-                          <img src={`${Gateway}${assetBalances.find(a => a.info.processId === activities.battle.cost.token)?.info.logo}`} 
-                               alt="TRUNK" className="cost-icon" />
-                          <span>-{formatTokenAmount(activities.battle.cost.amount.toString(), assetBalances.find(a => a.info.processId === activities.battle.cost.token)?.info.denomination || 0)}</span>
-                        </div>
-                        <div className={`cost-item ${
-                          monster.energy >= activities.battle.energyCost ? 'available' : 'unavailable'
-                        } ${monster.status.type === 'Home' ? '' : 'disabled'}`}>
-                          -{activities.battle.energyCost} Energy
-                        </div>
-                        <div className={`cost-item ${
-                          monster.happiness >= activities.battle.happinessCost ? 'available' : 'unavailable'
-                        } ${monster.status.type === 'Home' ? '' : 'disabled'}`}>
-                          -{activities.battle.happinessCost} Happy
-                        </div>
-                      </div>
-                    </div>
-                    <div className="rewards-section">
-                      <div className="section-title">REWARDS</div>
-                      <div className="rewards-list">
-                        <div className="reward-item exp">
-                          4 Battles
-                        </div>
-                      </div>
-                    </div>
+                  <div className={`stat-item p-2 rounded-lg ${theme.container}`}>
+                    <span className="font-semibold">Speed:</span> {monster.speed}/{5 + (monster.level * 5)}
                   </div>
-                  <button
-                    onClick={handleBattle}
-                    disabled={isInBattle || battleCooldown || !canBattle || (monster.status.type !== 'Home' && monster.status.type !== 'Battle')}
-                    className={`action-button battle ${
-                      (isInBattle || battleCooldown || !canBattle || (monster.status.type !== 'Home' && monster.status.type !== 'Battle')) ? 'opacity-50 cursor-not-allowed' : ''
-                    }`}
-                  >
-                    {isInBattle || battleCooldown ? 'In Battle...' : 
-                     (monster.status.type === 'Battle' && canReturn) ? 'Return from Battle' : 'Start Battle'}
-                  </button>
-                </div>
-              </div>
-
-              {/* Mission Button */}
-              <div className={`action-card ${theme.container} border ${theme.border}`}>
-                <div className="action-card-header">
-                  {activities.mission.duration / 3600000} HOUR
-                </div>
-                <div className="action-card-content">
-                  <div className="action-card-body">
-                    <div className="costs-section">
-                      <div className="section-title">COSTS</div>
-                      <div className="costs-list">
-                        <div className={`cost-item ${
-                          fuelBalance >= activities.mission.cost.amount ? 'available' : 'unavailable'
-                        } ${monster.status.type === 'Home' || (monster.status.type === 'Mission' && timeUp) ? '' : 'disabled'}`}>
-                          <img src={`${Gateway}${assetBalances.find(a => a.info.processId === activities.mission.cost.token)?.info.logo}`} 
-                               alt="TRUNK" className="cost-icon" />
-                          <span>-{formatTokenAmount(activities.mission.cost.amount.toString(), assetBalances.find(a => a.info.processId === activities.mission.cost.token)?.info.denomination || 0)}</span>
-                        </div>
-                        <div className={`cost-item ${
-                          monster.energy >= activities.mission.energyCost ? 'available' : 'unavailable'
-                        } ${monster.status.type === 'Home' || (monster.status.type === 'Mission' && timeUp) ? '' : 'disabled'}`}>
-                          -{activities.mission.energyCost} Energy
-                        </div>
-                        <div className={`cost-item ${
-                          monster.happiness >= activities.mission.happinessCost ? 'available' : 'unavailable'
-                        } ${monster.status.type === 'Home' || (monster.status.type === 'Mission' && timeUp) ? '' : 'disabled'}`}>
-                          -{activities.mission.happinessCost} Happy
-                        </div>
-                      </div>
-                    </div>
-                    <div className="rewards-section">
-                      <div className="section-title">REWARDS</div>
-                      <div className="rewards-list">
-                        <div className="reward-item exp">
-                          +1 EXP
-                        </div>
-                      </div>
-                    </div>
+                  <div className={`stat-item p-2 rounded-lg ${theme.container}`}>
+                    <span className="font-semibold">Health:</span> {monster.health}/{5 + (monster.level * 5)}
                   </div>
-                  <button
-                    onClick={handleMission}
-                    disabled={isOnMission || missionCooldown || !canMission || (monster.status.type !== 'Home' && monster.status.type !== 'Mission')}
-                    className={`action-button mission ${
-                      (isOnMission || missionCooldown || !canMission || (monster.status.type !== 'Home' && monster.status.type !== 'Mission')) ? 'opacity-50 cursor-not-allowed' : ''
-                    }`}
-                  >
-                    {isOnMission || missionCooldown ? 'On Mission...' : 
-                     (monster.status.type === 'Mission' && timeUp) ? 'Return from Mission' : 'Start Mission'}
-                  </button>
                 </div>
               </div>
             </div>
           </div>
+        </div>
+
+        {/* Activities */}
+        <div className="grid grid-cols-[repeat(auto-fit,minmax(200px,1fr))] gap-4 w-full mt-8">
+          <ActivityCard
+            title="Feed"
+            badge="INSTANT"
+            badgeColor="yellow"
+            gradientFrom="yellow-400"
+            gradientTo="orange-500"
+            tokenLogo={assetBalances.find(a => a.info.processId === activities.feed.cost.token)?.info.logo}
+            tokenBalance={berryBalance}
+            tokenRequired={activities.feed.cost.amount}
+            costs={[]}
+            rewards={[
+              { icon: "✨", text: `+${activities.feed.energyGain} Energy`, color: "green-500" }
+            ]}
+            onAction={handleFeedMonster}
+            isLoading={isFeeding || feedingCooldown}
+            isDisabled={!canFeed}
+            actionText="Feed"
+            loadingText="Feeding..."
+            theme={theme}
+          />
+
+          <ActivityCard
+            title="Play"
+            badge={`${activities.play.duration / 60000}m`}
+            badgeColor="green"
+            gradientFrom="green-400"
+            gradientTo="emerald-500"
+            tokenLogo={assetBalances.find(a => a.info.processId === activities.play.cost.token)?.info.logo}
+            tokenBalance={berryBalance}
+            tokenRequired={activities.play.cost.amount}
+            costs={[
+              { icon: "⚡", text: `-${activities.play.energyCost} Energy`, isAvailable: monster.energy >= activities.play.energyCost }
+            ]}
+            rewards={[
+              { icon: "💝", text: `+${activities.play.happinessGain} Happy`, color: "pink-500" }
+            ]}
+            onAction={handlePlayMonster}
+            isLoading={isPlaying || playingCooldown}
+            isDisabled={!canPlay || (monster.status.type !== 'Home' && monster.status.type !== 'Play')}
+            actionText={(monster.status.type === 'Play' && timeUp) ? 'Return from Play' : 'Play'}
+            loadingText="Playing..."
+            theme={theme}
+          />
+
+          <ActivityCard
+            title="Battle"
+            badge="ARENA"
+            badgeColor="red"
+            gradientFrom="red-400"
+            gradientTo="purple-500"
+            tokenLogo={assetBalances.find(a => a.info.processId === activities.battle.cost.token)?.info.logo}
+            tokenBalance={fuelBalance}
+            tokenRequired={activities.battle.cost.amount}
+            costs={[
+              { icon: "⚡", text: `-${activities.battle.energyCost} Energy`, isAvailable: monster.energy >= activities.battle.energyCost },
+              { icon: "💝", text: `-${activities.battle.happinessCost} Happy`, isAvailable: monster.happiness >= activities.battle.happinessCost }
+            ]}
+            rewards={[
+              { icon: "⚔️", text: "4 Battles", color: "purple-500" }
+            ]}
+            onAction={handleBattle}
+            isLoading={isInBattle || battleCooldown}
+            isDisabled={!canBattle || (monster.status.type !== 'Home' && monster.status.type !== 'Battle')}
+            actionText={(monster.status.type === 'Battle' && canReturn) ? 'Return from Battle' : 'Start Battle'}
+            loadingText="In Battle..."
+            theme={theme}
+          />
+
+          <ActivityCard
+            title="Mission"
+            badge={`${activities.mission.duration / 3600000}h`}
+            badgeColor="blue"
+            gradientFrom="blue-400"
+            gradientTo="indigo-500"
+            tokenLogo={assetBalances.find(a => a.info.processId === activities.mission.cost.token)?.info.logo}
+            tokenBalance={fuelBalance}
+            tokenRequired={activities.mission.cost.amount}
+            costs={[
+              { icon: "⚡", text: `-${activities.mission.energyCost} Energy`, isAvailable: monster.energy >= activities.mission.energyCost },
+              { icon: "💝", text: `-${activities.mission.happinessCost} Happy`, isAvailable: monster.happiness >= activities.mission.happinessCost }
+            ]}
+            rewards={[
+              { icon: "✨", text: "+1 EXP", color: "blue-500" }
+            ]}
+            onAction={handleMission}
+            isLoading={isOnMission || missionCooldown}
+            isDisabled={!canMission || (monster.status.type !== 'Home' && monster.status.type !== 'Mission')}
+            actionText={(monster.status.type === 'Mission' && timeUp) ? 'Return from Mission' : 'Start Mission'}
+            loadingText="On Mission..."
+            theme={theme}
+          />
         </div>
       </div>
     );
