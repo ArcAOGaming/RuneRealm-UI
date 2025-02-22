@@ -434,7 +434,6 @@ export const ActiveBattlePage: React.FC = (): JSX.Element => {
         <Header
           theme={theme}
           darkMode={darkMode}
-          onDarkModeToggle={() => setDarkMode(!darkMode)}
         />
 
         {/* Battle Overlays */}

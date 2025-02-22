@@ -43,7 +43,6 @@ export const AdminPage: React.FC = () => {
       <Header
         theme={theme}
         darkMode={darkMode}
-        onDarkModeToggle={() => setDarkMode(!darkMode)}
       />
       
       <div className={`container mx-auto px-6 py-8 flex-1 ${theme.text}`}>

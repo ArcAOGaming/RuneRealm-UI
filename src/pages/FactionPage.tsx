@@ -177,7 +177,6 @@ export const FactionPage: React.FC = () => {
         <Header
           theme={theme}
           darkMode={darkMode}
-          onDarkModeToggle={() => setDarkMode(!darkMode)}
         />
         
         {showConfetti && (

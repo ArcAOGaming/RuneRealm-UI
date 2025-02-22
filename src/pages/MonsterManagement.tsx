@@ -963,7 +963,6 @@ export const MonsterManagement: React.FC = (): JSX.Element => {
         <Header
           theme={theme}
           darkMode={darkMode}
-          onDarkModeToggle={() => setDarkMode(!darkMode)}
         />
         
         {showConfetti && (

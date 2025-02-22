@@ -393,13 +393,11 @@ const SpriteCustomizer: React.FC<SpriteCustomizerProps> = ({ wallet, onEnter, da
           theme={theme}
           darkMode={darkMode}
           showBackButton={!onEnter}
-          onDarkModeToggle={handleDarkModeToggle}
         />
         {/* Comment out when deploying in Reality */}
         {/*<SimpleHeader 
           theme={theme}
           darkMode={darkMode}
-          onDarkModeToggle={handleDarkModeToggle}
         />
         {/* Main content area */}
         <div className={`flex-1 w-full ${theme.container} ${theme.text} shadow-2xl ${theme.border} flex flex-col overflow-hidden`}>

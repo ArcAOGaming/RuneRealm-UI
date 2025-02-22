@@ -61,7 +61,6 @@ const PurchaseInfo: React.FC = () => {
       <Header
         theme={theme}
         darkMode={darkMode}
-        onDarkModeToggle={() => setDarkMode(!darkMode)}
         showBackButton={false}
       />
       {showConfetti && (

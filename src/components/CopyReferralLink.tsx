@@ -25,7 +25,7 @@ const CopyReferralLink: React.FC<CopyReferralLinkProps> = ({ theme }) => {
       className={`w-full px-4 py-2 ${theme.buttonBg} ${theme.buttonHover} ${theme.text} rounded-xl border ${theme.border} transition-all duration-300 hover:scale-105 flex items-center justify-center gap-2 text-sm`}
     >
       <span>🔗</span>
-      <span>Share Referral Link</span>
+      <span>Referral Link</span>
       {showCopiedNotification && (
         <span className="text-green-400">✓</span>
       )}

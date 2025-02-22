@@ -1,23 +1,23 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Theme } from '../constants/theme';
 import { useWallet } from '../hooks/useWallet';
 import CheckInButton from './CheckInButton';
 import CopyReferralLink from './CopyReferralLink';
+import SettingsModal from './SettingsModal';
 
 interface HeaderProps {
   theme: Theme;
   darkMode: boolean;
   showBackButton?: boolean;
-  onDarkModeToggle: () => void;
 }
 
 const Header: React.FC<HeaderProps> = ({
   theme,
   darkMode,
   showBackButton = true,
-  onDarkModeToggle,
 }) => {
+  const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   const navigate = useNavigate();
   const { wallet, walletStatus, isCheckingStatus, connectWallet } = useWallet();
   // Use cached wallet status
@@ -39,7 +39,7 @@ const Header: React.FC<HeaderProps> = ({
             onClick={() => navigate('/')}
             className={`px-6 py-3 ${theme.buttonBg} ${theme.buttonHover} ${theme.text} rounded-xl border ${theme.border} transition-all duration-300 hover:scale-105`}
           >
-            ← Back to Main Page
+            ← Back 
           </button>
         )}
       </div>
@@ -81,12 +81,13 @@ const Header: React.FC<HeaderProps> = ({
           )}
         </div>
         <button
-          onClick={onDarkModeToggle}
+          onClick={() => setIsSettingsOpen(true)}
           className={`px-4 py-3 ${theme.buttonBg} ${theme.buttonHover} ${theme.text} rounded-xl border ${theme.border} transition-all duration-300 hover:scale-105`}
         >
-          <span className="text-lg">{darkMode ? '☀️' : '🌙'}</span>
+          <span className="text-lg">⚙️</span>
         </button>
       </div>
+      <SettingsModal isOpen={isSettingsOpen} onClose={() => setIsSettingsOpen(false)} />
     </div>
   );
 };
