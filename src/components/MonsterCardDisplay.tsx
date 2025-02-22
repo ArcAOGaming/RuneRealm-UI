@@ -96,26 +96,26 @@ const CardImages = {
   air:{
     backgrounds: "S9ME1vtSmYqS8v5ygzX5CMpvYYVZ-nsV1kselavUDeM",
     cardframe: "AsRyajmJKrIFvmc6k3H-GKYveWb1TDvgIPg7HVH1B9k",
-    elementtypes: "ts_msM47WJdKVkDphg3TwKgwi_r0Cx6N10qxa8cHhbo",
+    elementtypes: "FwbLZYa0r0twYUvkP8su81L7yMhvs4EPkulUEm1X52U",
     level: "Bnvgn5yi9_6iRsRlKD9rhQvH5i0XhXvEeDTKu3LhJOI"
   },
   rock:{
     backgrounds: "arPti-7FScNGuPAzcaypGYv_aKk6v5Xk2TBbSeTq9Vc",
     cardframe: "m1GudORk0Q_46kkF0Z_SYvP9EVz3r9EvDMckn7XmwgA",
-    elementtypes: "1UFstD_6bOFGMiABZiCDzDNFotifkBuaLnZmsfHYPmk",
+    elementtypes: "b2pyHeYmaHkE4pzCqIGoqVzjrkXSA71pVruHY9wbv10",
     level: "whQ3nCw8fNrO3gPCSlBOTOlQ2WmLBZH3FeSogwtXmFg"
   },
   fire:{
     backgrounds: "_c3YdO2buD9WYhjst7XiaNRu5CsJ2_dZtSGISB_naQs",
     cardframe: "leecHc-g-zitMPrrMuO_P22ovyFc9OjW3u_F2rFkmSM",
-    elementtypes: "sbvdpFgWUEFahcItD3zvzNEV34GYYcIKyC2TXOZCU5A",
+    elementtypes: "1TMMbDFfPFuU60wNZVMN8mlI1c9J-7XPg7T_14SP480",
     level: "qlKFPHcG5xCWkrcFNeHGdKVv4qGS4NyTPOT-CYkmVsY"
   },
   water:{
     backgrounds: "cHmLdp4ozWmhMfnjhGe5noaMB7Jl9ieSg2cGnkovb7Y",
     cardframe: "ts_msM47WJdKVkDphg3TwKgwi_r0Cx6N10qxa8cHhbo",
-    elementtypes: "cGSU419k3xnkfgpsmmR9UT-uo8OsnnfkFbAsJRm_9aw",
-    level: "3UgHQfCa56XJ1kyuosld3ZxrpivEljjez_OcfSjcmbc"
+    elementtypes: "MvwTMcUOAClFOUrQG_BONbuVLCUuzzu2ep_0KXo03lA",
+    level: "k8qbJykA3KTUrLQ_O2TraH_LkJWlbGwOwYZs-E-bIjU"
   },
 }
 

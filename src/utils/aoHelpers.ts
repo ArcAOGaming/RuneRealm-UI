@@ -6,12 +6,13 @@ interface CachedData<T> {
 }
 
 const ONE_DAY_MS = 24 * 60 * 60 * 1000; // 24 hours in milliseconds
+const ONE_HOUR_MS = 60 * 60 * 1000; // 1 hour in milliseconds
 
-const isCacheValid = (timestamp: number): boolean => {
-  return Date.now() - timestamp < ONE_DAY_MS;
+const isCacheValid = (timestamp: number, expirationMs: number = ONE_DAY_MS): boolean => {
+  return Date.now() - timestamp < expirationMs;
 };
 
-const getCachedData = <T>(key: string): CachedData<T> | null => {
+const getCachedData = <T>(key: string, expirationMs: number = ONE_DAY_MS): CachedData<T> | null => {
   try {
     const cached = localStorage.getItem(key);
     if (!cached) return null;
@@ -22,7 +23,7 @@ const getCachedData = <T>(key: string): CachedData<T> | null => {
       return null;
     }
 
-    if (!isCacheValid(parsedCache.timestamp)) {
+    if (!isCacheValid(parsedCache.timestamp, expirationMs)) {
       localStorage.removeItem(key);
       return null;
     }
@@ -458,9 +459,19 @@ export const getPurchaseOptions = async (): Promise<TokenOption[]> => {
     }
 };
 
-export const getFactionOptions = async (): Promise<FactionOptions[]> => {
+export const getFactionOptions = async (useCache: boolean = false): Promise<FactionOptions[]> => {
     try {
-        console.log("Getting purchase options");
+        console.log("Getting faction options");
+        
+        const cacheKey = 'getFactionOptions';
+        
+        if (useCache) {
+            const cached = getCachedData<FactionOptions[]>(cacheKey, ONE_HOUR_MS);
+            if (cached) {
+                console.log(`[getFactionOptions] Using cached factions`);
+                return cached.data;
+            }
+        }
         
         const dryRunResult = await dryrun({
             process: AdminSkinChanger,
@@ -487,7 +498,7 @@ export const getFactionOptions = async (): Promise<FactionOptions[]> => {
             throw new Error("Invalid purchase options format");
         }
 
-        return options.map((option: any) => {
+        const mappedOptions = options.map((option: any) => {
             console.log(`Faction ${option.name} members:`, option.members);
             console.log(`Faction ${option.name} average monster level:`, option.averageLevel);
             return {
@@ -504,6 +515,13 @@ export const getFactionOptions = async (): Promise<FactionOptions[]> => {
                 totalTimesMission: Number(option.totalTimesMission) || 0
             };
         });
+        
+        // Cache the mapped options
+        if (mappedOptions.length > 0) {
+            setCachedData(cacheKey, mappedOptions);
+        }
+        
+        return mappedOptions;
     } catch (error) {
         console.error('Error getting purchase options:', error);
         throw error;
@@ -515,8 +533,9 @@ export const formatTokenAmount = (amount: string, denomination: number): string 
     const numAmount = parseFloat(amount);
     // Divide by 10^denomination
     const formattedAmount = (numAmount / Math.pow(10, denomination)).toFixed(denomination);
-    // Remove trailing zeros after decimal point
-    return formattedAmount.replace(/\.?0+$/, '');
+    // Remove trailing zeros after decimal point, but ensure 0 is displayed instead of empty string
+    const result = formattedAmount.replace(/\.?0+$/, '');
+    return result === '' ? '0' : result;
 };
 
 // Purchase access

@@ -38,6 +38,7 @@ const Inventory: React.FC = () => {
     "Utility": true,
     "Berries": true
   });
+  const [loadingIcons, setLoadingIcons] = useState<{ [key: string]: boolean }>({});
   const theme = currentTheme(darkMode);
 
   useEffect(() => {
@@ -60,6 +61,20 @@ const Inventory: React.FC = () => {
     setOpenSections(prev => ({
       ...prev,
       [section]: !prev[section]
+    }));
+  };
+
+  const handleImageLoad = (processId: string) => {
+    setLoadingIcons(prev => ({
+      ...prev,
+      [processId]: false
+    }));
+  };
+
+  const handleImageError = (processId: string) => {
+    setLoadingIcons(prev => ({
+      ...prev,
+      [processId]: false
     }));
   };
 
@@ -115,21 +130,42 @@ const Inventory: React.FC = () => {
             </button>
             {openSections[section.title] && (
               <div className="space-y-2 pl-2">
-                {getAssetsBySection(section.items).map((asset) => (
-                  <div key={asset.info.processId} className={`flex justify-between items-center ${theme.text}`}>
-                    <div className="flex items-center gap-2">
-                      <img 
-                        src={`${Gateway}${asset.info.logo}`}
-                        alt={asset.info.name}
-                        className="w-6 h-6 object-cover rounded-full"
-                      />
-                      <span>{asset.info.ticker}:</span>
+                {getAssetsBySection(section.items).map((asset) => {
+                  // Set loading state for this icon if not already set
+                  if (loadingIcons[asset.info.processId] === undefined) {
+                    setLoadingIcons(prev => ({
+                      ...prev,
+                      [asset.info.processId]: true
+                    }));
+                  }
+
+                  return (
+                    <div key={asset.info.processId} className={`flex justify-between items-center ${theme.text}`}>
+                      <div className="flex items-center gap-2">
+                        <div className="w-6 h-6 relative">
+                          {loadingIcons[asset.info.processId] && (
+                            <div className="absolute inset-0 flex items-center justify-center">
+                              <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-[#F4860A]"></div>
+                            </div>
+                          )}
+                          {asset.info.logo && (
+                            <img 
+                              src={`${Gateway}${asset.info.logo}`}
+                              alt={asset.info.name}
+                              className={`w-6 h-6 object-cover rounded-full transition-opacity duration-200 ${loadingIcons[asset.info.processId] ? 'opacity-0' : 'opacity-100'}`}
+                              onLoad={() => handleImageLoad(asset.info.processId)}
+                              onError={() => handleImageError(asset.info.processId)}
+                            />
+                          )}
+                        </div>
+                        <span>{asset.info.ticker}:</span>
+                      </div>
+                      <span className="font-bold">
+                        {formatTokenAmount(asset.balance.toString(), asset.info.denomination || 0)}
+                      </span>
                     </div>
-                    <span className="font-bold">
-                      {formatTokenAmount(asset.balance.toString(), asset.info.denomination || 0)}
-                    </span>
-                  </div>
-                ))}
+                  );
+                })}
               </div>
             )}
           </div>

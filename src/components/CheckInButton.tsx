@@ -11,7 +11,7 @@ const CheckInButton: React.FC<CheckInButtonProps> = ({ onOfferingComplete }) => 
   const { wallet, darkMode, triggerRefresh } = useWallet();
   const [isChecking, setIsChecking] = useState(false);
   const [offeringData, setOfferingData] = useState<OfferingData | null>(null);
-  const [nextCheckIn, setNextCheckIn] = useState('');
+  const [nextCheckIn, setNextCheckIn] = useState({ hours: 0, minutes: 0, seconds: 0 });
   const theme = currentTheme(darkMode);
 
   // Get current day number since Unix epoch
@@ -37,7 +37,7 @@ const CheckInButton: React.FC<CheckInButtonProps> = ({ onOfferingComplete }) => 
       const minutes = Math.floor((diff % (1000 * 60 * 60)) / (1000 * 60));
       const seconds = Math.floor((diff % (1000 * 60)) / 1000);
 
-      setNextCheckIn(`${hours}h ${minutes}m ${seconds}s`);
+      setNextCheckIn({ hours, minutes, seconds });
     };
 
     const timer = setInterval(updateNextCheckIn, 1000);
@@ -54,18 +54,6 @@ const CheckInButton: React.FC<CheckInButtonProps> = ({ onOfferingComplete }) => 
         const response = await getUserOfferings(wallet.address);
         console.log('Offering data:', response);
         setOfferingData(response);
-        
-        if (response?.LastOffering) {
-          const lastOfferingDay = response.LastOffering;
-          const currentDay = getCurrentDay();
-          const hasCheckedIn = lastOfferingDay === currentDay;
-          
-          console.log('Last offering day:', lastOfferingDay);
-          console.log('Current day:', currentDay);
-          console.log('Has checked in today:', hasCheckedIn);
-        } else {
-          console.log('No previous offering found');
-        }
       } catch (error) {
         console.error('Error checking offering status:', error);
         setOfferingData(null);
@@ -93,38 +81,79 @@ const CheckInButton: React.FC<CheckInButtonProps> = ({ onOfferingComplete }) => 
     }
   };
 
-  // Calculate if user has checked in today based on LastOffering day number
   const hasCheckedToday = offeringData?.LastOffering ? (() => {
     const currentDay = getCurrentDay();
     return offeringData.LastOffering === currentDay;
   })() : false;
 
-  // Streak display component
-  const StreakDisplay = () => (
-    <div className="flex items-center gap-1">
-      <span className="font-bold">{offeringData?.Streak || 0}</span>
-      <span className="text-xl">🔥</span>
-    </div>
-  );
+  const formatTimeUnit = (value: number) => value.toString().padStart(2, '0');
 
   return (
-    <div className="flex items-center gap-4">
+    <div className={`flex items-center gap-2 px-3 py-2 rounded-lg ${theme.container} border ${theme.border} backdrop-blur-md`}>
+      {/* Streak Display */}
+      <div className={`flex items-center gap-1 px-2 py-1 rounded-md bg-[#814E33]/20 border border-[#F4860A]/30`}>
+        <span className={`text-sm font-bold ${theme.text}`}>{offeringData?.Streak || 0}</span>
+        <span className="text-lg animate-pulse">🔥</span>
+      </div>
+
       {hasCheckedToday ? (
-        <div className="flex items-center gap-4">
-          <span className={`${theme.text}`}>Next check in: {nextCheckIn}</span>
-          <StreakDisplay />
+        // Timer Display when checked in
+        <div className="flex items-center gap-1">
+          <div className={`flex items-center gap-1 px-2 py-1 rounded-md bg-[#814E33]/20 border border-[#F4860A]/30`}>
+            <span className={`text-sm font-mono ${theme.text}`}>
+              {formatTimeUnit(nextCheckIn.hours)}:{formatTimeUnit(nextCheckIn.minutes)}:{formatTimeUnit(nextCheckIn.seconds)}
+            </span>
+          </div>
         </div>
       ) : (
-        <>
-          <button
-            onClick={handleCheckIn}
-            disabled={isChecking}
-            className={`px-6 py-3 rounded-lg transition-all duration-300 ${theme.buttonBg} ${theme.buttonHover} ${theme.text} ${isChecking ? 'opacity-50 cursor-not-allowed' : 'hover:scale-105'}`}
-          >
-            {isChecking ? 'Offering...' : 'Make Daily Offering'}
-          </button>
-          <StreakDisplay />
-        </>
+        // Check-in Button when not checked in
+        <button
+          onClick={handleCheckIn}
+          disabled={isChecking}
+          className={`px-3 py-1 rounded-lg text-sm font-medium transition-all duration-300 
+            relative overflow-hidden`}
+          style={{
+            backgroundColor: '#1a1a1a',
+            color: '#FFD700',
+            border: '2px solid #FFD700',
+            boxShadow: '0 0 10px #FFD700, 0 0 20px #FFD700, inset 0 0 5px rgba(255, 215, 0, 0.3)',
+            animation: 'pulseGold 2s infinite'
+          }}
+        >
+          <div className="relative z-10 flex items-center gap-2">
+            <span>{isChecking ? 'Offering...' : 'Daily Offering'}</span>
+          </div>
+          <div
+            className="absolute inset-0 opacity-20"
+            style={{
+              background: 'linear-gradient(45deg, transparent, #FFD700, transparent)',
+              backgroundSize: '200% 200%',
+              animation: 'shimmerGold 3s linear infinite'
+            }}
+          />
+          <style>
+            {`
+              @keyframes shimmerGold {
+                0% { background-position: -200% 0; }
+                100% { background-position: 200% 0; }
+              }
+              @keyframes pulseGold {
+                0%, 100% { box-shadow: 0 0 10px #FFD700, 0 0 20px #FFD700, inset 0 0 5px rgba(255, 215, 0, 0.3); }
+                50% { box-shadow: 0 0 20px #FFD700, 0 0 35px #FFD700, inset 0 0 5px rgba(255, 215, 0, 0.4); }
+              }
+              button:hover {
+                transform: scale(1.05);
+                box-shadow: 0 0 25px #FFD700, 0 0 40px #FFD700, inset 0 0 5px rgba(255, 215, 0, 0.5);
+              }
+              button:disabled {
+                opacity: 0.5;
+                cursor: not-allowed;
+                animation: none;
+                box-shadow: none;
+              }
+            `}
+          </style>
+        </button>
       )}
     </div>
   );
