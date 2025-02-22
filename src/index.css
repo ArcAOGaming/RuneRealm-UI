@@ -41,7 +41,7 @@
 
   body[data-rotate="true"] header,
   body[data-rotate="true"] nav,
-  body[data-rotate="true"] [class*="fixed"],
+  body[data-rotate="true"] [class*="fixed"]:not(.inventory-container),
   body[data-rotate="true"] [class*="sticky"] {
     position: relative !important;
     top: auto !important;

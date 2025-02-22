@@ -9,7 +9,6 @@ import { message } from '../utils/aoHelpers';
 import { currentTheme } from '../constants/theme';
 import { Gateway, TARGET_BATTLE_PID } from '../constants/Constants';
 import PurchaseModal from '../components/PurchaseModal';
-import Inventory from '../components/Inventory';
 import StatAllocationModal from '../components/StatAllocationModal';
 import Header from '../components/Header';
 import Footer from '../components/Footer';
@@ -1017,7 +1016,6 @@ export const MonsterManagement: React.FC = (): JSX.Element => {
             )}
           </div>
         </div>
-        {wallet?.address && <Inventory />}
         <Footer darkMode={darkMode} />
       </div>
     </div>

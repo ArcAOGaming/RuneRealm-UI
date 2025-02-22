@@ -250,9 +250,6 @@ const PurchaseInfo: React.FC = () => {
                         darkMode={darkMode}
                       />
                     </div> */}
-                    <div className="mt-8">
-                      <Inventory />
-                    </div>
                   </>
                 )}
               </>

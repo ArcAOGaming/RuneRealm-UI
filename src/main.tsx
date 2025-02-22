@@ -7,14 +7,24 @@ import {MonsterManagement} from './pages/MonsterManagement'
 import Admin from './pages/Admin'
 import MonsterTest from './pages/MonsterTest'
 import { WalletProvider } from './context/WalletContext'
+import { useWallet } from './hooks/useWallet';
+import { WalletStatus } from './utils/interefaces';
 import './index.css'
 import { FactionPage } from './pages/FactionPage'
 import { FactionDetailPage } from './pages/FactionDetailPage'
 import { BattlePage } from './pages/BattlePage'
 import { handleReferralLink } from './utils/aoHelpers'
 import { ActiveBattlePage } from './pages/ActiveBattlePage'
+import Inventory from './components/Inventory'
 
-const App = () => {
+interface AppContentProps {
+  wallet?: { address: string };
+  walletStatus?: WalletStatus;
+}
+
+const AppContent = () => {
+  const { wallet, walletStatus } = useWallet() as { wallet?: { address: string }, walletStatus?: WalletStatus };
+
   useEffect(() => {
     // Handle referral link parameters when the app loads
     handleReferralLink();
@@ -38,25 +48,30 @@ const App = () => {
   }, []);
 
   return (
-    <Router>
-      <WalletProvider>
-        <div className="app-container">
-          <Routes>
-          <Route path="/" element={<PurchaseInfo />} />
-          <Route path="/customize" element={<SpriteCustomizer />} />
-          <Route path="/factions" element={<FactionPage />} />
-          <Route path="/factions/:factionId" element={<FactionDetailPage />} />
-          <Route path="/monsters" element={<MonsterManagement />} />
-          <Route path="/admin" element={<Admin />} />
-          <Route path="/battle" element={<BattlePage />} />
-          <Route path="/battle/active" element={<ActiveBattlePage />} />
-          <Route path="/monster-test" element={<MonsterTest />} />
-          </Routes>
-        </div>
-      </WalletProvider>
-    </Router>
+    <div className="app-container">
+      {wallet?.address && walletStatus?.isUnlocked && <Inventory />}
+      <Routes>
+        <Route path="/" element={<PurchaseInfo />} />
+        <Route path="/customize" element={<SpriteCustomizer />} />
+        <Route path="/factions" element={<FactionPage />} />
+        <Route path="/factions/:factionId" element={<FactionDetailPage />} />
+        <Route path="/monsters" element={<MonsterManagement />} />
+        <Route path="/admin" element={<Admin />} />
+        <Route path="/battle" element={<BattlePage />} />
+        <Route path="/battle/active" element={<ActiveBattlePage />} />
+        <Route path="/monster-test" element={<MonsterTest />} />
+      </Routes>
+    </div>
   );
-}
+};
+
+const App = () => (
+  <Router>
+    <WalletProvider>
+      <AppContent />
+    </WalletProvider>
+  </Router>
+);
 
 ReactDOM.createRoot(document.getElementById('root')!).render(
   <React.StrictMode>

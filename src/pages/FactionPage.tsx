@@ -9,7 +9,6 @@ import CheckInButton from '../components/CheckInButton';
 import Header from '../components/Header';
 import Confetti from 'react-confetti';
 import LoadingAnimation from '../components/LoadingAnimation';
-import Inventory from '../components/Inventory';
 import Footer from '../components/Footer';
 
 const FACTION_TO_PATH = {
@@ -308,13 +307,6 @@ export const FactionPage: React.FC = () => {
               </div>
             )}
           </div>
-
-          {/* Inventory Section */}
-          {walletStatus?.isUnlocked && (
-            <div className="max-w-6xl mx-auto mb-8">
-              <Inventory />
-            </div>
-          )}
 
           {/* Loading State or Content */}
           {isInitialLoad && !factions.length ? (
