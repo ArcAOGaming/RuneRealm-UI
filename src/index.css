@@ -56,38 +56,3 @@
   }
 }
 
-/* Minecraft message styling */
-.minecraft-message {
-  font-family: monospace;
-  text-shadow: 2px 2px rgba(0, 0, 0, 0.7);
-  transform: rotate(-20deg) skew(-5deg);
-  animation: float 3s ease-in-out infinite;
-  font-size: 1.1em;
-  font-style: italic;
-  position: relative;
-  display: inline-block;
-  white-space: nowrap;
-}
-
-/* Floating animation */
-@keyframes float {
-  0% {
-    transform: rotate(-20deg) skew(-5deg) translateY(0px);
-  }
-  50% {
-    transform: rotate(-20deg) skew(-5deg) translateY(-8px);
-  }
-  100% {
-    transform: rotate(-20deg) skew(-5deg) translateY(0px);
-  }
-}
-
-/* Color transition */
-.minecraft-message {
-  transition: color 1s ease;
-}
-
-/* Ensure text remains readable */
-.minecraft-message {
-  filter: drop-shadow(0 0 2px rgba(0, 0, 0, 0.8));
-}
