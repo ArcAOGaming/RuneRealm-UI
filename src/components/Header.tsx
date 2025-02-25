@@ -10,12 +10,14 @@ interface HeaderProps {
   theme: Theme;
   darkMode: boolean;
   showBackButton?: boolean;
+  onDarkModeToggle?: () => void;
 }
 
 const Header: React.FC<HeaderProps> = ({
   theme,
   darkMode,
   showBackButton = true,
+  onDarkModeToggle,
 }) => {
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   const navigate = useNavigate();

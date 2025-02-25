@@ -1,5 +1,5 @@
 import React from 'react';
-import { BattleTurn } from '../utils/aoHelpers';
+import { BattleTurn } from '../utils/interefaces';
 
 interface BattleLogProps {
   turns: BattleTurn[];
@@ -32,17 +32,17 @@ const BattleLog: React.FC<BattleLogProps> = ({ turns, isOpen, onClose, playerNam
           {turns.map((turn, index) => (
             <div
               key={index}
-              className={`flex ${turn.attacker === 'player' ? 'justify-end' : 'justify-start'} w-full`}
+              className={`flex ${turn.attacker === 'challenger' ? 'justify-end' : 'justify-start'} w-full`}
             >
               <div
                 className={`max-w-[80%] p-4 rounded-lg ${
-                  turn.attacker === 'player'
+                  turn.attacker === 'challenger'
                     ? 'bg-blue-500/90 ml-auto rounded-br-none'
                     : 'bg-red-500/90 mr-auto rounded-bl-none'
                 } text-white backdrop-blur-sm shadow-md`}
               >
                 <div className="font-medium mb-2 text-lg">
-                  {turn.attacker === 'player' ? `🦸‍♂️ ${playerName}` : `👾 ${opponentName}`} used {turn.move}
+                  {turn.attacker === 'challenger' ? `🦸‍♂️ ${playerName}` : `👾 ${opponentName}`} used {turn.move}
                 </div>
                 <div className="space-y-2 text-md">
                   {(turn.healthDamage > 0 || turn.shieldDamage > 0) && (

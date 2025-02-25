@@ -5,14 +5,14 @@ import BattleStatus from './BattleStatus';
 import { BATTLE_POSITIONS } from '../constants/Constants';
 
 interface BattleSceneProps {
-  player: MonsterStats;
-  opponent: MonsterStats;
+  challenger: MonsterStats;
+  accepter: MonsterStats;
   playerAnimation?: 'walkRight' | 'walkLeft' | 'walkUp' | 'walkDown' | 'attack1' | 'attack2';
   opponentAnimation?: 'walkRight' | 'walkLeft' | 'walkUp' | 'walkDown' | 'attack1' | 'attack2';
   onPlayerAnimationComplete?: () => void;
   onOpponentAnimationComplete?: () => void;
   attackAnimation: {
-    attacker: 'player' | 'opponent';
+    attacker: 'challenger' | 'accepter';
     moveName: string;
   } | null;
   shieldRestoring: boolean;
@@ -23,8 +23,8 @@ interface BattleSceneProps {
 }
 
 const BattleScene: React.FC<BattleSceneProps> = ({
-  player,
-  opponent,
+  challenger,
+  accepter,
   playerAnimation,
   opponentAnimation,
   onPlayerAnimationComplete,
@@ -77,27 +77,27 @@ const BattleScene: React.FC<BattleSceneProps> = ({
           <div className="w-full h-4 bg-gray-800 rounded-full overflow-hidden relative">
             <div 
               className="h-full bg-blue-500 transition-all duration-500"
-              style={{ width: `${(player.shield / player.defense) * 100}%` }}
+              style={{ width: `${(challenger.shield / challenger.defense) * 100}%` }}
             />
             <div className="absolute inset-0 flex items-center justify-center text-xs text-white font-bold">
-              {player.shield}/{player.defense}
+              {challenger.shield}/{challenger.defense}
             </div>
           </div>
           {/* Health Bar */}
           <div className="w-full h-4 bg-gray-800 rounded-full overflow-hidden relative">
             <div 
               className="h-full bg-red-500 transition-all duration-500"
-              style={{ width: `${(player.healthPoints / (player.health * 10)) * 100}%` }}
+              style={{ width: `${(challenger.healthPoints / (challenger.health * 10)) * 100}%` }}
             />
             <div className="absolute inset-0 flex items-center justify-center text-xs text-white font-bold">
-              {player.healthPoints}/{player.health * 10}
+              {challenger.healthPoints}/{challenger.health * 10}
             </div>
           </div>
         </div>
         
         {/* Monster Sprite */}
         <MonsterSpriteView
-          sprite={player.sprite}
+          sprite={challenger.sprite}
           currentAnimation={playerAnimation}
           onAnimationComplete={onPlayerAnimationComplete}
         />
@@ -116,27 +116,27 @@ const BattleScene: React.FC<BattleSceneProps> = ({
           <div className="w-full h-4 bg-gray-800 rounded-full overflow-hidden relative">
             <div 
               className="h-full bg-blue-500 transition-all duration-500"
-              style={{ width: `${(opponent.shield / opponent.defense) * 100}%` }}
+              style={{ width: `${(accepter.shield / accepter.defense) * 100}%` }}
             />
             <div className="absolute inset-0 flex items-center justify-center text-xs text-white font-bold">
-              {opponent.shield}/{opponent.defense}
+              {accepter.shield}/{accepter.defense}
             </div>
           </div>
           {/* Health Bar */}
           <div className="w-full h-4 bg-gray-800 rounded-full overflow-hidden relative">
             <div 
               className="h-full bg-red-500 transition-all duration-500"
-              style={{ width: `${(opponent.healthPoints / (opponent.health * 10)) * 100}%` }}
+              style={{ width: `${(accepter.healthPoints / (accepter.health * 10)) * 100}%` }}
             />
             <div className="absolute inset-0 flex items-center justify-center text-xs text-white font-bold">
-              {opponent.healthPoints}/{opponent.health * 10}
+              {accepter.healthPoints}/{accepter.health * 10}
             </div>
           </div>
         </div>
         
         {/* Monster Sprite */}
         <MonsterSpriteView
-          sprite={opponent.sprite}
+          sprite={accepter.sprite}
           currentAnimation={opponentAnimation}
           onAnimationComplete={onOpponentAnimationComplete}
           isOpponent
@@ -151,8 +151,8 @@ const BattleScene: React.FC<BattleSceneProps> = ({
         onAttackComplete={onAttackComplete}
         onShieldComplete={onShieldComplete}
         onRoundComplete={onRoundComplete}
-        playerMonsterName={player.name}
-        opponentMonsterName={opponent.name}
+        playerMonsterName={challenger.name}
+        opponentMonsterName={accepter.name}
       />
     </div>
   );

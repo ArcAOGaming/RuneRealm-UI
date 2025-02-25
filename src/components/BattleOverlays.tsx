@@ -1,5 +1,5 @@
 import React from 'react';
-import { BattleTurn } from '../utils/aoHelpers';
+import { BattleTurn } from '../utils/interefaces';
 import Inventory from './Inventory';
 import BattleLogContainer from './BattleLogContainer';
 

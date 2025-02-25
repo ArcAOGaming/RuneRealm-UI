@@ -58,7 +58,7 @@ const setCachedData = <T>(key: string, data: T): void => {
 };
 import { AdminSkinChanger, DefaultAtlasTxID, Alter, SUPPORTED_ASSET_IDS, WAITTIMEOUIT, ASSET_INFO, AssetInfo, TARGET_BATTLE_PID } from "../constants/Constants";
 import { ProfileInfo, ProfilesService } from 'ao-process-clients';
-import { AssetBalance, BattleManagerInfo, BattleResponse, FactionOptions, MonsterStats, ResultType, TokenOption, UserInfo, WalletStatus } from "./interefaces";
+import { AssetBalance, BattleManagerInfo, BattleResponse, BattleTurn, FactionOptions, MonsterStats, ResultType, TokenOption, UserInfo, WalletStatus } from "./interefaces";
 export type { 
   AssetInfo 
 } from '../constants/Constants';
@@ -75,36 +75,14 @@ export interface BattleParticipant {
 
 export interface ActiveBattle {
   id: string;
-  challenger: {
-    address: string;
-    healthPoints: number;
-    health: number;
-    shield: number;
-    defense: number;
-    moves: Record<string, any>;
-    name?: string;
-  };
-  accepter: {
-    address: string;
-    healthPoints: number;
-    health: number;
-    shield: number;
-    defense: number;
-    moves: Record<string, any>;
-    name?: string;
-  };
-  status: 'pending' | 'battling' | 'ended';
-  challengeType?: 'OPEN' | 'TARGETED';
-  targetAccepter?: string;
-  turns: any[];
+  challenger: MonsterStats;
+  accepter: MonsterStats;
+  status: 'active' | 'ended';
+  turns: BattleTurn[];
   startTime: number;
-  currentTurn?: {
-    challenger: any;
-    accepter: any;
-  };
-  hasUsedStruggle?: {
-    challenger: boolean;
-    accepter: boolean;
+  moveCounts: {
+    challenger: { [key: string]: number };
+    accepter: { [key: string]: number };
   };
 }
 
@@ -115,7 +93,8 @@ export type {
   FactionOptions,
   ProfileInfo,
   WalletStatus,
-  BattleResponse
+  BattleResponse,
+  BattleTurn
 };
 
 export const getProfileInfo = async (
@@ -1275,6 +1254,36 @@ export const getActiveBattle = async (walletAddress: string): Promise<ActiveBatt
             process: TARGET_BATTLE_PID,
             tags: [
                 { name: "Action", value: "GetOpenBattle" },
+                { name: "UserId", value: walletAddress }
+            ],
+            data: ""
+        });
+        console.log(result)
+
+        if (!result.Messages || result.Messages.length === 0) {
+            return null;
+        }
+
+        const response = JSON.parse(result.Messages[0].Data);
+        console.log(response)
+        if (response.status === 'success' && response.data) {
+            return response.data;
+        }
+
+        return null;
+    } catch (error) {
+        console.error('Error getting active battle:', error);
+        return null;
+    }
+};
+
+// Get active battle
+export const getUserActiveBattles = async (walletAddress: string): Promise<ActiveBattle | null> => {
+    try {
+        const result = await dryrun({
+            process: TARGET_BATTLE_PID,
+            tags: [
+                { name: "Action", value: "GetUserOpenBattles" },
                 { name: "UserId", value: walletAddress }
             ],
             data: ""

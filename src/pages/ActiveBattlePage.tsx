@@ -30,7 +30,6 @@ const getMoveColor = (moveName: string, move: any) => {
   return 'bg-red-700';
 };
 
-
 // Small loading indicator for updates
 const UpdateIndicator: React.FC = () => (
   <div className="fixed bottom-4 right-4 bg-blue-500 text-white px-3 py-1 rounded-full text-sm animate-pulse">
@@ -44,7 +43,7 @@ export const ActiveBattlePage: React.FC = (): JSX.Element => {
   const [activeBattle, setActiveBattle] = useState<ActiveBattle | null>(null);
   const [previousBattle, setPreviousBattle] = useState<ActiveBattle | null>(null);
   const [attackAnimation, setAttackAnimation] = useState<{
-    attacker: 'player' | 'opponent';
+    attacker: 'challenger' | 'accepter';
     moveName: string;
   } | null>(null);
   const [shieldRestoring, setShieldRestoring] = useState(false);
@@ -65,15 +64,15 @@ export const ActiveBattlePage: React.FC = (): JSX.Element => {
     
     // Compare relevant battle data excluding status
     const oldData = {
-      player: { ...oldBattle.player, status: undefined },
-      opponent: { ...oldBattle.opponent, status: undefined },
+      challenger: { ...oldBattle.challenger, status: undefined },
+      accepter: { ...oldBattle.accepter, status: undefined },
       turns: oldBattle.turns,
       moveCounts: oldBattle.moveCounts
     };
     
     const newData = {
-      player: { ...newBattle.player, status: undefined },
-      opponent: { ...newBattle.opponent, status: undefined },
+      challenger: { ...newBattle.challenger, status: undefined },
+      accepter: { ...newBattle.accepter, status: undefined },
       turns: newBattle.turns,
       moveCounts: newBattle.moveCounts
     };
@@ -93,15 +92,22 @@ export const ActiveBattlePage: React.FC = (): JSX.Element => {
         if (!mounted) return;
         setBattleManagerInfo(info);
         
-        const battle = await getActiveBattle(wallet.address);
+        const allbattle = await getActiveBattle(wallet.address);
+        const battle = allbattle[0] as unknown as ActiveBattle;
+        console.log(allbattle)
+        console.log(allbattle)
+        console.log(activeBattle)
         if (!mounted) return;
         
         if (battle) {
           if (!activeBattle) {
             // Initial battle load
             console.log("Initial battle load")
+            console.log(battle)
+            // console.log(battle.challenger)
+            // console.log(battle.challenger.healthPoints)
             // Check if battle is over by checking health points
-            const isEnded = battle.player.healthPoints <= 0 || battle.opponent.healthPoints <= 0;
+            const isEnded = battle.challenger.healthPoints <= 0 || battle.accepter.healthPoints <= 0;
             const status = isEnded ? 'ended' : 'active';
             
             setActiveBattle({
@@ -150,8 +156,8 @@ export const ActiveBattlePage: React.FC = (): JSX.Element => {
 
       // Save current state before update
       const previousState = {
-        player: { ...activeBattle.player },
-        opponent: { ...activeBattle.opponent }
+        challenger: { ...activeBattle.challenger },
+        accepter: { ...activeBattle.accepter }
       };
       setPreviousBattle({ ...activeBattle });
 
@@ -163,40 +169,40 @@ export const ActiveBattlePage: React.FC = (): JSX.Element => {
           setBattleManagerInfo(result.session);
           
           // Process the final attack animation
-          const battleData = response.data as ActiveBattle;
+          const battleData = response.data as unknown as ActiveBattle;
           const turn = battleData.turns[battleData.turns.length - 1];
           
           // Update battle state with final turn data
           const updatedBattle = {
             ...activeBattle,
-            player: { ...activeBattle.player },
-            opponent: { ...activeBattle.opponent }
+            challenger: { ...activeBattle.challenger },
+            accepter: { ...activeBattle.accepter }
           };
 
-          if(turn.attacker === "player") {
-            updatedBattle.player.attack = turn.attackerState.attack;
-            updatedBattle.player.defense = turn.attackerState.defense;
-            updatedBattle.player.speed = turn.attackerState.speed;
-            updatedBattle.player.shield = turn.attackerState.shield;
-            updatedBattle.player.healthPoints = turn.attackerState.healthPoints;
+          if(turn.attacker === "challenger") {
+            activeBattle.challenger.attack = turn.attackerState.attack;
+            activeBattle.challenger.defense = turn.attackerState.defense;
+            activeBattle.challenger.speed = turn.attackerState.speed;
+            activeBattle.challenger.shield = turn.attackerState.shield;
+            activeBattle.challenger.healthPoints = turn.attackerState.healthPoints;
 
-            updatedBattle.opponent.attack = turn.defenderState.attack;
-            updatedBattle.opponent.defense = turn.defenderState.defense;
-            updatedBattle.opponent.speed = turn.defenderState.speed;
-            updatedBattle.opponent.shield = turn.defenderState.shield;
-            updatedBattle.opponent.healthPoints = turn.defenderState.healthPoints;
+            activeBattle.accepter.attack = turn.defenderState.attack;
+            activeBattle.accepter.defense = turn.defenderState.defense;
+            activeBattle.accepter.speed = turn.defenderState.speed;
+            activeBattle.accepter.shield = turn.defenderState.shield;
+            activeBattle.accepter.healthPoints = turn.defenderState.healthPoints;
           } else {
-            updatedBattle.opponent.attack = turn.attackerState.attack;
-            updatedBattle.opponent.defense = turn.attackerState.defense;
-            updatedBattle.opponent.speed = turn.attackerState.speed;
-            updatedBattle.opponent.shield = turn.attackerState.shield;
-            updatedBattle.opponent.healthPoints = turn.attackerState.healthPoints;
+            activeBattle.accepter.attack = turn.attackerState.attack;
+            updatedBattle.accepter.defense = turn.attackerState.defense;
+            updatedBattle.accepter.speed = turn.attackerState.speed;
+            updatedBattle.accepter.shield = turn.attackerState.shield;
+            updatedBattle.accepter.healthPoints = turn.attackerState.healthPoints;
 
-            updatedBattle.player.attack = turn.defenderState.attack;
-            updatedBattle.player.defense = turn.defenderState.defense;
-            updatedBattle.player.speed = turn.defenderState.speed;
-            updatedBattle.player.shield = turn.defenderState.shield;
-            updatedBattle.player.healthPoints = turn.defenderState.healthPoints;
+            updatedBattle.challenger.attack = turn.defenderState.attack;
+            updatedBattle.challenger.defense = turn.defenderState.defense;
+            updatedBattle.challenger.speed = turn.defenderState.speed;
+            updatedBattle.challenger.shield = turn.defenderState.shield;
+            updatedBattle.challenger.healthPoints = turn.defenderState.healthPoints;
           }
 
           // Update battle state before animations
@@ -209,7 +215,7 @@ export const ActiveBattlePage: React.FC = (): JSX.Element => {
           });
 
           // Play the attack animation sequence
-          if (turn.attacker === 'player') {
+          if (turn.attacker === 'challenger') {
             setPlayerAnimation('walkRight');
             await new Promise(resolve => setTimeout(resolve, 1000));
             
@@ -241,8 +247,8 @@ export const ActiveBattlePage: React.FC = (): JSX.Element => {
           }));
           
           // Show winner announcement
-          const playerWon = updatedBattle.player.healthPoints > 0;
-          const winnerName = playerWon ? updatedBattle.player.name : updatedBattle.opponent.name;
+          const playerWon = updatedBattle.challenger.healthPoints > 0;
+          const winnerName = playerWon ? updatedBattle.challenger.name : updatedBattle.accepter.name;
           setShowWinnerAnnouncement({ winner: winnerName });
           await new Promise(resolve => setTimeout(resolve, 3000));
           setShowWinnerAnnouncement(null);
@@ -250,7 +256,7 @@ export const ActiveBattlePage: React.FC = (): JSX.Element => {
           setMovesDisabled(false);
         } else {
           // Battle continues - process new turns
-          const battleData = response.data as ActiveBattle;
+          const battleData = response.data as unknown as ActiveBattle;
           const previousTurns = activeBattle?.turns.length || 0;
           const newTurns = battleData.turns.length;
           
@@ -258,8 +264,8 @@ export const ActiveBattlePage: React.FC = (): JSX.Element => {
             // Determine turn order based on speed
             const turns = battleData.turns.slice(previousTurns);
             const sortedTurns = [...turns].sort((a, b) => {
-              const speedA = a.attacker === 'player' ? previousState.player.speed : previousState.opponent.speed;
-              const speedB = b.attacker === 'player' ? previousState.player.speed : previousState.opponent.speed;
+              const speedA = a.attacker === 'challenger' ? previousState.challenger.speed : previousState.accepter.speed;
+              const speedB = b.attacker === 'challenger' ? previousState.challenger.speed : previousState.accepter.speed;
               return speedB - speedA;
             });
 
@@ -304,7 +310,7 @@ export const ActiveBattlePage: React.FC = (): JSX.Element => {
                 
                 if (isAttackMove) {
                   // Attack sequence: move in -> attack -> move out
-                  if (turn.attacker === 'player') {
+                  if (turn.attacker === 'challenger') {
                     setPlayerAnimation('walkRight');
                     await new Promise(resolve => setTimeout(resolve, 1000));
                     
@@ -325,7 +331,7 @@ export const ActiveBattlePage: React.FC = (): JSX.Element => {
                   }
                 } else {
                   // Heal/Boost sequence: up -> left -> down
-                  if (turn.attacker === 'player') {
+                  if (turn.attacker === 'challenger') {
                     setPlayerAnimation('walkUp');
                     await new Promise(resolve => setTimeout(resolve, 1000));
                     
@@ -354,36 +360,36 @@ export const ActiveBattlePage: React.FC = (): JSX.Element => {
                 // Apply this turn's changes to the previous state
                 const updatedBattle = {
                   ...activeBattle,
-                  player: { ...activeBattle.player },
-                  opponent: { ...activeBattle.opponent }
+                  challenger: { ...activeBattle.challenger },
+                  accepter: { ...activeBattle.accepter }
                 };
                 console.log(turn.attackerState)
                 console.log(turn.defenderState)
 
-                if(turn.attacker =="player"){
-                  updatedBattle.player.attack = turn.attackerState.attack
-                  updatedBattle.player.defense = turn.attackerState.defense
-                  updatedBattle.player.speed = turn.attackerState.speed
-                  updatedBattle.player.shield = turn.attackerState.shield
-                 updatedBattle.player.healthPoints = turn.attackerState.healthPoints
+                if(turn.attacker === "challenger") {
+                  updatedBattle.challenger.attack = turn.attackerState.attack;
+                  updatedBattle.challenger.defense = turn.attackerState.defense;
+                  updatedBattle.challenger.speed = turn.attackerState.speed;
+                  updatedBattle.challenger.shield = turn.attackerState.shield;
+                  updatedBattle.challenger.healthPoints = turn.attackerState.healthPoints;
 
-                  updatedBattle.opponent.attack = turn.defenderState.attack
-                  updatedBattle.opponent.defense = turn.defenderState.defense
-                  updatedBattle.opponent.speed = turn.defenderState.speed
-                  updatedBattle.opponent.shield = turn.defenderState.shield
-                  updatedBattle.opponent.healthPoints = turn.defenderState.healthPoints
-                }else{
-                  updatedBattle.opponent.attack = turn.attackerState.attack
-                  updatedBattle.opponent.defense = turn.attackerState.defense
-                  updatedBattle.opponent.speed = turn.attackerState.speed
-                  updatedBattle.opponent.shield = turn.attackerState.shield
-                  updatedBattle.opponent.healthPoints = turn.attackerState.healthPoints
+                  updatedBattle.accepter.attack = turn.defenderState.attack;
+                  updatedBattle.accepter.defense = turn.defenderState.defense;
+                  updatedBattle.accepter.speed = turn.defenderState.speed;
+                  updatedBattle.accepter.shield = turn.defenderState.shield;
+                  updatedBattle.accepter.healthPoints = turn.defenderState.healthPoints;
+                } else {
+                  updatedBattle.accepter.attack = turn.attackerState.attack;
+                  updatedBattle.accepter.defense = turn.attackerState.defense;
+                  updatedBattle.accepter.speed = turn.attackerState.speed;
+                  updatedBattle.accepter.shield = turn.attackerState.shield;
+                  updatedBattle.accepter.healthPoints = turn.attackerState.healthPoints;
 
-                  updatedBattle.player.attack = turn.defenderState.attack
-                  updatedBattle.player.defense = turn.defenderState.defense
-                  updatedBattle.player.speed = turn.defenderState.speed
-                  updatedBattle.player.shield = turn.defenderState.shield
-                  updatedBattle.player.healthPoints = turn.defenderState.healthPoints
+                  updatedBattle.challenger.attack = turn.defenderState.attack;
+                  updatedBattle.challenger.defense = turn.defenderState.defense;
+                  updatedBattle.challenger.speed = turn.defenderState.speed;
+                  updatedBattle.challenger.shield = turn.defenderState.shield;
+                  updatedBattle.challenger.healthPoints = turn.defenderState.healthPoints;
                 }
                 // Update battle state with this turn's changes
                 console.log("Turn battle load")
@@ -444,8 +450,8 @@ export const ActiveBattlePage: React.FC = (): JSX.Element => {
             showBattleLog={showBattleLog}
             onToggleBattleLog={() => setShowBattleLog(!showBattleLog)}
             theme={theme}
-            playerName={activeBattle.player.name}
-            opponentName={activeBattle.opponent.name}
+            playerName={activeBattle.challenger.name}
+            opponentName={activeBattle.accepter.name}
           />
         )}
         
@@ -494,8 +500,8 @@ export const ActiveBattlePage: React.FC = (): JSX.Element => {
                     maxHeight: '800px'
                   }}>
                     <BattleScene
-                      player={activeBattle.player}
-                      opponent={activeBattle.opponent}
+                      challenger={activeBattle.challenger}
+                      accepter={activeBattle.accepter}
                       playerAnimation={playerAnimation}
                       opponentAnimation={opponentAnimation}
                       onPlayerAnimationComplete={() => {}}
@@ -516,11 +522,11 @@ export const ActiveBattlePage: React.FC = (): JSX.Element => {
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-4 px-4 pb-4">
                     {/* Player Moves */}
                     <div className={`p-4 rounded-lg ${theme.container} bg-opacity-20`}>
-                      <h4 className="text-md font-semibold mb-3">Your Moves</h4>
+                      <h4 className="text-md font-semibold mb-3">Challenger's Moves</h4>
                       <div className="relative">
                         {/* Regular moves */}
                         <div className="grid grid-cols-2 gap-2 relative">
-                          {Object.entries(activeBattle.player.moves).map(([moveName, move]) => (
+                          {Object.entries(activeBattle.challenger.moves).map(([moveName, move]) => (
                             <button
                               key={moveName}
                               onClick={() => handleAttack(moveName)}
@@ -571,7 +577,7 @@ export const ActiveBattlePage: React.FC = (): JSX.Element => {
                           ))}
 
                           {/* Struggle button - show when all moves have 0 uses */}
-                          {Object.values(activeBattle.player.moves).every(move => move.count === 0) && (
+                          {Object.values(activeBattle.challenger.moves).every(move => move.count === 0) && (
                             <button
                               onClick={() => handleAttack('struggle')}
                               disabled={isUpdating || movesDisabled || activeBattle.status === 'ended'}
@@ -591,10 +597,10 @@ export const ActiveBattlePage: React.FC = (): JSX.Element => {
                     
                     {/* Opponent Moves */}
                     <div className={`p-4 rounded-lg ${theme.container} bg-opacity-20`}>
-                      <h4 className="text-md font-semibold mb-3">Opponent's Moves</h4>
+                      <h4 className="text-md font-semibold mb-3">Accepter's Moves</h4>
                       <div className="relative">
                         <div className="grid grid-cols-2 gap-2 relative">
-                          {Object.entries(activeBattle.opponent.moves).map(([moveName, move]) => (
+                          {Object.entries(activeBattle.accepter.moves).map(([moveName, move]) => (
                             <div
                               key={moveName}
                               className={`w-full p-2 rounded-lg font-medium text-left transition-all duration-300 min-h-[80px]
@@ -640,7 +646,7 @@ export const ActiveBattlePage: React.FC = (): JSX.Element => {
                             </div>
                           ))}
 
-                          {Object.values(activeBattle.opponent.moves).every(move => move.count === 0) && (
+                          {Object.values(activeBattle.accepter.moves).every(move => move.count === 0) && (
                             <div
                               className={`absolute inset-0 m-auto w-32 h-32 p-2 rounded-lg font-medium transition-all duration-300
                                 bg-purple-500 opacity-75 cursor-default z-10
@@ -665,3 +671,5 @@ export const ActiveBattlePage: React.FC = (): JSX.Element => {
     </div>
   );
 };
+
+export default ActiveBattlePage;

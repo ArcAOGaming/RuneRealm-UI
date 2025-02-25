@@ -139,19 +139,19 @@ export interface BattleManagerInfo {
 
 export interface ActiveBattle {
   id: string;
-  player: MonsterStats;
-  opponent: MonsterStats;
+  challenger: MonsterStats;
+  accepter: MonsterStats;
   startTime: number;
   status: 'active' | 'ended';
   turns: BattleTurn[];
   moveCounts: {
-    player: { [key: string]: number };
-    opponent: { [key: string]: number };
+    challenger: { [key: string]: number };
+    accepter: { [key: string]: number };
   };
 }
 
 export interface BattleTurn {
-  attacker: 'player' | 'opponent';
+  attacker: 'challenger' | 'accepter';
   move: string;
   moveName: string;
   moveRarity: number;

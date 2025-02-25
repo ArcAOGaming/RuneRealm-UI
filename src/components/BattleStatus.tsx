@@ -2,7 +2,7 @@ import React, { useEffect } from 'react';
 
 interface BattleStatusProps {
   attackAnimation: {
-    attacker: 'player' | 'opponent';
+    attacker: 'challenger' | 'accepter';
     moveName: string;
   } | null;
   shieldRestoring: boolean;
@@ -53,8 +53,8 @@ const BattleStatus: React.FC<BattleStatusProps> = ({
     <div className="absolute bottom-4 left-1/2 transform -translate-x-1/2 z-40 pointer-events-none w-3/5">
       <div className="bg-black bg-opacity-75 rounded-lg px-4 py-2 text-center">
         {attackAnimation && (
-          <div className={`text-2xl font-bold ${attackAnimation.attacker === 'player' ? 'text-blue-500' : 'text-red-500'} transform scale-100 animate-[pulse_2s_ease-in-out_infinite] text-center`}>
-            {attackAnimation.attacker === 'player' ? playerMonsterName : opponentMonsterName} using {attackAnimation.moveName}...
+          <div className={`text-2xl font-bold ${attackAnimation.attacker === 'challenger' ? 'text-blue-500' : 'text-red-500'} transform scale-100 animate-[pulse_2s_ease-in-out_infinite] text-center`}>
+            {attackAnimation.attacker === 'challenger' ? playerMonsterName : opponentMonsterName} using {attackAnimation.moveName}...
           </div>
         )}
         {shieldRestoring && (

@@ -11,7 +11,7 @@ import { useNavigate } from 'react-router-dom';
 // Popup component for battle transitions
 const BattlePopup: React.FC<{
   type: 'start' | 'end';
-  winner?: 'player' | 'opponent';
+  winner?: 'challenger' | 'accepter';
   stats?: { wins: number; losses: number };
   onClose: () => void;
 }> = ({ type, winner, stats, onClose }): JSX.Element => {
@@ -28,7 +28,7 @@ const BattlePopup: React.FC<{
         ) : (
           <div>
             <div className="text-2xl font-bold mb-4">
-              {winner === 'player' ? (
+              {winner === 'challenger' ? (
                 <span className="text-green-500">Victory!</span>
               ) : (
                 <span className="text-red-500">Defeat!</span>

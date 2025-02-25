@@ -16,29 +16,29 @@ interface StatValues {
 
 const BattleStats: React.FC<BattleStatsProps> = ({ battle, theme }) => {
   const prevPlayerStats = useRef<StatValues>({
-    attack: battle.player.attack,
-    defense: battle.player.defense,
-    speed: battle.player.speed
+    attack: battle.challenger.attack,
+    defense: battle.challenger.defense,
+    speed: battle.challenger.speed
   });
   
   const prevOpponentStats = useRef<StatValues>({
-    attack: battle.opponent.attack,
-    defense: battle.opponent.defense,
-    speed: battle.opponent.speed
+    attack: battle.accepter.attack,
+    defense: battle.accepter.defense,
+    speed: battle.accepter.speed
   });
 
   useEffect(() => {
     // Update previous values after animations complete
     const timer = setTimeout(() => {
       prevPlayerStats.current = {
-        attack: battle.player.attack,
-        defense: battle.player.defense,
-        speed: battle.player.speed
+        attack: battle.challenger.attack,
+        defense: battle.challenger.defense,
+        speed: battle.challenger.speed
       };
       prevOpponentStats.current = {
-        attack: battle.opponent.attack,
-        defense: battle.opponent.defense,
-        speed: battle.opponent.speed
+        attack: battle.accepter.attack,
+        defense: battle.accepter.defense,
+        speed: battle.accepter.speed
       };
     }, 500);
 
@@ -59,32 +59,32 @@ const BattleStats: React.FC<BattleStatsProps> = ({ battle, theme }) => {
       <div className="flex justify-between items-center text-2xl">
         <div className="flex items-center gap-8">
           <div className="flex flex-col items-start justify-center">
-            <span className="font-bold text-3xl leading-tight">{battle.player.name}</span>
-            <span className="text-xl opacity-75 leading-tight">Level {battle.player.level}</span>
+            <span className="font-bold text-3xl leading-tight">{battle.challenger.name}</span>
+            <span className="text-xl opacity-75 leading-tight">Level {battle.challenger.level}</span>
           </div>
-          <span className={`font-medium text-3xl ${getStatClassName(battle.player.attack, prevPlayerStats.current.attack)}`}>
-            ⚔️ {battle.player.attack}
+          <span className={`font-medium text-3xl ${getStatClassName(battle.challenger.attack, prevPlayerStats.current.attack)}`}>
+            ⚔️ {battle.challenger.attack}
           </span>
-          <span className={`font-medium text-3xl ${getStatClassName(battle.player.defense, prevPlayerStats.current.defense)}`}>
-            🛡️ {battle.player.defense}
+          <span className={`font-medium text-3xl ${getStatClassName(battle.challenger.defense, prevPlayerStats.current.defense)}`}>
+            🛡️ {battle.challenger.defense}
           </span>
-          <span className={`font-medium text-3xl ${getStatClassName(battle.player.speed, prevPlayerStats.current.speed)}`}>
-            ⚡ {battle.player.speed}
+          <span className={`font-medium text-3xl ${getStatClassName(battle.challenger.speed, prevPlayerStats.current.speed)}`}>
+            ⚡ {battle.challenger.speed}
           </span>
         </div>
         <div className="flex items-center gap-8 text-right">
-          <span className={`font-medium text-3xl ${getStatClassName(battle.opponent.attack, prevOpponentStats.current.attack)}`}>
-            ⚔️ {battle.opponent.attack}
+          <span className={`font-medium text-3xl ${getStatClassName(battle.accepter.attack, prevOpponentStats.current.attack)}`}>
+            ⚔️ {battle.accepter.attack}
           </span>
-          <span className={`font-medium text-3xl ${getStatClassName(battle.opponent.defense, prevOpponentStats.current.defense)}`}>
-            🛡️ {battle.opponent.defense}
+          <span className={`font-medium text-3xl ${getStatClassName(battle.accepter.defense, prevOpponentStats.current.defense)}`}>
+            🛡️ {battle.accepter.defense}
           </span>
-          <span className={`font-medium text-3xl ${getStatClassName(battle.opponent.speed, prevOpponentStats.current.speed)}`}>
-            ⚡ {battle.opponent.speed}
+          <span className={`font-medium text-3xl ${getStatClassName(battle.accepter.speed, prevOpponentStats.current.speed)}`}>
+            ⚡ {battle.accepter.speed}
           </span>
           <div className="flex flex-col items-end justify-center">
-            <span className="font-bold text-3xl leading-tight">{battle.opponent.name}</span>
-            <span className="text-xl opacity-75 leading-tight">Level {battle.opponent.level}</span>
+            <span className="font-bold text-3xl leading-tight">{battle.accepter.name}</span>
+            <span className="text-xl opacity-75 leading-tight">Level {battle.accepter.level}</span>
           </div>
         </div>
       </div>
