@@ -51,12 +51,12 @@ const CARD = {
   NAME: {
     FONT: {
       FAMILY: 'Arial, sans-serif',
-      WEIGHT: '900',
-      SIZE_RATIO: 0.045,
+      WEIGHT: '1000',
+      SIZE_RATIO: 0.06,
       COLOR: 'white'
     },
     POSITION: {
-      TOP_RATIO: 0.05,
+      TOP_RATIO: 0.09,
       CENTER: true
     }
   },
@@ -352,42 +352,44 @@ export const MonsterCardDisplay: React.FC<MonsterCardDisplayProps> = ({ monster,
       */}
       <canvas
         ref={canvasRef}
-        className={isZoomed ? "hidden" : "w-full h-full"}
+        className="w-full h-full"
         style={{ 
           aspectRatio: CARD.DIMENSIONS.ASPECT_RATIO,
           objectFit: 'contain'
         }}
       />
-      {isZoomed && cardImage && (
-        <img
-          src={cardImage}
-          alt={monster.name || 'Monster Card'}
-          className="w-full h-full object-contain"
-        />
-      )}
     </div>
   );
 
-  if (isZoomed) {
-    return (
-      <div 
-        className="fixed inset-0 flex items-center justify-center bg-black bg-opacity-50 cursor-pointer"
-        style={{ zIndex: CARD_ZOOM.Z_INDEX }}
-        onClick={handleClose}
-      >
-        <div 
-          className="max-w-[500px] w-full p-4"
-          onClick={(e) => e.stopPropagation()}
-        >
-          {renderCard(1.5)}
-        </div>
-      </div>
-    );
-  }
-
   return (
-    <div onClick={handleClick}>
-      {renderCard()}
-    </div>
+    <>
+      <div onClick={handleClick}>
+        {renderCard()}
+      </div>
+      
+      {isZoomed && (
+        <div 
+          className="fixed inset-0 flex items-center justify-center bg-black bg-opacity-50 cursor-pointer"
+          style={{ zIndex: CARD_ZOOM.Z_INDEX }}
+          onClick={handleClose}
+        >
+          <div 
+            className="max-w-[500px] w-full p-4"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <img
+              src={cardImage || ''}
+              alt={monster.name || 'Monster Card'}
+              className="w-full h-full object-contain"
+              style={{
+                transform: 'scale(1.5)',
+                transition: `transform ${CARD_ZOOM.DURATION}`,
+                transformOrigin: 'center center'
+              }}
+            />
+          </div>
+        </div>
+      )}
+    </>
   );
 };

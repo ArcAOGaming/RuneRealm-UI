@@ -18,17 +18,16 @@
   padding: 2rem 1.5rem;
   flex: 1;
   overflow-y: auto;
-  padding-right: 18rem;
 }
 
 @media (min-width: 768px) {
   .monster-management-content {
-    padding-right: 20rem;
+    padding-right: 10rem;
   }
 }
 
 .monster-management-wrapper {
-  max-width: 72rem;
+  /* max-width: 72rem; */
   margin: 0 auto;
   margin-bottom: 2rem;
 }

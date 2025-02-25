@@ -1,10 +1,11 @@
 import React, { useEffect, useState, useCallback } from 'react';
 import { useWallet } from '../hooks/useWallet';
-import { getBattleManagerInfo, getActiveBattle, enterBattle, returnFromBattle, BattleManagerInfo, ActiveBattle } from '../utils/aoHelpers';
+import { getBattleManagerInfo, getActiveBattle, enterBattle, returnFromBattle, BattleManagerInfo, ActiveBattle, MonsterStats, BattleParticipant } from '../utils/aoHelpers';
 import { currentTheme } from '../constants/theme';
 import Header from '../components/Header';
 import Footer from '../components/Footer';
 import Loading from '../components/Loading';
+import { MonsterCardDisplay } from '../components/MonsterCardDisplay';
 import { useNavigate } from 'react-router-dom';
 
 // Popup component for battle transitions
@@ -47,6 +48,19 @@ const BattlePopup: React.FC<{
   );
 };
 
+// Helper function to check if a battle participant has enough info to display
+const isCompleteMonster = (participant: BattleParticipant): boolean => {
+  return (
+    participant &&
+    typeof participant === 'object' &&
+    'healthPoints' in participant &&
+    'health' in participant &&
+    'shield' in participant &&
+    'defense' in participant &&
+    'moves' in participant
+  );
+};
+
 export const BattlePage: React.FC = (): JSX.Element => {
   const { wallet, darkMode, setDarkMode } = useWallet();
   const [battleManagerInfo, setBattleManagerInfo] = useState<BattleManagerInfo | null>(null);
@@ -71,8 +85,11 @@ export const BattlePage: React.FC = (): JSX.Element => {
       // Only check for active battles if we have battles remaining
       if (info && info.battlesRemaining > 0) {
         console.log('[BattlePage] Checking for active battles...');
-        const battle = await getActiveBattle(wallet.address);
-        console.log('[BattlePage] Active battle query result:', battle);
+        const battles = await getActiveBattle(wallet.address);
+        console.log('[BattlePage] Active battles query result:', battles);
+        // Take the first battle from the array
+        const battle = Array.isArray(battles) && battles.length > 0 ? battles[0] : null;
+        console.log('[BattlePage] Selected battle:', battle);
         setActiveBattle(battle);
       } else {
         setActiveBattle(null);
@@ -92,16 +109,55 @@ export const BattlePage: React.FC = (): JSX.Element => {
     return () => clearInterval(interval);
   }, [updateBattleData]);
 
-  const handleStartNewBattle = async () => {
+  const [challengeAddress, setChallengeAddress] = useState<string>('');
+  const [showChallengeOptions, setShowChallengeOptions] = useState<boolean>(false);
+
+  const handleStartNewBattle = async (type: 'bot' | 'open' | 'targeted') => {
     if (!wallet?.address) return;
     try {
       setIsUpdating(true);
-      const response = await enterBattle(wallet);
+      let response;
+      
+      switch (type) {
+        case 'bot':
+          // Start bot battle (no challenge/accept tags)
+          response = await enterBattle(wallet);
+          break;
+        case 'open':
+          // Create open challenge
+          response = await enterBattle(wallet, { challenge: 'OPEN' });
+          break;
+        case 'targeted':
+          // Create targeted challenge
+          if (!challengeAddress) {
+            alert('Please enter a wallet address to challenge');
+            return;
+          }
+          response = await enterBattle(wallet, { challenge: challengeAddress });
+          break;
+      }
+
       if (response.status === 'success' && response.data) {
         navigate('/battle/active');
       }
     } catch (error) {
       console.error('Error starting battle:', error);
+    } finally {
+      setIsUpdating(false);
+      setShowChallengeOptions(false);
+    }
+  };
+
+  const handleAcceptChallenge = async (challengerId: string) => {
+    if (!wallet?.address) return;
+    try {
+      setIsUpdating(true);
+      const response = await enterBattle(wallet, { accept: challengerId });
+      if (response.status === 'success' && response.data) {
+        navigate('/battle/active');
+      }
+    } catch (error) {
+      console.error('Error accepting challenge:', error);
     } finally {
       setIsUpdating(false);
     }
@@ -160,102 +216,189 @@ export const BattlePage: React.FC = (): JSX.Element => {
                 
                 {/* Active Battle Status */}
                 <div className="mb-6 transition-opacity duration-300">
-                  {activeBattle ? (
-                    <div className={`p-4 rounded-lg ${theme.container} bg-opacity-20 mb-4`}>
-                      <h3 className={`text-lg font-bold mb-4 ${theme.text}`}>Active Battle Available</h3>
-                      <div className="grid grid-cols-2 gap-6">
-                        {/* Player Status */}
-                        <div className="space-y-3">
-                          <div className="flex items-center space-x-2">
-                            <span className="text-xl">🦾</span>
-                            <p className="font-semibold">Your Monster</p>
-                          </div>
-                          <div className="space-y-2">
-                            <div>
-                              <div className="flex justify-between text-sm mb-1">
-                                <span>HP</span>
-                                <span>{activeBattle.player.healthPoints}/{activeBattle.player.health * 10}</span>
-                              </div>
-                              <div className="w-full h-2 bg-gray-200 dark:bg-gray-700 rounded-full overflow-hidden">
-                                <div 
-                                  className="h-full bg-green-500 transition-all duration-500"
-                                  style={{ 
-                                    width: `${(activeBattle.player.healthPoints / (activeBattle.player.health * 10)) * 100}%` 
-                                  }}
-                                />
-                              </div>
+                {activeBattle && (() => {
+                  console.log('[BattlePage] Rendering battle:', {
+                    status: activeBattle.status,
+                    challengeType: activeBattle.challengeType,
+                    challenger: activeBattle.challenger,
+                    accepter: activeBattle.accepter,
+                    userAddress: wallet?.address
+                  });
+                  return activeBattle.status !== "pending" && 
+                    (activeBattle.challenger?.address === wallet?.address || activeBattle.accepter?.address === wallet?.address);
+                })() ? (
+                  <div className={`p-4 rounded-lg ${theme.container} bg-opacity-20 mb-4`}>
+                    <h3 className={`text-lg font-bold mb-4 ${theme.text}`}>
+                      Active Battle
+                    </h3>
+                    <div className="grid grid-cols-2 gap-6">
+                          {/* Challenger Status */}
+                          <div className="space-y-3">
+                            <div className="flex items-center space-x-2">
+                              <span className="text-xl"></span>
+                              <p className="font-semibold font-mono text-sm">{activeBattle.challenger?.address}</p>
                             </div>
-                            <div>
-                              <div className="flex justify-between text-sm mb-1">
-                                <span>Shield</span>
-                                <span>{activeBattle.player.shield}/{activeBattle.player.defense}</span>
+                            <div className="space-y-2">
+                              <div>
+                                <div className="flex justify-between text-sm mb-1">
+                                  <span>HP</span>
+                                  <span>
+                                    {activeBattle.challenger && activeBattle.challenger.health ? 
+                                      `${activeBattle.challenger.healthPoints ?? (activeBattle.challenger.health * 10)}/${activeBattle.challenger.health * 10}`
+                                      : '0/0'
+                                    }
+                                  </span>
+                                </div>
+                                <div className="w-full h-2 bg-gray-200 dark:bg-gray-700 rounded-full overflow-hidden">
+                                  <div 
+                                    className="h-full bg-green-500 transition-all duration-500"
+                                    style={{ 
+                                      width: `${activeBattle.challenger && activeBattle.challenger.health ? 
+                                        ((activeBattle.challenger.healthPoints ?? (activeBattle.challenger.health * 10)) / (activeBattle.challenger.health * 10)) * 100
+                                        : 0}%`
+                                    }}
+                                  />
+                                </div>
                               </div>
-                              <div className="w-full h-2 bg-gray-200 dark:bg-gray-700 rounded-full overflow-hidden">
-                                <div 
-                                  className="h-full bg-blue-500 transition-all duration-500"
-                                  style={{ 
-                                    width: `${(activeBattle.player.shield / activeBattle.player.defense) * 100}%` 
-                                  }}
-                                />
-                              </div>
-                            </div>
-                          </div>
-                        </div>
-                        
-                        {/* Opponent Status */}
-                        <div className="space-y-3">
-                          <div className="flex items-center space-x-2">
-                            <span className="text-xl">👾</span>
-                            <p className="font-semibold">Opponent</p>
-                          </div>
-                          <div className="space-y-2">
-                            <div>
-                              <div className="flex justify-between text-sm mb-1">
-                                <span>HP</span>
-                                <span>{activeBattle.opponent.healthPoints}/{activeBattle.opponent.health * 10}</span>
-                              </div>
-                              <div className="w-full h-2 bg-gray-200 dark:bg-gray-700 rounded-full overflow-hidden">
-                                <div 
-                                  className="h-full bg-red-500 transition-all duration-500"
-                                  style={{ 
-                                    width: `${(activeBattle.opponent.healthPoints / (activeBattle.opponent.health * 10)) * 100}%` 
-                                  }}
-                                />
-                              </div>
-                            </div>
-                            <div>
-                              <div className="flex justify-between text-sm mb-1">
-                                <span>Shield</span>
-                                <span>{activeBattle.opponent.shield}/{activeBattle.opponent.defense}</span>
-                              </div>
-                              <div className="w-full h-2 bg-gray-200 dark:bg-gray-700 rounded-full overflow-hidden">
-                                <div 
-                                  className="h-full bg-blue-500 transition-all duration-500"
-                                  style={{ 
-                                    width: `${(activeBattle.opponent.shield / activeBattle.opponent.defense) * 100}%` 
-                                  }}
-                                />
+                              <div>
+                                <div className="flex justify-between text-sm mb-1">
+                                  <span>Shield</span>
+                                  <span>
+                                    {activeBattle.challenger && activeBattle.challenger.defense ? 
+                                      `${activeBattle.challenger.shield ?? activeBattle.challenger.defense}/${activeBattle.challenger.defense}`
+                                      : '0/0'
+                                    }
+                                  </span>
+                                </div>
+                                <div className="w-full h-2 bg-gray-200 dark:bg-gray-700 rounded-full overflow-hidden">
+                                  <div 
+                                    className="h-full bg-blue-500 transition-all duration-500"
+                                    style={{ 
+                                      width: `${activeBattle.challenger && activeBattle.challenger.defense ? 
+                                        ((activeBattle.challenger.shield ?? activeBattle.challenger.defense) / activeBattle.challenger.defense) * 100
+                                        : 0}%`
+                                    }}
+                                  />
+                                </div>
                               </div>
                             </div>
                           </div>
-                        </div>
-                      </div>
-                      <button
-                        onClick={handleJoinBattle}
-                        className={`w-full mt-6 px-6 py-3 rounded-lg font-bold transition-all duration-300 bg-blue-500 hover:bg-blue-600 text-white`}
-                      >
-                        Join Active Battle
-                      </button>
+                          
+                          {/* Accepter Status */}
+                          <div className="space-y-3">
+                            <div className="flex items-center space-x-2">
+                              <span className="text-xl"></span>
+                              <p className="font-semibold font-mono text-sm">{activeBattle.accepter?.address}</p>
+                            </div>
+                            <div className="space-y-2">
+                              <div>
+                                <div className="flex justify-between text-sm mb-1">
+                                  <span>HP</span>
+                                  <span>
+                                    {activeBattle.accepter && activeBattle.accepter.health ? 
+                                      `${activeBattle.accepter.healthPoints ?? (activeBattle.accepter.health * 10)}/${activeBattle.accepter.health * 10}`
+                                      : '0/0'
+                                    }
+                                  </span>
+                                </div>
+                                <div className="w-full h-2 bg-gray-200 dark:bg-gray-700 rounded-full overflow-hidden">
+                                  <div 
+                                    className="h-full bg-red-500 transition-all duration-500"
+                                    style={{ 
+                                      width: `${activeBattle.accepter && activeBattle.accepter.health ? 
+                                        ((activeBattle.accepter.healthPoints ?? (activeBattle.accepter.health * 10)) / (activeBattle.accepter.health * 10)) * 100
+                                        : 0}%`
+                                    }}
+                                  />
+                                </div>
+                              </div>
+                              <div>
+                                <div className="flex justify-between text-sm mb-1">
+                                  <span>Shield</span>
+                                  <span>
+                                    {activeBattle.accepter && activeBattle.accepter.defense ? 
+                                      `${activeBattle.accepter.shield ?? activeBattle.accepter.defense}/${activeBattle.accepter.defense}`
+                                      : '0/0'
+                                    }
+                                  </span>
+                                </div>
+                                <div className="w-full h-2 bg-gray-200 dark:bg-gray-700 rounded-full overflow-hidden">
+                                  <div 
+                                    className="h-full bg-blue-500 transition-all duration-500"
+                                    style={{ 
+                                      width: `${activeBattle.accepter && activeBattle.accepter.defense ? 
+                                        ((activeBattle.accepter.shield ?? activeBattle.accepter.defense) / activeBattle.accepter.defense) * 100
+                                        : 0}%`
+                                    }}
+                                  />
+                                </div>
+                              </div>
+                            </div>
+                          </div>
                     </div>
-                  ) : battleManagerInfo.battlesRemaining > 0 ? (
+                    <button
+                      onClick={handleJoinBattle}
+                      className={`w-full mt-6 px-6 py-3 rounded-lg font-bold transition-all duration-300 bg-blue-500 hover:bg-blue-600 text-white`}
+                    >
+                      Join Active Battle
+                    </button>
+                  </div>
+                ) : battleManagerInfo.battlesRemaining > 0 ? (
                     <div className="text-center mb-6">
                       <p className={`mb-4 ${theme.text}`}>No active battles. Start a new one?</p>
-                      <button
-                        onClick={handleStartNewBattle}
-                        className={`px-6 py-3 rounded-lg font-bold transition-all duration-300 bg-green-500 hover:bg-green-600 text-white`}
-                      >
-                        Start New Battle
-                      </button>
+                      
+                      {!showChallengeOptions ? (
+                        <button
+                          onClick={() => setShowChallengeOptions(true)}
+                          className={`px-6 py-3 rounded-lg font-bold transition-all duration-300 bg-green-500 hover:bg-green-600 text-white`}
+                        >
+                          Start New Battle
+                        </button>
+                      ) : (
+                        <div className="space-y-4">
+                          <button
+                            onClick={() => handleStartNewBattle('bot')}
+                            className={`w-full px-6 py-3 rounded-lg font-bold transition-all duration-300 bg-green-500 hover:bg-green-600 text-white`}
+                          >
+                            Battle Bot
+                          </button>
+                          
+                          <button
+                            onClick={() => handleStartNewBattle('open')}
+                            className={`w-full px-6 py-3 rounded-lg font-bold transition-all duration-300 bg-blue-500 hover:bg-blue-600 text-white`}
+                          >
+                            Create Open Challenge
+                          </button>
+                          
+                          <div className="space-y-2">
+                            <input
+                              type="text"
+                              value={challengeAddress}
+                              onChange={(e) => setChallengeAddress(e.target.value)}
+                              placeholder="Enter wallet address to challenge"
+                              className="w-full px-4 py-2 rounded-lg border dark:bg-gray-700 dark:border-gray-600"
+                            />
+                            <button
+                              onClick={() => handleStartNewBattle('targeted')}
+                              disabled={!challengeAddress}
+                              className={`w-full px-6 py-3 rounded-lg font-bold transition-all duration-300 ${
+                                challengeAddress 
+                                  ? 'bg-purple-500 hover:bg-purple-600' 
+                                  : 'bg-gray-400 cursor-not-allowed'
+                              } text-white`}
+                            >
+                              Challenge Player
+                            </button>
+                          </div>
+
+                          <button
+                            onClick={() => setShowChallengeOptions(false)}
+                            className="text-sm text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-300"
+                          >
+                            Cancel
+                          </button>
+                        </div>
+                      )}
                     </div>
                   ) : (
                     <div className="text-center mb-6">
@@ -274,6 +417,97 @@ export const BattlePage: React.FC = (): JSX.Element => {
                     Return Home
                   </button>
                 </div>
+
+                {/* Pending Battles */}
+                      {activeBattle?.status === "pending" && activeBattle.challenger?.address === wallet?.address && activeBattle.challengeType !== "OPEN" && (
+                        <div className="mb-6">
+                          <h3 className={`text-lg font-bold mb-4 ${theme.text}`}>Pending Battles</h3>
+                          <div className={`p-4 rounded-lg ${theme.container} bg-opacity-20`}>
+                            <div className="text-center">
+                              <p className="mb-2">You have challenged:</p>
+                              <p className="font-mono text-sm break-all">{activeBattle.targetAccepter}</p>
+                              <p className="text-sm text-gray-500 mt-2">Waiting for acceptance...</p>
+                            </div>
+                          </div>
+                        </div>
+                      )}
+
+                {/* Open Challenges */}
+                {battleManagerInfo.battlesRemaining > 0 && (
+                  <div className="mb-6">
+                    <h3 className={`text-lg font-bold mb-4 ${theme.text}`}>Open Challenges</h3>
+                    <div className={`p-4 rounded-lg ${theme.container} bg-opacity-20`}>
+                      <div className="space-y-4">
+                        {activeBattle?.status === "pending" && activeBattle.challengeType === "OPEN" && activeBattle.challenger?.address === wallet?.address ? (
+                          <div className="text-center">
+                            <div className={`p-4 rounded-lg ${theme.container} bg-opacity-10 mb-4`}>
+                              <h4 className="font-semibold mb-2">Your Open Challenge</h4>
+                              <p className="text-sm text-gray-500">Waiting for someone to accept...</p>
+                              {isCompleteMonster(activeBattle.challenger) && activeBattle.challenger.name && (
+                                <div className="mt-4">
+                                  <p className="text-sm">Monster: {activeBattle.challenger.name}</p>
+                                  <div className="mt-2">
+                                    <div className="flex justify-between text-sm mb-1">
+                                      <span>HP</span>
+                                      <span>{activeBattle.challenger.health * 10}/{activeBattle.challenger.health * 10}</span>
+                                    </div>
+                                    <div className="w-full h-2 bg-gray-200 dark:bg-gray-700 rounded-full">
+                                      <div className="h-full bg-green-500 w-full"/>
+                                    </div>
+                                    <div className="flex justify-between text-sm mt-2 mb-1">
+                                      <span>Shield</span>
+                                      <span>{activeBattle.challenger.defense}/{activeBattle.challenger.defense}</span>
+                                    </div>
+                                    <div className="w-full h-2 bg-gray-200 dark:bg-gray-700 rounded-full">
+                                      <div className="h-full bg-blue-500 w-full"/>
+                                    </div>
+                                  </div>
+                                </div>
+                              )}
+                            </div>
+                          </div>
+                        ) : activeBattle?.status === "pending" && activeBattle.challengeType === "OPEN" && activeBattle.challenger?.address !== wallet?.address ? (
+                          <div className="text-center">
+                            <div className={`p-4 rounded-lg ${theme.container} bg-opacity-10 mb-4`}>
+                              <h4 className="font-semibold mb-2">Available Challenge</h4>
+                              {isCompleteMonster(activeBattle.challenger) && activeBattle.challenger.name && (
+                                <div className="mt-4">
+                                  <p className="text-sm">Monster: {activeBattle.challenger.name}</p>
+                                  <div className="mt-2">
+                                    <div className="flex justify-between text-sm mb-1">
+                                      <span>HP</span>
+                                      <span>{activeBattle.challenger?.health ? activeBattle.challenger.health * 10 : 0}/{activeBattle.challenger?.health ? activeBattle.challenger.health * 10 : 0}</span>
+                                    </div>
+                                    <div className="w-full h-2 bg-gray-200 dark:bg-gray-700 rounded-full">
+                                      <div className="h-full bg-green-500 w-full"/>
+                                    </div>
+                                    <div className="flex justify-between text-sm mt-2 mb-1">
+                                      <span>Shield</span>
+                                      <span>{activeBattle.challenger?.defense ?? 0}/{activeBattle.challenger?.defense ?? 0}</span>
+                                    </div>
+                                    <div className="w-full h-2 bg-gray-200 dark:bg-gray-700 rounded-full">
+                                      <div className="h-full bg-blue-500 w-full"/>
+                                    </div>
+                                  </div>
+                                </div>
+                              )}
+                              <button
+                                onClick={() => handleAcceptChallenge(activeBattle.challenger?.address ?? '')}
+                                className="mt-4 px-4 py-2 bg-blue-500 hover:bg-blue-600 text-white rounded-lg"
+                              >
+                                Accept Challenge
+                              </button>
+                            </div>
+                          </div>
+                        ) : (
+                          <div className="text-center text-sm text-gray-500">
+                            No open challenges available
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                )}
 
                 {/* Session Stats */}
                 <div className="mt-6">

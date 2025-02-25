@@ -58,15 +58,60 @@ const setCachedData = <T>(key: string, data: T): void => {
 };
 import { AdminSkinChanger, DefaultAtlasTxID, Alter, SUPPORTED_ASSET_IDS, WAITTIMEOUIT, ASSET_INFO, AssetInfo, TARGET_BATTLE_PID } from "../constants/Constants";
 import { ProfileInfo, ProfilesService } from 'ao-process-clients';
-import { ActiveBattle, AssetBalance, BattleManagerInfo, BattleResponse, FactionOptions, MonsterStats, ResultType, TokenOption, UserInfo, WalletStatus } from "./interefaces";
+import { AssetBalance, BattleManagerInfo, BattleResponse, FactionOptions, MonsterStats, ResultType, TokenOption, UserInfo, WalletStatus } from "./interefaces";
 export type { 
   AssetInfo 
 } from '../constants/Constants';
+
+export interface BattleParticipant {
+  address: string;
+  healthPoints: number;
+  health: number;
+  shield: number;
+  defense: number;
+  moves: Record<string, any>;
+  name?: string;
+}
+
+export interface ActiveBattle {
+  id: string;
+  challenger: {
+    address: string;
+    healthPoints: number;
+    health: number;
+    shield: number;
+    defense: number;
+    moves: Record<string, any>;
+    name?: string;
+  };
+  accepter: {
+    address: string;
+    healthPoints: number;
+    health: number;
+    shield: number;
+    defense: number;
+    moves: Record<string, any>;
+    name?: string;
+  };
+  status: 'pending' | 'battling' | 'ended';
+  challengeType?: 'OPEN' | 'TARGETED';
+  targetAccepter?: string;
+  turns: any[];
+  startTime: number;
+  currentTurn?: {
+    challenger: any;
+    accepter: any;
+  };
+  hasUsedStruggle?: {
+    challenger: boolean;
+    accepter: boolean;
+  };
+}
+
 export type {
   TokenOption,
   MonsterStats,
   BattleManagerInfo,
-  ActiveBattle,
   FactionOptions,
   ProfileInfo,
   WalletStatus,
@@ -1289,18 +1334,35 @@ export const startBattle = async (wallet: any, refreshCallback?: () => void) => 
 };
 
 // Enter a battle
-export const enterBattle = async (wallet: any, refreshCallback?: () => void): Promise<BattleResponse> => {
+export const enterBattle = async (
+    wallet: any, 
+    options?: { 
+        challenge?: string, // "OPEN" for open challenge, wallet address for targeted challenge
+        accept?: string    // wallet address of challenger to accept their battle
+    }, 
+    refreshCallback?: () => void
+): Promise<BattleResponse> => {
     if (!wallet?.address) {
         throw new Error("No wallet connected");
     }
 
     try {
         const signer = createDataItemSigner(window.arweaveWallet);
+        const tags = [{ name: "Action", value: "Battle" }];
+
+        // Add challenge tag if specified
+        if (options?.challenge) {
+            tags.push({ name: "challenge", value: options.challenge });
+        }
+
+        // Add accept tag if specified
+        if (options?.accept) {
+            tags.push({ name: "accept", value: options.accept });
+        }
+
         const messageResult = await message({
             process: TARGET_BATTLE_PID,
-            tags: [
-                { name: "Action", value: "Battle" }
-            ],
+            tags,
             signer,
             data: ""
         }, refreshCallback);

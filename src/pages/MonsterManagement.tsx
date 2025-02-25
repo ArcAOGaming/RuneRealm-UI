@@ -1,13 +1,14 @@
+
 import React, { useEffect, useState } from 'react';
 import '../styles/MonsterManagement.css';
 import { useNavigate } from 'react-router-dom';
 import { useWallet } from '../hooks/useWallet';
-import { getFactionOptions, purchaseAccess, TokenOption, adoptMonster, getAssetBalances, MonsterStats, formatTokenAmount } from '../utils/aoHelpers';
+import { purchaseAccess, TokenOption, adoptMonster, getAssetBalances, MonsterStats } from '../utils/aoHelpers';
 import { AssetBalance } from '../utils/interefaces';
 import { createDataItemSigner } from '../config/aoConnection';
 import { message } from '../utils/aoHelpers';
 import { currentTheme } from '../constants/theme';
-import { Gateway, TARGET_BATTLE_PID } from '../constants/Constants';
+import { TARGET_BATTLE_PID } from '../constants/Constants';
 import PurchaseModal from '../components/PurchaseModal';
 import StatAllocationModal from '../components/StatAllocationModal';
 import Header from '../components/Header';
@@ -32,6 +33,64 @@ export const MonsterManagement: React.FC = (): JSX.Element => {
   const [localMonster, setLocalMonster] = useState<MonsterStats | null>(null);
   const theme = currentTheme(darkMode);
   const [, setForceUpdate] = useState({});
+
+  // Update local monster and load assets when wallet status changes
+  useEffect(() => {
+    const updateData = async () => {
+      console.log('[MonsterManagement] Checking for updates', {
+        hasWallet: !!wallet?.address,
+        hasMonster: !!walletStatus?.monster,
+        refreshTrigger
+      });
+
+      if (wallet?.address) {
+        await loadAssetBalances();
+      }
+      
+      if (walletStatus?.monster) {
+        const monsterChanged = JSON.stringify(walletStatus.monster) !== JSON.stringify(localMonster);
+        if (monsterChanged) {
+          console.log('[MonsterManagement] Monster state updated:', {
+            old: localMonster,
+            new: walletStatus.monster
+          });
+          setLocalMonster(walletStatus.monster);
+        } else {
+          console.log('[MonsterManagement] Monster state unchanged');
+        }
+      }
+    };
+    updateData();
+  }, [wallet?.address, walletStatus?.monster, refreshTrigger, localMonster]);
+
+  // Handle timer updates for progress bars and countdowns
+  useEffect(() => {
+    if (!localMonster || localMonster.status.type === 'Home') {
+      console.log('[MonsterManagement] No timer needed - monster is home or null');
+      return;
+    }
+
+    console.log('[MonsterManagement] Starting progress timer');
+    // Update every second for smooth progress
+    const timer = setInterval(() => {
+      const now = Date.now();
+      if (now >= localMonster.status.until_time) {
+        console.log('[MonsterManagement] Activity complete, clearing timer');
+        clearInterval(timer);
+        // Force one final update to ensure UI shows 100%
+        setForceUpdate({});
+        // Trigger a refresh to update the monster state
+        triggerRefresh();
+      } else {
+        setForceUpdate({});
+      }
+    }, 1000);
+
+    return () => {
+      console.log('[MonsterManagement] Cleaning up progress timer');
+      clearInterval(timer);
+    };
+  }, [localMonster?.status.type, localMonster?.status.until_time, triggerRefresh]);
 
   const loadAssetBalances = async () => {
     try {
@@ -748,7 +807,7 @@ export const MonsterManagement: React.FC = (): JSX.Element => {
               <div className={`no-monster-card ${theme.container} border ${theme.border} backdrop-blur-md`}>
                 <h2 className={`no-monster-title ${theme.text}`}>Join a Faction First</h2>
                 <a
-                  href="/faction"
+                  href="/factions"
                   className={`adopt-button ${theme.buttonBg} ${theme.buttonHover} ${theme.text}`}
                 >
                   Choose Your Faction

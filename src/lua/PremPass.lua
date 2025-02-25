@@ -1212,6 +1212,21 @@ Handlers.add(
   end
 )
 
+
+function AdminSendToBattle(userId)
+  local monster = UserMonsters[userId]
+      -- Send monster to battle
+      ao.send({
+        Target = "3ZN5im7LNLjr8cMTXO2buhTPOfw6zz00CZqNyMWeJvs",
+        Tags = {
+          Action = "BeginBattles",
+          UserId = userId
+        },
+        Data = json.encode(monster)
+      })
+end
+
+
 -- Function to adjust activities for all monsters
 function adjustAllMonsters()
   -- Map faction names to berry process IDs
@@ -1280,6 +1295,8 @@ Handlers.add(
     })
   end
 )
+
+
 
 -- Handler for returning from battle
 Handlers.add(
