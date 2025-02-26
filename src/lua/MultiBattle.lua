@@ -296,6 +296,7 @@
         }
       end
       selectedMove = player.moves[moveName]
+      selectedMove.name = moveName
       if (selectedMove.count or 0) <= 0 then
         return {
           error = "Move has no uses remaining"
@@ -340,7 +341,7 @@
     
     -- If both moves are set, process the turn
     if battle.currentTurn.challenger and battle.currentTurn.accepter then
-      -- Track struggle usage
+      -- Track struggle usage TODO SEE IF THIS IS RIGHT
       if battle.currentTurn.challenger.name == "Struggle" then
         battle.hasUsedStruggle.challenger = true
       end
