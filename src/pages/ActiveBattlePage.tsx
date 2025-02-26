@@ -248,7 +248,7 @@ export const ActiveBattlePage: React.FC = (): JSX.Element => {
           
           // Show winner announcement
           const playerWon = updatedBattle.challenger.healthPoints > 0;
-          const winnerName = playerWon ? updatedBattle.challenger.name : updatedBattle.accepter.name;
+          const winnerName = playerWon ? "Player 1's  " + updatedBattle.challenger.name : "Player 2's  " +updatedBattle.accepter.name;
           setShowWinnerAnnouncement({ winner: winnerName });
           await new Promise(resolve => setTimeout(resolve, 3000));
           setShowWinnerAnnouncement(null);
@@ -453,8 +453,8 @@ export const ActiveBattlePage: React.FC = (): JSX.Element => {
             showBattleLog={showBattleLog}
             onToggleBattleLog={() => setShowBattleLog(!showBattleLog)}
             theme={theme}
-            playerName={activeBattle.challenger.name}
-            opponentName={activeBattle.accepter.name}
+            playerName={"Player 1's  " + activeBattle.challenger.name}
+            opponentName={"Player 2's  " + activeBattle.accepter.name}
           />
         )}
         

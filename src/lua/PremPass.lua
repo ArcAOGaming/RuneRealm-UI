@@ -1212,7 +1212,6 @@ Handlers.add(
   end
 )
 
-
 function AdminSendToBattle(userId)
   local monster = UserMonsters[userId]
       -- Send monster to battle

@@ -151,8 +151,8 @@ const BattleScene: React.FC<BattleSceneProps> = ({
         onAttackComplete={onAttackComplete}
         onShieldComplete={onShieldComplete}
         onRoundComplete={onRoundComplete}
-        playerMonsterName={challenger.name}
-        opponentMonsterName={accepter.name}
+        playerMonsterName={"Player 1's  " +challenger.name}
+        opponentMonsterName={"Player 2's  " + accepter.name}
       />
     </div>
   );

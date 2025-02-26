@@ -3,6 +3,7 @@
   json = require("json")
   -- require("globals")
   -- require("attacklogic")
+  -- require("battlehelpers")
   
   
   -- Attack Logic
@@ -28,58 +29,9 @@
   battleIdCounter = battleIdCounter or 0 -- Global counter for generating unique battle IDs
   pendingBattles = pendingBattles or {} -- Store battles waiting for acceptance
   openChallenges = openChallenges or {} -- Store open challenges that anyone can accept
+   
   
-  -- Helper function to get all available battles for a user
-  local function getAvailableBattles(userId)
-    local availableBattles = {}
-    
-    -- Check pending battles
-    for battleId, battle in pairs(pendingBattles) do
-      if battle.challengeType == "OPEN" and battle.challenger.address ~= userId then
-        battle.id = battleId
-        table.insert(availableBattles, battle)
-      elseif battle.targetAccepter == userId then
-        battle.id = battleId
-        table.insert(availableBattles, battle)
-      end
-    end
-    
-    return availableBattles
-  end
-  
-  -- Helper function to validate battle acceptance
-  local function validateBattleAcceptance(userId, challengerId)
-    local battle = nil
-    local battleId = nil
-    
-    -- Search for pending battle with matching challenger
-    for id, pendingBattle in pairs(pendingBattles) do
-      if pendingBattle.challenger.address == challengerId then
-        if pendingBattle.challengeType == "OPEN" or pendingBattle.targetAccepter == userId then
-          battle = pendingBattle
-          battleId = id
-          break
-        end
-      end
-    end
-    
-    return battle, battleId
-  end
-  
-  
-  -- Create struggle move for when all moves are depleted
-  local function createStruggleMove(monster)
-      return {
-          name = "Struggle",
-          type = monster.elementType or "normal", -- Fallback to normal type if none exists
-          count = 999,
-          damage = 1,
-          attack = 0,
-          defense = 0,
-          speed = 0,
-          health =0
-      }
-  end
+
   
   local function processAttack(attacker, defender, move)
     -- Ensure moves have a count field
@@ -93,6 +45,7 @@
         return {
             missed = true,
             attacker = attacker.name,
+            attackeraddress = attacker.address,
             move = move.name,
             attackerState = json.decode(json.encode(attacker)), -- Deep copy state
             defenderState = json.decode(json.encode(defender))  -- Deep copy state
@@ -118,6 +71,7 @@
     return {
         missed = false,
         attacker = attacker.name,
+        attackeraddress = attacker.address,
         move = move.name,
         moveRarity = move.rarity,
         shieldDamage = shieldDamage,
@@ -356,9 +310,12 @@
     
       -- Convert turn result to battle turns format with enhanced state tracking
       for _, action in ipairs(turnResult.actions) do
-        local isChallenger = action.attacker == battle.challenger.name
+        local isChallenger = action.attackeraddress == battle.challenger.address
+        -- print(action.attackeraddress.value)
+        -- print(battle.challenger.address.value)
         local turnInfo = {
           attacker = isChallenger and "challenger" or "accepter",
+          monsterName = action.name,
           move = action.move,
           moveName = action.moveName,
           moveRarity = action.moveRarity,
@@ -432,185 +389,6 @@
       accepterMoved = battle.currentTurn.accepter ~= nil
     }
   end
-  
-  -- Handlers
-  Handlers.add(
-    "BeginBattles",
-    Handlers.utils.hasMatchingTag("Action", "BeginBattles"),
-    function(msg)
-      local userId = msg.Tags.UserId
-      local monsterData = json.decode(msg.Data)
-      if not monsterData then
-        ao.send({
-          Target = msg.From,
-          Data = json.encode({
-            status = "error",
-            message = "Invalid monster data"
-          })
-        })
-        return
-      end
-      
-      -- Store user's monster
-      UserMonsters[userId] = monsterData
-      
-      -- Initialize battle session
-      initBattleSession(userId)
-      
-      ao.send({
-        Target = msg.From,
-        Data = json.encode({
-          status = "success",
-          message = "Battle session started",
-          data = battles[userId]
-        })
-      })
-    end
-  )
-  
-  Handlers.add(
-    "GetBattleManagerInfo",
-    Handlers.utils.hasMatchingTag("Action", "GetBattleManagerInfo"),
-    function(msg)
-      local userId = msg.Tags.UserId
-      local session = getBattleSession(userId)
-      if not session then
-        ao.send({
-          Target = msg.From,
-          Data = json.encode({
-            status = "not_found",
-            message = "No active battle session"
-          })
-        })
-        return
-      end
-      
-      ao.send({
-        Target = msg.From,
-        Data = json.encode({
-          status = "success",
-          message = "Battle status retrieved",
-          data = session
-        })
-      })
-    end
-  )
-  
-  Handlers.add(
-    "GetOpenBattle",
-    Handlers.utils.hasMatchingTag("Action", "GetOpenBattle"),
-    function(msg)
-      local userId = msg.Tags.UserId
-      local battles = {}
-      
-      -- Get user's active battles
-      for battleId, battle in pairs(activeBattles) do
-        if battle.challenger.address == userId or battle.accepter.address == userId then
-          -- Restore battle logs if they exist
-          if battleLogs[battleId] then
-            battle.turns = battleLogs[battleId]
-          end
-          battle.id = battleId
-          table.insert(battles, battle)
-        end
-      end
-      
-      -- Get user's pending battles (as challenger or targeted accepter)
-      for battleId, battle in pairs(pendingBattles) do
-        if battle.challenger.address == userId or 
-           (battle.targetAccepter and battle.targetAccepter == userId) then
-          battle.id = battleId
-          table.insert(battles, battle)
-        end
-      end
-      
-      -- Get available open challenges (exclude user's own challenges)
-      for battleId, battle in pairs(pendingBattles) do
-        if battle.challengeType == "OPEN" and battle.challenger.address ~= userId then
-          battle.id = battleId
-          table.insert(battles, battle)
-        end
-      end
-      
-      if #battles == 0 then
-        ao.send({
-          Target = userId,
-          Data = json.encode({
-            status = "not_found",
-            message = "No battles found"
-          })
-        })
-        return
-      end
-      
-      ao.send({
-        Target = userId,
-        Data = json.encode({
-          status = "success",
-          message = "Battles found",
-          data = battles
-        })
-      })
-    end
-  )
-
-  Handlers.add(
-    "GetUserOpenBattles",
-    Handlers.utils.hasMatchingTag("Action", "GetOpenBattle"),
-    function(msg)
-      local userId = msg.Tags.UserId
-      local battles = {}
-      
-      -- Get user's active battles
-      for battleId, battle in pairs(activeBattles) do
-        if battle.challenger.address == userId or battle.accepter.address == userId then
-          -- Restore battle logs if they exist
-          if battleLogs[battleId] then
-            battle.turns = battleLogs[battleId]
-          end
-          battle.id = battleId
-          table.insert(battles, battle)
-        end
-      end
-      
-      -- Get user's pending battles (as challenger or targeted accepter)
-      for battleId, battle in pairs(pendingBattles) do
-        if battle.challenger.address == userId or 
-           (battle.targetAccepter and battle.targetAccepter == userId) then
-          battle.id = battleId
-          table.insert(battles, battle)
-        end
-      end
-      
-      -- -- Get available open challenges (exclude user's own challenges)
-      -- for battleId, battle in pairs(pendingBattles) do
-      --   if battle.challengeType == "OPEN" and battle.challenger.address ~= userId then
-      --     battle.id = battleId
-      --     table.insert(battles, battle)
-      --   end
-      -- end
-      
-      if #battles == 0 then
-        ao.send({
-          Target = userId,
-          Data = json.encode({
-            status = "not_found",
-            message = "No battles found"
-          })
-        })
-        return
-      end
-      
-      ao.send({
-        Target = userId,
-        Data = json.encode({
-          status = "success",
-          message = "Battles found",
-          data = battles
-        })
-      })
-    end
-  )
   
   Handlers.add(
     "Battle",
@@ -980,6 +758,43 @@
     end
   )
   
+  
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
   Handlers.add(
     "EndBattle",
     Handlers.utils.hasMatchingTag("Action", "EndBattle"),
@@ -1178,6 +993,217 @@
       })
     end
   )
+
+
+    -- Helper function to validate battle acceptance
+ function validateBattleAcceptance(userId, challengerId)
+    local battle = nil
+    local battleId = nil
+    
+    -- Search for pending battle with matching challenger
+    for id, pendingBattle in pairs(pendingBattles) do
+      if pendingBattle.challenger.address == challengerId then
+        if pendingBattle.challengeType == "OPEN" or pendingBattle.targetAccepter == userId then
+          battle = pendingBattle
+          battleId = id
+          break
+        end
+      end
+    end
+    
+    return battle, battleId
+  end
+
+    -- Helper function to get all available battles for a user
+ function getAvailableBattles(userId)
+    local availableBattles = {}
+    
+    -- Check pending battles
+    for battleId, battle in pairs(pendingBattles) do
+      if battle.challengeType == "OPEN" and battle.challenger.address ~= userId then
+        battle.id = battleId
+        table.insert(availableBattles, battle)
+      elseif battle.targetAccepter == userId then
+        battle.id = battleId
+        table.insert(availableBattles, battle)
+      end
+    end
+    
+    return availableBattles
+  end
+
+
+  Handlers.add(
+    "GetOpenBattle",
+    Handlers.utils.hasMatchingTag("Action", "GetOpenBattle"),
+    function(msg)
+      local userId = msg.Tags.UserId
+      local battles = {}
+      
+      -- Get user's active battles
+      for battleId, battle in pairs(activeBattles) do
+        if battle.challenger.address == userId or battle.accepter.address == userId then
+          -- Restore battle logs if they exist
+          if battleLogs[battleId] then
+            battle.turns = battleLogs[battleId]
+          end
+          battle.id = battleId
+          table.insert(battles, battle)
+        end
+      end
+      
+      -- Get user's pending battles (as challenger or targeted accepter)
+      for battleId, battle in pairs(pendingBattles) do
+        if battle.challenger.address == userId or 
+           (battle.targetAccepter and battle.targetAccepter == userId) then
+          battle.id = battleId
+          table.insert(battles, battle)
+        end
+      end
+      
+      -- Get available open challenges (exclude user's own challenges)
+      for battleId, battle in pairs(pendingBattles) do
+        if battle.challengeType == "OPEN" and battle.challenger.address ~= userId then
+          battle.id = battleId
+          table.insert(battles, battle)
+        end
+      end
+      
+      if #battles == 0 then
+        ao.send({
+          Target = userId,
+          Data = json.encode({
+            status = "not_found",
+            message = "No battles found"
+          })
+        })
+        return
+      end
+      
+      ao.send({
+        Target = userId,
+        Data = json.encode({
+          status = "success",
+          message = "Battles found",
+          data = battles
+        })
+      })
+    end
+  )
+
+  Handlers.add(
+    "GetUserOpenBattles",
+    Handlers.utils.hasMatchingTag("Action", "GetOpenBattle"),
+    function(msg)
+      local userId = msg.Tags.UserId
+      local battles = {}
+      
+      -- Get user's active battles
+      for battleId, battle in pairs(activeBattles) do
+        if battle.challenger.address == userId or battle.accepter.address == userId then
+          -- Restore battle logs if they exist
+          if battleLogs[battleId] then
+            battle.turns = battleLogs[battleId]
+          end
+          battle.id = battleId
+          table.insert(battles, battle)
+        end
+      end
+      
+      -- Get user's pending battles (as challenger or targeted accepter)
+      for battleId, battle in pairs(pendingBattles) do
+        if battle.challenger.address == userId or 
+           (battle.targetAccepter and battle.targetAccepter == userId) then
+          battle.id = battleId
+          table.insert(battles, battle)
+        end
+      end
+      
+      if #battles == 0 then
+        ao.send({
+          Target = userId,
+          Data = json.encode({
+            status = "not_found",
+            message = "No battles found"
+          })
+        })
+        return
+      end
+      
+      ao.send({
+        Target = userId,
+        Data = json.encode({
+          status = "success",
+          message = "Battles found",
+          data = battles
+        })
+      })
+    end
+  )
+  
+
+  Handlers.add(
+    "GetBattleManagerInfo",
+    Handlers.utils.hasMatchingTag("Action", "GetBattleManagerInfo"),
+    function(msg)
+      local userId = msg.Tags.UserId
+      local session = getBattleSession(userId)
+      if not session then
+        ao.send({
+          Target = msg.From,
+          Data = json.encode({
+            status = "not_found",
+            message = "No active battle session"
+          })
+        })
+        return
+      end
+      
+      ao.send({
+        Target = msg.From,
+        Data = json.encode({
+          status = "success",
+          message = "Battle status retrieved",
+          data = session
+        })
+      })
+    end
+  )
+
+    -- Handlers
+    Handlers.add(
+        "BeginBattles",
+        Handlers.utils.hasMatchingTag("Action", "BeginBattles"),
+        function(msg)
+          local userId = msg.Tags.UserId
+          local monsterData = json.decode(msg.Data)
+          if not monsterData then
+            ao.send({
+              Target = msg.From,
+              Data = json.encode({
+                status = "error",
+                message = "Invalid monster data"
+              })
+            })
+            return
+          end
+          
+          -- Store user's monster
+          UserMonsters[userId] = monsterData
+          
+          -- Initialize battle session
+          initBattleSession(userId)
+          
+          ao.send({
+            Target = msg.From,
+            Data = json.encode({
+              status = "success",
+              message = "Battle session started",
+              data = battles[userId]
+            })
+          })
+        end
+      )
   
   print("Loaded Battle.lua")
   

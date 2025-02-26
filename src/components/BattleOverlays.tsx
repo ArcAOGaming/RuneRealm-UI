@@ -22,11 +22,6 @@ const BattleOverlays: React.FC<BattleOverlaysProps> = ({
 }) => {
   return (
     <>
-      {/* Inventory
-      <div className="fixed right-4 top-32">
-        <Inventory />
-      </div> */}
-
       {/* Battle Log */}
       <BattleLogContainer
         turns={turns}

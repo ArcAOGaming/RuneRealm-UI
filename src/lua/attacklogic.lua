@@ -176,3 +176,17 @@ function applyStatChanges(target, move)
     
     return changes
 end
+
+  -- Create struggle move for when all moves are depleted
+  function createStruggleMove(monster)
+    return {
+        name = "Struggle",
+        type = monster.elementType or "normal", -- Fallback to normal type if none exists
+        count = 999,
+        damage = 1,
+        attack = 0,
+        defense = 0,
+        speed = 0,
+        health =0
+    }
+end
