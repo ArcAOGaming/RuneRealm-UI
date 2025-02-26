@@ -256,7 +256,7 @@ export const ActiveBattlePage: React.FC = (): JSX.Element => {
           setMovesDisabled(false);
         } else {
           // Battle continues - process new turns //TODO see why this needs to be battle
-          const battleData = response.data.battle as unknown as ActiveBattle;
+          const battleData = ((response.data as unknown) as { battle: ActiveBattle }).battle;
           console.log(battleData)
           const previousTurns = activeBattle?.turns.length || 0;
           console.log(previousTurns)
@@ -604,10 +604,13 @@ export const ActiveBattlePage: React.FC = (): JSX.Element => {
                       <div className="relative">
                         <div className="grid grid-cols-2 gap-2 relative">
                           {Object.entries(activeBattle.accepter.moves).map(([moveName, move]) => (
-                            <div
+                            <button
                               key={moveName}
+                              onClick={() => handleAttack(moveName)}
+                              disabled={isUpdating || movesDisabled || activeBattle.status === 'ended' || move.count === 0}
                               className={`w-full p-2 rounded-lg font-medium text-left transition-all duration-300 min-h-[80px]
-                                ${getMoveColor(moveName, move)} opacity-75 cursor-default
+                                ${getMoveColor(moveName, move)} hover:brightness-110
+                                ${activeBattle.status === 'ended' || movesDisabled || move.count === 0 ? 'opacity-50 cursor-not-allowed' : ''}
                                 text-white relative overflow-hidden group flex flex-col justify-between`}
                             >
                               <div className="flex justify-between items-center relative">
@@ -646,19 +649,23 @@ export const ActiveBattlePage: React.FC = (): JSX.Element => {
                                   ))}
                                 </div>
                               </div>
-                            </div>
+                              <div className="absolute inset-0 bg-white opacity-0 group-hover:opacity-10 transition-opacity duration-300"></div>
+                            </button>
                           ))}
 
                           {Object.values(activeBattle.accepter.moves).every(move => move.count === 0) && (
-                            <div
-                              className={`absolute inset-0 m-auto w-32 h-32 p-2 rounded-lg font-medium transition-all duration-300
-                                bg-purple-500 opacity-75 cursor-default z-10
+                            <button
+                              onClick={() => handleAttack('struggle')}
+                              disabled={isUpdating || movesDisabled || activeBattle.status === 'ended'}
+                              className={`absolute inset-0 m-auto w-32 h-32 p-2 rounded-lg font-medium transition-all duration-300 
+                                bg-purple-500 hover:brightness-110 z-10
+                                ${activeBattle.status === 'ended' || movesDisabled ? 'opacity-50 cursor-not-allowed' : ''}
                                 text-white overflow-hidden group flex flex-col justify-center items-center`}
                             >
                               <span className="capitalize text-lg mb-1">Struggle</span>
                               <span className="text-sm opacity-75 mb-2">Last Resort</span>
                               <span className="text-sm">⚔️ +1</span>
-                            </div>
+                            </button>
                           )}
                         </div>
                       </div>
