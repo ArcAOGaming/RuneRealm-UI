@@ -98,7 +98,7 @@ function calculateDamage(move, attacker, defender)
     damage = damage * effectiveness
     print("Final damage after type effectiveness:", damage)
     print("Type effectiveness:", effectiveness)
-    
+
     return math.floor(damage), effectiveness
 end
 
@@ -134,6 +134,7 @@ end
 function applyStatChanges(target, move)
     local changes = {}
     
+    --print("Here")
     -- Attack modification
     if move.attack ~= 0 then
         target.attack = math.max(0, target.attack + move.attack)

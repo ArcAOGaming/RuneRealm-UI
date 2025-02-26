@@ -255,10 +255,13 @@ export const ActiveBattlePage: React.FC = (): JSX.Element => {
           
           setMovesDisabled(false);
         } else {
-          // Battle continues - process new turns
-          const battleData = response.data as unknown as ActiveBattle;
+          // Battle continues - process new turns //TODO see why this needs to be battle
+          const battleData = response.data.battle as unknown as ActiveBattle;
+          console.log(battleData)
           const previousTurns = activeBattle?.turns.length || 0;
+          console.log(previousTurns)
           const newTurns = battleData.turns.length;
+          console.log(newTurns)
           
           if (newTurns > previousTurns) {
             // Determine turn order based on speed
