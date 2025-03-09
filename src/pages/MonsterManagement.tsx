@@ -1,4 +1,3 @@
-
 import React, { useEffect, useState } from 'react';
 import '../styles/MonsterManagement.css';
 import { useNavigate } from 'react-router-dom';
@@ -503,7 +502,7 @@ export const MonsterManagement: React.FC = (): JSX.Element => {
       <div className={`monster-card ${theme.container} border ${theme.border} backdrop-blur-md p-6`}>
         <div className="flex flex-col md:flex-row gap-8">
           {/* Left Column - Monster Card and Basic Info */}
-          <div className="flex flex-col items-center md:w-1/2">
+          <div className="flex flex-col items-center md:w-2/5">
             <div className="monster-card-header w-full flex justify-between items-center mb-4">
               <div className={`monster-level ${theme.text}`}>
                 Level {monster.level}
@@ -525,7 +524,7 @@ export const MonsterManagement: React.FC = (): JSX.Element => {
           </div>
 
           {/* Right Column - Stats and Info */}
-          <div className="flex flex-col md:w-1/2 space-y-6">
+          <div className="flex flex-col md:w-3/5 space-y-6">
             {/* Moves Display */}
             <div className="moves-section">
               <h3 className={`moves-title ${theme.text} mb-2`}>Moves</h3>
@@ -608,121 +607,128 @@ export const MonsterManagement: React.FC = (): JSX.Element => {
                 </div>
               </div>
 
-              {/* Stats Display */}
+              {/* Stats Display - Now Horizontal */}
               <div className="stats-display mt-4">
                 <h3 className={`text-xl font-bold mb-2 ${theme.text}`}>Stats</h3>
-                <div className="grid grid-cols-2 gap-2">
-                  <div className={`stat-item p-2 rounded-lg ${theme.container}`}>
+                <div className="flex flex-wrap gap-2">
+                  <div className={`stat-item p-2 rounded-lg ${theme.container} transition-all duration-200`}>
                     <span className="font-semibold">Attack:</span> {monster.attack}/{5 + (monster.level * 5)}
                   </div>
-                  <div className={`stat-item p-2 rounded-lg ${theme.container}`}>
+                  <div className={`stat-item p-2 rounded-lg ${theme.container} transition-all duration-200`}>
                     <span className="font-semibold">Defense:</span> {monster.defense}/{5 + (monster.level * 5)}
                   </div>
-                  <div className={`stat-item p-2 rounded-lg ${theme.container}`}>
+                  <div className={`stat-item p-2 rounded-lg ${theme.container} transition-all duration-200`}>
                     <span className="font-semibold">Speed:</span> {monster.speed}/{5 + (monster.level * 5)}
                   </div>
-                  <div className={`stat-item p-2 rounded-lg ${theme.container}`}>
+                  <div className={`stat-item p-2 rounded-lg ${theme.container} transition-all duration-200`}>
                     <span className="font-semibold">Health:</span> {monster.health}/{5 + (monster.level * 5)}
                   </div>
                 </div>
               </div>
+                
+              {/* Activities - Now moved under stats in the side column */}
+              <div className="activities-container mt-6">
+                <h3 className={`text-xl font-bold mb-2 ${theme.text}`}>Activities</h3>
+                <div className="grid grid-cols-[repeat(auto-fit,minmax(180px,1fr))] gap-3">
+                  <ActivityCard
+                    title="Feed"
+                    badge="INSTANT"
+                    badgeColor="yellow"
+                    gradientFrom="yellow-400"
+                    gradientTo="orange-500"
+                    tokenLogo={assetBalances.find(a => a.info.processId === activities.feed.cost.token)?.info.logo}
+                    tokenBalance={berryBalance}
+                    tokenRequired={activities.feed.cost.amount}
+                    costs={[]}
+                    rewards={[
+                      { icon: "✨", text: `+${activities.feed.energyGain} Energy`, color: "green-500" }
+                    ]}
+                    onAction={handleFeedMonster}
+                    isLoading={isFeeding || feedingCooldown}
+                    isDisabled={!canFeed}
+                    actionText="Feed"
+                    loadingText="Feeding..."
+                    theme={theme}
+                    highlightSelectable={true}
+                  />
+
+                  <ActivityCard
+                    title="Play"
+                    badge={`${activities.play.duration / 60000}m`}
+                    badgeColor="green"
+                    gradientFrom="green-400"
+                    gradientTo="emerald-500"
+                    tokenLogo={assetBalances.find(a => a.info.processId === activities.play.cost.token)?.info.logo}
+                    tokenBalance={berryBalance}
+                    tokenRequired={activities.play.cost.amount}
+                    costs={[
+                      { icon: "⚡", text: `-${activities.play.energyCost} Energy`, isAvailable: monster.energy >= activities.play.energyCost }
+                    ]}
+                    rewards={[
+                      { icon: "💝", text: `+${activities.play.happinessGain} Happy`, color: "pink-500" }
+                    ]}
+                    onAction={handlePlayMonster}
+                    isLoading={isPlaying || playingCooldown}
+                    isDisabled={!canPlay || (monster.status.type !== 'Home' && monster.status.type !== 'Play')}
+                    actionText={(monster.status.type === 'Play' && timeUp) ? 'Return from Play' : 'Play'}
+                    loadingText="Playing..."
+                    theme={theme}
+                    highlightSelectable={true}
+                  />
+
+                  <ActivityCard
+                    title="Battle"
+                    badge="ARENA"
+                    badgeColor="red"
+                    gradientFrom="red-400"
+                    gradientTo="purple-500"
+                    tokenLogo={assetBalances.find(a => a.info.processId === activities.battle.cost.token)?.info.logo}
+                    tokenBalance={fuelBalance}
+                    tokenRequired={activities.battle.cost.amount}
+                    costs={[
+                      { icon: "⚡", text: `-${activities.battle.energyCost} Energy`, isAvailable: monster.energy >= activities.battle.energyCost },
+                      { icon: "💝", text: `-${activities.battle.happinessCost} Happy`, isAvailable: monster.happiness >= activities.battle.happinessCost }
+                    ]}
+                    rewards={[
+                      { icon: "⚔️", text: "4 Battles", color: "purple-500" }
+                    ]}
+                    onAction={handleBattle}
+                    isLoading={isInBattle || battleCooldown}
+                    isDisabled={!canBattle || (monster.status.type !== 'Home' && monster.status.type !== 'Battle')}
+                    actionText={(monster.status.type === 'Battle' && canReturn) ? 'Return from Battle' : 'Start Battle'}
+                    loadingText="In Battle..."
+                    theme={theme}
+                    highlightSelectable={true}
+                  />
+
+                  <ActivityCard
+                    title="Mission"
+                    badge={`${activities.mission.duration / 3600000}h`}
+                    badgeColor="blue"
+                    gradientFrom="blue-400"
+                    gradientTo="indigo-500"
+                    tokenLogo={assetBalances.find(a => a.info.processId === activities.mission.cost.token)?.info.logo}
+                    tokenBalance={fuelBalance}
+                    tokenRequired={activities.mission.cost.amount}
+                    costs={[
+                      { icon: "⚡", text: `-${activities.mission.energyCost} Energy`, isAvailable: monster.energy >= activities.mission.energyCost },
+                      { icon: "💝", text: `-${activities.mission.happinessCost} Happy`, isAvailable: monster.happiness >= activities.mission.happinessCost }
+                    ]}
+                    rewards={[
+                      { icon: "✨", text: "+1 EXP", color: "blue-500" }
+                    ]}
+                    onAction={handleMission}
+                    isLoading={isOnMission || missionCooldown}
+                    isDisabled={!canMission || (monster.status.type !== 'Home' && monster.status.type !== 'Mission')}
+                    actionText={(monster.status.type === 'Mission' && timeUp) ? 'Return from Mission' : 'Start Mission'}
+                    loadingText="On Mission..."
+                    theme={theme}
+                    highlightSelectable={true}
+                  />
+                </div>
+              </div>
             </div>
           </div>
-        </div>
-
-        {/* Activities */}
-        <div className="grid grid-cols-[repeat(auto-fit,minmax(200px,1fr))] gap-4 w-full mt-8">
-          <ActivityCard
-            title="Feed"
-            badge="INSTANT"
-            badgeColor="yellow"
-            gradientFrom="yellow-400"
-            gradientTo="orange-500"
-            tokenLogo={assetBalances.find(a => a.info.processId === activities.feed.cost.token)?.info.logo}
-            tokenBalance={berryBalance}
-            tokenRequired={activities.feed.cost.amount}
-            costs={[]}
-            rewards={[
-              { icon: "✨", text: `+${activities.feed.energyGain} Energy`, color: "green-500" }
-            ]}
-            onAction={handleFeedMonster}
-            isLoading={isFeeding || feedingCooldown}
-            isDisabled={!canFeed}
-            actionText="Feed"
-            loadingText="Feeding..."
-            theme={theme}
-          />
-
-          <ActivityCard
-            title="Play"
-            badge={`${activities.play.duration / 60000}m`}
-            badgeColor="green"
-            gradientFrom="green-400"
-            gradientTo="emerald-500"
-            tokenLogo={assetBalances.find(a => a.info.processId === activities.play.cost.token)?.info.logo}
-            tokenBalance={berryBalance}
-            tokenRequired={activities.play.cost.amount}
-            costs={[
-              { icon: "⚡", text: `-${activities.play.energyCost} Energy`, isAvailable: monster.energy >= activities.play.energyCost }
-            ]}
-            rewards={[
-              { icon: "💝", text: `+${activities.play.happinessGain} Happy`, color: "pink-500" }
-            ]}
-            onAction={handlePlayMonster}
-            isLoading={isPlaying || playingCooldown}
-            isDisabled={!canPlay || (monster.status.type !== 'Home' && monster.status.type !== 'Play')}
-            actionText={(monster.status.type === 'Play' && timeUp) ? 'Return from Play' : 'Play'}
-            loadingText="Playing..."
-            theme={theme}
-          />
-
-          <ActivityCard
-            title="Battle"
-            badge="ARENA"
-            badgeColor="red"
-            gradientFrom="red-400"
-            gradientTo="purple-500"
-            tokenLogo={assetBalances.find(a => a.info.processId === activities.battle.cost.token)?.info.logo}
-            tokenBalance={fuelBalance}
-            tokenRequired={activities.battle.cost.amount}
-            costs={[
-              { icon: "⚡", text: `-${activities.battle.energyCost} Energy`, isAvailable: monster.energy >= activities.battle.energyCost },
-              { icon: "💝", text: `-${activities.battle.happinessCost} Happy`, isAvailable: monster.happiness >= activities.battle.happinessCost }
-            ]}
-            rewards={[
-              { icon: "⚔️", text: "4 Battles", color: "purple-500" }
-            ]}
-            onAction={handleBattle}
-            isLoading={isInBattle || battleCooldown}
-            isDisabled={!canBattle || (monster.status.type !== 'Home' && monster.status.type !== 'Battle')}
-            actionText={(monster.status.type === 'Battle' && canReturn) ? 'Return from Battle' : 'Start Battle'}
-            loadingText="In Battle..."
-            theme={theme}
-          />
-
-          <ActivityCard
-            title="Mission"
-            badge={`${activities.mission.duration / 3600000}h`}
-            badgeColor="blue"
-            gradientFrom="blue-400"
-            gradientTo="indigo-500"
-            tokenLogo={assetBalances.find(a => a.info.processId === activities.mission.cost.token)?.info.logo}
-            tokenBalance={fuelBalance}
-            tokenRequired={activities.mission.cost.amount}
-            costs={[
-              { icon: "⚡", text: `-${activities.mission.energyCost} Energy`, isAvailable: monster.energy >= activities.mission.energyCost },
-              { icon: "💝", text: `-${activities.mission.happinessCost} Happy`, isAvailable: monster.happiness >= activities.mission.happinessCost }
-            ]}
-            rewards={[
-              { icon: "✨", text: "+1 EXP", color: "blue-500" }
-            ]}
-            onAction={handleMission}
-            isLoading={isOnMission || missionCooldown}
-            isDisabled={!canMission || (monster.status.type !== 'Home' && monster.status.type !== 'Mission')}
-            actionText={(monster.status.type === 'Mission' && timeUp) ? 'Return from Mission' : 'Start Mission'}
-            loadingText="On Mission..."
-            theme={theme}
-          />
         </div>
       </div>
     );
