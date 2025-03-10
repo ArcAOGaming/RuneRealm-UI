@@ -2,31 +2,44 @@ Initialized = Initialized or nil
 
 TARGET_WORLD_PID = "lA4WPP5v9iUowzLJtCjZsSH_m6WV2FUbGlPSlG7KbnM"
 TARGET_PREMPASS_PID = "j7NcraZUL6GZlgdPEoph12Q5rk_dydvQDecLNxYi8rI"
-TARGET_BATTLE_PID = "W111mH0QHpqVMQ6z3ayHEQWC94xqETy2G8qceQUaFRQ"
+TARGET_BATTLE_PID = "3ZN5im7LNLjr8cMTXO2buhTPOfw6zz00CZqNyMWeJvs"
 --TARGET_BATTLE_PID = "3ZN5im7LNLjr8cMTXO2buhTPOfw6zz00CZqNyMWeJvs"
 BaseSprite = '2wRFNJg9XlCcG6jKNpDAMxX1vnHZoub998KkR0qfDjE'
 BaseSpriteAtlas = 'sVIX0l_PFC6M7lYpuEOGJ_f5ESOkMxd5f5xCQSUH_2g'
 BaseSpriteScale = 1.75
 BaseSpriteHitbox = {width=38,height=48,offsetX=1,offsetY=22}
 
+AR_TOKEN="xU9zFkq3X2ZQ6olwNVvr1vUWIjc3kXTWr7xKQD6dh10"
+TRUNK_TOKEN="wOrb8b_V8QixWyXZub48Ki5B6OIDyf_p1ngoonsaRpQ"
+NAB_TOKEN="OsK9Vgjxo0ypX_HLz2iJJuh4hp3I80yA9KArsJjIloU"
+FIRE_BERRY="j_CKoyoHKgWjDU-sy6Fp86ykks2tNyQbhDVd0tHX_RE"
+WATER_BERRY="twFZ4HTvL_0XAIOMPizxs_S3YH5J5yGvJ8zKiMReWF0"
+ROCK_BERRY="2NoNsZNyHMWOzTqeQUJW9Xvcga3iTonocFIsgkWIiPM"
+AIR_BERRY="XJjSdWaorbQ2q0YkaQSmylmuADWH1fh2PvgfdLmXlzA"
+RUNE_TOKEN="4sKr4cf3kvbzFyhM6HmUsYG_Jz9bFZoNUrUX5KoVe0Q"
+SCROLL_TOKEN="f1KnnMFYR125aQo0zYKgL0PzgJL__fO8JOtDfuIDdHo"
+RUBY_TOKEN="rNVB_bYcNLk6OgcbyG8MEmxjGo76oj3gFzLBCWOhqXI"
+EMERALD_TOKEN="C19KuCwx1VRH4WItj9wYUu1DIkdvareU3aMmojVZJf4"
+TOPOZ_TOKEN="R5UGOfFboMv-zlaSSDgRqxRILmGgPPe5BlnPf5F4i3A"
+
 -- Available tokens for purchase
 PurchaseTokens = {
   {
-    token = 'wOrb8b_V8QixWyXZub48Ki5B6OIDyf_p1ngoonsaRpQ',  -- TRUNK token
+    token = TRUNK_TOKEN,  -- TRUNK token
     amount = "3000",
     name = "TRUNK",
     icon="hqg-Em9DdYHYmMysyVi8LuTGF8IF_F7ZacgjYiSpj0k",
     denomination = 3  
 },
   {
-    token = 'xU9zFkq3X2ZQ6olwNVvr1vUWIjc3kXTWr7xKQD6dh10',
+    token = AR_TOKEN,
     amount = "1984000000000",
     name = "wAR",
     icon="L99jaxRKQKJt9CqoJtPaieGPEhJD3wNhR4iGqc8amXs",
     denomination = 12 
   },
   {
-    token = 'OsK9Vgjxo0ypX_HLz2iJJuh4hp3I80yA9KArsJjIloU',
+    token = NAB_TOKEN,
     amount = "50000000000",
     name = "NAB" ,
     icon="LQ4crOHN9qO6JsLNs253AaTch6MgAMbM8PKqBxs4hgI",
@@ -73,8 +86,6 @@ AvailableFactions = {
         }
     }
 }
-
-
 
 -- Admin wallet
 ADMIN_WALLET = "dUqCbSIdkxxSuIhq8ohcQMwI-oq-CPX1Ey6qUnam0jc"
