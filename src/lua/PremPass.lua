@@ -1350,6 +1350,49 @@ Handlers.add(
   end
 )
 
+Handlers.add(
+  "OpenLootBox",
+  Handlers.utils.hasMatchingTag("Action", "OpenLootBox"),
+  function(msg)
+    print("Opening loot box")
+    local userId = msg.From
+
+    -- Ensure the user has loot boxes
+    if UserLootBoxes[userId] and #UserLootBoxes[userId] > 0 then
+        -- Get the first loot box's rarity
+        local rarity = table.remove(UserLootBoxes[userId], 1) -- Remove the first loot box
+
+        -- Roll the loot chest based on the rarity
+        RollLootChest(rarity, userId)
+    else
+        -- If no loot boxes left
+        ao.send({
+          Target = userId,
+          Data = json.encode({
+            result = "You have no loot boxes to open!"
+          })
+        })
+    end
+  end
+)
+
+-- Handler for returning from battle
+Handlers.add(
+  "GetLootBox",
+  Handlers.utils.hasMatchingTag("Action", "GetLootBox"),
+  function(msg)
+
+    print("Getting loot box")
+    local userId = msg.Tags.UserId
+    ao.send({
+      Target = userId,
+      Data = json.encode({
+          result = UserLootBoxes[userId]
+      })
+  })
+  end
+)
+
 -- Function to add loot boxes to a user's mapping
 function addLootBoxes(userId, numLootBoxes, rarity)
   -- Ensure the user has a table to store loot boxes
