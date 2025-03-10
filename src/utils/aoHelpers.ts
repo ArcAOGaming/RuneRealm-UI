@@ -1553,49 +1553,63 @@ export const getLootBoxes = async (userId: string): Promise<LootBoxResponse | nu
  * @returns Promise with loot box results
  */
 export const openLootBox = async (wallet: any, refreshCallback?: () => void): Promise<LootBoxResponse | null> => {
-  if (!wallet?.address) {
-    console.error('[openLootBox] No wallet address provided');
-    return null;
-  }
-
-  try {
-    console.log('[openLootBox] Opening loot box for user:', wallet.address);
-    
-    const result: any = await dryrun({
-      process: AdminSkinChanger,
-      tags: [
-        { name: 'Action', value: 'OpenLootBox' },
-        { name: 'From', value: wallet.address }
-      ]
-    });
-    
-    console.log(result);
-    console.log(result?.Messages?.[0]?.Data);
-
-    if (result?.Messages?.[0]?.Data) {
-      try {
-        const parsed = JSON.parse(result.Messages[0].Data);
-        console.log('[openLootBox] Loot box opened successfully:', parsed);
-        
-        // Call refresh callback to update UI
-        if (refreshCallback) {
-          refreshCallback();
-        }
-        
-        // Format the response properly
-        return {
-          result: parsed
-        };
-      } catch (error) {
-        console.error('[openLootBox] Error parsing response:', error);
-        return null;
-      }
+    if (!wallet?.address) {
+      console.error('[openLootBox] No wallet address provided');
+      return null;
     }
-    
-    console.warn('[openLootBox] No valid response data');
-    return null;
-  } catch (error) {
-    console.error('[openLootBox] Error opening loot box:', error);
-    return null;
-  }
-};
+  
+    try {
+      console.log('[openLootBox] Opening loot box for user:', wallet.address);
+      const signer = createDataItemSigner(window.arweaveWallet);
+  
+      // Send your message
+      const messageresult: any = await message({
+        process: AdminSkinChanger,
+        tags: [
+          { name: 'Action', value: 'OpenLootBox' },
+          { name: 'From', value: wallet.address }
+        ],
+        signer
+      });
+      console.log(messageresult);
+      
+      // Get the result object
+      const boxResult = await result({
+        message: messageresult,
+        process: AdminSkinChanger
+      }) as ResultType;
+  
+      console.log(boxResult);
+  
+      // Grab the last message in the array (if any)
+      if (boxResult?.Messages && boxResult.Messages.length > 0) {
+        const lastMessage = boxResult.Messages[boxResult.Messages.length - 1];
+        
+        if (lastMessage?.Data) {
+          try {
+            // Parse the last message's Data
+            const parsedData = JSON.parse(lastMessage.Data);
+  
+            console.log('[openLootBox] Loot box opened successfully:', parsedData);
+  
+            // Return it in a shape that allows usage like result[0].token
+            // If your parsedData has a top-level "result" array, you can pass that through:
+            return {
+              result: parsedData.result
+            };
+          } catch (error) {
+            console.error('[openLootBox] Error parsing the last message data:', error);
+            return null;
+          }
+        }
+      }
+  
+      console.warn('[openLootBox] No valid response data found in the last message');
+      return null;
+      
+    } catch (error) {
+      console.error('[openLootBox] Error opening loot box:', error);
+      return null;
+    }
+  };
+  

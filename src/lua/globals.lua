@@ -12,7 +12,7 @@ BaseSpriteHitbox = {width=38,height=48,offsetX=1,offsetY=22}
 AR_TOKEN="xU9zFkq3X2ZQ6olwNVvr1vUWIjc3kXTWr7xKQD6dh10"
 TRUNK_TOKEN="wOrb8b_V8QixWyXZub48Ki5B6OIDyf_p1ngoonsaRpQ"
 NAB_TOKEN="OsK9Vgjxo0ypX_HLz2iJJuh4hp3I80yA9KArsJjIloU"
-FIRE_BERRY="j_CKoyoHKgWjDU-sy6Fp86ykks2tNyQbhDVd0tHX_RE"
+FIRE_BERRY="30cPTQXrHN76YZ3bLfNAePIEYDb5Xo1XnbQ-xmLMOM0"
 WATER_BERRY="twFZ4HTvL_0XAIOMPizxs_S3YH5J5yGvJ8zKiMReWF0"
 ROCK_BERRY="2NoNsZNyHMWOzTqeQUJW9Xvcga3iTonocFIsgkWIiPM"
 AIR_BERRY="XJjSdWaorbQ2q0YkaQSmylmuADWH1fh2PvgfdLmXlzA"
@@ -279,28 +279,28 @@ end
 monstersMAP = {
   ["Sky Nomads"] = {
       name = "Airbud",
-      berry = "XJjSdWaorbQ2q0YkaQSmylmuADWH1fh2PvgfdLmXlzA",
+      berry = AIR_BERRY,
       element = "air",
       image = "XD4tSBeekM1ETZMflAANDfkW6pVWaQIXgSdSiwfwVqw",
       sprite = "0_gQ7rNpxD8S4wZBE_DZs3adWfZMsBIuo8fwvH3SwL0"
   },
   ["Aqua Guardians"] = {
       name = "WaterDoge",
-      berry = "twFZ4HTvL_0XAIOMPizxs_S3YH5J5yGvJ8zKiMReWF0",
+      berry = WATER_BERRY,
       element = "water",
       image = "w_-mPdemSXZ1G-Q6fMEu6wTDJYFnJM9XePjGf_ZChgo",
       sprite = "p90BYY1O3BS3VVzdZETr-hG6jkA3kwo8l0h3aQ2UFoc"
   },
   ["Stone Titans"] = {
       name ="Rockpup",
-      berry = "2NoNsZNyHMWOzTqeQUJW9Xvcga3iTonocFIsgkWIiPM",
+      berry = ROCK_BERRY,
       element = "rock",
       image = "WhdcUkIGYZG4M5kq00TnUwaIt5OCGz3Q4u6_fZNktvQ",
       sprite = "Zt8LmHGVIziXhzjqBhEAWLuGetcDitFKbfaJROkyZks"
   },
   ["Inferno Blades"] = {
       name ="FireFox",
-      berry = "30cPTQXrHN76YZ3bLfNAePIEYDb5Xo1XnbQ-xmLMOM0",
+      berry = FIRE_BERRY,
       element = "fire",
       image = "lnYr9oTtkRHiheQFwH4ns50mrQE6AQR-8Bvl4VfXb0o",
       sprite = "wUo47CacsMRFFizJqUhSj75Rczg3f_MvHs4ytfPtCjQ"

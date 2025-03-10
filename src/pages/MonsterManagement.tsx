@@ -16,6 +16,7 @@ import Confetti from 'react-confetti';
 import { MonsterCardDisplay } from '../components/MonsterCardDisplay';
 import { ActivityCard } from '../components/ActivityCard';
 import LootBoxUtil from '../components/LootBoxUtil';
+import MonsterActivities from '../components/MonsterActivities';
 
 export const MonsterManagement: React.FC = (): JSX.Element => {
   const navigate = useNavigate();
@@ -513,8 +514,8 @@ export const MonsterManagement: React.FC = (): JSX.Element => {
     return (
       <div className={`monster-card ${theme.container} border ${theme.border} backdrop-blur-md p-6`}>
         <div className="flex flex-col md:flex-row gap-8">
-          {/* Left Column - Monster Card and Basic Info */}
-          <div className="flex flex-col items-center md:w-2/5">
+          {/* Left Column - Monster Card */}
+          <div className="flex flex-col items-center md:w-1/2">
             <div className="monster-card-header w-full flex justify-between items-center mb-4">
               <div className={`monster-level ${theme.text}`}>
                 Level {monster.level}
@@ -530,285 +531,36 @@ export const MonsterManagement: React.FC = (): JSX.Element => {
             
             <MonsterCardDisplay 
               monster={monster}
-              className="w-full max-w-md mb-4"
+              expanded={true}
+              className="w-full h-full"
             />
-            <h2 className={`text-2xl font-bold ${theme.text}`}>{monster.name}</h2>
           </div>
 
           {/* Right Column - Stats and Info */}
-          <div className="flex flex-col md:w-3/5 space-y-6">
-            {/* Moves Display */}
-            <div className="moves-section">
-              <h3 className={`moves-title ${theme.text} mb-2`}>Moves</h3>
-              <div className="grid grid-cols-2 gap-2">
-                {Object.entries(monster.moves).map(([name, move]) => (
-                  <div 
-                    key={name} 
-                    className={`move-card ${move.type} p-2 rounded-lg bg-opacity-20 backdrop-blur-sm relative overflow-hidden`}
-                  >
-                    {/* Type Badge in Corner */}
-                    <div className={`absolute top-0 right-0 px-2 py-0.5 text-xs font-bold ${getTypeColorClass(move.type)} rounded-bl-lg uppercase`}>
-                      {move.type}
-                    </div>
-                    
-                    {/* Rarity Stars (under type badge) */}
-                    {(move as any).rarity && (
-                      <div className="absolute top-5 right-0 px-2 py-0.5">
-                        <span className={`text-xs font-medium text-yellow-500`}>
-                          {getRarityStars((move as any).rarity)}
-                        </span>
-                      </div>
-                    )}
-                    
-                    {/* Move Name with Count */}
-                    <div className="flex items-center gap-1 mb-1">
-                      <div className={`move-name ${theme.text} font-bold text-sm truncate`}>{name}</div>
-                      {(move as any).count > 1 && (
-                        <span className="bg-gray-200 text-gray-900 rounded-full px-1.5 text-xs font-medium">
-                          x{(move as any).count}
-                        </span>
-                      )}
-                    </div>
-                    
-                    {/* Move Stats - condensed to one row with smaller text */}
-                    <div className="move-stats flex flex-wrap gap-x-2 gap-y-0.5 mt-1 text-xs">
-                      {move.attack !== 0 && move.attack !== undefined && (
-                        <div className={`stat-item ${theme.text} flex items-center`}>
-                          <span className="stat-icon mr-0.5">⚔️</span>
-                          <span className={`${move.attack < 0 ? 'text-red-500' : ''}`}>
-                            {move.attack > 0 ? '+' : ''}{move.attack}
-                          </span>
-                        </div>
-                      )}
-                      
-                      {move.defense !== 0 && move.defense !== undefined && (
-                        <div className={`stat-item ${theme.text} flex items-center`}>
-                          <span className="stat-icon mr-0.5">🛡️</span>
-                          <span className={`${move.defense < 0 ? 'text-red-500' : ''}`}>
-                            {move.defense > 0 ? '+' : ''}{move.defense}
-                          </span>
-                        </div>
-                      )}
-                      
-                      {move.speed !== 0 && move.speed !== undefined && (
-                        <div className={`stat-item ${theme.text} flex items-center`}>
-                          <span className="stat-icon mr-0.5">⚡</span>
-                          <span className={`${move.speed < 0 ? 'text-red-500' : ''}`}>
-                            {move.speed > 0 ? '+' : ''}{move.speed}
-                          </span>
-                        </div>
-                      )}
-                      
-                      {move.health !== 0 && move.health !== undefined && (
-                        <div className={`stat-item ${theme.text} flex items-center`}>
-                          <span className="stat-icon mr-0.5">❤️</span>
-                          <span className={`${move.health < 0 ? 'text-red-500' : ''}`}>
-                            {move.health > 0 ? '+' : ''}{move.health}
-                          </span>
-                        </div>
-                      )}
-                      
-                      {(move as any).damage !== 0 && (move as any).damage !== undefined && (
-                        <div className={`stat-item ${theme.text} flex items-center`}>
-                          <span className="stat-icon mr-0.5">💥</span>
-                          <span className={`${(move as any).damage < 0 ? 'text-red-500' : ''}`}>
-                            {(move as any).damage > 0 ? '+' : ''}{(move as any).damage}
-                          </span>
-                        </div>
-                      )}
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </div>
-
-            {/* Status Bars */}
-            <div className="space-y-3">
-              {/* Status */}
-              <div className="status-bar">
-                <div className="status-header flex justify-between">
-                  <span className={`${theme.text} text-sm`}>Status: {monster.status.type}</span>
-                  {monster.status.type !== 'Home' && (
-                    <span className={`${theme.text} text-sm`}>
-                      Time Remaining: {formatTimeRemaining(monster.status.until_time)}
-                    </span>
-                  )}
-                </div>
-                {monster.status.type !== 'Home' && (
-                  <div className="progress-bar mt-1 bg-gray-200 rounded-full overflow-hidden">
-                    <div 
-                      className="progress-bar-fill activity bg-blue-500 h-2" 
-                      style={{ 
-                        width: `${calculateProgress(monster.status.since, monster.status.until_time)}%` 
-                      }}
-                    ></div>
-                  </div>
-                )}
-              </div>
-
-              {/* Energy Bar */}
-              <div className="status-bar">
-                <div className="status-header flex justify-between">
-                  <span className={`${theme.text} text-sm`}>Energy</span>
-                  <span className={`${theme.text} text-sm`}>{monster.energy}/100</span>
-                </div>
-                <div className="progress-bar mt-1 bg-gray-200 rounded-full overflow-hidden">
-                  <div 
-                    className="progress-bar-fill energy bg-yellow-500 h-2" 
-                    style={{ width: `${monster.energy}%` }}
-                  ></div>
-                </div>
-              </div>
-
-              {/* Happiness Bar */}
-              <div className="status-bar">
-                <div className="status-header flex justify-between">
-                  <span className={`${theme.text} text-sm`}>Happiness</span>
-                  <span className={`${theme.text} text-sm`}>{monster.happiness}/100</span>
-                </div>
-                <div className="progress-bar mt-1 bg-gray-200 rounded-full overflow-hidden">
-                  <div 
-                    className="progress-bar-fill happiness bg-pink-500 h-2" 
-                    style={{ width: `${monster.happiness}%` }}
-                  ></div>
-                </div>
-              </div>
-
-              {/* Experience Bar */}
-              <div className="status-bar">
-                <div className="status-header flex justify-between">
-                  <span className={`${theme.text} text-sm`}>Experience</span>
-                  <span className={`${theme.text} text-sm`}>{monster.exp}/{getFibonacciExp(monster.level)}</span>
-                </div>
-                <div className="progress-bar mt-1 bg-gray-200 rounded-full overflow-hidden">
-                  <div 
-                    className="progress-bar-fill experience bg-purple-500 h-2" 
-                    style={{ width: `${Math.min((monster.exp / getFibonacciExp(monster.level)) * 100, 100)}%` }}
-                  ></div>
-                </div>
-              </div>
-
-              {/* Stats Display - Now Horizontal */}
-              <div className="stats-display mt-4">
-                <h3 className={`text-xl font-bold mb-2 ${theme.text}`}>Stats</h3>
-                <div className="flex flex-wrap gap-2">
-                  <div className={`stat-item p-2 rounded-lg ${theme.container} transition-all duration-200`}>
-                    <span className="font-semibold">Attack:</span> {monster.attack}/{5 + (monster.level * 5)}
-                  </div>
-                  <div className={`stat-item p-2 rounded-lg ${theme.container} transition-all duration-200`}>
-                    <span className="font-semibold">Defense:</span> {monster.defense}/{5 + (monster.level * 5)}
-                  </div>
-                  <div className={`stat-item p-2 rounded-lg ${theme.container} transition-all duration-200`}>
-                    <span className="font-semibold">Speed:</span> {monster.speed}/{5 + (monster.level * 5)}
-                  </div>
-                  <div className={`stat-item p-2 rounded-lg ${theme.container} transition-all duration-200`}>
-                    <span className="font-semibold">Health:</span> {monster.health}/{5 + (monster.level * 5)}
-                  </div>
-                </div>
-              </div>
-                
-              {/* Activities - Now moved under stats in the side column */}
-              <div className="activities-container mt-6">
-                <h3 className={`text-xl font-bold mb-2 ${theme.text}`}>Activities</h3>
-                <div className="grid grid-cols-[repeat(auto-fit,minmax(180px,1fr))] gap-3">
-                  <ActivityCard
-                    title="Feed"
-                    badge="INSTANT"
-                    badgeColor="yellow"
-                    gradientFrom="yellow-400"
-                    gradientTo="orange-500"
-                    tokenLogo={assetBalances.find(a => a.info.processId === activities.feed.cost.token)?.info.logo}
-                    tokenBalance={berryBalance}
-                    tokenRequired={activities.feed.cost.amount}
-                    costs={[]}
-                    rewards={[
-                      { icon: "✨", text: `+${activities.feed.energyGain} Energy`, color: "green-500" }
-                    ]}
-                    onAction={handleFeedMonster}
-                    isLoading={isFeeding}
-                    isDisabled={!canFeed}
-                    actionText="Feed"
-                    loadingText="Feeding..."
-                    theme={theme}
-                    highlightSelectable={true}
-                  />
-
-                  <ActivityCard
-                    title="Play"
-                    badge={`${activities.play.duration / 60000}m`}
-                    badgeColor="green"
-                    gradientFrom="green-400"
-                    gradientTo="emerald-500"
-                    tokenLogo={assetBalances.find(a => a.info.processId === activities.play.cost.token)?.info.logo}
-                    tokenBalance={berryBalance}
-                    tokenRequired={activities.play.cost.amount}
-                    costs={[
-                      { icon: "⚡", text: `-${activities.play.energyCost} Energy`, isAvailable: monster.energy >= activities.play.energyCost }
-                    ]}
-                    rewards={[
-                      { icon: "💝", text: `+${activities.play.happinessGain} Happy`, color: "pink-500" }
-                    ]}
-                    onAction={handlePlayMonster}
-                    isLoading={isPlaying}
-                    isDisabled={!canPlay || (monster.status.type !== 'Home' && monster.status.type !== 'Play')}
-                    actionText={(monster.status.type === 'Play' && timeUp) ? 'Return from Play' : 'Play'}
-                    loadingText="Playing..."
-                    theme={theme}
-                    highlightSelectable={true}
-                  />
-
-                  <ActivityCard
-                    title="Battle"
-                    badge="ARENA"
-                    badgeColor="red"
-                    gradientFrom="red-400"
-                    gradientTo="purple-500"
-                    tokenLogo={assetBalances.find(a => a.info.processId === activities.battle.cost.token)?.info.logo}
-                    tokenBalance={fuelBalance}
-                    tokenRequired={activities.battle.cost.amount}
-                    costs={[
-                      { icon: "⚡", text: `-${activities.battle.energyCost} Energy`, isAvailable: monster.energy >= activities.battle.energyCost },
-                      { icon: "💝", text: `-${activities.battle.happinessCost} Happy`, isAvailable: monster.happiness >= activities.battle.happinessCost }
-                    ]}
-                    rewards={[
-                      { icon: "⚔️", text: "4 Battles", color: "purple-500" }
-                    ]}
-                    onAction={handleBattle}
-                    isLoading={isInBattle}
-                    isDisabled={!canBattle || (monster.status.type !== 'Home' && monster.status.type !== 'Battle')}
-                    actionText={(monster.status.type === 'Battle' && canReturn) ? 'Return from Battle' : 'Start Battle'}
-                    loadingText="In Battle..."
-                    theme={theme}
-                    highlightSelectable={true}
-                  />
-
-                  <ActivityCard
-                    title="Mission"
-                    badge={`${activities.mission.duration / 3600000}h`}
-                    badgeColor="blue"
-                    gradientFrom="blue-400"
-                    gradientTo="indigo-500"
-                    tokenLogo={assetBalances.find(a => a.info.processId === activities.mission.cost.token)?.info.logo}
-                    tokenBalance={fuelBalance}
-                    tokenRequired={activities.mission.cost.amount}
-                    costs={[
-                      { icon: "⚡", text: `-${activities.mission.energyCost} Energy`, isAvailable: monster.energy >= activities.mission.energyCost },
-                      { icon: "💝", text: `-${activities.mission.happinessCost} Happy`, isAvailable: monster.happiness >= activities.mission.happinessCost }
-                    ]}
-                    rewards={[
-                      { icon: "✨", text: "+1 EXP", color: "blue-500" }
-                    ]}
-                    onAction={handleMission}
-                    isLoading={isOnMission}
-                    isDisabled={!canMission || (monster.status.type !== 'Home' && monster.status.type !== 'Mission')}
-                    actionText={(monster.status.type === 'Mission' && timeUp) ? 'Return from Mission' : 'Start Mission'}
-                    loadingText="On Mission..."
-                    theme={theme}
-                    highlightSelectable={true}
-                  />
-                </div>
-              </div>
-            </div>
+          <div className="flex flex-col md:w-1/2 space-y-6">
+            {/* Activities Section */}
+            <MonsterActivities 
+              monster={monster}
+              activities={activities}
+              assetBalances={assetBalances}
+              theme={theme}
+              berryBalance={berryBalance}
+              fuelBalance={fuelBalance}
+              canFeed={canFeed}
+              canPlay={canPlay}
+              canBattle={canBattle}
+              canMission={canMission}
+              isFeeding={isFeeding}
+              isPlaying={isPlaying}
+              isInBattle={isInBattle}
+              isOnMission={isOnMission}
+              timeUp={timeUp}
+              canReturn={canReturn}
+              handleFeedMonster={handleFeedMonster}
+              handlePlayMonster={handlePlayMonster}
+              handleBattle={handleBattle}
+              handleMission={handleMission}
+            />
           </div>
         </div>
       </div>
