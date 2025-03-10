@@ -1387,7 +1387,7 @@ Handlers.add(
     ao.send({
       Target = userId,
       Data = json.encode({
-          result = UserLootBoxes[userId]
+          UserLootBoxes[userId]
       })
   })
   end

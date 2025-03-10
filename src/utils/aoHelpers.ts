@@ -1494,3 +1494,108 @@ export const endBattle = async (wallet: any, battleId: string, refreshCallback?:
         throw error;
     }
 };
+
+export interface LootBoxResponse {
+  result: any;
+}
+
+/**
+ * Get user's loot boxes
+ * @param userId User's ID (wallet address)
+ * @returns Promise with loot box information
+ */
+export const getLootBoxes = async (userId: string): Promise<LootBoxResponse | null> => {
+  if (!userId) {
+    console.error('[getLootBoxes] No user ID provided');
+    return null;
+  }
+
+  try {
+    console.log('[getLootBoxes] Getting loot boxes for user:', userId);
+    
+    const result: any = await dryrun({
+        process: AdminSkinChanger,
+        tags: [
+            { name: 'Action', value: 'GetLootBox' },
+            { name: 'UserId', value: userId }
+        ]
+    });
+    console.log(result)
+    console.log(result?.Messages?.[0]?.Data)
+
+    if (result?.Messages?.[0]?.Data) {
+      try {
+        const parsed = JSON.parse(result.Messages[0].Data);
+        console.log('[getLootBoxes] Parsed loot boxes:', parsed);
+        
+        // Format the response properly
+        return {
+          result: parsed
+        };
+      } catch (error) {
+        console.error('[getLootBoxes] Error parsing response:', error);
+        return null;
+      }
+    }
+    
+    console.warn('[getLootBoxes] No valid response data');
+    return null;
+  } catch (error) {
+    console.error('[getLootBoxes] Error getting loot boxes:', error);
+    return null;
+  }
+};
+
+/**
+ * Open a loot box
+ * @param wallet User's wallet
+ * @param refreshCallback Optional callback to refresh UI after opening
+ * @returns Promise with loot box results
+ */
+export const openLootBox = async (wallet: any, refreshCallback?: () => void): Promise<LootBoxResponse | null> => {
+  if (!wallet?.address) {
+    console.error('[openLootBox] No wallet address provided');
+    return null;
+  }
+
+  try {
+    console.log('[openLootBox] Opening loot box for user:', wallet.address);
+    
+    const result: any = await dryrun({
+      process: AdminSkinChanger,
+      tags: [
+        { name: 'Action', value: 'OpenLootBox' },
+        { name: 'From', value: wallet.address }
+      ]
+    });
+    
+    console.log(result);
+    console.log(result?.Messages?.[0]?.Data);
+
+    if (result?.Messages?.[0]?.Data) {
+      try {
+        const parsed = JSON.parse(result.Messages[0].Data);
+        console.log('[openLootBox] Loot box opened successfully:', parsed);
+        
+        // Call refresh callback to update UI
+        if (refreshCallback) {
+          refreshCallback();
+        }
+        
+        // Format the response properly
+        return {
+          result: parsed
+        };
+      } catch (error) {
+        console.error('[openLootBox] Error parsing response:', error);
+        return null;
+      }
+    }
+    
+    console.warn('[openLootBox] No valid response data');
+    return null;
+  } catch (error) {
+    console.error('[openLootBox] Error opening loot box:', error);
+    return null;
+  }
+};

@@ -15,6 +15,7 @@ import Footer from '../components/Footer';
 import Confetti from 'react-confetti';
 import { MonsterCardDisplay } from '../components/MonsterCardDisplay';
 import { ActivityCard } from '../components/ActivityCard';
+import LootBoxUtil from '../components/LootBoxUtil';
 
 export const MonsterManagement: React.FC = (): JSX.Element => {
   const navigate = useNavigate();
@@ -101,12 +102,6 @@ export const MonsterManagement: React.FC = (): JSX.Element => {
     }
   };
 
-  // Add cooldown states
-  const [feedingCooldown, setFeedingCooldown] = useState(false);
-  const [playingCooldown, setPlayingCooldown] = useState(false);
-  const [missionCooldown, setMissionCooldown] = useState(false);
-  const [battleCooldown, setBattleCooldown] = useState(false);
-
   // Add battle handler
   const handleBattle = async () => {
     if (!walletStatus?.monster || !wallet?.address) return;
@@ -155,11 +150,6 @@ export const MonsterManagement: React.FC = (): JSX.Element => {
       }
 
       await loadAssetBalances();
-      // Start cooldown period after transaction confirms
-      setBattleCooldown(true);
-      setTimeout(() => {
-        setBattleCooldown(false);
-      }, 5000);
     } catch (error) {
       console.error('Error with battle:', error);
     } finally {
@@ -203,11 +193,6 @@ export const MonsterManagement: React.FC = (): JSX.Element => {
       }, triggerRefresh);
 
       await loadAssetBalances();
-      // Start cooldown period after transaction confirms
-      setFeedingCooldown(true);
-      setTimeout(() => {
-        setFeedingCooldown(false);
-      }, 5000);
     } catch (error) {
       console.error('Error feeding monster:', error);
     } finally {
@@ -268,11 +253,6 @@ export const MonsterManagement: React.FC = (): JSX.Element => {
       }
 
       await loadAssetBalances();
-      // Start cooldown period after transaction confirms
-      setPlayingCooldown(true);
-      setTimeout(() => {
-        setPlayingCooldown(false);
-      }, 5000);
     } catch (error) {
       console.error('Error with play action:', error);
     } finally {
@@ -324,11 +304,6 @@ export const MonsterManagement: React.FC = (): JSX.Element => {
       }
 
       await loadAssetBalances();
-      // Start cooldown period after transaction confirms
-      setMissionCooldown(true);
-      setTimeout(() => {
-        setMissionCooldown(false);
-      }, 5000);
     } catch (error) {
       console.error('Error with mission:', error);
     } finally {
@@ -444,6 +419,43 @@ export const MonsterManagement: React.FC = (): JSX.Element => {
     return Math.min(100, Math.max(0, progress));
   };
 
+  // Utility function to get appropriate color class based on move type
+  const getTypeColorClass = (type: string): string => {
+    const typeColors: Record<string, string> = {
+      water: 'bg-blue-500 text-white',
+      fire: 'bg-red-500 text-white',
+      earth: 'bg-green-500 text-white',
+      air: 'bg-cyan-400 text-white',
+      light: 'bg-yellow-300 text-black',
+      dark: 'bg-purple-700 text-white',
+      normal: 'bg-gray-400 text-black',
+      boost: 'bg-orange-400 text-white',
+      heal: 'bg-emerald-400 text-white',
+      // Add more types as needed
+    };
+    
+    return typeColors[type.toLowerCase()] || 'bg-gray-500 text-white'; // Default fallback
+  };
+
+  // Utility function to get rarity badge class
+  const getRarityBadgeClass = (rarity: number): string => {
+    const rarityClasses: Record<number, string> = {
+      1: 'bg-gray-300 text-gray-800', // Common
+      2: 'bg-blue-300 text-blue-800', // Uncommon
+      3: 'bg-purple-300 text-purple-800', // Rare
+      4: 'bg-yellow-300 text-yellow-800', // Epic
+      5: 'bg-red-300 text-red-800', // Legendary
+    };
+    
+    return rarityClasses[rarity] || 'bg-gray-300 text-gray-800'; // Default to common
+  };
+
+  // Utility function to display rarity stars
+  const getRarityStars = (rarity: number): string => {
+    const stars = '★'.repeat(rarity);
+    return stars || '★'; // At least one star
+  };
+
   const renderMonsterCard = React.useMemo(() => {
     if (!walletStatus?.monster) {
       return (
@@ -532,10 +544,79 @@ export const MonsterManagement: React.FC = (): JSX.Element => {
                 {Object.entries(monster.moves).map(([name, move]) => (
                   <div 
                     key={name} 
-                    className={`move-card ${move.type} p-2 rounded-lg bg-opacity-20 backdrop-blur-sm`}
+                    className={`move-card ${move.type} p-2 rounded-lg bg-opacity-20 backdrop-blur-sm relative overflow-hidden`}
                   >
-                    <div className={`move-name ${theme.text} font-bold`}>{name}</div>
-                    <div className={`move-type ${theme.text} text-sm`}>Type: {move.type}</div>
+                    {/* Type Badge in Corner */}
+                    <div className={`absolute top-0 right-0 px-2 py-0.5 text-xs font-bold ${getTypeColorClass(move.type)} rounded-bl-lg uppercase`}>
+                      {move.type}
+                    </div>
+                    
+                    {/* Rarity Stars (under type badge) */}
+                    {(move as any).rarity && (
+                      <div className="absolute top-5 right-0 px-2 py-0.5">
+                        <span className={`text-xs font-medium text-yellow-500`}>
+                          {getRarityStars((move as any).rarity)}
+                        </span>
+                      </div>
+                    )}
+                    
+                    {/* Move Name with Count */}
+                    <div className="flex items-center gap-1 mb-1">
+                      <div className={`move-name ${theme.text} font-bold text-sm truncate`}>{name}</div>
+                      {(move as any).count > 1 && (
+                        <span className="bg-gray-200 text-gray-900 rounded-full px-1.5 text-xs font-medium">
+                          x{(move as any).count}
+                        </span>
+                      )}
+                    </div>
+                    
+                    {/* Move Stats - condensed to one row with smaller text */}
+                    <div className="move-stats flex flex-wrap gap-x-2 gap-y-0.5 mt-1 text-xs">
+                      {move.attack !== 0 && move.attack !== undefined && (
+                        <div className={`stat-item ${theme.text} flex items-center`}>
+                          <span className="stat-icon mr-0.5">⚔️</span>
+                          <span className={`${move.attack < 0 ? 'text-red-500' : ''}`}>
+                            {move.attack > 0 ? '+' : ''}{move.attack}
+                          </span>
+                        </div>
+                      )}
+                      
+                      {move.defense !== 0 && move.defense !== undefined && (
+                        <div className={`stat-item ${theme.text} flex items-center`}>
+                          <span className="stat-icon mr-0.5">🛡️</span>
+                          <span className={`${move.defense < 0 ? 'text-red-500' : ''}`}>
+                            {move.defense > 0 ? '+' : ''}{move.defense}
+                          </span>
+                        </div>
+                      )}
+                      
+                      {move.speed !== 0 && move.speed !== undefined && (
+                        <div className={`stat-item ${theme.text} flex items-center`}>
+                          <span className="stat-icon mr-0.5">⚡</span>
+                          <span className={`${move.speed < 0 ? 'text-red-500' : ''}`}>
+                            {move.speed > 0 ? '+' : ''}{move.speed}
+                          </span>
+                        </div>
+                      )}
+                      
+                      {move.health !== 0 && move.health !== undefined && (
+                        <div className={`stat-item ${theme.text} flex items-center`}>
+                          <span className="stat-icon mr-0.5">❤️</span>
+                          <span className={`${move.health < 0 ? 'text-red-500' : ''}`}>
+                            {move.health > 0 ? '+' : ''}{move.health}
+                          </span>
+                        </div>
+                      )}
+                      
+                      {(move as any).damage !== 0 && (move as any).damage !== undefined && (
+                        <div className={`stat-item ${theme.text} flex items-center`}>
+                          <span className="stat-icon mr-0.5">💥</span>
+                          <span className={`${(move as any).damage < 0 ? 'text-red-500' : ''}`}>
+                            {(move as any).damage > 0 ? '+' : ''}{(move as any).damage}
+                          </span>
+                        </div>
+                      )}
+                    </div>
                   </div>
                 ))}
               </div>
@@ -644,7 +725,7 @@ export const MonsterManagement: React.FC = (): JSX.Element => {
                       { icon: "✨", text: `+${activities.feed.energyGain} Energy`, color: "green-500" }
                     ]}
                     onAction={handleFeedMonster}
-                    isLoading={isFeeding || feedingCooldown}
+                    isLoading={isFeeding}
                     isDisabled={!canFeed}
                     actionText="Feed"
                     loadingText="Feeding..."
@@ -668,7 +749,7 @@ export const MonsterManagement: React.FC = (): JSX.Element => {
                       { icon: "💝", text: `+${activities.play.happinessGain} Happy`, color: "pink-500" }
                     ]}
                     onAction={handlePlayMonster}
-                    isLoading={isPlaying || playingCooldown}
+                    isLoading={isPlaying}
                     isDisabled={!canPlay || (monster.status.type !== 'Home' && monster.status.type !== 'Play')}
                     actionText={(monster.status.type === 'Play' && timeUp) ? 'Return from Play' : 'Play'}
                     loadingText="Playing..."
@@ -693,7 +774,7 @@ export const MonsterManagement: React.FC = (): JSX.Element => {
                       { icon: "⚔️", text: "4 Battles", color: "purple-500" }
                     ]}
                     onAction={handleBattle}
-                    isLoading={isInBattle || battleCooldown}
+                    isLoading={isInBattle}
                     isDisabled={!canBattle || (monster.status.type !== 'Home' && monster.status.type !== 'Battle')}
                     actionText={(monster.status.type === 'Battle' && canReturn) ? 'Return from Battle' : 'Start Battle'}
                     loadingText="In Battle..."
@@ -718,7 +799,7 @@ export const MonsterManagement: React.FC = (): JSX.Element => {
                       { icon: "✨", text: "+1 EXP", color: "blue-500" }
                     ]}
                     onAction={handleMission}
-                    isLoading={isOnMission || missionCooldown}
+                    isLoading={isOnMission}
                     isDisabled={!canMission || (monster.status.type !== 'Home' && monster.status.type !== 'Mission')}
                     actionText={(monster.status.type === 'Mission' && timeUp) ? 'Return from Mission' : 'Start Mission'}
                     loadingText="On Mission..."
@@ -749,9 +830,6 @@ export const MonsterManagement: React.FC = (): JSX.Element => {
     isPlaying,
     isLevelingUp,
     isOnMission,
-    feedingCooldown,
-    playingCooldown,
-    missionCooldown,
     darkMode,
     theme,
     handleAdoptMonster,
@@ -760,8 +838,7 @@ export const MonsterManagement: React.FC = (): JSX.Element => {
     handleMission,
     handleLevelUp,
     handleBattle,
-    isInBattle,
-    battleCooldown
+    isInBattle
   ]);
 
   return (
@@ -821,6 +898,12 @@ export const MonsterManagement: React.FC = (): JSX.Element => {
               </div>
             ) : (
               renderMonsterCard
+            )}
+            
+            {walletStatus?.isUnlocked && walletStatus?.faction && (
+              <div className="mt-8">
+                <LootBoxUtil className="max-w-2xl mx-auto" />
+              </div>
             )}
           </div>
         </div>
