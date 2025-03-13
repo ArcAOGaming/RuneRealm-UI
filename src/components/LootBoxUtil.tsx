@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { useWallet } from '../hooks/useWallet';
-import { getLootBoxes, openLootBox, LootBoxResponse } from '../utils/aoHelpers';
+import { getLootBoxes, openLootBox, LootBoxResponse, getAssetBalances } from '../utils/aoHelpers';
 import { currentTheme } from '../constants/theme';
 import Confetti from 'react-confetti';
 
@@ -19,8 +19,9 @@ const LootBoxUtil: React.FC<LootBoxProps> = ({ className = '' }) => {
   const [lootBoxes, setLootBoxes] = useState<LootBox[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [isOpening, setIsOpening] = useState(false);
-  const [openResult, setOpenResult] = useState<string | null>(null);
+  const [openResult, setOpenResult] = useState<LootBoxResponse | null>(null);
   const [showConfetti, setShowConfetti] = useState(false);
+  const [assets, setAssets] = useState<{[key: string]: {name: string, ticker: string, logo?: string}}>({}); 
   
   const theme = currentTheme(darkMode);
   
@@ -89,6 +90,31 @@ const LootBoxUtil: React.FC<LootBoxProps> = ({ className = '' }) => {
     loadLootBoxes();
   }, [wallet?.address, refreshTrigger]);
   
+  // Load assets for token name mapping
+  useEffect(() => {
+    const loadAssets = async () => {
+      if (!wallet?.address) return;
+      try {
+        const assetBalances = await getAssetBalances(wallet.address);
+        const assetMap: {[key: string]: {name: string, ticker: string, logo?: string}} = {};
+        
+        assetBalances.forEach(asset => {
+          assetMap[asset.info.processId] = {
+            name: asset.info.name,
+            ticker: asset.info.ticker,
+            logo: asset.info.logo
+          };
+        });
+        
+        setAssets(assetMap);
+      } catch (error) {
+        console.error('Error loading assets:', error);
+      }
+    };
+    
+    loadAssets();
+  }, [wallet?.address]);
+  
   // Get color class based on rarity
   const getRarityColorClass = (rarity: number): string => {
     switch (rarity) {
@@ -119,9 +145,6 @@ const LootBoxUtil: React.FC<LootBoxProps> = ({ className = '' }) => {
       const lootBoxToOpen = lootBoxes[0];
       const rarityName = lootBoxToOpen ? lootBoxToOpen.displayName : '';
       
-      // Show opening message with the rarity
-      setOpenResult(`Opening ${rarityName} Loot Box...`);
-      
       const result = await openLootBox(wallet, triggerRefresh);
       
       if (result) {
@@ -129,17 +152,8 @@ const LootBoxUtil: React.FC<LootBoxProps> = ({ className = '' }) => {
         setShowConfetti(true);
         setTimeout(() => setShowConfetti(false), 5000);
         
-        // Format and display result
-        let resultText = '';
-        if (typeof result.result === 'string') {
-          resultText = result.result;
-        } else if (Array.isArray(result.result)) {
-          resultText = JSON.stringify(result.result, null, 2);
-        } else {
-          resultText = JSON.stringify(result.result);
-        }
-            
-        setOpenResult(resultText);
+        // Store the structured result
+        setOpenResult(result);
         
         // Refresh loot boxes after a short delay to allow animation to complete
         setTimeout(() => {
@@ -148,10 +162,38 @@ const LootBoxUtil: React.FC<LootBoxProps> = ({ className = '' }) => {
       }
     } catch (error) {
       console.error('Error opening loot box:', error);
-      setOpenResult('Error opening loot box');
     } finally {
       setIsOpening(false);
     }
+  };
+  
+  // Helper to get the token name or ID if name not available
+  const getTokenName = (tokenId: string): string => {
+    if (assets[tokenId]) {
+      return assets[tokenId].name || assets[tokenId].ticker || tokenId.substring(0, 8);
+    }
+    
+    // Berry name mappings if not found in assets
+    const berryNames: {[key: string]: string} = {
+      "30cPTQXrHN76YZ3bLfNAePIEYDb5Xo1XnbQ-xmLMOM0": "Fire Berry",
+      "twFZ4HTvL_0XAIOMPizxs_S3YH5J5yGvJ8zKiMReWF0": "Water Berry",
+      "2NoNsZNyHMWOzTqeQUJW9Xvcga3iTonocFIsgkWIiPM": "Rock Berry",
+      "XJjSdWaorbQ2q0YkaQSmylmuADWH1fh2PvgfdLmXlzA": "Air Berry",
+    };
+    
+    return berryNames[tokenId] || tokenId.substring(0, 8) + "...";
+  };
+  
+  // Helper function to get berry color based on token ID
+  const getBerryColor = (tokenId: string): string => {
+    const berryColors: {[key: string]: string} = {
+      "30cPTQXrHN76YZ3bLfNAePIEYDb5Xo1XnbQ-xmLMOM0": "bg-red-200 text-red-800",
+      "twFZ4HTvL_0XAIOMPizxs_S3YH5J5yGvJ8zKiMReWF0": "bg-blue-200 text-blue-800",
+      "2NoNsZNyHMWOzTqeQUJW9Xvcga3iTonocFIsgkWIiPM": "bg-stone-200 text-stone-800",
+      "XJjSdWaorbQ2q0YkaQSmylmuADWH1fh2PvgfdLmXlzA": "bg-sky-200 text-sky-800",
+    };
+    
+    return berryColors[tokenId] || "bg-gray-200 text-gray-800";
   };
   
   return (
@@ -190,12 +232,31 @@ const LootBoxUtil: React.FC<LootBoxProps> = ({ className = '' }) => {
             {isOpening ? 'Opening...' : 'Open Loot Box'}
           </button>
           
-          {openResult && (
+          {openResult && openResult.result && (
             <div className={`result-container mt-4 p-4 rounded-lg ${theme.container} border ${theme.border}`}>
-              <h3 className={`text-lg font-bold ${theme.text} mb-2`}>Loot Box Result</h3>
-              <div className={`${theme.text} whitespace-pre-wrap break-words`}>
-                {openResult}
+              <h3 className={`text-lg font-bold ${theme.text} mb-3`}>You received:</h3>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                {Array.isArray(openResult.result) && openResult.result.map((item, index) => (
+                  <div 
+                    key={index} 
+                    className={`berry-item p-3 rounded-lg ${getBerryColor(item.token)} flex items-center justify-between`}
+                  >
+                    <div className="flex items-center">
+                      <span className="text-2xl mr-2">
+                        {item.token === "30cPTQXrHN76YZ3bLfNAePIEYDb5Xo1XnbQ-xmLMOM0" ? "🔥" : 
+                         item.token === "twFZ4HTvL_0XAIOMPizxs_S3YH5J5yGvJ8zKiMReWF0" ? "💧" :
+                         item.token === "2NoNsZNyHMWOzTqeQUJW9Xvcga3iTonocFIsgkWIiPM" ? "🪨" :
+                         item.token === "XJjSdWaorbQ2q0YkaQSmylmuADWH1fh2PvgfdLmXlzA" ? "💨" : "🌟"}
+                      </span>
+                      <span className="font-medium">{getTokenName(item.token)}</span>
+                    </div>
+                    <span className="font-bold">x{item.quantity}</span>
+                  </div>
+                ))}
               </div>
+              <p className={`${theme.text} mt-3 text-sm`}>
+                These items have been added to your inventory!
+              </p>
             </div>
           )}
         </div>

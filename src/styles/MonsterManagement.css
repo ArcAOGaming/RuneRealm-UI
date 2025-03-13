@@ -378,3 +378,28 @@
   font-weight: 700;
   transition: all 0.3s;
 }
+
+/* Add CSS for the glowing level up button */
+@keyframes glow {
+  0% {
+    box-shadow: 0 0 5px #ffcc00, 0 0 10px #ffcc00;
+  }
+  50% {
+    box-shadow: 0 0 15px #ffcc00, 0 0 20px #ffcc00, 0 0 25px #ffcc00;
+  }
+  100% {
+    box-shadow: 0 0 5px #ffcc00, 0 0 10px #ffcc00;
+  }
+}
+
+.level-up-button-glow {
+  animation: glow 2s infinite;
+  position: relative;
+  z-index: 1;
+  transition: all 0.3s ease;
+}
+
+.level-up-button-glow:hover {
+  transform: scale(1.05);
+  animation: glow 1s infinite;
+}

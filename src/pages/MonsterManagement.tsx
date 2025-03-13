@@ -18,6 +18,34 @@ import { ActivityCard } from '../components/ActivityCard';
 import LootBoxUtil from '../components/LootBoxUtil';
 import MonsterActivities from '../components/MonsterActivities';
 
+// Helper functions for monster status display
+const formatTimeRemaining = (untilTime: number): string => {
+  const now = Date.now();
+  const timeLeft = Math.max(0, untilTime - now);
+  
+  if (timeLeft <= 0) return 'Complete';
+  
+  const hours = Math.floor(timeLeft / (1000 * 60 * 60));
+  const minutes = Math.floor((timeLeft % (1000 * 60 * 60)) / (1000 * 60));
+  const seconds = Math.floor((timeLeft % (1000 * 60)) / 1000);
+  
+  if (hours > 0) {
+    return `${hours}h ${minutes}m ${seconds}s`;
+  } else if (minutes > 0) {
+    return `${minutes}m ${seconds}s`;
+  } else {
+    return `${seconds}s`;
+  }
+};
+
+const calculateProgress = (sinceTime: number, untilTime: number): number => {
+  const now = Date.now();
+  const total = untilTime - sinceTime;
+  const elapsed = now - sinceTime;
+  
+  return Math.min(100, Math.max(0, (elapsed / total) * 100));
+};
+
 export const MonsterManagement: React.FC = (): JSX.Element => {
   const navigate = useNavigate();
   const { wallet, walletStatus, darkMode, connectWallet, setDarkMode, triggerRefresh, refreshTrigger } = useWallet();
@@ -32,6 +60,7 @@ export const MonsterManagement: React.FC = (): JSX.Element => {
   const [isInBattle, setIsInBattle] = useState(false);
   const [assetBalances, setAssetBalances] = useState<AssetBalance[]>([]);
   const [localMonster, setLocalMonster] = useState<MonsterStats | null>(null);
+  const [timeUpdateTrigger, setTimeUpdateTrigger] = useState<number>(0);
   const theme = currentTheme(darkMode);
   const [, setForceUpdate] = useState({});
 
@@ -63,6 +92,18 @@ export const MonsterManagement: React.FC = (): JSX.Element => {
     };
     updateData();
   }, [wallet?.address, walletStatus?.monster, refreshTrigger, localMonster]);
+
+  // Add effect to update timers every second
+  useEffect(() => {
+    // Only set interval if monster is active in an activity
+    if (localMonster && localMonster.status && localMonster.status.type !== 'Home') {
+      const timer = setInterval(() => {
+        setTimeUpdateTrigger(Date.now());
+      }, 1000);
+      
+      return () => clearInterval(timer);
+    }
+  }, [localMonster?.status?.type]);
 
   // Handle timer updates for progress bars and countdowns
   useEffect(() => {
@@ -388,38 +429,6 @@ export const MonsterManagement: React.FC = (): JSX.Element => {
     return b;
   };
 
-  // Format time remaining with rounding to nearest minute
-  const formatTimeRemaining = (until: number) => {
-    const remaining = Math.max(0, until - Date.now());
-    const minutes = remaining / 60000;
-    const roundedMinutes = Math.ceil(minutes);
-    
-    if (minutes < 1) {
-      const seconds = Math.ceil((remaining % 60000) / 1000);
-      return `${seconds}s`;
-    } else {
-      // Round up if more than 30 seconds into the minute
-      const seconds = Math.floor((remaining % 60000) / 1000);
-      if (seconds > 30) {
-        return `~${roundedMinutes}m`;
-      } else {
-        return `~${Math.floor(minutes)}m`;
-      }
-    }
-  };
-
-  // Calculate progress percentage (0-100) for activities
-  const calculateProgress = (since: number, until: number) => {
-    const now = Date.now();
-    // If time is up, return 100% immediately
-    if (now >= until) return 100;
-    const total = until - since;
-    const elapsed = now - since;
-    // Round to 2 decimal places to avoid floating point issues
-    const progress = Math.round((elapsed / total) * 10000) / 100;
-    return Math.min(100, Math.max(0, progress));
-  };
-
   // Utility function to get appropriate color class based on move type
   const getTypeColorClass = (type: string): string => {
     const typeColors: Record<string, string> = {
@@ -461,8 +470,7 @@ export const MonsterManagement: React.FC = (): JSX.Element => {
     if (!walletStatus?.monster) {
       return (
         <div className={`no-monster-card ${theme.container} border ${theme.border} backdrop-blur-md`}>
-          <h2 className={`no-monster-title ${theme.text}`}>No Monster Yet</h2>
-          <p className={`no-monster-text ${theme.text}`}>Ready to begin your journey? Adopt your first monster!</p>
+          <h2 className={`no-monster-title ${theme.text}`}>Adopt a Monster</h2>
           <button
             onClick={handleAdoptMonster}
             disabled={isAdopting}
@@ -474,34 +482,30 @@ export const MonsterManagement: React.FC = (): JSX.Element => {
       );
     }
 
-    const monster = localMonster || walletStatus.monster;
-    const isPlaytime = monster.status.type === 'Play';
-    const isMissionTime = monster.status.type === 'Mission';
-    const now = Date.now();
-    const timeUp = (isPlaytime || isMissionTime) && now >= monster.status.until_time;
-
-    // Use monster's activities directly
-    const activities = monster.activities;
-
-    // Get berry balance for play action
-    const berryBalance = assetBalances.find(a => a.info.processId === monster.activities?.play?.cost?.token)?.balance || 0;
-    const fuelBalance = assetBalances.find(a => a.info.processId === monster.activities?.mission?.cost?.token)?.balance || 0;
-
+    const monster = { ...walletStatus.monster };
+    const activities = walletStatus.monster.activities;
+    
+    // Calculate if any activity is complete (timeUp is true)
+    const activityTimeUp = monster.status.type !== 'Home' && 
+                        monster.status.until_time && 
+                        Date.now() > monster.status.until_time;
+    
+    // Calculate if monster can feed
+    const fuelBalance = assetBalances.find(a => a.info.processId === activities.feed.cost.token)?.balance || 0;
+    const berryBalance = assetBalances.find(a => a.info.processId === activities.feed.cost.token)?.balance || 0;
+    const canFeed = monster.status.type === 'Home' && berryBalance >= activities.feed.cost.amount;
+    
     // Check if all requirements are met for each activity
-    const canFeed = monster.status.type === 'Home' && 
-                    berryBalance >= activities.feed.cost.amount && 
-                    monster.energy < 100;
-
     const canPlay = (monster.status.type === 'Home' && 
                     berryBalance >= activities.play.cost.amount && 
                     monster.energy >= activities.play.energyCost) ||
-                    (monster.status.type === 'Play' && timeUp);
+                    (monster.status.type === 'Play' && activityTimeUp);
 
     const canMission = (monster.status.type === 'Home' && 
                       fuelBalance >= activities.mission.cost.amount && 
                       monster.energy >= activities.mission.energyCost && 
                       monster.happiness >= activities.mission.happinessCost) ||
-                      (monster.status.type === 'Mission' && timeUp);
+                      (monster.status.type === 'Mission' && activityTimeUp);
 
     const isBattleTime = monster.status.type === 'Battle';
     const canReturn = isBattleTime && Date.now() > monster.status.until_time;
@@ -516,19 +520,6 @@ export const MonsterManagement: React.FC = (): JSX.Element => {
         <div className="flex flex-col md:flex-row gap-8">
           {/* Left Column - Monster Card */}
           <div className="flex flex-col items-center md:w-1/2">
-            <div className="monster-card-header w-full flex justify-between items-center mb-4">
-              <div className={`monster-level ${theme.text}`}>
-                Level {monster.level}
-              </div>
-              <button
-                onClick={handleLevelUp}
-                disabled={isLevelingUp || monster.status.type !== 'Home' || monster.exp < getFibonacciExp(monster.level)}
-                className={`px-4 py-2 ${theme.buttonBg} ${theme.buttonHover} ${theme.text} rounded-lg ${(isLevelingUp || monster.status.type !== 'Home' || monster.exp < getFibonacciExp(monster.level)) ? 'opacity-50 cursor-not-allowed' : ''}`}
-              >
-                {isLevelingUp ? 'Leveling Up...' : 'Level Up'}
-              </button>
-            </div>
-            
             <MonsterCardDisplay 
               monster={monster}
               expanded={true}
@@ -538,29 +529,76 @@ export const MonsterManagement: React.FC = (): JSX.Element => {
 
           {/* Right Column - Stats and Info */}
           <div className="flex flex-col md:w-1/2 space-y-6">
+            {/* Monster Status Display - Always visible */}
+            <div className={`status-section ${theme.container} rounded-lg p-4`}>
+              <h3 className={`text-xl font-bold mb-2 ${theme.text}`}>Current Status</h3>
+              <div className="flex flex-col space-y-2">
+                <div className="flex justify-between items-center">
+                  <span className={`font-medium ${theme.text}`}>
+                    Status: <span className="font-bold">{monster.status.type}</span>
+                  </span>
+                  {monster.status.type !== 'Home' && monster.status.type !== 'Battle' && monster.status.until_time && (
+                    <span className={`${theme.text} ${activityTimeUp ? 'text-green-500 font-bold' : ''}`}>
+                      {activityTimeUp ? 'Ready to Return!' : `Time Remaining: ${formatTimeRemaining(monster.status.until_time)}`}
+                    </span>
+                  )}
+                </div>
+                
+                {monster.status.type !== 'Home' && monster.status.type !== 'Battle' && monster.status.until_time && (
+                  <div className="w-full h-4 bg-gray-200 rounded-full overflow-hidden">
+                    <div 
+                      className={`h-full ${activityTimeUp ? 'bg-green-500' : 'bg-blue-500'} rounded-full`}
+                      style={{ 
+                        width: `${calculateProgress(monster.status.since, monster.status.until_time)}%` 
+                      }}
+                    ></div>
+                  </div>
+                )}
+              </div>
+            </div>
+            
             {/* Activities Section */}
             <MonsterActivities 
               monster={monster}
               activities={activities}
-              assetBalances={assetBalances}
-              theme={theme}
-              berryBalance={berryBalance}
-              fuelBalance={fuelBalance}
-              canFeed={canFeed}
               canPlay={canPlay}
-              canBattle={canBattle}
+              canFeed={canFeed}
               canMission={canMission}
+              canBattle={canBattle}
+              canReturn={canReturn}
+              assetBalances={assetBalances}
               isFeeding={isFeeding}
               isPlaying={isPlaying}
               isInBattle={isInBattle}
               isOnMission={isOnMission}
-              timeUp={timeUp}
-              canReturn={canReturn}
+              timeUp={activityTimeUp}
               handleFeedMonster={handleFeedMonster}
               handlePlayMonster={handlePlayMonster}
               handleBattle={handleBattle}
               handleMission={handleMission}
+              theme={theme}
+              berryBalance={berryBalance}
+              fuelBalance={fuelBalance}
             />
+            
+            {/* Level Up Button - Moved below activities */}
+            {monster.status.type === 'Home' && monster.exp >= getFibonacciExp(monster.level) && (
+              <div className={`level-up-section ${theme.container} rounded-lg p-4 mt-4`}>
+                <div className="flex justify-between items-center">
+                  <div>
+                    <h3 className={`text-xl font-bold ${theme.text}`}>Level Up Available</h3>
+                    <p className={`${theme.text}`}>Your monster has enough experience to level up</p>
+                  </div>
+                  <button
+                    onClick={handleLevelUp}
+                    disabled={isLevelingUp}
+                    className={`px-4 py-2 rounded-lg ${theme.buttonBg} ${theme.buttonHover} ${theme.text} level-up-button-glow`}
+                  >
+                    {isLevelingUp ? 'Leveling...' : 'Level Up'}
+                  </button>
+                </div>
+              </div>
+            )}
           </div>
         </div>
       </div>
@@ -590,7 +628,8 @@ export const MonsterManagement: React.FC = (): JSX.Element => {
     handleMission,
     handleLevelUp,
     handleBattle,
-    isInBattle
+    isInBattle,
+    timeUpdateTrigger // Only keep this dependency
   ]);
 
   return (

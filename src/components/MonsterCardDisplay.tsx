@@ -17,19 +17,19 @@ const CARD = {
       HEIGHT: 750
     },
     POSITION: {
-      TOP_RATIO: 0.02,
+      TOP_RATIO: 0.04,
       CENTER: true
     }
   },
   LEVEL: {
     FONT: {
       FAMILY: 'Arial, sans-serif',
-      WEIGHT: '900',
-      SIZE_RATIO: 0.03,
+      WEIGHT: '1000',
+      SIZE_RATIO: 0.025,
       COLOR: 'white'
     },
     POSITION: {
-      LEFT_RATIO: 0.075,
+      LEFT_RATIO: 0.073,
       TOP_RATIO: 0.05,
       OFFSET_X: 10,
       OFFSET_Y: 10
@@ -90,6 +90,165 @@ const CARD = {
       defense: '🛡️',
       health: '❤️'
     }
+  },
+  // Configuration for the expanded side section
+  EXPANDED: {
+    // Spacing and layout for the expanded area
+    PADDING: {
+      LEFT: 20,    // Left padding from original card width
+      RIGHT: 20,   // Right padding from card width
+      TOP: 50      // Top padding for the expanded area
+    },
+    WIDTH: 420,    // Width of the expanded section
+    // Section titles configuration
+    SECTION_TITLE: {
+      FONT: {
+        FAMILY: 'Arial, sans-serif',
+        WEIGHT: 'bold',
+        SIZE: 36,
+        COLOR: 'black'
+      },
+      SPACING: {
+        BOTTOM: 10,     // Space below the title text before the underline
+        AFTER: 20       // Space after the underline before section content
+      },
+      UNDERLINE: {
+        COLOR: '#ccc',
+        WIDTH: 2
+      }
+    },
+    // Configuration for move boxes
+    MOVES: {
+      HEIGHT: 100,           // Height of each move box
+      SPACING: 15,           // Vertical space between move boxes
+      SECTION_SPACING: 40,   // Space between different sections
+      TITLE_OFFSET: 10,      // Space above the title
+      FIRST_MOVE_OFFSET: 30, // Space after title before first move
+      BACKGROUND: {
+        COLOR: 'rgba(240, 240, 240, 0.8)'
+      },
+      BORDER: {
+        COLOR: '#ddd',
+        WIDTH: 1
+      },
+      // Font settings for move names and stats
+      FONT: {
+        NAME: {
+          FAMILY: 'Arial, sans-serif',
+          WEIGHT: 'bold',
+          SIZE: 28,
+          COLOR: 'black',
+          OFFSET_X: 15,      // Left padding for move name
+          OFFSET_Y: 30       // Top padding for move name from moveY
+        },
+        STATS: {
+          FAMILY: 'Arial, sans-serif',
+          WEIGHT: 'normal',
+          SIZE: 22,
+          COLOR: 'black',
+          OFFSET_X: 12,      // Left padding for stats
+          OFFSET_Y: 60,      // Vertical position of stats from moveY
+          SPACING: 10        // Horizontal spacing between stats
+        },
+        RARITY: {
+          FAMILY: 'Arial, sans-serif',
+          WEIGHT: 'normal',
+          SIZE: 35,
+          COLOR: 'gold',
+          OFFSET_X: 30,      // Right padding for rarity stars
+          OFFSET_Y: 70       // Vertical position of rarity from moveY
+        }
+      },
+      // Configuration for element type images
+      ELEMENT_IMAGE: {
+        HEIGHT: 400,         // Height of element type image
+        OFFSET_X: 20,        // Right padding from card edge
+        OFFSET_Y: 150,       // Additional vertical offset for positioning
+        FALLBACK: {          // Fallback badge when image is not available
+          WIDTH: 80,
+          HEIGHT: 25,
+          OFFSET_X: 120,     // Right padding from card edge
+          OFFSET_Y: 10,      // Top padding from moveY
+          FONT: {
+            FAMILY: 'Arial, sans-serif',
+            WEIGHT: 'bold',
+            SIZE: 16,
+            COLOR: 'white'
+          },
+          TEXT_OFFSET_X: 80, // Center position of text
+          TEXT_OFFSET_Y: 27  // Vertical position of text from moveY
+        }
+      },
+      // Stat icons and display configuration
+      STATS: {
+        ICONS: {
+          count: 'X',
+          speed: '⚡',
+          health: '❤️',
+          defense: '🛡️',
+          attack: '⚔️',
+          damage: '💥'
+        },
+        LAYOUT: {
+          GRID: {
+            ROWS: 2,
+            COLS: 3,
+            WIDTH: 85,         // Increased cell width
+            HEIGHT: 30,        // Increased cell height
+            START_Y: 40,       // Moved up from 55 to 40
+            START_X: 15,       // Starting X position from expandedAreaX
+            X_GAP: 0,          // Removed gap between cells horizontally
+            Y_GAP: 0,          // Removed gap between cells vertically
+            INNER_PADDING: 3   // Added minimal inner padding
+          },
+          BACKGROUND: {
+            COLOR: 'rgba(240, 240, 240, 0.9)',
+            BORDER_COLOR: 'rgba(180, 180, 180, 0.9)',
+            BORDER_WIDTH: 1,
+            RADIUS: 0          // Removed rounded corners since cells are touching
+          },
+          FONT: {
+            FAMILY: 'Arial, sans-serif',
+            WEIGHT: 'bold',
+            SIZE: 20,
+            COLOR: 'black'
+          }
+        }
+      }
+    },
+    // Inventory section configuration
+    INVENTORY: {
+      TITLE_OFFSET: 10,      // Space above the title
+      SECTION_SPACING: 20,   // Space between different sections
+      ITEM_HEIGHT: 70,       // Height of each item slot
+      ITEM_WIDTH: 70,        // Width of each item slot
+      ITEM_SPACING: 20,      // Horizontal spacing between item slots
+      ITEM_START_Y: 30,      // Vertical spacing after the title
+      FONT: {
+        NAME: {
+          FAMILY: 'Arial, sans-serif',
+          WEIGHT: 'bold',
+          SIZE: 18,
+          COLOR: 'black'
+        }
+      },
+      SLOT: {
+        BACKGROUND: {
+          COLOR: 'rgba(230, 230, 230, 0.9)',
+          BORDER_COLOR: 'rgba(180, 180, 180, 0.9)',
+          BORDER_WIDTH: 2
+        },
+        EMPTY_TEXT: {
+          LABEL: "Empty",
+          FONT: {
+            FAMILY: 'Arial, sans-serif',
+            WEIGHT: 'normal',
+            SIZE: 14,
+            COLOR: '#888'
+          }
+        }
+      }
+    }
   }
 } as const;
 
@@ -118,15 +277,42 @@ const CardImages = {
     elementtypes: "MvwTMcUOAClFOUrQG_BONbuVLCUuzzu2ep_0KXo03lA",
     level: "k8qbJykA3KTUrLQ_O2TraH_LkJWlbGwOwYZs-E-bIjU"
   },
+  heal:{
+    backgrounds: "cHmLdp4ozWmhMfnjhGe5noaMB7Jl9ieSg2cGnkovb7Y",
+    cardframe: "ts_msM47WJdKVkDphg3TwKgwi_r0Cx6N10qxa8cHhbo",
+    elementtypes: "FwbLZYa0r0twYUvkP8su81L7yMhvs4EPkulUEm1X52U",
+    level: "k8qbJykA3KTUrLQ_O2TraH_LkJWlbGwOwYZs-E-bIjU"
+  },
+  boost:{
+    backgrounds: "cHmLdp4ozWmhMfnjhGe5noaMB7Jl9ieSg2cGnkovb7Y",
+    cardframe: "ts_msM47WJdKVkDphg3TwKgwi_r0Cx6N10qxa8cHhbo",
+    elementtypes: "MvwTMcUOAClFOUrQG_BONbuVLCUuzzu2ep_0KXo03lA",
+    level: "k8qbJykA3KTUrLQ_O2TraH_LkJWlbGwOwYZs-E-bIjU"
+  },
+  normal:{
+    backgrounds: "cHmLdp4ozWmhMfnjhGe5noaMB7Jl9ieSg2cGnkovb7Y",
+    cardframe: "ts_msM47WJdKVkDphg3TwKgwi_r0Cx6N10qxa8cHhbo",
+    elementtypes: "MvwTMcUOAClFOUrQG_BONbuVLCUuzzu2ep_0KXo03lA",
+    level: "k8qbJykA3KTUrLQ_O2TraH_LkJWlbGwOwYZs-E-bIjU"
+  },
 }
 
 interface MonsterCardDisplayProps {
   monster: MonsterStats;
   className?: string;
   expanded?: boolean;
+  inventoryItems?: InventoryItem[]; // Array of inventory items to display in the slots
 }
 
-export const MonsterCardDisplay: React.FC<MonsterCardDisplayProps> = ({ monster, className = '', expanded = false }) => {
+interface InventoryItem {
+  id: string;
+  name: string;
+  imageUrl?: string;
+  rarity?: string; // common, uncommon, rare, epic, legendary
+  description?: string;
+}
+
+export const MonsterCardDisplay: React.FC<MonsterCardDisplayProps> = ({ monster, className = '', expanded = false, inventoryItems = [] }) => {
   const [isZoomed, setIsZoomed] = useState(false);
   const theme = currentTheme(false); // Default to light theme for card expanded section
 
@@ -264,161 +450,200 @@ export const MonsterCardDisplay: React.FC<MonsterCardDisplayProps> = ({ monster,
       const nameY = canvas.height * CARD.NAME.POSITION.TOP_RATIO;
       ctx.fillText(monster.name || 'Unknown Monster', nameX, nameY);
 
-      // Draw moves in 2x2 grid
-      // Convert moves object to array to show all moves
-      const moves = Object.entries(monster.moves || {}).map(([name, moveData]) => ({
-        name,
-        stats: {
-          attack: moveData.attack,
-          speed: moveData.speed,
-          defense: moveData.defense,
-          health: moveData.health
-        }
-      }));
-
-      // Draw moves in 2x2 grid
-      const moveStartY = canvas.height * 0.78; // Start at 78% from top
-      const gridHeight = canvas.height * 0.18; // Grid takes up 18% of card height
-      const cellHeight = gridHeight / 2; // Each cell is half of grid height
-      const cellWidth = originalCardWidth * 0.4; // Each cell is 40% of card width
-      const moveNameOffset = canvas.height * 0.035; // Increased space between name and stats
-      const horizontalOffset = originalCardWidth * 0.1; // 10% offset from edges
-
-      moves.forEach((move, index) => {
-        const row = Math.floor(index / 2); // 0 for first row, 1 for second row
-        const col = index % 2; // 0 for left column, 1 for right column
-        
-        // Center moves with adjusted spacing
-        const x = horizontalOffset + (col * cellWidth) + (cellWidth / 2);
-        const y = moveStartY + (row * cellHeight); // Top of cell + row offset
-
-        // Draw move name
-        ctx.font = `${CARD.MOVES.FONT.NAME.WEIGHT} ${Math.floor(canvas.height * CARD.MOVES.FONT.NAME.SIZE_RATIO)}px ${CARD.MOVES.FONT.NAME.FAMILY}`;
-        ctx.fillStyle = CARD.MOVES.FONT.NAME.COLOR;
-        ctx.textAlign = 'center';
-        ctx.fillText(move.name, x, y);
-
-        // Draw move stats with emojis
-        ctx.font = `${CARD.MOVES.FONT.STATS.WEIGHT} ${Math.floor(canvas.height * CARD.MOVES.FONT.STATS.SIZE_RATIO)}px ${CARD.MOVES.FONT.STATS.FAMILY}`;
-        ctx.fillStyle = CARD.MOVES.FONT.STATS.COLOR;
-        
-        const statEntries = Object.entries(move.stats).filter(([_, value]) => value && value > 0);
-        const statsText = statEntries.map(([stat, value]) => `${CARD.MOVES.EMOJIS[stat as keyof typeof CARD.MOVES.EMOJIS]}${value}`).join(' ');
-        
-        ctx.fillText(statsText, x, y + moveNameOffset);
-      });
-      
       // If expanded, draw moves in the expanded white space
       if (expanded) {
-        const expandedAreaX = originalCardWidth + 20; // Add some padding
-        const expandedAreaY = 50; // Start a bit down from the top
-        const moveHeight = 100; // Height for each move
-        const moveSpacing = 15; // Space between moves
-        const sectionSpacing = 40; // Space between sections
+        // Draw the card details in the expanded section
+        const expandedAreaX = originalCardWidth + 10; // 10px gap between card and expanded area
+        const expandedAreaY = 0;
+        const expandedAreaWidth = CARD.EXPANDED.WIDTH;
+        const expandedAreaHeight = canvas.height;
+        
+        // Constants for positioning moves
+        const moveHeight = CARD.EXPANDED.MOVES.HEIGHT; // Height of each move box
+        const moveSpacing = CARD.EXPANDED.MOVES.SPACING; // Vertical space between move boxes
+        const sectionSpacing = CARD.EXPANDED.MOVES.SECTION_SPACING; // Space between sections
+
+        // 1. Start Drawing the Moves section
+        // Add some extra spacing before the first section title
+        let currentY = expandedAreaY + CARD.EXPANDED.PADDING.TOP;
         
         // Draw "Moves" title
-        ctx.font = `bold 36px Arial, sans-serif`;
-        ctx.fillStyle = 'black';
+        const movesTitleY = currentY;
+        ctx.font = `${CARD.EXPANDED.SECTION_TITLE.FONT.WEIGHT} ${CARD.EXPANDED.SECTION_TITLE.FONT.SIZE}px ${CARD.EXPANDED.SECTION_TITLE.FONT.FAMILY}`;
+        ctx.fillStyle = CARD.EXPANDED.SECTION_TITLE.FONT.COLOR;
         ctx.textAlign = 'left';
-        ctx.fillText('Moves', expandedAreaX, expandedAreaY - 10);
+        ctx.fillText('Moves', expandedAreaX, movesTitleY);
         
-        // Draw a line under the title
+        // Draw underline below the title
+        const movesUnderlineY = movesTitleY + CARD.EXPANDED.SECTION_TITLE.SPACING.BOTTOM;
         ctx.beginPath();
-        ctx.moveTo(expandedAreaX, expandedAreaY);
-        ctx.lineTo(cardWidth - 20, expandedAreaY);
-        ctx.strokeStyle = '#ccc';
-        ctx.lineWidth = 2;
+        ctx.moveTo(expandedAreaX, movesUnderlineY);
+        ctx.lineTo(expandedAreaX + expandedAreaWidth - CARD.EXPANDED.PADDING.RIGHT, movesUnderlineY);
+        ctx.strokeStyle = CARD.EXPANDED.SECTION_TITLE.UNDERLINE.COLOR;
+        ctx.lineWidth = CARD.EXPANDED.SECTION_TITLE.UNDERLINE.WIDTH;
         ctx.stroke();
+        
+        // Calculate starting Y position for moves content
+        const movesContentY = movesUnderlineY + CARD.EXPANDED.SECTION_TITLE.SPACING.AFTER;
+        
+        let moveY = movesContentY;
+        
+        // Load move type images in advance to ensure they're ready when needed
+        // Create a map of valid move types to their corresponding images
+        const moveTypeImages: Record<string, HTMLImageElement> = {};
+        const validMoveTypes = Object.keys(CardImages);
+        
+        // Create an array of move types that need to be loaded
+        const moveTypes = Object.values(monster.moves || {})
+          .map(move => move.type?.toLowerCase() || 'normal')
+          .filter(type => validMoveTypes.includes(type));
+        
+        // Load images for all valid move types found in the monster's moves
+        await Promise.all(moveTypes.map(async (type) => {
+          try {
+            if (CardImages[type as keyof typeof CardImages]) {
+              const img = await loadImage(`${Gateway}${CardImages[type as keyof typeof CardImages].elementtypes}`);
+              moveTypeImages[type] = img;
+            }
+          } catch (err) {
+            console.error(`Failed to load image for type: ${type}`, err);
+          }
+        }));
         
         // Draw each move in a vertical list
         const moveEntries = Object.entries(monster.moves || {});
         moveEntries.forEach(([name, moveData], index) => {
-          const moveY = expandedAreaY + (index * (moveHeight + moveSpacing)) + 30;
+          moveY = movesContentY + (index * (moveHeight + moveSpacing)) + CARD.EXPANDED.MOVES.FIRST_MOVE_OFFSET;
           
           // Draw move background
-          ctx.fillStyle = 'rgba(240, 240, 240, 0.8)';
-          ctx.fillRect(expandedAreaX, moveY, cardWidth - expandedAreaX - 20, moveHeight);
+          ctx.fillStyle = CARD.EXPANDED.MOVES.BACKGROUND.COLOR;
+          ctx.fillRect(expandedAreaX, moveY, expandedAreaWidth - CARD.EXPANDED.PADDING.RIGHT, moveHeight);
           
           // Draw move border
-          ctx.strokeStyle = '#ddd';
-          ctx.lineWidth = 1;
-          ctx.strokeRect(expandedAreaX, moveY, cardWidth - expandedAreaX - 20, moveHeight);
+          ctx.strokeStyle = CARD.EXPANDED.MOVES.BORDER.COLOR;
+          ctx.lineWidth = CARD.EXPANDED.MOVES.BORDER.WIDTH;
+          ctx.strokeRect(expandedAreaX, moveY, expandedAreaWidth - CARD.EXPANDED.PADDING.RIGHT, moveHeight);
           
           // Draw move name
-          ctx.font = 'bold 24px Arial, sans-serif';
-          ctx.fillStyle = 'black';
+          ctx.font = `${CARD.EXPANDED.MOVES.FONT.NAME.WEIGHT} ${CARD.EXPANDED.MOVES.FONT.NAME.SIZE}px ${CARD.EXPANDED.MOVES.FONT.NAME.FAMILY}`;
+          ctx.fillStyle = CARD.EXPANDED.MOVES.FONT.NAME.COLOR;
           ctx.textAlign = 'left';
-          ctx.fillText(name, expandedAreaX + 15, moveY + 30);
+          ctx.fillText(name, expandedAreaX + CARD.EXPANDED.MOVES.FONT.NAME.OFFSET_X, moveY + CARD.EXPANDED.MOVES.FONT.NAME.OFFSET_Y);
           
-          // Draw move type badge
-          const moveType = moveData.type || 'normal';
-          ctx.fillStyle = getTypeColor(moveType);
-          ctx.fillRect(cardWidth - 120, moveY + 10, 80, 25);
-          
-          ctx.font = 'bold 16px Arial, sans-serif';
-          ctx.fillStyle = 'white';
-          ctx.textAlign = 'center';
-          ctx.fillText(moveType.toUpperCase(), cardWidth - 80, moveY + 27);
+          // Draw move type image or fallback to colored badge
+          const moveType = moveData.type?.toLowerCase() || 'normal';
+          if (moveTypeImages[moveType]) {
+            // Draw pre-loaded image - adjust dimensions to prevent stretching
+            // Calculate proper aspect ratio for the element type image
+            const img = moveTypeImages[moveType];
+            const aspectRatio = img.width / img.height;
+            const targetHeight = CARD.EXPANDED.MOVES.ELEMENT_IMAGE.HEIGHT; // 10x larger than previous 40
+            const targetWidth = targetHeight * aspectRatio;
+            
+            // Position the image - moved down and slightly to the right
+            // Add vertical offset to move down
+            const imgY = moveY + (moveHeight - targetHeight) / 2 + CARD.EXPANDED.MOVES.ELEMENT_IMAGE.OFFSET_Y; 
+            // Position the image more to the right
+            const imgX = expandedAreaX + expandedAreaWidth - targetWidth - CARD.EXPANDED.MOVES.ELEMENT_IMAGE.OFFSET_X; 
+            
+            ctx.drawImage(img, imgX, imgY, targetWidth, targetHeight);
+          } else {
+            // Fallback to colored badge if element type image not available
+            ctx.fillStyle = getTypeColor(moveType);
+            ctx.fillRect(expandedAreaX + expandedAreaWidth - CARD.EXPANDED.MOVES.ELEMENT_IMAGE.FALLBACK.WIDTH - CARD.EXPANDED.MOVES.ELEMENT_IMAGE.OFFSET_X, moveY + CARD.EXPANDED.MOVES.ELEMENT_IMAGE.FALLBACK.OFFSET_Y, CARD.EXPANDED.MOVES.ELEMENT_IMAGE.FALLBACK.WIDTH, CARD.EXPANDED.MOVES.ELEMENT_IMAGE.FALLBACK.HEIGHT);
+            
+            ctx.font = `${CARD.EXPANDED.MOVES.ELEMENT_IMAGE.FALLBACK.FONT.WEIGHT} ${CARD.EXPANDED.MOVES.ELEMENT_IMAGE.FALLBACK.FONT.SIZE}px ${CARD.EXPANDED.MOVES.ELEMENT_IMAGE.FALLBACK.FONT.FAMILY}`;
+            ctx.fillStyle = CARD.EXPANDED.MOVES.ELEMENT_IMAGE.FALLBACK.FONT.COLOR;
+            ctx.textAlign = 'center';
+            ctx.fillText(moveType.toUpperCase(), expandedAreaX + expandedAreaWidth - CARD.EXPANDED.MOVES.ELEMENT_IMAGE.FALLBACK.TEXT_OFFSET_X - CARD.EXPANDED.MOVES.ELEMENT_IMAGE.OFFSET_X, moveY + CARD.EXPANDED.MOVES.ELEMENT_IMAGE.FALLBACK.TEXT_OFFSET_Y);
+          }
           
           // Draw move stats
-          ctx.font = '18px Arial, sans-serif';
-          ctx.fillStyle = 'black';
+          ctx.font = `${CARD.EXPANDED.MOVES.FONT.STATS.WEIGHT} ${CARD.EXPANDED.MOVES.FONT.STATS.SIZE}px ${CARD.EXPANDED.MOVES.FONT.STATS.FAMILY}`;
+          ctx.fillStyle = CARD.EXPANDED.MOVES.FONT.STATS.COLOR;
           ctx.textAlign = 'left';
           
-          const statIcons = {
-            attack: '⚔️',
-            speed: '⚡',
-            defense: '🛡️',
-            health: '❤️'
-          };
+          // Define all stats that should be displayed
+          const statIcons = CARD.EXPANDED.MOVES.STATS.ICONS;
           
-          let statX = expandedAreaX + 15;
-          const statY = moveY + 70;
+          // Get the grid configuration
+          const grid = CARD.EXPANDED.MOVES.STATS.LAYOUT.GRID;
+          const background = CARD.EXPANDED.MOVES.STATS.LAYOUT.BACKGROUND;
+          const statFont = CARD.EXPANDED.MOVES.STATS.LAYOUT.FONT;
           
-          // Draw each stat that has a value
-          Object.entries(statIcons).forEach(([stat, icon]) => {
-            const value = moveData[stat as keyof typeof moveData];
-            if (value && Number(value) !== 0) {
-              const statText = `${icon} ${Number(value) > 0 ? '+' : ''}${value}`;
-              ctx.fillText(statText, statX, statY);
-              statX += ctx.measureText(statText).width + 20; // Add spacing between stats
+          // Draw all stats in a grid layout
+          let statIndex = 0;
+          for (let row = 0; row < grid.ROWS; row++) {
+            for (let col = 0; col < grid.COLS; col++) {
+              const statName = Object.keys(statIcons)[statIndex];
+              const icon = statIcons[statName as keyof typeof statIcons];
+              
+              // Calculate the position for this stat
+              const statX = expandedAreaX + grid.START_X + col * (grid.WIDTH + grid.X_GAP);
+              const statY = moveY + grid.START_Y + row * (grid.HEIGHT + grid.Y_GAP);
+              
+              // Get the stat value, defaulting to 0 if not present
+              const value = moveData[statName as keyof typeof moveData] || 0;
+              
+              // Draw stat box background as a simple rectangle
+              ctx.fillStyle = background.COLOR;
+              ctx.fillRect(statX, statY, grid.WIDTH, grid.HEIGHT);
+              
+              // Draw stat box border
+              ctx.strokeStyle = background.BORDER_COLOR;
+              ctx.lineWidth = background.BORDER_WIDTH;
+              ctx.strokeRect(statX, statY, grid.WIDTH, grid.HEIGHT);
+              
+              // Draw stat icon and value
+              ctx.font = `${statFont.WEIGHT} ${statFont.SIZE}px ${statFont.FAMILY}`;
+              ctx.fillStyle = statFont.COLOR;
+              ctx.textAlign = 'left';
+              
+              // Format the stat value with + sign if positive
+              const formattedValue = Number(value) > 0 ? `+${value}` : `${value}`;
+              ctx.fillText(`${icon} ${formattedValue}`, statX + grid.INNER_PADDING, statY + grid.HEIGHT - grid.INNER_PADDING);
+              
+              statIndex++;
+              if (statIndex >= Object.keys(statIcons).length) break;
             }
-          });
+            if (statIndex >= Object.keys(statIcons).length) break;
+          }
           
           // Draw rarity stars if available
           if ((moveData as any).rarity) {
-            const stars = '★'.repeat((moveData as any).rarity);
-            ctx.font = '18px Arial, sans-serif';
+            ctx.font = `bold 35px Arial, sans-serif`;
             ctx.fillStyle = 'gold';
             ctx.textAlign = 'right';
-            ctx.fillText(stars, cardWidth - 30, moveY + 70);
+            ctx.fillText('★'.repeat((moveData as any).rarity), expandedAreaX + expandedAreaWidth - 30, moveY + 70);
           }
         });
         
-        // Calculate starting Y position for status bars - after the moves section
-        const lastMoveY = expandedAreaY + (moveEntries.length * (moveHeight + moveSpacing)) + 30;
-        let statusY = lastMoveY + sectionSpacing;
+        // Calculate ending Y position of the moves section
+        const lastMoveY = movesContentY + (moveEntries.length * (moveHeight + moveSpacing)) + CARD.EXPANDED.MOVES.FIRST_MOVE_OFFSET;
         
-        // Draw "Status" title
-        ctx.font = `bold 36px Arial, sans-serif`;
-        ctx.fillStyle = 'black';
+        // 3. Draw "Status" section (for energy, happiness, experience bars)
+        const statusTitleY = lastMoveY + sectionSpacing;
+        ctx.font = `${CARD.EXPANDED.SECTION_TITLE.FONT.WEIGHT} ${CARD.EXPANDED.SECTION_TITLE.FONT.SIZE}px ${CARD.EXPANDED.SECTION_TITLE.FONT.FAMILY}`;
+        ctx.fillStyle = CARD.EXPANDED.SECTION_TITLE.FONT.COLOR;
         ctx.textAlign = 'left';
-        ctx.fillText('Status', expandedAreaX, statusY - 10);
+        ctx.fillText('Status', expandedAreaX, statusTitleY);
         
-        // Draw a line under the title
+        // Draw underline below the title
+        const statusUnderlineY = statusTitleY + CARD.EXPANDED.SECTION_TITLE.SPACING.BOTTOM;
         ctx.beginPath();
-        ctx.moveTo(expandedAreaX, statusY);
-        ctx.lineTo(cardWidth - 20, statusY);
-        ctx.strokeStyle = '#ccc';
-        ctx.lineWidth = 2;
+        ctx.moveTo(expandedAreaX, statusUnderlineY);
+        ctx.lineTo(expandedAreaX + expandedAreaWidth - CARD.EXPANDED.PADDING.RIGHT, statusUnderlineY);
+        ctx.strokeStyle = CARD.EXPANDED.SECTION_TITLE.UNDERLINE.COLOR;
+        ctx.lineWidth = CARD.EXPANDED.SECTION_TITLE.UNDERLINE.WIDTH;
         ctx.stroke();
         
-        statusY += 30; // Move down for the first status bar
-        const barWidth = cardWidth - expandedAreaX - 20;
-        const barHeight = 30;
-        const barSpacing = 50; // Space between status bars
+        // Calculate starting Y position for status content
+        const statusContentY = statusUnderlineY + CARD.EXPANDED.SECTION_TITLE.SPACING.AFTER;
         
-        // Helper function to draw a status bar
+        // Status bars
+        let statusY = statusContentY;
+        
+        // Draw Energy Bar
         const drawStatusBar = (
           label: string, 
           current: number, 
@@ -436,61 +661,123 @@ export const MonsterCardDisplay: React.FC<MonsterCardDisplayProps> = ({ monster,
           // Draw value text
           const text = valueText || `${current}/${max}`;
           ctx.textAlign = 'right';
-          ctx.fillText(text, expandedAreaX + barWidth, y);
+          ctx.fillText(text, expandedAreaX + expandedAreaWidth - CARD.EXPANDED.PADDING.RIGHT, y);
           
           // Draw background bar
           ctx.fillStyle = 'rgba(230, 230, 230, 1)';
-          ctx.fillRect(expandedAreaX, y + 10, barWidth, barHeight / 2);
+          ctx.fillRect(expandedAreaX, y + 10, expandedAreaWidth - CARD.EXPANDED.PADDING.RIGHT - 20, 30 / 2);
           
           // Draw progress bar
           ctx.fillStyle = color;
-          const progressWidth = (current / max) * barWidth;
-          ctx.fillRect(expandedAreaX, y + 10, progressWidth, barHeight / 2);
+          const progressWidth = (current / max) * (expandedAreaWidth - CARD.EXPANDED.PADDING.RIGHT - 20);
+          ctx.fillRect(expandedAreaX, y + 10, progressWidth, 30 / 2);
           
           // Draw border around bar
           ctx.strokeStyle = '#aaa';
           ctx.lineWidth = 1;
-          ctx.strokeRect(expandedAreaX, y + 10, barWidth, barHeight / 2);
+          ctx.strokeRect(expandedAreaX, y + 10, expandedAreaWidth - CARD.EXPANDED.PADDING.RIGHT - 20, 30 / 2);
         };
         
-        // Draw Energy Bar
         drawStatusBar('Energy', monster.energy, 100, '#F59E0B', statusY); // Yellow
-        statusY += barSpacing;
+        statusY += 50;
         
         // Draw Happiness Bar
         drawStatusBar('Happiness', monster.happiness, 100, '#EC4899', statusY); // Pink
-        statusY += barSpacing;
+        statusY += 50;
         
         // Draw Experience Bar
         const expNeeded = getFibonacciExp(monster.level);
         drawStatusBar('Experience', monster.exp, expNeeded, '#3B82F6', statusY, `${monster.exp}/${expNeeded}`); // Blue
-        statusY += barSpacing;
+        statusY += 50;
         
-        // Draw Status info if not at home
-        if (monster.status.type !== 'Home') {
-          ctx.font = 'bold 18px Arial, sans-serif';
-          ctx.fillStyle = 'black';
-          ctx.textAlign = 'left';
-          ctx.fillText(`Status: ${monster.status.type}`, expandedAreaX, statusY);
+        // Calculate starting Y position for inventory title
+        const lastStatusY = statusY + 50; // Account for the last status bar
+        const inventoryTitleY = lastStatusY + 60; // 60px gap between sections (same as between moves and status)
+        
+        // Draw "Inventory" title
+        ctx.font = `${CARD.EXPANDED.SECTION_TITLE.FONT.WEIGHT} ${CARD.EXPANDED.SECTION_TITLE.FONT.SIZE}px ${CARD.EXPANDED.SECTION_TITLE.FONT.FAMILY}`;
+        ctx.fillStyle = CARD.EXPANDED.SECTION_TITLE.FONT.COLOR;
+        ctx.textAlign = 'left';
+        ctx.fillText('Inventory', expandedAreaX, inventoryTitleY);
+        
+        // Draw a line under the title
+        const inventoryUnderlineY = inventoryTitleY + CARD.EXPANDED.SECTION_TITLE.SPACING.BOTTOM;
+        ctx.beginPath();
+        ctx.moveTo(expandedAreaX, inventoryUnderlineY);
+        ctx.lineTo(expandedAreaX + expandedAreaWidth - CARD.EXPANDED.PADDING.RIGHT, inventoryUnderlineY);
+        ctx.strokeStyle = CARD.EXPANDED.SECTION_TITLE.UNDERLINE.COLOR;
+        ctx.lineWidth = CARD.EXPANDED.SECTION_TITLE.UNDERLINE.WIDTH;
+        ctx.stroke();
+        
+        // Calculate starting Y position for inventory content
+        const inventoryContentY = inventoryUnderlineY + CARD.EXPANDED.SECTION_TITLE.SPACING.AFTER;
+        
+        // Draw inventory slots
+        const inventoryY = inventoryContentY;
+        const inventoryX = expandedAreaX;
+        const slotWidth = Math.floor((expandedAreaWidth - CARD.EXPANDED.PADDING.RIGHT - (CARD.EXPANDED.INVENTORY.ITEM_SPACING * 2)) / 3);
+        const inventoryHeight = CARD.EXPANDED.INVENTORY.ITEM_HEIGHT;
+        
+        // Get inventory items from props
+        const items = inventoryItems;
+        
+        // Draw each inventory slot
+        for (let i = 0; i < 3; i++) {
+          const slotX = inventoryX + (i * (slotWidth + CARD.EXPANDED.INVENTORY.ITEM_SPACING));
+          const slotY = inventoryY;
+          const item = items[i];
           
-          if (monster.status.until_time) {
-            const timeRemaining = formatTimeRemaining(monster.status.until_time);
-            ctx.textAlign = 'right';
-            ctx.fillText(`Time remaining: ${timeRemaining}`, expandedAreaX + barWidth, statusY);
+          // Draw slot background
+          ctx.fillStyle = CARD.EXPANDED.INVENTORY.SLOT.BACKGROUND.COLOR;
+          ctx.fillRect(slotX, slotY, slotWidth, inventoryHeight);
+          
+          // Draw slot border
+          ctx.strokeStyle = CARD.EXPANDED.INVENTORY.SLOT.BACKGROUND.BORDER_COLOR;
+          ctx.lineWidth = CARD.EXPANDED.INVENTORY.SLOT.BACKGROUND.BORDER_WIDTH;
+          ctx.strokeRect(slotX, slotY, slotWidth, inventoryHeight);
+          
+          if (item) {
+            // Draw item name if available
+            ctx.font = `${CARD.EXPANDED.INVENTORY.FONT.NAME.WEIGHT} ${CARD.EXPANDED.INVENTORY.FONT.NAME.SIZE}px ${CARD.EXPANDED.INVENTORY.FONT.NAME.FAMILY}`;
+            ctx.fillStyle = CARD.EXPANDED.INVENTORY.FONT.NAME.COLOR;
+            ctx.textAlign = 'center';
             
-            // Draw progress bar
-            statusY += 20;
-            ctx.fillStyle = 'rgba(230, 230, 230, 1)';
-            ctx.fillRect(expandedAreaX, statusY, barWidth, barHeight / 2);
+            // Truncate item name if too long
+            let displayName = item.name;
+            if (ctx.measureText(displayName).width > slotWidth - 10) {
+              // Truncate and add ellipsis
+              while (ctx.measureText(displayName + '...').width > slotWidth - 10 && displayName.length > 0) {
+                displayName = displayName.slice(0, -1);
+              }
+              displayName += '...';
+            }
             
-            const progress = calculateProgress(monster.status.since, monster.status.until_time);
-            ctx.fillStyle = '#60A5FA'; // Light blue
-            const progressWidth = (progress / 100) * barWidth;
-            ctx.fillRect(expandedAreaX, statusY, progressWidth, barHeight / 2);
+            ctx.fillText(displayName, slotX + slotWidth/2, slotY + inventoryHeight/2 + 5);
             
-            ctx.strokeStyle = '#aaa';
-            ctx.lineWidth = 1;
-            ctx.strokeRect(expandedAreaX, statusY, barWidth, barHeight / 2);
+            // If item has an image, draw it
+            // This would require loading the image - implementing a placeholder here
+            if (item.rarity) {
+              // Add a small colored dot indicating rarity at top right of slot
+              const rarityColors: {[key: string]: string} = {
+                common: '#aaaaaa',
+                uncommon: '#00cc00',
+                rare: '#0066ff',
+                epic: '#cc00ff',
+                legendary: '#ffaa00'
+              };
+              
+              const rarityColor = rarityColors[item.rarity.toLowerCase()] || rarityColors.common;
+              ctx.fillStyle = rarityColor;
+              ctx.beginPath();
+              ctx.arc(slotX + slotWidth - 10, slotY + 10, 5, 0, Math.PI * 2);
+              ctx.fill();
+            }
+          } else {
+            // Draw empty text if no item
+            ctx.font = `${CARD.EXPANDED.INVENTORY.SLOT.EMPTY_TEXT.FONT.WEIGHT} ${CARD.EXPANDED.INVENTORY.SLOT.EMPTY_TEXT.FONT.SIZE}px ${CARD.EXPANDED.INVENTORY.SLOT.EMPTY_TEXT.FONT.FAMILY}`;
+            ctx.fillStyle = CARD.EXPANDED.INVENTORY.SLOT.EMPTY_TEXT.FONT.COLOR;
+            ctx.textAlign = 'center';
+            ctx.fillText(CARD.EXPANDED.INVENTORY.SLOT.EMPTY_TEXT.LABEL, slotX + slotWidth/2, slotY + inventoryHeight/2 + 5);
           }
         }
       }
