@@ -100,21 +100,37 @@ const CARD = {
       TOP: 50      // Top padding for the expanded area
     },
     WIDTH: 420,    // Width of the expanded section
+    BACKGROUND: {
+      COLOR: '#f8f9fa', // Light gray background
+      BORDER: {
+        COLOR: '#ddd',
+        WIDTH: 2,
+        RADIUS: 10
+      }
+    },
     // Section titles configuration
     SECTION_TITLE: {
       FONT: {
         FAMILY: 'Arial, sans-serif',
         WEIGHT: 'bold',
         SIZE: 36,
-        COLOR: 'black'
+        COLOR: '#333333'
       },
       SPACING: {
         BOTTOM: 10,     // Space below the title text before the underline
         AFTER: 20       // Space after the underline before section content
       },
       UNDERLINE: {
-        COLOR: '#ccc',
-        WIDTH: 2
+        COLOR: '#5b87cc', // More vibrant blue color
+        WIDTH: 3,         // Slightly thicker
+        GRADIENT: true    // Use gradient for more gaming aesthetic
+      },
+      ICON_SIZE: 24,      // Size of the section icons
+      SHADOW: {
+        COLOR: 'rgba(0, 0, 0, 0.2)',
+        BLUR: 3,
+        OFFSET_X: 2,
+        OFFSET_Y: 2
       }
     },
     // Configuration for move boxes
@@ -125,11 +141,18 @@ const CARD = {
       TITLE_OFFSET: 10,      // Space above the title
       FIRST_MOVE_OFFSET: 30, // Space after title before first move
       BACKGROUND: {
-        COLOR: 'rgba(240, 240, 240, 0.8)'
+        COLOR: 'rgba(240, 240, 240, 0.9)'
       },
       BORDER: {
-        COLOR: '#ddd',
-        WIDTH: 1
+        COLOR: '#7e91ac',    // More game-like bluish border
+        WIDTH: 2,            // Thicker border
+        RADIUS: 8            // Rounded corners
+      },
+      SHADOW: {
+        COLOR: 'rgba(0, 0, 0, 0.15)',
+        BLUR: 5,
+        OFFSET_X: 2,
+        OFFSET_Y: 2
       },
       // Font settings for move names and stats
       FONT: {
@@ -257,43 +280,50 @@ const CardImages = {
     backgrounds: "S9ME1vtSmYqS8v5ygzX5CMpvYYVZ-nsV1kselavUDeM",
     cardframe: "AsRyajmJKrIFvmc6k3H-GKYveWb1TDvgIPg7HVH1B9k",
     elementtypes: "FwbLZYa0r0twYUvkP8su81L7yMhvs4EPkulUEm1X52U",
-    level: "Bnvgn5yi9_6iRsRlKD9rhQvH5i0XhXvEeDTKu3LhJOI"
+    level: "Bnvgn5yi9_6iRsRlKD9rhQvH5i0XhXvEeDTKu3LhJOI",
+    side:"H8ugI_R1OEKQxe_NyUO2VrFHJYE9wYBcl-OUFKRg_OQ"
   },
   rock:{
     backgrounds: "arPti-7FScNGuPAzcaypGYv_aKk6v5Xk2TBbSeTq9Vc",
     cardframe: "m1GudORk0Q_46kkF0Z_SYvP9EVz3r9EvDMckn7XmwgA",
     elementtypes: "b2pyHeYmaHkE4pzCqIGoqVzjrkXSA71pVruHY9wbv10",
-    level: "whQ3nCw8fNrO3gPCSlBOTOlQ2WmLBZH3FeSogwtXmFg"
+    level: "whQ3nCw8fNrO3gPCSlBOTOlQ2WmLBZH3FeSogwtXmFg",
+    side:"H8ugI_R1OEKQxe_NyUO2VrFHJYE9wYBcl-OUFKRg_OQ"
   },
   fire:{
     backgrounds: "_c3YdO2buD9WYhjst7XiaNRu5CsJ2_dZtSGISB_naQs",
     cardframe: "leecHc-g-zitMPrrMuO_P22ovyFc9OjW3u_F2rFkmSM",
     elementtypes: "1TMMbDFfPFuU60wNZVMN8mlI1c9J-7XPg7T_14SP480",
-    level: "qlKFPHcG5xCWkrcFNeHGdKVv4qGS4NyTPOT-CYkmVsY"
+    level: "qlKFPHcG5xCWkrcFNeHGdKVv4qGS4NyTPOT-CYkmVsY",
+    side:"H8ugI_R1OEKQxe_NyUO2VrFHJYE9wYBcl-OUFKRg_OQ"
   },
   water:{
     backgrounds: "cHmLdp4ozWmhMfnjhGe5noaMB7Jl9ieSg2cGnkovb7Y",
     cardframe: "ts_msM47WJdKVkDphg3TwKgwi_r0Cx6N10qxa8cHhbo",
     elementtypes: "MvwTMcUOAClFOUrQG_BONbuVLCUuzzu2ep_0KXo03lA",
-    level: "k8qbJykA3KTUrLQ_O2TraH_LkJWlbGwOwYZs-E-bIjU"
+    level: "k8qbJykA3KTUrLQ_O2TraH_LkJWlbGwOwYZs-E-bIjU",
+    side:"H8ugI_R1OEKQxe_NyUO2VrFHJYE9wYBcl-OUFKRg_OQ"
   },
   heal:{
     backgrounds: "cHmLdp4ozWmhMfnjhGe5noaMB7Jl9ieSg2cGnkovb7Y",
     cardframe: "ts_msM47WJdKVkDphg3TwKgwi_r0Cx6N10qxa8cHhbo",
     elementtypes: "FwbLZYa0r0twYUvkP8su81L7yMhvs4EPkulUEm1X52U",
-    level: "k8qbJykA3KTUrLQ_O2TraH_LkJWlbGwOwYZs-E-bIjU"
+    level: "k8qbJykA3KTUrLQ_O2TraH_LkJWlbGwOwYZs-E-bIjU",
+    side:"H8ugI_R1OEKQxe_NyUO2VrFHJYE9wYBcl-OUFKRg_OQ"
   },
   boost:{
     backgrounds: "cHmLdp4ozWmhMfnjhGe5noaMB7Jl9ieSg2cGnkovb7Y",
     cardframe: "ts_msM47WJdKVkDphg3TwKgwi_r0Cx6N10qxa8cHhbo",
     elementtypes: "MvwTMcUOAClFOUrQG_BONbuVLCUuzzu2ep_0KXo03lA",
-    level: "k8qbJykA3KTUrLQ_O2TraH_LkJWlbGwOwYZs-E-bIjU"
+    level: "k8qbJykA3KTUrLQ_O2TraH_LkJWlbGwOwYZs-E-bIjU",
+    side:"H8ugI_R1OEKQxe_NyUO2VrFHJYE9wYBcl-OUFKRg_OQ"
   },
   normal:{
     backgrounds: "cHmLdp4ozWmhMfnjhGe5noaMB7Jl9ieSg2cGnkovb7Y",
     cardframe: "ts_msM47WJdKVkDphg3TwKgwi_r0Cx6N10qxa8cHhbo",
     elementtypes: "MvwTMcUOAClFOUrQG_BONbuVLCUuzzu2ep_0KXo03lA",
-    level: "k8qbJykA3KTUrLQ_O2TraH_LkJWlbGwOwYZs-E-bIjU"
+    level: "k8qbJykA3KTUrLQ_O2TraH_LkJWlbGwOwYZs-E-bIjU",
+    side:"H8ugI_R1OEKQxe_NyUO2VrFHJYE9wYBcl-OUFKRg_OQ"
   },
 }
 
@@ -458,6 +488,32 @@ export const MonsterCardDisplay: React.FC<MonsterCardDisplayProps> = ({ monster,
         const expandedAreaWidth = CARD.EXPANDED.WIDTH;
         const expandedAreaHeight = canvas.height;
         
+        // Draw a slightly shaded background for the expanded section with rounded corners
+        if (CARD.EXPANDED.BACKGROUND) {
+          ctx.fillStyle = CARD.EXPANDED.BACKGROUND.COLOR;
+          const radius = CARD.EXPANDED.BACKGROUND.BORDER.RADIUS;
+          
+          // Draw rounded rectangle for the background
+          ctx.beginPath();
+          ctx.moveTo(expandedAreaX + radius, expandedAreaY);
+          ctx.lineTo(expandedAreaX + expandedAreaWidth - radius, expandedAreaY);
+          ctx.arcTo(expandedAreaX + expandedAreaWidth, expandedAreaY, expandedAreaX + expandedAreaWidth, expandedAreaY + radius, radius);
+          ctx.lineTo(expandedAreaX + expandedAreaWidth, expandedAreaHeight - radius);
+          ctx.arcTo(expandedAreaX + expandedAreaWidth, expandedAreaHeight, expandedAreaX + expandedAreaWidth - radius, expandedAreaHeight, radius);
+          ctx.lineTo(expandedAreaX + radius, expandedAreaHeight);
+          ctx.arcTo(expandedAreaX, expandedAreaHeight, expandedAreaX, expandedAreaHeight - radius, radius);
+          ctx.lineTo(expandedAreaX, expandedAreaY + radius);
+          ctx.arcTo(expandedAreaX, expandedAreaY, expandedAreaX + radius, expandedAreaY, radius);
+          ctx.closePath();
+          
+          ctx.fill();
+          
+          // Draw border
+          ctx.strokeStyle = CARD.EXPANDED.BACKGROUND.BORDER.COLOR;
+          ctx.lineWidth = CARD.EXPANDED.BACKGROUND.BORDER.WIDTH;
+          ctx.stroke();
+        }
+        
         // Constants for positioning moves
         const moveHeight = CARD.EXPANDED.MOVES.HEIGHT; // Height of each move box
         const moveSpacing = CARD.EXPANDED.MOVES.SPACING; // Vertical space between move boxes
@@ -467,20 +523,52 @@ export const MonsterCardDisplay: React.FC<MonsterCardDisplayProps> = ({ monster,
         // Add some extra spacing before the first section title
         let currentY = expandedAreaY + CARD.EXPANDED.PADDING.TOP;
         
-        // Draw "Moves" title
+        // Draw "Moves" title with shadow
         const movesTitleY = currentY;
         ctx.font = `${CARD.EXPANDED.SECTION_TITLE.FONT.WEIGHT} ${CARD.EXPANDED.SECTION_TITLE.FONT.SIZE}px ${CARD.EXPANDED.SECTION_TITLE.FONT.FAMILY}`;
+        
+        // Add shadow to the title
+        if (CARD.EXPANDED.SECTION_TITLE.SHADOW) {
+          ctx.shadowColor = CARD.EXPANDED.SECTION_TITLE.SHADOW.COLOR;
+          ctx.shadowBlur = CARD.EXPANDED.SECTION_TITLE.SHADOW.BLUR;
+          ctx.shadowOffsetX = CARD.EXPANDED.SECTION_TITLE.SHADOW.OFFSET_X;
+          ctx.shadowOffsetY = CARD.EXPANDED.SECTION_TITLE.SHADOW.OFFSET_Y;
+        }
+        
         ctx.fillStyle = CARD.EXPANDED.SECTION_TITLE.FONT.COLOR;
         ctx.textAlign = 'left';
         ctx.fillText('Moves', expandedAreaX, movesTitleY);
         
+        // Reset shadow
+        ctx.shadowColor = 'transparent';
+        ctx.shadowBlur = 0;
+        ctx.shadowOffsetX = 0;
+        ctx.shadowOffsetY = 0;
+        
         // Draw underline below the title
         const movesUnderlineY = movesTitleY + CARD.EXPANDED.SECTION_TITLE.SPACING.BOTTOM;
+        
+        // Draw a gradient underline if specified
+        if (CARD.EXPANDED.SECTION_TITLE.UNDERLINE.GRADIENT) {
+          const gradient = ctx.createLinearGradient(
+            expandedAreaX, 
+            movesUnderlineY, 
+            expandedAreaX + expandedAreaWidth - CARD.EXPANDED.PADDING.RIGHT, 
+            movesUnderlineY
+          );
+          gradient.addColorStop(0, CARD.EXPANDED.SECTION_TITLE.UNDERLINE.COLOR);
+          gradient.addColorStop(0.5, '#9bc1ff'); // Lighter middle
+          gradient.addColorStop(1, CARD.EXPANDED.SECTION_TITLE.UNDERLINE.COLOR);
+          
+          ctx.strokeStyle = gradient;
+        } else {
+          ctx.strokeStyle = CARD.EXPANDED.SECTION_TITLE.UNDERLINE.COLOR;
+        }
+        
+        ctx.lineWidth = CARD.EXPANDED.SECTION_TITLE.UNDERLINE.WIDTH;
         ctx.beginPath();
         ctx.moveTo(expandedAreaX, movesUnderlineY);
         ctx.lineTo(expandedAreaX + expandedAreaWidth - CARD.EXPANDED.PADDING.RIGHT, movesUnderlineY);
-        ctx.strokeStyle = CARD.EXPANDED.SECTION_TITLE.UNDERLINE.COLOR;
-        ctx.lineWidth = CARD.EXPANDED.SECTION_TITLE.UNDERLINE.WIDTH;
         ctx.stroke();
         
         // Calculate starting Y position for moves content
@@ -515,14 +603,55 @@ export const MonsterCardDisplay: React.FC<MonsterCardDisplayProps> = ({ monster,
         moveEntries.forEach(([name, moveData], index) => {
           moveY = movesContentY + (index * (moveHeight + moveSpacing)) + CARD.EXPANDED.MOVES.FIRST_MOVE_OFFSET;
           
-          // Draw move background
-          ctx.fillStyle = CARD.EXPANDED.MOVES.BACKGROUND.COLOR;
-          ctx.fillRect(expandedAreaX, moveY, expandedAreaWidth - CARD.EXPANDED.PADDING.RIGHT, moveHeight);
+          // Apply shadow if specified
+          if (CARD.EXPANDED.MOVES.SHADOW) {
+            ctx.shadowColor = CARD.EXPANDED.MOVES.SHADOW.COLOR;
+            ctx.shadowBlur = CARD.EXPANDED.MOVES.SHADOW.BLUR;
+            ctx.shadowOffsetX = CARD.EXPANDED.MOVES.SHADOW.OFFSET_X;
+            ctx.shadowOffsetY = CARD.EXPANDED.MOVES.SHADOW.OFFSET_Y;
+          }
           
-          // Draw move border
-          ctx.strokeStyle = CARD.EXPANDED.MOVES.BORDER.COLOR;
-          ctx.lineWidth = CARD.EXPANDED.MOVES.BORDER.WIDTH;
-          ctx.strokeRect(expandedAreaX, moveY, expandedAreaWidth - CARD.EXPANDED.PADDING.RIGHT, moveHeight);
+          // Draw move background with rounded corners if specified
+          ctx.fillStyle = CARD.EXPANDED.MOVES.BACKGROUND.COLOR;
+          
+          if (CARD.EXPANDED.MOVES.BORDER.RADIUS > 0) {
+            // Draw rounded rectangle
+            const radius = CARD.EXPANDED.MOVES.BORDER.RADIUS;
+            const width = expandedAreaWidth - CARD.EXPANDED.PADDING.RIGHT;
+            
+            ctx.beginPath();
+            ctx.moveTo(expandedAreaX + radius, moveY);
+            ctx.lineTo(expandedAreaX + width - radius, moveY);
+            ctx.arcTo(expandedAreaX + width, moveY, expandedAreaX + width, moveY + radius, radius);
+            ctx.lineTo(expandedAreaX + width, moveY + moveHeight - radius);
+            ctx.arcTo(expandedAreaX + width, moveY + moveHeight, expandedAreaX + width - radius, moveY + moveHeight, radius);
+            ctx.lineTo(expandedAreaX + radius, moveY + moveHeight);
+            ctx.arcTo(expandedAreaX, moveY + moveHeight, expandedAreaX, moveY + moveHeight - radius, radius);
+            ctx.lineTo(expandedAreaX, moveY + radius);
+            ctx.arcTo(expandedAreaX, moveY, expandedAreaX + radius, moveY, radius);
+            ctx.closePath();
+            
+            ctx.fill();
+            
+            // Draw move border
+            ctx.strokeStyle = CARD.EXPANDED.MOVES.BORDER.COLOR;
+            ctx.lineWidth = CARD.EXPANDED.MOVES.BORDER.WIDTH;
+            ctx.stroke();
+          } else {
+            // Draw regular rectangle
+            ctx.fillRect(expandedAreaX, moveY, expandedAreaWidth - CARD.EXPANDED.PADDING.RIGHT, moveHeight);
+            
+            // Draw move border
+            ctx.strokeStyle = CARD.EXPANDED.MOVES.BORDER.COLOR;
+            ctx.lineWidth = CARD.EXPANDED.MOVES.BORDER.WIDTH;
+            ctx.strokeRect(expandedAreaX, moveY, expandedAreaWidth - CARD.EXPANDED.PADDING.RIGHT, moveHeight);
+          }
+          
+          // Reset shadow
+          ctx.shadowColor = 'transparent';
+          ctx.shadowBlur = 0;
+          ctx.shadowOffsetX = 0;
+          ctx.shadowOffsetY = 0;
           
           // Draw move name
           ctx.font = `${CARD.EXPANDED.MOVES.FONT.NAME.WEIGHT} ${CARD.EXPANDED.MOVES.FONT.NAME.SIZE}px ${CARD.EXPANDED.MOVES.FONT.NAME.FAMILY}`;
@@ -623,18 +752,50 @@ export const MonsterCardDisplay: React.FC<MonsterCardDisplayProps> = ({ monster,
         
         // 3. Draw "Status" section (for energy, happiness, experience bars)
         const statusTitleY = lastMoveY + sectionSpacing;
+        
+        // Add shadow to the title
+        if (CARD.EXPANDED.SECTION_TITLE.SHADOW) {
+          ctx.shadowColor = CARD.EXPANDED.SECTION_TITLE.SHADOW.COLOR;
+          ctx.shadowBlur = CARD.EXPANDED.SECTION_TITLE.SHADOW.BLUR;
+          ctx.shadowOffsetX = CARD.EXPANDED.SECTION_TITLE.SHADOW.OFFSET_X;
+          ctx.shadowOffsetY = CARD.EXPANDED.SECTION_TITLE.SHADOW.OFFSET_Y;
+        }
+        
         ctx.font = `${CARD.EXPANDED.SECTION_TITLE.FONT.WEIGHT} ${CARD.EXPANDED.SECTION_TITLE.FONT.SIZE}px ${CARD.EXPANDED.SECTION_TITLE.FONT.FAMILY}`;
         ctx.fillStyle = CARD.EXPANDED.SECTION_TITLE.FONT.COLOR;
         ctx.textAlign = 'left';
         ctx.fillText('Status', expandedAreaX, statusTitleY);
         
+        // Reset shadow
+        ctx.shadowColor = 'transparent';
+        ctx.shadowBlur = 0;
+        ctx.shadowOffsetX = 0;
+        ctx.shadowOffsetY = 0;
+        
         // Draw underline below the title
         const statusUnderlineY = statusTitleY + CARD.EXPANDED.SECTION_TITLE.SPACING.BOTTOM;
+        
+        // Draw a gradient underline if specified
+        if (CARD.EXPANDED.SECTION_TITLE.UNDERLINE.GRADIENT) {
+          const gradient = ctx.createLinearGradient(
+            expandedAreaX, 
+            statusUnderlineY, 
+            expandedAreaX + expandedAreaWidth - CARD.EXPANDED.PADDING.RIGHT, 
+            statusUnderlineY
+          );
+          gradient.addColorStop(0, CARD.EXPANDED.SECTION_TITLE.UNDERLINE.COLOR);
+          gradient.addColorStop(0.5, '#9bc1ff'); // Lighter middle
+          gradient.addColorStop(1, CARD.EXPANDED.SECTION_TITLE.UNDERLINE.COLOR);
+          
+          ctx.strokeStyle = gradient;
+        } else {
+          ctx.strokeStyle = CARD.EXPANDED.SECTION_TITLE.UNDERLINE.COLOR;
+        }
+        
+        ctx.lineWidth = CARD.EXPANDED.SECTION_TITLE.UNDERLINE.WIDTH;
         ctx.beginPath();
         ctx.moveTo(expandedAreaX, statusUnderlineY);
         ctx.lineTo(expandedAreaX + expandedAreaWidth - CARD.EXPANDED.PADDING.RIGHT, statusUnderlineY);
-        ctx.strokeStyle = CARD.EXPANDED.SECTION_TITLE.UNDERLINE.COLOR;
-        ctx.lineWidth = CARD.EXPANDED.SECTION_TITLE.UNDERLINE.WIDTH;
         ctx.stroke();
         
         // Calculate starting Y position for status content
@@ -663,19 +824,103 @@ export const MonsterCardDisplay: React.FC<MonsterCardDisplayProps> = ({ monster,
           ctx.textAlign = 'right';
           ctx.fillText(text, expandedAreaX + expandedAreaWidth - CARD.EXPANDED.PADDING.RIGHT, y);
           
-          // Draw background bar
-          ctx.fillStyle = 'rgba(230, 230, 230, 1)';
-          ctx.fillRect(expandedAreaX, y + 10, expandedAreaWidth - CARD.EXPANDED.PADDING.RIGHT - 20, 30 / 2);
+          // Draw background bar with rounded corners
+          const barHeight = 30 / 2;
+          const barY = y + 10;
+          const barWidth = expandedAreaWidth - CARD.EXPANDED.PADDING.RIGHT - 20;
+          const radius = 4; // Rounded corners for the status bars
           
-          // Draw progress bar
-          ctx.fillStyle = color;
-          const progressWidth = (current / max) * (expandedAreaWidth - CARD.EXPANDED.PADDING.RIGHT - 20);
-          ctx.fillRect(expandedAreaX, y + 10, progressWidth, 30 / 2);
+          // Create a background gradient
+          const bgGradient = ctx.createLinearGradient(
+            expandedAreaX, 
+            barY, 
+            expandedAreaX, 
+            barY + barHeight
+          );
+          bgGradient.addColorStop(0, 'rgba(230, 230, 230, 1)');
+          bgGradient.addColorStop(1, 'rgba(210, 210, 210, 1)');
+          ctx.fillStyle = bgGradient;
+          
+          // Draw rounded background bar
+          ctx.beginPath();
+          ctx.moveTo(expandedAreaX + radius, barY);
+          ctx.lineTo(expandedAreaX + barWidth - radius, barY);
+          ctx.arcTo(expandedAreaX + barWidth, barY, expandedAreaX + barWidth, barY + radius, radius);
+          ctx.lineTo(expandedAreaX + barWidth, barY + barHeight - radius);
+          ctx.arcTo(expandedAreaX + barWidth, barY + barHeight, expandedAreaX + barWidth - radius, barY + barHeight, radius);
+          ctx.lineTo(expandedAreaX + radius, barY + barHeight);
+          ctx.arcTo(expandedAreaX, barY + barHeight, expandedAreaX, barY + barHeight - radius, radius);
+          ctx.lineTo(expandedAreaX, barY + radius);
+          ctx.arcTo(expandedAreaX, barY, expandedAreaX + radius, barY, radius);
+          ctx.closePath();
+          ctx.fill();
+          
+          // Draw progress bar with gradient
+          // Cap the visual progress at 100% while preserving the actual value for display
+          const progressPercentage = Math.min(1, current / max);
+          const progressWidth = progressPercentage * barWidth;
+          
+          // Only draw progress if there's actual progress
+          if (progressWidth > 0) {
+            // Create a progress gradient
+            const progressGradient = ctx.createLinearGradient(
+              expandedAreaX, 
+              barY, 
+              expandedAreaX, 
+              barY + barHeight
+            );
+            progressGradient.addColorStop(0, color);
+            progressGradient.addColorStop(1, shadeColor(color, -20)); // Darker shade at bottom
+            ctx.fillStyle = progressGradient;
+            
+            // Draw rounded progress bar (only round the right side)
+            ctx.beginPath();
+            if (progressWidth >= barWidth - radius) {
+              // If progress is near complete, use full rounded corners
+              ctx.moveTo(expandedAreaX + radius, barY);
+              ctx.lineTo(expandedAreaX + progressWidth - radius, barY);
+              ctx.arcTo(expandedAreaX + progressWidth, barY, expandedAreaX + progressWidth, barY + radius, radius);
+              ctx.lineTo(expandedAreaX + progressWidth, barY + barHeight - radius);
+              ctx.arcTo(expandedAreaX + progressWidth, barY + barHeight, expandedAreaX + progressWidth - radius, barY + barHeight, radius);
+            } else {
+              // If progress is not complete, just clip at progress width
+              ctx.moveTo(expandedAreaX, barY);
+              ctx.lineTo(expandedAreaX + progressWidth, barY);
+              ctx.lineTo(expandedAreaX + progressWidth, barY + barHeight);
+            }
+            ctx.lineTo(expandedAreaX + radius, barY + barHeight);
+            ctx.arcTo(expandedAreaX, barY + barHeight, expandedAreaX, barY + barHeight - radius, radius);
+            ctx.lineTo(expandedAreaX, barY + radius);
+            ctx.arcTo(expandedAreaX, barY, expandedAreaX + radius, barY, radius);
+            ctx.closePath();
+            ctx.fill();
+            
+            // Add shine effect to progress bar
+            ctx.beginPath();
+            ctx.moveTo(expandedAreaX, barY);
+            ctx.lineTo(expandedAreaX + progressWidth, barY);
+            ctx.lineTo(expandedAreaX + progressWidth, barY + barHeight/3);
+            ctx.lineTo(expandedAreaX, barY + barHeight/3);
+            ctx.closePath();
+            ctx.fillStyle = 'rgba(255, 255, 255, 0.3)';
+            ctx.fill();
+          }
           
           // Draw border around bar
           ctx.strokeStyle = '#aaa';
           ctx.lineWidth = 1;
-          ctx.strokeRect(expandedAreaX, y + 10, expandedAreaWidth - CARD.EXPANDED.PADDING.RIGHT - 20, 30 / 2);
+          ctx.beginPath();
+          ctx.moveTo(expandedAreaX + radius, barY);
+          ctx.lineTo(expandedAreaX + barWidth - radius, barY);
+          ctx.arcTo(expandedAreaX + barWidth, barY, expandedAreaX + barWidth, barY + radius, radius);
+          ctx.lineTo(expandedAreaX + barWidth, barY + barHeight - radius);
+          ctx.arcTo(expandedAreaX + barWidth, barY + barHeight, expandedAreaX + barWidth - radius, barY + barHeight, radius);
+          ctx.lineTo(expandedAreaX + radius, barY + barHeight);
+          ctx.arcTo(expandedAreaX, barY + barHeight, expandedAreaX, barY + barHeight - radius, radius);
+          ctx.lineTo(expandedAreaX, barY + radius);
+          ctx.arcTo(expandedAreaX, barY, expandedAreaX + radius, barY, radius);
+          ctx.closePath();
+          ctx.stroke();
         };
         
         drawStatusBar('Energy', monster.energy, 100, '#F59E0B', statusY); // Yellow
@@ -695,18 +940,49 @@ export const MonsterCardDisplay: React.FC<MonsterCardDisplayProps> = ({ monster,
         const inventoryTitleY = lastStatusY + 60; // 60px gap between sections (same as between moves and status)
         
         // Draw "Inventory" title
+        // Add shadow to the title
+        if (CARD.EXPANDED.SECTION_TITLE.SHADOW) {
+          ctx.shadowColor = CARD.EXPANDED.SECTION_TITLE.SHADOW.COLOR;
+          ctx.shadowBlur = CARD.EXPANDED.SECTION_TITLE.SHADOW.BLUR;
+          ctx.shadowOffsetX = CARD.EXPANDED.SECTION_TITLE.SHADOW.OFFSET_X;
+          ctx.shadowOffsetY = CARD.EXPANDED.SECTION_TITLE.SHADOW.OFFSET_Y;
+        }
+        
         ctx.font = `${CARD.EXPANDED.SECTION_TITLE.FONT.WEIGHT} ${CARD.EXPANDED.SECTION_TITLE.FONT.SIZE}px ${CARD.EXPANDED.SECTION_TITLE.FONT.FAMILY}`;
         ctx.fillStyle = CARD.EXPANDED.SECTION_TITLE.FONT.COLOR;
         ctx.textAlign = 'left';
         ctx.fillText('Inventory', expandedAreaX, inventoryTitleY);
         
+        // Reset shadow
+        ctx.shadowColor = 'transparent';
+        ctx.shadowBlur = 0;
+        ctx.shadowOffsetX = 0;
+        ctx.shadowOffsetY = 0;
+        
         // Draw a line under the title
         const inventoryUnderlineY = inventoryTitleY + CARD.EXPANDED.SECTION_TITLE.SPACING.BOTTOM;
+        
+        // Draw a gradient underline if specified
+        if (CARD.EXPANDED.SECTION_TITLE.UNDERLINE.GRADIENT) {
+          const gradient = ctx.createLinearGradient(
+            expandedAreaX, 
+            inventoryUnderlineY, 
+            expandedAreaX + expandedAreaWidth - CARD.EXPANDED.PADDING.RIGHT, 
+            inventoryUnderlineY
+          );
+          gradient.addColorStop(0, CARD.EXPANDED.SECTION_TITLE.UNDERLINE.COLOR);
+          gradient.addColorStop(0.5, '#9bc1ff'); // Lighter middle
+          gradient.addColorStop(1, CARD.EXPANDED.SECTION_TITLE.UNDERLINE.COLOR);
+          
+          ctx.strokeStyle = gradient;
+        } else {
+          ctx.strokeStyle = CARD.EXPANDED.SECTION_TITLE.UNDERLINE.COLOR;
+        }
+        
+        ctx.lineWidth = CARD.EXPANDED.SECTION_TITLE.UNDERLINE.WIDTH;
         ctx.beginPath();
         ctx.moveTo(expandedAreaX, inventoryUnderlineY);
         ctx.lineTo(expandedAreaX + expandedAreaWidth - CARD.EXPANDED.PADDING.RIGHT, inventoryUnderlineY);
-        ctx.strokeStyle = CARD.EXPANDED.SECTION_TITLE.UNDERLINE.COLOR;
-        ctx.lineWidth = CARD.EXPANDED.SECTION_TITLE.UNDERLINE.WIDTH;
         ctx.stroke();
         
         // Calculate starting Y position for inventory content
@@ -727,14 +1003,39 @@ export const MonsterCardDisplay: React.FC<MonsterCardDisplayProps> = ({ monster,
           const slotY = inventoryY;
           const item = items[i];
           
-          // Draw slot background
+          // Add shadow to the inventory slots
+          ctx.shadowColor = 'rgba(0, 0, 0, 0.1)';
+          ctx.shadowBlur = 3;
+          ctx.shadowOffsetX = 1;
+          ctx.shadowOffsetY = 1;
+          
+          // Draw slot background with rounded corners
           ctx.fillStyle = CARD.EXPANDED.INVENTORY.SLOT.BACKGROUND.COLOR;
-          ctx.fillRect(slotX, slotY, slotWidth, inventoryHeight);
+          const radius = 5; // Rounded corners for inventory slots
+          
+          ctx.beginPath();
+          ctx.moveTo(slotX + radius, slotY);
+          ctx.lineTo(slotX + slotWidth - radius, slotY);
+          ctx.arcTo(slotX + slotWidth, slotY, slotX + slotWidth, slotY + radius, radius);
+          ctx.lineTo(slotX + slotWidth, slotY + inventoryHeight - radius);
+          ctx.arcTo(slotX + slotWidth, slotY + inventoryHeight, slotX + slotWidth - radius, slotY + inventoryHeight, radius);
+          ctx.lineTo(slotX + radius, slotY + inventoryHeight);
+          ctx.arcTo(slotX, slotY + inventoryHeight, slotX, slotY + inventoryHeight - radius, radius);
+          ctx.lineTo(slotX, slotY + radius);
+          ctx.arcTo(slotX, slotY, slotX + radius, slotY, radius);
+          ctx.closePath();
+          ctx.fill();
           
           // Draw slot border
           ctx.strokeStyle = CARD.EXPANDED.INVENTORY.SLOT.BACKGROUND.BORDER_COLOR;
           ctx.lineWidth = CARD.EXPANDED.INVENTORY.SLOT.BACKGROUND.BORDER_WIDTH;
-          ctx.strokeRect(slotX, slotY, slotWidth, inventoryHeight);
+          ctx.stroke();
+          
+          // Reset shadow
+          ctx.shadowColor = 'transparent';
+          ctx.shadowBlur = 0;
+          ctx.shadowOffsetX = 0;
+          ctx.shadowOffsetY = 0;
           
           if (item) {
             // Draw item name if available
@@ -768,9 +1069,17 @@ export const MonsterCardDisplay: React.FC<MonsterCardDisplayProps> = ({ monster,
               
               const rarityColor = rarityColors[item.rarity.toLowerCase()] || rarityColors.common;
               ctx.fillStyle = rarityColor;
+              
+              // Draw a glowing rarity indicator
+              ctx.shadowColor = rarityColor;
+              ctx.shadowBlur = 4;
               ctx.beginPath();
               ctx.arc(slotX + slotWidth - 10, slotY + 10, 5, 0, Math.PI * 2);
               ctx.fill();
+              
+              // Reset shadow
+              ctx.shadowColor = 'transparent';
+              ctx.shadowBlur = 0;
             }
           } else {
             // Draw empty text if no item
@@ -787,6 +1096,23 @@ export const MonsterCardDisplay: React.FC<MonsterCardDisplayProps> = ({ monster,
     } catch (error) {
       console.error('Error rendering card:', error);
     }
+  };
+
+  // Helper function to shade a color (positive percent brightens, negative percent darkens)
+  const shadeColor = (color: string, percent: number): string => {
+    let R = parseInt(color.substring(1, 3), 16);
+    let G = parseInt(color.substring(3, 5), 16);
+    let B = parseInt(color.substring(5, 7), 16);
+
+    R = Math.min(255, Math.max(0, R + (R * percent) / 100));
+    G = Math.min(255, Math.max(0, G + (G * percent) / 100));
+    B = Math.min(255, Math.max(0, B + (B * percent) / 100));
+
+    const RR = Math.round(R).toString(16).padStart(2, '0');
+    const GG = Math.round(G).toString(16).padStart(2, '0');
+    const BB = Math.round(B).toString(16).padStart(2, '0');
+
+    return `#${RR}${GG}${BB}`;
   };
 
   // Helper function to get color for move type
