@@ -97,7 +97,8 @@ const CARD = {
     PADDING: {
       LEFT: 20,    // Left padding from original card width
       RIGHT: 20,   // Right padding from card width
-      TOP: 80      // Top padding for the expanded area (increased to move moves section down)
+      TOP: 80,     // Top padding for the expanded area (increased to move moves section down)
+      OVERLAY_LEFT: 15  // Left indentation for the overlay box
     },
     WIDTH: 417,    // Width of the expanded section (full size of background image)
     BACKGROUND: {
@@ -138,8 +139,8 @@ const CARD = {
       HEIGHT: 100,           // Height of each move box
       SPACING: 15,           // Vertical space between move boxes
       SECTION_SPACING: 30,   // Space between different sections (reduced)
-      TITLE_OFFSET: 10,      // Space above the title
-      FIRST_MOVE_OFFSET: 10, // Space after title before first move (further reduced to make moves closer to title)
+      TITLE_OFFSET: 5,      // Space above the title
+      FIRST_MOVE_OFFSET: 0, // Space after title before first move (further reduced to make moves closer to title)
       BACKGROUND: {
         COLOR: 'rgba(255, 255, 255, 0.7)'
       },
@@ -512,9 +513,9 @@ export const MonsterCardDisplay: React.FC<MonsterCardDisplayProps> = ({ monster,
             const radius = CARD.EXPANDED.BACKGROUND.BORDER.RADIUS;
             
             // Make the overlay just a bit smaller than full width 
-            // Increase the overlay size by another 10%
-            const overlayWidth = expandedAreaWidth * 1.0; // Using full width (100%)
-            const overlayX = expandedAreaX + (expandedAreaWidth - overlayWidth) / 2; // Center the overlay
+            // Full width of the overlay, but indented from the left edge
+            const overlayWidth = expandedAreaWidth * 1.0 - CARD.EXPANDED.PADDING.OVERLAY_LEFT; // Slightly less than full width to account for left indent
+            const overlayX = expandedAreaX + CARD.EXPANDED.PADDING.OVERLAY_LEFT; // Indented from left edge by 15px
             
             // Draw only the border of the rounded rectangle
             ctx.beginPath();
@@ -558,7 +559,7 @@ export const MonsterCardDisplay: React.FC<MonsterCardDisplayProps> = ({ monster,
         
         ctx.fillStyle = CARD.EXPANDED.SECTION_TITLE.FONT.COLOR;
         ctx.textAlign = 'left';
-        ctx.fillText('Moves', expandedAreaX, movesTitleY);
+        ctx.fillText('Moves', expandedAreaX + CARD.EXPANDED.PADDING.OVERLAY_LEFT, movesTitleY);
         
         // Reset shadow
         ctx.shadowColor = 'transparent';
