@@ -97,9 +97,9 @@ const CARD = {
     PADDING: {
       LEFT: 20,    // Left padding from original card width
       RIGHT: 20,   // Right padding from card width
-      TOP: 50      // Top padding for the expanded area
+      TOP: 80      // Top padding for the expanded area (increased to move moves section down)
     },
-    WIDTH: 420,    // Width of the expanded section
+    WIDTH: 417,    // Width of the expanded section (full size of background image)
     BACKGROUND: {
       COLOR: '#f8f9fa', // Light gray background
       BORDER: {
@@ -137,11 +137,11 @@ const CARD = {
     MOVES: {
       HEIGHT: 100,           // Height of each move box
       SPACING: 15,           // Vertical space between move boxes
-      SECTION_SPACING: 40,   // Space between different sections
+      SECTION_SPACING: 30,   // Space between different sections (reduced)
       TITLE_OFFSET: 10,      // Space above the title
-      FIRST_MOVE_OFFSET: 30, // Space after title before first move
+      FIRST_MOVE_OFFSET: 10, // Space after title before first move (further reduced to make moves closer to title)
       BACKGROUND: {
-        COLOR: 'rgba(240, 240, 240, 0.9)'
+        COLOR: 'rgba(255, 255, 255, 0.7)'
       },
       BORDER: {
         COLOR: '#7e91ac',    // More game-like bluish border
@@ -225,8 +225,8 @@ const CARD = {
             INNER_PADDING: 3   // Added minimal inner padding
           },
           BACKGROUND: {
-            COLOR: 'rgba(240, 240, 240, 0.9)',
-            BORDER_COLOR: 'rgba(180, 180, 180, 0.9)',
+            COLOR: 'rgba(255, 255, 255, 0.7)',
+            BORDER_COLOR: 'rgba(180, 180, 180, 0.7)',
             BORDER_WIDTH: 1,
             RADIUS: 0          // Removed rounded corners since cells are touching
           },
@@ -242,7 +242,7 @@ const CARD = {
     // Inventory section configuration
     INVENTORY: {
       TITLE_OFFSET: 10,      // Space above the title
-      SECTION_SPACING: 20,   // Space between different sections
+      SECTION_SPACING: 5,    // Space between different sections (further reduced to move inventory higher)
       ITEM_HEIGHT: 70,       // Height of each item slot
       ITEM_WIDTH: 70,        // Width of each item slot
       ITEM_SPACING: 20,      // Horizontal spacing between item slots
@@ -257,8 +257,8 @@ const CARD = {
       },
       SLOT: {
         BACKGROUND: {
-          COLOR: 'rgba(230, 230, 230, 0.9)',
-          BORDER_COLOR: 'rgba(180, 180, 180, 0.9)',
+          COLOR: 'rgba(255, 255, 255, 0.7)',
+          BORDER_COLOR: 'rgba(180, 180, 180, 0.7)',
           BORDER_WIDTH: 2
         },
         EMPTY_TEXT: {
@@ -281,49 +281,49 @@ const CardImages = {
     cardframe: "AsRyajmJKrIFvmc6k3H-GKYveWb1TDvgIPg7HVH1B9k",
     elementtypes: "FwbLZYa0r0twYUvkP8su81L7yMhvs4EPkulUEm1X52U",
     level: "Bnvgn5yi9_6iRsRlKD9rhQvH5i0XhXvEeDTKu3LhJOI",
-    side:"H8ugI_R1OEKQxe_NyUO2VrFHJYE9wYBcl-OUFKRg_OQ"
+    side:"-nnSDId268Dzo9Sb7ERnum2zC5H8Cn9f8p_BOpbg2y0"
   },
   rock:{
     backgrounds: "arPti-7FScNGuPAzcaypGYv_aKk6v5Xk2TBbSeTq9Vc",
     cardframe: "m1GudORk0Q_46kkF0Z_SYvP9EVz3r9EvDMckn7XmwgA",
     elementtypes: "b2pyHeYmaHkE4pzCqIGoqVzjrkXSA71pVruHY9wbv10",
     level: "whQ3nCw8fNrO3gPCSlBOTOlQ2WmLBZH3FeSogwtXmFg",
-    side:"H8ugI_R1OEKQxe_NyUO2VrFHJYE9wYBcl-OUFKRg_OQ"
+    side:"-nnSDId268Dzo9Sb7ERnum2zC5H8Cn9f8p_BOpbg2y0"
   },
   fire:{
     backgrounds: "_c3YdO2buD9WYhjst7XiaNRu5CsJ2_dZtSGISB_naQs",
     cardframe: "leecHc-g-zitMPrrMuO_P22ovyFc9OjW3u_F2rFkmSM",
     elementtypes: "1TMMbDFfPFuU60wNZVMN8mlI1c9J-7XPg7T_14SP480",
     level: "qlKFPHcG5xCWkrcFNeHGdKVv4qGS4NyTPOT-CYkmVsY",
-    side:"H8ugI_R1OEKQxe_NyUO2VrFHJYE9wYBcl-OUFKRg_OQ"
+    side:"-nnSDId268Dzo9Sb7ERnum2zC5H8Cn9f8p_BOpbg2y0"
   },
   water:{
     backgrounds: "cHmLdp4ozWmhMfnjhGe5noaMB7Jl9ieSg2cGnkovb7Y",
     cardframe: "ts_msM47WJdKVkDphg3TwKgwi_r0Cx6N10qxa8cHhbo",
     elementtypes: "MvwTMcUOAClFOUrQG_BONbuVLCUuzzu2ep_0KXo03lA",
     level: "k8qbJykA3KTUrLQ_O2TraH_LkJWlbGwOwYZs-E-bIjU",
-    side:"H8ugI_R1OEKQxe_NyUO2VrFHJYE9wYBcl-OUFKRg_OQ"
+    side:"-nnSDId268Dzo9Sb7ERnum2zC5H8Cn9f8p_BOpbg2y0"
   },
   heal:{
     backgrounds: "cHmLdp4ozWmhMfnjhGe5noaMB7Jl9ieSg2cGnkovb7Y",
     cardframe: "ts_msM47WJdKVkDphg3TwKgwi_r0Cx6N10qxa8cHhbo",
     elementtypes: "FwbLZYa0r0twYUvkP8su81L7yMhvs4EPkulUEm1X52U",
     level: "k8qbJykA3KTUrLQ_O2TraH_LkJWlbGwOwYZs-E-bIjU",
-    side:"H8ugI_R1OEKQxe_NyUO2VrFHJYE9wYBcl-OUFKRg_OQ"
+    side:"-nnSDId268Dzo9Sb7ERnum2zC5H8Cn9f8p_BOpbg2y0"
   },
   boost:{
     backgrounds: "cHmLdp4ozWmhMfnjhGe5noaMB7Jl9ieSg2cGnkovb7Y",
     cardframe: "ts_msM47WJdKVkDphg3TwKgwi_r0Cx6N10qxa8cHhbo",
     elementtypes: "MvwTMcUOAClFOUrQG_BONbuVLCUuzzu2ep_0KXo03lA",
     level: "k8qbJykA3KTUrLQ_O2TraH_LkJWlbGwOwYZs-E-bIjU",
-    side:"H8ugI_R1OEKQxe_NyUO2VrFHJYE9wYBcl-OUFKRg_OQ"
+    side:"-nnSDId268Dzo9Sb7ERnum2zC5H8Cn9f8p_BOpbg2y0"
   },
   normal:{
     backgrounds: "cHmLdp4ozWmhMfnjhGe5noaMB7Jl9ieSg2cGnkovb7Y",
     cardframe: "ts_msM47WJdKVkDphg3TwKgwi_r0Cx6N10qxa8cHhbo",
     elementtypes: "MvwTMcUOAClFOUrQG_BONbuVLCUuzzu2ep_0KXo03lA",
     level: "k8qbJykA3KTUrLQ_O2TraH_LkJWlbGwOwYZs-E-bIjU",
-    side:"H8ugI_R1OEKQxe_NyUO2VrFHJYE9wYBcl-OUFKRg_OQ"
+    side:"-nnSDId268Dzo9Sb7ERnum2zC5H8Cn9f8p_BOpbg2y0"
   },
 }
 
@@ -379,11 +379,13 @@ export const MonsterCardDisplay: React.FC<MonsterCardDisplayProps> = ({ monster,
     // Clear canvas
     ctx.clearRect(0, 0, canvas.width, canvas.height);
 
-    // If expanded, fill the entire canvas with white first
-    if (expanded) {
-      ctx.fillStyle = 'white';
-      ctx.fillRect(0, 0, canvas.width, canvas.height);
-    }
+      // If expanded, prepare the expanded area
+      if (expanded) {
+        ctx.fillStyle = 'white';
+        ctx.fillRect(0, 0, canvas.width, canvas.height);
+        
+        // We'll load the side image later for the expanded section
+      }
 
     // Load and draw images in order
     const loadImage = (src: string): Promise<HTMLImageElement> => {
@@ -408,19 +410,28 @@ export const MonsterCardDisplay: React.FC<MonsterCardDisplayProps> = ({ monster,
         loadImage(`${Gateway}${CardImages[elementType].level}`),
       ];
 
+      // Add side image if expanded
+      if (expanded) {
+        imagePromises.push(loadImage(`${Gateway}${CardImages[elementType].side}`));
+      }
+
       // Add monster image if available
       if (monster.image) {
         imagePromises.push(loadImage(`${Gateway}${monster.image}`));
       }
 
       // Load all images in parallel
-      const [
-        bgImg,
-        frameImg,
-        elementImg,
-        levelImg,
-        monsterImg
-      ] = await Promise.all(imagePromises);
+      let bgImg, frameImg, elementImg, levelImg, sideImg, monsterImg;
+      
+      if (expanded && monster.image) {
+        [bgImg, frameImg, elementImg, levelImg, sideImg, monsterImg] = await Promise.all(imagePromises);
+      } else if (expanded) {
+        [bgImg, frameImg, elementImg, levelImg, sideImg] = await Promise.all(imagePromises);
+      } else if (monster.image) {
+        [bgImg, frameImg, elementImg, levelImg, monsterImg] = await Promise.all(imagePromises);
+      } else {
+        [bgImg, frameImg, elementImg, levelImg] = await Promise.all(imagePromises);
+      }
 
       // Set up original card area - either full canvas or left portion if expanded
       const originalCardWidth = CARD.DIMENSIONS.WIDTH;
@@ -483,32 +494,42 @@ export const MonsterCardDisplay: React.FC<MonsterCardDisplayProps> = ({ monster,
       // If expanded, draw moves in the expanded white space
       if (expanded) {
         // Draw the card details in the expanded section
-        const expandedAreaX = originalCardWidth + 10; // 10px gap between card and expanded area
+        const expandedAreaX = originalCardWidth; // Position exactly at the edge to fit the 417px image precisely
         const expandedAreaY = 0;
         const expandedAreaWidth = CARD.EXPANDED.WIDTH;
         const expandedAreaHeight = canvas.height;
         
-        // Draw a slightly shaded background for the expanded section with rounded corners
-        if (CARD.EXPANDED.BACKGROUND) {
-          ctx.fillStyle = CARD.EXPANDED.BACKGROUND.COLOR;
-          const radius = CARD.EXPANDED.BACKGROUND.BORDER.RADIUS;
+        // Draw the side image as the background for the expanded section
+        if (sideImg) {
+          // Side image is 417px x 1065px according to specification
+          // Draw it to fill the expanded area
+          ctx.drawImage(sideImg, expandedAreaX, expandedAreaY, expandedAreaWidth, expandedAreaHeight);
+        }
+        
+          // Draw just the border for the expanded section with rounded corners
+          // Don't add any background fill to let the side image show through completely
+          if (CARD.EXPANDED.BACKGROUND) {
+            const radius = CARD.EXPANDED.BACKGROUND.BORDER.RADIUS;
+            
+            // Make the overlay just a bit smaller than full width 
+            // Increase the overlay size by another 10%
+            const overlayWidth = expandedAreaWidth * 1.0; // Using full width (100%)
+            const overlayX = expandedAreaX + (expandedAreaWidth - overlayWidth) / 2; // Center the overlay
+            
+            // Draw only the border of the rounded rectangle
+            ctx.beginPath();
+            ctx.moveTo(overlayX + radius, expandedAreaY);
+            ctx.lineTo(overlayX + overlayWidth - radius, expandedAreaY);
+            ctx.arcTo(overlayX + overlayWidth, expandedAreaY, overlayX + overlayWidth, expandedAreaY + radius, radius);
+            ctx.lineTo(overlayX + overlayWidth, expandedAreaHeight - radius);
+            ctx.arcTo(overlayX + overlayWidth, expandedAreaHeight, overlayX + overlayWidth - radius, expandedAreaHeight, radius);
+            ctx.lineTo(overlayX + radius, expandedAreaHeight);
+            ctx.arcTo(overlayX, expandedAreaHeight, overlayX, expandedAreaHeight - radius, radius);
+            ctx.lineTo(overlayX, expandedAreaY + radius);
+            ctx.arcTo(overlayX, expandedAreaY, overlayX + radius, expandedAreaY, radius);
+            ctx.closePath();
           
-          // Draw rounded rectangle for the background
-          ctx.beginPath();
-          ctx.moveTo(expandedAreaX + radius, expandedAreaY);
-          ctx.lineTo(expandedAreaX + expandedAreaWidth - radius, expandedAreaY);
-          ctx.arcTo(expandedAreaX + expandedAreaWidth, expandedAreaY, expandedAreaX + expandedAreaWidth, expandedAreaY + radius, radius);
-          ctx.lineTo(expandedAreaX + expandedAreaWidth, expandedAreaHeight - radius);
-          ctx.arcTo(expandedAreaX + expandedAreaWidth, expandedAreaHeight, expandedAreaX + expandedAreaWidth - radius, expandedAreaHeight, radius);
-          ctx.lineTo(expandedAreaX + radius, expandedAreaHeight);
-          ctx.arcTo(expandedAreaX, expandedAreaHeight, expandedAreaX, expandedAreaHeight - radius, radius);
-          ctx.lineTo(expandedAreaX, expandedAreaY + radius);
-          ctx.arcTo(expandedAreaX, expandedAreaY, expandedAreaX + radius, expandedAreaY, radius);
-          ctx.closePath();
-          
-          ctx.fill();
-          
-          // Draw border
+          // Draw only the border
           ctx.strokeStyle = CARD.EXPANDED.BACKGROUND.BORDER.COLOR;
           ctx.lineWidth = CARD.EXPANDED.BACKGROUND.BORDER.WIDTH;
           ctx.stroke();
@@ -566,9 +587,13 @@ export const MonsterCardDisplay: React.FC<MonsterCardDisplayProps> = ({ monster,
         }
         
         ctx.lineWidth = CARD.EXPANDED.SECTION_TITLE.UNDERLINE.WIDTH;
+        // Use the full width for content to match the full width overlay
+        const titleWidth = expandedAreaWidth; // Using full width
+        const titleX = expandedAreaX + (expandedAreaWidth - titleWidth) / 2; // Center like the overlay
+        
         ctx.beginPath();
         ctx.moveTo(expandedAreaX, movesUnderlineY);
-        ctx.lineTo(expandedAreaX + expandedAreaWidth - CARD.EXPANDED.PADDING.RIGHT, movesUnderlineY);
+        ctx.lineTo(titleX + titleWidth - CARD.EXPANDED.PADDING.RIGHT, movesUnderlineY);
         ctx.stroke();
         
         // Calculate starting Y position for moves content
@@ -619,16 +644,20 @@ export const MonsterCardDisplay: React.FC<MonsterCardDisplayProps> = ({ monster,
             const radius = CARD.EXPANDED.MOVES.BORDER.RADIUS;
             const width = expandedAreaWidth - CARD.EXPANDED.PADDING.RIGHT;
             
+            // Draw move boxes to match narrower overlay width
+            const moveBoxX = titleX; // Start moves at same X as section title
+            const moveBoxWidth = titleWidth - CARD.EXPANDED.PADDING.RIGHT;
+            
             ctx.beginPath();
-            ctx.moveTo(expandedAreaX + radius, moveY);
-            ctx.lineTo(expandedAreaX + width - radius, moveY);
-            ctx.arcTo(expandedAreaX + width, moveY, expandedAreaX + width, moveY + radius, radius);
-            ctx.lineTo(expandedAreaX + width, moveY + moveHeight - radius);
-            ctx.arcTo(expandedAreaX + width, moveY + moveHeight, expandedAreaX + width - radius, moveY + moveHeight, radius);
-            ctx.lineTo(expandedAreaX + radius, moveY + moveHeight);
-            ctx.arcTo(expandedAreaX, moveY + moveHeight, expandedAreaX, moveY + moveHeight - radius, radius);
-            ctx.lineTo(expandedAreaX, moveY + radius);
-            ctx.arcTo(expandedAreaX, moveY, expandedAreaX + radius, moveY, radius);
+            ctx.moveTo(moveBoxX + radius, moveY);
+            ctx.lineTo(moveBoxX + moveBoxWidth - radius, moveY);
+            ctx.arcTo(moveBoxX + moveBoxWidth, moveY, moveBoxX + moveBoxWidth, moveY + radius, radius);
+            ctx.lineTo(moveBoxX + moveBoxWidth, moveY + moveHeight - radius);
+            ctx.arcTo(moveBoxX + moveBoxWidth, moveY + moveHeight, moveBoxX + moveBoxWidth - radius, moveY + moveHeight, radius);
+            ctx.lineTo(moveBoxX + radius, moveY + moveHeight);
+            ctx.arcTo(moveBoxX, moveY + moveHeight, moveBoxX, moveY + moveHeight - radius, radius);
+            ctx.lineTo(moveBoxX, moveY + radius);
+            ctx.arcTo(moveBoxX, moveY, moveBoxX + radius, moveY, radius);
             ctx.closePath();
             
             ctx.fill();
@@ -638,13 +667,13 @@ export const MonsterCardDisplay: React.FC<MonsterCardDisplayProps> = ({ monster,
             ctx.lineWidth = CARD.EXPANDED.MOVES.BORDER.WIDTH;
             ctx.stroke();
           } else {
-            // Draw regular rectangle
-            ctx.fillRect(expandedAreaX, moveY, expandedAreaWidth - CARD.EXPANDED.PADDING.RIGHT, moveHeight);
+            // Draw regular rectangle (matching the overlay width)
+            ctx.fillRect(titleX, moveY, titleWidth - CARD.EXPANDED.PADDING.RIGHT, moveHeight);
             
             // Draw move border
             ctx.strokeStyle = CARD.EXPANDED.MOVES.BORDER.COLOR;
             ctx.lineWidth = CARD.EXPANDED.MOVES.BORDER.WIDTH;
-            ctx.strokeRect(expandedAreaX, moveY, expandedAreaWidth - CARD.EXPANDED.PADDING.RIGHT, moveHeight);
+            ctx.strokeRect(titleX, moveY, titleWidth - CARD.EXPANDED.PADDING.RIGHT, moveHeight);
           }
           
           // Reset shadow
@@ -653,11 +682,11 @@ export const MonsterCardDisplay: React.FC<MonsterCardDisplayProps> = ({ monster,
           ctx.shadowOffsetX = 0;
           ctx.shadowOffsetY = 0;
           
-          // Draw move name
+          // Draw move name (within the narrower container)
           ctx.font = `${CARD.EXPANDED.MOVES.FONT.NAME.WEIGHT} ${CARD.EXPANDED.MOVES.FONT.NAME.SIZE}px ${CARD.EXPANDED.MOVES.FONT.NAME.FAMILY}`;
           ctx.fillStyle = CARD.EXPANDED.MOVES.FONT.NAME.COLOR;
           ctx.textAlign = 'left';
-          ctx.fillText(name, expandedAreaX + CARD.EXPANDED.MOVES.FONT.NAME.OFFSET_X, moveY + CARD.EXPANDED.MOVES.FONT.NAME.OFFSET_Y);
+          ctx.fillText(name, titleX + CARD.EXPANDED.MOVES.FONT.NAME.OFFSET_X, moveY + CARD.EXPANDED.MOVES.FONT.NAME.OFFSET_Y);
           
           // Draw move type image or fallback to colored badge
           const moveType = moveData.type?.toLowerCase() || 'normal';
@@ -707,8 +736,8 @@ export const MonsterCardDisplay: React.FC<MonsterCardDisplayProps> = ({ monster,
               const statName = Object.keys(statIcons)[statIndex];
               const icon = statIcons[statName as keyof typeof statIcons];
               
-              // Calculate the position for this stat
-              const statX = expandedAreaX + grid.START_X + col * (grid.WIDTH + grid.X_GAP);
+              // Calculate the position for this stat (aligned with narrower move box)
+              const statX = titleX + grid.START_X + col * (grid.WIDTH + grid.X_GAP);
               const statY = moveY + grid.START_Y + row * (grid.HEIGHT + grid.Y_GAP);
               
               // Get the stat value, defaulting to 0 if not present
@@ -793,9 +822,10 @@ export const MonsterCardDisplay: React.FC<MonsterCardDisplayProps> = ({ monster,
         }
         
         ctx.lineWidth = CARD.EXPANDED.SECTION_TITLE.UNDERLINE.WIDTH;
+        // Make Status title underline match the narrower width
         ctx.beginPath();
         ctx.moveTo(expandedAreaX, statusUnderlineY);
-        ctx.lineTo(expandedAreaX + expandedAreaWidth - CARD.EXPANDED.PADDING.RIGHT, statusUnderlineY);
+        ctx.lineTo(titleX + titleWidth - CARD.EXPANDED.PADDING.RIGHT, statusUnderlineY);
         ctx.stroke();
         
         // Calculate starting Y position for status content
@@ -824,10 +854,10 @@ export const MonsterCardDisplay: React.FC<MonsterCardDisplayProps> = ({ monster,
           ctx.textAlign = 'right';
           ctx.fillText(text, expandedAreaX + expandedAreaWidth - CARD.EXPANDED.PADDING.RIGHT, y);
           
-          // Draw background bar with rounded corners
+          // Draw background bar with rounded corners (contained within overlay width)
           const barHeight = 30 / 2;
           const barY = y + 10;
-          const barWidth = expandedAreaWidth - CARD.EXPANDED.PADDING.RIGHT - 20;
+          const barWidth = titleWidth - CARD.EXPANDED.PADDING.RIGHT - 20;
           const radius = 4; // Rounded corners for the status bars
           
           // Create a background gradient
@@ -837,8 +867,8 @@ export const MonsterCardDisplay: React.FC<MonsterCardDisplayProps> = ({ monster,
             expandedAreaX, 
             barY + barHeight
           );
-          bgGradient.addColorStop(0, 'rgba(230, 230, 230, 1)');
-          bgGradient.addColorStop(1, 'rgba(210, 210, 210, 1)');
+          bgGradient.addColorStop(0, 'rgba(255, 255, 255, 0.5)');
+          bgGradient.addColorStop(1, 'rgba(240, 240, 240, 0.5)');
           ctx.fillStyle = bgGradient;
           
           // Draw rounded background bar
@@ -936,8 +966,8 @@ export const MonsterCardDisplay: React.FC<MonsterCardDisplayProps> = ({ monster,
         statusY += 50;
         
         // Calculate starting Y position for inventory title
-        const lastStatusY = statusY + 50; // Account for the last status bar
-        const inventoryTitleY = lastStatusY + 60; // 60px gap between sections (same as between moves and status)
+        const lastStatusY = statusY + 30; // Account for the last status bar (reduced from 50)
+        const inventoryTitleY = lastStatusY + 30; // Reduced from 60px to move inventory higher
         
         // Draw "Inventory" title
         // Add shadow to the title
@@ -980,18 +1010,19 @@ export const MonsterCardDisplay: React.FC<MonsterCardDisplayProps> = ({ monster,
         }
         
         ctx.lineWidth = CARD.EXPANDED.SECTION_TITLE.UNDERLINE.WIDTH;
+        // Make Inventory title underline match the narrower width
         ctx.beginPath();
         ctx.moveTo(expandedAreaX, inventoryUnderlineY);
-        ctx.lineTo(expandedAreaX + expandedAreaWidth - CARD.EXPANDED.PADDING.RIGHT, inventoryUnderlineY);
+        ctx.lineTo(titleX + titleWidth - CARD.EXPANDED.PADDING.RIGHT, inventoryUnderlineY);
         ctx.stroke();
         
         // Calculate starting Y position for inventory content
         const inventoryContentY = inventoryUnderlineY + CARD.EXPANDED.SECTION_TITLE.SPACING.AFTER;
         
-        // Draw inventory slots
+        // Draw inventory slots (contained within overlay width)
         const inventoryY = inventoryContentY;
-        const inventoryX = expandedAreaX;
-        const slotWidth = Math.floor((expandedAreaWidth - CARD.EXPANDED.PADDING.RIGHT - (CARD.EXPANDED.INVENTORY.ITEM_SPACING * 2)) / 3);
+        const inventoryX = titleX; // Align with overlay's left edge
+        const slotWidth = Math.floor((titleWidth - CARD.EXPANDED.PADDING.RIGHT - (CARD.EXPANDED.INVENTORY.ITEM_SPACING * 2)) / 3);
         const inventoryHeight = CARD.EXPANDED.INVENTORY.ITEM_HEIGHT;
         
         // Get inventory items from props
