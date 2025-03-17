@@ -2,8 +2,7 @@ import React, { useEffect, useState } from 'react';
 import '../styles/MonsterManagement.css';
 import { useNavigate } from 'react-router-dom';
 import { useWallet } from '../hooks/useWallet';
-import { purchaseAccess, TokenOption, adoptMonster, getAssetBalances, MonsterStats } from '../utils/aoHelpers';
-import { AssetBalance } from '../utils/interefaces';
+import { purchaseAccess, TokenOption, adoptMonster, MonsterStats } from '../utils/aoHelpers';
 import { createDataItemSigner } from '../config/aoConnection';
 import { message } from '../utils/aoHelpers';
 import { currentTheme } from '../constants/theme';
@@ -48,7 +47,7 @@ const calculateProgress = (sinceTime: number, untilTime: number): number => {
 
 export const MonsterManagement: React.FC = (): JSX.Element => {
   const navigate = useNavigate();
-  const { wallet, walletStatus, darkMode, connectWallet, setDarkMode, triggerRefresh, refreshTrigger } = useWallet();
+  const { wallet, walletStatus, darkMode, connectWallet, setDarkMode, triggerRefresh, refreshTrigger, assetBalances, refreshAssets } = useWallet();
   const [isPurchaseModalOpen, setIsPurchaseModalOpen] = useState(false);
   const [showConfetti, setShowConfetti] = useState(false);
   const [isAdopting, setIsAdopting] = useState(false);
@@ -58,13 +57,12 @@ export const MonsterManagement: React.FC = (): JSX.Element => {
   const [showStatModal, setShowStatModal] = useState(false);
   const [isOnMission, setIsOnMission] = useState(false);
   const [isInBattle, setIsInBattle] = useState(false);
-  const [assetBalances, setAssetBalances] = useState<AssetBalance[]>([]);
   const [localMonster, setLocalMonster] = useState<MonsterStats | null>(null);
   const [timeUpdateTrigger, setTimeUpdateTrigger] = useState<number>(0);
   const theme = currentTheme(darkMode);
   const [, setForceUpdate] = useState({});
 
-  // Update local monster and load assets when wallet status changes
+  // Update local monster when wallet status changes
   useEffect(() => {
     const updateData = async () => {
       console.log('[MonsterManagement] Checking for updates', {
@@ -72,10 +70,6 @@ export const MonsterManagement: React.FC = (): JSX.Element => {
         hasMonster: !!walletStatus?.monster,
         refreshTrigger
       });
-
-      if (wallet?.address) {
-        await loadAssetBalances();
-      }
       
       if (walletStatus?.monster) {
         const monsterChanged = JSON.stringify(walletStatus.monster) !== JSON.stringify(localMonster);
@@ -134,16 +128,6 @@ export const MonsterManagement: React.FC = (): JSX.Element => {
     };
   }, [localMonster?.status.type, localMonster?.status.until_time, triggerRefresh]);
 
-  const loadAssetBalances = async () => {
-    try {
-      const balances = await getAssetBalances(wallet);
-      console.log('Current asset balances:', balances);
-      setAssetBalances(balances);
-    } catch (error) {
-      console.error('Error loading asset balances:', error);
-    }
-  };
-
   // Add battle handler
   const handleBattle = async () => {
     if (!walletStatus?.monster || !wallet?.address) return;
@@ -191,7 +175,7 @@ export const MonsterManagement: React.FC = (): JSX.Element => {
         navigate('/battle');
       }
 
-      await loadAssetBalances();
+      refreshAssets();
     } catch (error) {
       console.error('Error with battle:', error);
     } finally {
@@ -234,7 +218,7 @@ export const MonsterManagement: React.FC = (): JSX.Element => {
         data: ""
       }, triggerRefresh);
 
-      await loadAssetBalances();
+      refreshAssets();
     } catch (error) {
       console.error('Error feeding monster:', error);
     } finally {
@@ -294,7 +278,7 @@ export const MonsterManagement: React.FC = (): JSX.Element => {
         }, triggerRefresh);
       }
 
-      await loadAssetBalances();
+      refreshAssets();
     } catch (error) {
       console.error('Error with play action:', error);
     } finally {
@@ -345,7 +329,7 @@ export const MonsterManagement: React.FC = (): JSX.Element => {
         }, triggerRefresh);
       }
 
-      await loadAssetBalances();
+      refreshAssets();
     } catch (error) {
       console.error('Error with mission:', error);
     } finally {

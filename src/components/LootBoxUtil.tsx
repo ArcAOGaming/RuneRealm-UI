@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { useWallet } from '../hooks/useWallet';
-import { getLootBoxes, openLootBox, LootBoxResponse, getAssetBalances } from '../utils/aoHelpers';
+import { getLootBoxes, openLootBox, LootBoxResponse } from '../utils/aoHelpers';
 import { currentTheme } from '../constants/theme';
 import Confetti from 'react-confetti';
 
@@ -15,13 +15,13 @@ interface LootBox {
 }
 
 const LootBoxUtil: React.FC<LootBoxProps> = ({ className = '' }) => {
-  const { wallet, darkMode, triggerRefresh, refreshTrigger } = useWallet();
+  const { wallet, darkMode, triggerRefresh, refreshTrigger, assetBalances } = useWallet();
   const [lootBoxes, setLootBoxes] = useState<LootBox[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [isOpening, setIsOpening] = useState(false);
   const [openResult, setOpenResult] = useState<LootBoxResponse | null>(null);
   const [showConfetti, setShowConfetti] = useState(false);
-  const [assets, setAssets] = useState<{[key: string]: {name: string, ticker: string, logo?: string}}>({}); 
+  const [assets, setAssets] = useState<{[key: string]: {name: string, ticker: string, logo?: string}}>({});
   
   const theme = currentTheme(darkMode);
   
@@ -90,30 +90,22 @@ const LootBoxUtil: React.FC<LootBoxProps> = ({ className = '' }) => {
     loadLootBoxes();
   }, [wallet?.address, refreshTrigger]);
   
-  // Load assets for token name mapping
+  // Map assets for token name mapping
   useEffect(() => {
-    const loadAssets = async () => {
-      if (!wallet?.address) return;
-      try {
-        const assetBalances = await getAssetBalances(wallet.address);
-        const assetMap: {[key: string]: {name: string, ticker: string, logo?: string}} = {};
-        
-        assetBalances.forEach(asset => {
-          assetMap[asset.info.processId] = {
-            name: asset.info.name,
-            ticker: asset.info.ticker,
-            logo: asset.info.logo
-          };
-        });
-        
-        setAssets(assetMap);
-      } catch (error) {
-        console.error('Error loading assets:', error);
-      }
-    };
+    if (!wallet?.address || !assetBalances.length) return;
     
-    loadAssets();
-  }, [wallet?.address]);
+    const assetMap: {[key: string]: {name: string, ticker: string, logo?: string}} = {};
+    
+    assetBalances.forEach(asset => {
+      assetMap[asset.info.processId] = {
+        name: asset.info.name,
+        ticker: asset.info.ticker,
+        logo: asset.info.logo
+      };
+    });
+    
+    setAssets(assetMap);
+  }, [wallet?.address, assetBalances]);
   
   // Get color class based on rarity
   const getRarityColorClass = (rarity: number): string => {

@@ -1,7 +1,6 @@
-import React, { useEffect, useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useWallet } from '../hooks/useWallet';
-import { getAssetBalances, formatTokenAmount } from '../utils/aoHelpers';
-import type { AssetBalance } from '../utils/interefaces';
+import { formatTokenAmount } from '../utils/aoHelpers';
 import { currentTheme } from '../constants/theme';
 import { Gateway } from '../constants/Constants';
 
@@ -30,8 +29,7 @@ const INVENTORY_SECTIONS: InventorySection[] = [
 ];
 
 const Inventory = () => {
-  const { wallet, darkMode } = useWallet();
-  const [assetBalances, setAssetBalances] = useState<AssetBalance[]>([]);
+  const { wallet, darkMode, assetBalances, isLoadingAssets, refreshAssets, refreshTrigger } = useWallet();
   const [openSections, setOpenSections] = useState<{ [key: string]: boolean }>({
     main: true,
     "Value": true,
@@ -39,24 +37,10 @@ const Inventory = () => {
     "Utility": true,
     "Berries": true
   });
+
+  // No need for a duplicate refreshAssets call here, it's already called by the WalletContext
   const [loadingIcons, setLoadingIcons] = useState<{ [key: string]: boolean }>({});
   const theme = currentTheme(darkMode);
-
-  useEffect(() => {
-    if (wallet?.address) {
-      loadAssetBalances();
-    }
-  }, [wallet?.address]);
-
-  const loadAssetBalances = async () => {
-    try {
-      const balances = await getAssetBalances(wallet);
-      console.log('Current asset balances:', balances);
-      setAssetBalances(balances);
-    } catch (error) {
-      console.error('Error loading asset balances:', error);
-    }
-  };
 
   const toggleSection = (section: string) => {
     setOpenSections(prev => ({
@@ -114,22 +98,39 @@ const Inventory = () => {
 
   return (
     <div className={`fixed right-4 top-32 ${theme.container} border ${theme.border} backdrop-blur-md transition-all duration-300 rounded-xl z-40 inventory-container max-w-[280px]`}>
-      <div 
-        className={`flex items-center justify-between p-3 cursor-pointer ${theme.text}`} 
-        onClick={() => toggleSection('main')}
-      >
-        <div className="flex items-center gap-2">
+      <div className={`flex items-center justify-between p-3 ${theme.text}`}>
+        <div 
+          className="flex items-center gap-2 cursor-pointer"
+          onClick={() => toggleSection('main')}
+        >
           <span className="text-xl">👜</span>
           <h2 className="text-lg font-bold">Inventory</h2>
         </div>
-        <span 
-          className="transform transition-transform duration-200" 
-          style={{
-            transform: openSections.main ? 'rotate(90deg)' : 'rotate(0deg)'
-          }}
-        >
-          ›
-        </span>
+        <div className="flex items-center gap-2">
+          {isLoadingAssets ? (
+            <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-[#F4860A]"></div>
+          ) : (
+            <button 
+              onClick={(e) => {
+                e.stopPropagation();
+                refreshAssets();
+              }} 
+              className="text-sm hover:text-[#F4860A] transition-colors"
+              title="Refresh assets"
+            >
+              ↻
+            </button>
+          )}
+          <span 
+            className="transform transition-transform duration-200 cursor-pointer" 
+            style={{
+              transform: openSections.main ? 'rotate(90deg)' : 'rotate(0deg)'
+            }}
+            onClick={() => toggleSection('main')}
+          >
+            ›
+          </span>
+        </div>
       </div>
       <div className={`overflow-hidden transition-all duration-300 ${openSections.main ? 'max-h-fit w-full p-3' : 'max-h-0 w-0 p-0'}`}>
         <div className="space-y-3">

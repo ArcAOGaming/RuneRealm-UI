@@ -1,5 +1,6 @@
-import React, { createContext, useContext, useState, useEffect, useCallback } from 'react';
-import { checkWalletStatus, WalletStatus } from '../utils/aoHelpers';
+import React, { createContext, useContext, useState, useEffect, useCallback, useRef } from 'react';
+import { checkWalletStatus, WalletStatus, getAssetBalances } from '../utils/aoHelpers';
+import type { AssetBalance } from '../utils/interefaces';
 
 interface WalletContextType {
   wallet: any | null;
@@ -7,9 +8,12 @@ interface WalletContextType {
   isCheckingStatus: boolean;
   darkMode: boolean;
   refreshTrigger: number;
+  assetBalances: AssetBalance[];
+  isLoadingAssets: boolean;
   connectWallet: (force?: boolean) => Promise<void>;
   setDarkMode: (mode: boolean) => void;
   triggerRefresh: () => void;
+  refreshAssets: () => Promise<void>;
 }
 
 const WalletContext = createContext<WalletContextType | undefined>(undefined);
@@ -23,6 +27,15 @@ export const WalletProvider: React.FC<{ children: React.ReactNode }> = ({ childr
   );
   const [lastCheck, setLastCheck] = useState<number>(0);
   const [refreshTrigger, setRefreshTrigger] = useState<number>(0);
+  const [assetBalances, setAssetBalances] = useState<AssetBalance[]>([]);
+  const [isLoadingAssets, setIsLoadingAssets] = useState<boolean>(false);
+  
+  // Use a ref to track ongoing asset refresh to prevent duplicate requests
+  const isRefreshingRef = useRef(false);
+  // Use a ref to track last refresh time
+  const lastRefreshTimeRef = useRef(0);
+  // Minimum time between refreshes (3 seconds)
+  const MIN_REFRESH_INTERVAL = 3000;
 
   const triggerRefresh = useCallback(() => {
     console.log('[WalletContext] Refresh triggered from message');
@@ -37,6 +50,47 @@ export const WalletProvider: React.FC<{ children: React.ReactNode }> = ({ childr
       });
     }, 5000);
   }, []);
+
+  const refreshAssets = useCallback(async () => {
+    if (!wallet?.address) return;
+    
+    const now = Date.now();
+    // Prevent duplicate requests and throttle refreshes
+    if (isRefreshingRef.current) {
+      console.log('[WalletContext] Asset refresh already in progress, skipping');
+      return;
+    }
+    
+    // Check if we've refreshed recently
+    if (now - lastRefreshTimeRef.current < MIN_REFRESH_INTERVAL) {
+      console.log('[WalletContext] Recent refresh detected, using cached data');
+      return;
+    }
+
+    try {
+      isRefreshingRef.current = true;
+      setIsLoadingAssets(true);
+      
+      console.log('[WalletContext] Starting asset refresh');
+      const balances = await getAssetBalances(wallet);
+      
+      // Only update if we got valid data and balances is not empty
+      if (balances && balances.length > 0) {
+        console.log('[WalletContext] Asset balances refreshed:', balances);
+        setAssetBalances(balances);
+      } else {
+        console.log('[WalletContext] No asset balances returned, keeping current data');
+      }
+      
+      // Update last refresh time
+      lastRefreshTimeRef.current = Date.now();
+    } catch (error) {
+      console.error('[WalletContext] Error loading asset balances:', error);
+    } finally {
+      setIsLoadingAssets(false);
+      isRefreshingRef.current = false;
+    }
+  }, [wallet]);
 
   const checkAndUpdateWalletStatus = async (force: boolean = false) => {
     try {
@@ -103,6 +157,13 @@ export const WalletProvider: React.FC<{ children: React.ReactNode }> = ({ childr
     }
   };
 
+  // Refresh asset balances when wallet changes or refresh is triggered
+  useEffect(() => {
+    if (wallet?.address) {
+      refreshAssets();
+    }
+  }, [wallet?.address, refreshTrigger, refreshAssets]);
+
   useEffect(() => {
     // Check wallet status on mount, force initial check
     checkAndUpdateWalletStatus(true);
@@ -117,6 +178,7 @@ export const WalletProvider: React.FC<{ children: React.ReactNode }> = ({ childr
       console.log('[WalletContext] Wallet disconnected');
       setWallet(null);
       setWalletStatus(null);
+      setAssetBalances([]);
     };
 
     // @ts-ignore
@@ -143,9 +205,12 @@ export const WalletProvider: React.FC<{ children: React.ReactNode }> = ({ childr
     isCheckingStatus,
     darkMode,
     refreshTrigger,
+    assetBalances,
+    isLoadingAssets,
     connectWallet,
     setDarkMode,
-    triggerRefresh
+    triggerRefresh,
+    refreshAssets
   };
 
   return <WalletContext.Provider value={value}>{children}</WalletContext.Provider>;

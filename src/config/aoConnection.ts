@@ -3,7 +3,7 @@ import { connect, createDataItemSigner } from "@permaweb/aoconnect";
 // Default URLs
 const DEFAULT_CONFIG = {
   MU_URL: "https://mu.ao-testnet.xyz",
-  CU_URL: "https://ar.randao.net/ao/cu",
+  CU_URL: "https://cu.randao.net",
   GATEWAY_URL: "https://arweave.net",
 };
 
