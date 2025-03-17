@@ -173,7 +173,10 @@ const Inventory = () => {
                     }
 
                     return (
-                      <div key={asset.info.processId} className={`flex justify-between items-center gap-2 ${theme.text}`}>
+                      <div 
+                        key={asset.info.processId} 
+                        className={`flex justify-between items-center gap-2 ${theme.text}`}
+                      >
                         <div className="flex items-center gap-1">
                           <div className="w-6 h-6 relative">
                             {/* Show loading indicator for asset info/image */}
@@ -198,15 +201,15 @@ const Inventory = () => {
                           </div>
                           <span>{asset.info.ticker}:</span>
                         </div>
-                        <span className="font-bold">
-                          {pendingAssets.has(asset.info.processId) ? (
-                            <div className="w-8 flex justify-end">
-                              <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-[#F4860A]"></div>
-                            </div>
-                          ) : (
-                            formatTokenAmount(asset.balance.toString(), asset.info.denomination || 0)
-                          )}
-                        </span>
+<span className="font-bold">
+  {pendingAssets.has(asset.info.processId) ? (
+    <div className="w-8 flex justify-end">
+      <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-[#F4860A]"></div>
+    </div>
+  ) : (
+    formatTokenAmount(asset.balance.toString(), asset.info.denomination || 0)
+  )}
+</span>
                       </div>
                     );
                   })}

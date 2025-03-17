@@ -82,6 +82,12 @@ export const WalletProvider: React.FC<{ children: React.ReactNode }> = ({ childr
   const [isLoadingInfo, setIsLoadingInfo] = useState<boolean>(false);
   // Track which assets still need balance loading
   const [pendingAssets, setPendingAssets] = useState<Set<string>>(new Set(SUPPORTED_ASSET_IDS));
+  
+  // Debug log for pendingAssets
+  useEffect(() => {
+    console.log(`[WalletContext] pendingAssets updated, count: ${pendingAssets.size}`, 
+      Array.from(pendingAssets));
+  }, [pendingAssets]);
   // Track which assets still need info loading
   const [pendingInfo, setPendingInfo] = useState<Set<string>>(new Set(SUPPORTED_ASSET_IDS));
   

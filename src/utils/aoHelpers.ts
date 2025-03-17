@@ -1081,6 +1081,7 @@ export const getAssetBalances = async (
                     };
                     
                     // Process the asset with info but potentially missing balance
+                    console.log(`[getAssetBalances] Processing initial asset: ${processId} with info only`);
                     processLoadedAsset(initialAsset);
                     
                     // Then get the balance
