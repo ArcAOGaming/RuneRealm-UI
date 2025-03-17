@@ -859,8 +859,55 @@ const retryWithTimeout = async <T>(
     return null;
 };
 
+// Cache info for 1 week (in milliseconds)
+const INFO_CACHE_DURATION = 7 * 24 * 60 * 60 * 1000;
+
+// Get cached asset info from localStorage
+const getCachedAssetInfo = (processId: string): AssetInfo | null => {
+    try {
+        const cached = localStorage.getItem(`asset_info_${processId}`);
+        if (!cached) return null;
+
+        const parsedCache = JSON.parse(cached);
+        if (!parsedCache || !parsedCache.data || !parsedCache.timestamp) {
+            localStorage.removeItem(`asset_info_${processId}`);
+            return null;
+        }
+
+        // Check if cache is still valid (1 week)
+        if (Date.now() - parsedCache.timestamp > INFO_CACHE_DURATION) {
+            localStorage.removeItem(`asset_info_${processId}`);
+            return null;
+        }
+
+        console.log(`[Cache] Using cached asset info for ${processId}`);
+        return parsedCache.data;
+    } catch (error) {
+        console.error(`Error retrieving cached asset info for ${processId}:`, error);
+        localStorage.removeItem(`asset_info_${processId}`);
+        return null;
+    }
+};
+
+// Store asset info in localStorage
+const cacheAssetInfo = (processId: string, info: AssetInfo): void => {
+    try {
+        if (!info) return;
+
+        const cacheData = {
+            data: info,
+            timestamp: Date.now()
+        };
+
+        localStorage.setItem(`asset_info_${processId}`, JSON.stringify(cacheData));
+        console.log(`[Cache] Stored asset info for ${processId}`);
+    } catch (error) {
+        console.error(`Error caching asset info for ${processId}:`, error);
+    }
+};
+
 /**
- * Get asset balances with incremental loading
+ * Get asset balances with incremental loading and caching of asset info
  * @param wallet Wallet object
  * @param onAssetLoaded Optional callback that gets called whenever an asset is loaded
  * @returns Promise with array of loaded assets
@@ -882,11 +929,32 @@ export const getAssetBalances = async (
 
         // Process a loaded asset - add to results and call callback if provided
         const processLoadedAsset = (asset: AssetBalance) => {
-            if (!loadedAssets.has(asset.info.processId)) {
-                loadedAssets.set(asset.info.processId, asset);
+            const processId = asset.info.processId;
+            
+            // Check if we already have this asset
+            if (loadedAssets.has(processId)) {
+                const existing = loadedAssets.get(processId)!;
+                
+                // Always update with latest info and balance
+                const updatedAsset = {
+                    info: { ...existing.info, ...asset.info },
+                    balance: asset.balance
+                };
+                
+                // Update in our map
+                loadedAssets.set(processId, updatedAsset);
+                
+                // Always call the callback when balance changes
+                if (onAssetLoaded && existing.balance !== asset.balance) {
+                    onAssetLoaded(updatedAsset);
+                    console.log(`Asset ${asset.info.name} balance updated: ${asset.balance}`);
+                }
+            } else {
+                // New asset, add it to our collections
+                loadedAssets.set(processId, asset);
                 results.push(asset);
                 
-                // Call the callback if provided
+                // Call the callback for new assets
                 if (onAssetLoaded) {
                     onAssetLoaded(asset);
                 }
@@ -894,104 +962,145 @@ export const getAssetBalances = async (
                 console.log(`Asset ${asset.info.name} (${asset.info.ticker}) loaded: ${asset.balance}`);
             }
         };
+        
+        // Function to fetch asset info only (without balance)
+        const fetchAssetInfo = async (processId: SupportedAssetId): Promise<AssetInfo | null> => {
+            try {
+                // Try to get predefined asset info first (fastest path)
+                const predefinedInfo = ASSET_INFO[processId];
+                if (predefinedInfo) {
+                    console.log(`Using predefined info for asset ${processId}`);
+                    return predefinedInfo;
+                }
+                
+                // Try to get cached asset info next (fast path)
+                const cachedInfo = getCachedAssetInfo(processId);
+                if (cachedInfo) {
+                    console.log(`Using cached info for asset ${processId}`);
+                    return cachedInfo;
+                }
+                
+                // Finally, fetch asset info from contract
+                console.log(`Fetching info for asset ${processId} from contract`);
+                const infoResult = await dryrun({
+                    process: processId,
+                    tags: [{ name: "Action", value: "Info" }],
+                    data: ""
+                });
+                
+                // Extract asset info from response
+                if (infoResult.Messages && infoResult.Messages.length > 0) {
+                    const infoTags = infoResult.Messages[0].Tags;
+                    const logo = infoTags.find(t => t.name === "Logo")?.value;
+                    const name = infoTags.find(t => t.name === "Name")?.value;
+                    const ticker = infoTags.find(t => t.name === "Ticker")?.value;
+                    const denomination = parseInt(infoTags.find(t => t.name === "Denomination")?.value || "0");
 
-        // Function to fetch single asset info with retry logic
-        const fetchAssetInfo = async (processId: SupportedAssetId): Promise<AssetBalance | null> => {
+                    if (!logo || !name || !ticker) {
+                        console.warn(`Missing required info for asset ${processId}`);
+                        return null;
+                    }
+
+                    const assetInfo: AssetInfo = { 
+                        processId, 
+                        logo, 
+                        name, 
+                        ticker, 
+                        denomination: denomination || 0 
+                    };
+                    
+                    // Cache the asset info
+                    cacheAssetInfo(processId, assetInfo);
+                    
+                    return assetInfo;
+                } else {
+                    console.warn(`No info messages for asset ${processId}`);
+                    return null;
+                }
+            } catch (error) {
+                console.error(`Error fetching info for asset ${processId}:`, error);
+                return null;
+            }
+        };
+
+        // Function to fetch asset balance only
+        const fetchAssetBalance = async (processId: SupportedAssetId, assetInfo: AssetInfo): Promise<AssetBalance | null> => {
+            try {
+                console.log(`Fetching balance for asset ${processId}`);
+                const balanceResult = await dryrun({
+                    process: processId,
+                    tags: [{ name: "Action", value: "Balances" }],
+                    data: ""
+                });
+                
+                // Parse balance
+                let balance = 0;
+                if (balanceResult.Messages && balanceResult.Messages.length > 0) {
+                    try {
+                        const balanceData = JSON.parse(balanceResult.Messages[0].Data);
+                        balance = parseInt(balanceData[wallet.address] || "0");
+                    } catch (e) {
+                        console.error(`Error parsing balance for ${processId}:`, e);
+                    }
+                }
+
+                // Create the complete asset balance object
+                const assetBalance: AssetBalance = {
+                    info: assetInfo,
+                    balance
+                };
+                
+                return assetBalance;
+            } catch (error) {
+                console.error(`Error fetching balance for ${processId}:`, error);
+                return null;
+            }
+        };
+
+        // Function to fetch a single asset (info + balance) with retry logic
+        const fetchAsset = async (processId: SupportedAssetId): Promise<AssetBalance | null> => {
             try {
                 // If the asset is already in our known assets cache, skip it
                 if (loadedAssets.has(processId)) {
                     return null;
                 }
                 
-                // Try to get predefined asset info first (faster path)
-                const predefinedInfo = ASSET_INFO[processId];
-                if (predefinedInfo) {
-                    console.log(`Using predefined info for asset ${processId}`);
-                    // Just need to get the balance
-                    try {
-                        const balanceResult = await dryrun({
-                            process: processId,
-                            tags: [{ name: "Action", value: "Balances" }],
-                            data: ""
-                        });
-                        
-                        let balance = 0;
-                        if (balanceResult?.Messages && balanceResult.Messages.length > 0) {
-                            const balanceData = JSON.parse(balanceResult.Messages[0].Data);
-                            balance = parseInt(balanceData[wallet.address] || "0");
-                        }
-                        
-                        const assetBalance = {
-                            info: predefinedInfo,
-                            balance
-                        };
-                        
-                        // Process this asset
-                        processLoadedAsset(assetBalance);
-                        return assetBalance;
-                    } catch (error) {
-                        console.error(`Error getting balance for ${processId}:`, error);
-                        return null;
-                    }
-                }
-                
-                // Otherwise, need to get both info and balance
                 try {
-                    // First try to get info
-                    const infoResult = await dryrun({
-                        process: processId,
-                        tags: [{ name: "Action", value: "Info" }],
-                        data: ""
-                    });
-                    
-                    // Extract asset info from response
-                    let assetInfo: AssetInfo;
-                    if (infoResult.Messages && infoResult.Messages.length > 0) {
-                        const infoTags = infoResult.Messages[0].Tags;
-                        const logo = infoTags.find(t => t.name === "Logo")?.value;
-                        const name = infoTags.find(t => t.name === "Name")?.value;
-                        const ticker = infoTags.find(t => t.name === "Ticker")?.value;
-                        const denomination = parseInt(infoTags.find(t => t.name === "Denomination")?.value || "0");
-
-                        if (!logo || !name || !ticker) {
-                            console.warn(`Missing required info for asset ${processId}`);
-                            return null;
-                        }
-
-                        assetInfo = { processId, logo, name, ticker, denomination: denomination || 0 };
-                    } else {
-                        console.warn(`No info messages for asset ${processId}`);
+                    // First get asset info - try to use cache, predefined values, or fetch from contract
+                    const assetInfo = await fetchAssetInfo(processId);
+                    if (!assetInfo) {
+                        console.warn(`Could not get info for asset ${processId}`);
                         return null;
                     }
-
-                    // Now try to get balance
-                    const balanceResult = await dryrun({
-                        process: processId,
-                        tags: [{ name: "Action", value: "Balances" }],
-                        data: ""
-                    });
                     
-                    // Parse balance
-                    let balance = 0;
-                    if (balanceResult.Messages && balanceResult.Messages.length > 0) {
-                        try {
-                            const balanceData = JSON.parse(balanceResult.Messages[0].Data);
-                            balance = parseInt(balanceData[wallet.address] || "0");
-                        } catch (e) {
-                            console.error(`Error parsing balance for ${processId}:`, e);
-                        }
-                    }
-
-                    const assetBalance = {
+                    // Create a initial asset with the info and zero balance
+                    // This allows the UI to show the asset info immediately while balance loads
+                    const initialAsset: AssetBalance = {
                         info: assetInfo,
-                        balance
+                        balance: 0
                     };
                     
-                    // Process this asset
-                    processLoadedAsset(assetBalance);
-                    return assetBalance;
+                    // Process the asset with info but potentially missing balance
+                    processLoadedAsset(initialAsset);
+                    
+                    // Then get the balance
+                    const assetWithBalance = await fetchAssetBalance(processId, assetInfo);
+                    if (assetWithBalance) {
+                        // Update with the real balance - force the balance to be a number 
+                        // (in case there was a string parsing issue)
+                        const finalAsset = {
+                            info: assetInfo,
+                            balance: Number(assetWithBalance.balance)
+                        };
+                        
+                        // Update with the real balance
+                        processLoadedAsset(finalAsset);
+                        return finalAsset;
+                    }
+                    
+                    return initialAsset;
                 } catch (error) {
-                    console.error(`Error loading asset ${processId}:`, error);
+                    console.error(`Error processing asset ${processId}:`, error);
                     return null;
                 }
             } catch (error) {
@@ -1010,7 +1119,7 @@ export const getAssetBalances = async (
             await new Promise(resolve => setTimeout(resolve, RETRY_DELAY));
             
             // Try to fetch these assets again
-            const retryPromises = failedAssetIds.map(id => fetchAssetInfo(id as SupportedAssetId));
+            const retryPromises = failedAssetIds.map(id => fetchAsset(id as SupportedAssetId));
             const retryResults = await Promise.all(retryPromises);
             
             // Collect failed assets for next retry round
@@ -1023,7 +1132,7 @@ export const getAssetBalances = async (
         };
 
         // Initial attempt to fetch all assets
-        const assetPromises = SUPPORTED_ASSET_IDS.map(fetchAssetInfo);
+        const assetPromises = SUPPORTED_ASSET_IDS.map(fetchAsset);
         const initialResults = await Promise.all(assetPromises);
         
         // Determine which assets failed to load in the first attempt

@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState } from 'react';
 import { useWallet } from '../hooks/useWallet';
 import { formatTokenAmount } from '../utils/aoHelpers';
 import { currentTheme } from '../constants/theme';
@@ -29,7 +29,15 @@ const INVENTORY_SECTIONS: InventorySection[] = [
 ];
 
 const Inventory = () => {
-  const { wallet, darkMode, assetBalances, isLoadingAssets, refreshAssets, refreshTrigger } = useWallet();
+  const { 
+    wallet, 
+    darkMode, 
+    assetBalances, 
+    isLoadingAssets, 
+    pendingAssets,
+    pendingInfo,
+    refreshAssets 
+  } = useWallet();
   const [openSections, setOpenSections] = useState<{ [key: string]: boolean }>({
     main: true,
     "Value": true,
@@ -168,7 +176,8 @@ const Inventory = () => {
                       <div key={asset.info.processId} className={`flex justify-between items-center gap-2 ${theme.text}`}>
                         <div className="flex items-center gap-1">
                           <div className="w-6 h-6 relative">
-                            {loadingIcons[asset.info.processId] && (
+                            {/* Show loading indicator for asset info/image */}
+                            {(loadingIcons[asset.info.processId] || pendingInfo.has(asset.info.processId)) && (
                               <div className="absolute inset-0 flex items-center justify-center">
                                 <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-[#F4860A]"></div>
                               </div>
@@ -177,7 +186,11 @@ const Inventory = () => {
                               <img 
                                 src={`${Gateway}${asset.info.logo}`}
                                 alt={asset.info.name}
-                                className={`w-6 h-6 object-cover rounded-full transition-opacity duration-200 ${loadingIcons[asset.info.processId] ? 'opacity-0' : 'opacity-100'}`}
+                                className={`w-6 h-6 object-cover rounded-full transition-opacity duration-200 ${
+                                  loadingIcons[asset.info.processId] || pendingInfo.has(asset.info.processId) 
+                                    ? 'opacity-0' 
+                                    : 'opacity-100'
+                                }`}
                                 onLoad={() => handleImageLoad(asset.info.processId)}
                                 onError={() => handleImageError(asset.info.processId)}
                               />
@@ -186,7 +199,13 @@ const Inventory = () => {
                           <span>{asset.info.ticker}:</span>
                         </div>
                         <span className="font-bold">
-                          {formatTokenAmount(asset.balance.toString(), asset.info.denomination || 0)}
+                          {pendingAssets.has(asset.info.processId) ? (
+                            <div className="w-8 flex justify-end">
+                              <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-[#F4860A]"></div>
+                            </div>
+                          ) : (
+                            formatTokenAmount(asset.balance.toString(), asset.info.denomination || 0)
+                          )}
                         </span>
                       </div>
                     );
