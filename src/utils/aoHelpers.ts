@@ -56,7 +56,19 @@ const setCachedData = <T>(key: string, data: T): void => {
     console.error(`[Cache] Error storing data for key ${key}:`, error);
   }
 };
-import { AdminSkinChanger, DefaultAtlasTxID, Alter, SUPPORTED_ASSET_IDS, WAITTIMEOUIT, ASSET_INFO, AssetInfo, TARGET_BATTLE_PID } from "../constants/Constants";
+import { 
+  AdminSkinChanger, 
+  DefaultAtlasTxID, 
+  Alter, 
+  SUPPORTED_ASSET_IDS, 
+  WAITTIMEOUIT, 
+  ASSET_INFO, 
+  AssetInfo, 
+  TARGET_BATTLE_PID,
+  MAX_RETRIES,
+  RETRY_DELAY,
+  type SupportedAssetId
+} from "../constants/Constants";
 import { ProfileInfo, ProfilesService } from 'ao-process-clients';
 import { AssetBalance, BattleManagerInfo, BattleResponse, BattleTurn, FactionOptions, MonsterStats, ResultType, TokenOption, UserInfo, WalletStatus } from "./interefaces";
 export type { 
@@ -779,85 +791,254 @@ const withTimeout = <T>(promise: Promise<T>, ms: number): Promise<T | null> => {
     ]);
 };
 
-export const getAssetBalances = async (wallet: any): Promise<AssetBalance[]> => {
+/**
+ * Retry a function with timeout and exponential backoff
+ * @param fn Function to retry
+ * @param maxRetries Maximum number of retries
+ * @param timeout Timeout for each attempt in ms
+ * @param delayMs Delay between retries in ms
+ */
+const retryWithTimeout = async <T>(
+    fn: () => Promise<T>, 
+    maxRetries: number = MAX_RETRIES, 
+    timeout: number = WAITTIMEOUIT, 
+    delayMs: number = RETRY_DELAY
+): Promise<T | null> => {
+    let retries = 0;
+    
+    while (retries <= maxRetries) {
+        try {
+            // If not the first attempt, log that we're retrying
+            if (retries > 0) {
+                console.log(`Retry attempt ${retries}/${maxRetries}`);
+            }
+            
+            // Attempt with timeout
+            const result = await withTimeout(fn(), timeout);
+            
+            // If successful, return the result
+            if (result !== null) {
+                if (retries > 0) {
+                    console.log(`Succeeded after ${retries} retry attempts`);
+                }
+                return result;
+            }
+            
+            // If we get here, it's because of a timeout
+            console.warn(`Attempt ${retries + 1} timed out after ${timeout}ms`);
+            
+            // If we've reached max retries, return null
+            if (retries >= maxRetries) {
+                console.warn(`Max retries (${maxRetries}) reached, giving up`);
+                return null;
+            }
+            
+            // Wait before next retry
+            console.log(`Waiting ${delayMs}ms before next attempt...`);
+            await new Promise(resolve => setTimeout(resolve, delayMs));
+            
+            // Increment retry counter
+            retries++;
+        } catch (error) {
+            console.error(`Error during retry attempt ${retries}:`, error);
+            
+            // If we've reached max retries, throw the error
+            if (retries >= maxRetries) {
+                console.warn(`Max retries (${maxRetries}) reached, giving up`);
+                return null;
+            }
+            
+            // Wait before next retry
+            await new Promise(resolve => setTimeout(resolve, delayMs));
+            
+            // Increment retry counter
+            retries++;
+        }
+    }
+    
+    return null;
+};
+
+/**
+ * Get asset balances with incremental loading
+ * @param wallet Wallet object
+ * @param onAssetLoaded Optional callback that gets called whenever an asset is loaded
+ * @returns Promise with array of loaded assets
+ */
+export const getAssetBalances = async (
+    wallet: any,
+    onAssetLoaded?: (asset: AssetBalance) => void
+): Promise<AssetBalance[]> => {
     if (!wallet?.address) {
         throw new Error("No wallet connected");
     }
 
     try {
-        console.log("Getting berry balances for wallet:", wallet.address);
+        console.log("Getting asset balances for wallet:", wallet.address);
+        
+        // Tracking cache of already loaded assets
+        const loadedAssets = new Map<string, AssetBalance>();
+        const results: AssetBalance[] = [];
 
-        const assetPromises = SUPPORTED_ASSET_IDS.map(async (processId) => {
+        // Process a loaded asset - add to results and call callback if provided
+        const processLoadedAsset = (asset: AssetBalance) => {
+            if (!loadedAssets.has(asset.info.processId)) {
+                loadedAssets.set(asset.info.processId, asset);
+                results.push(asset);
+                
+                // Call the callback if provided
+                if (onAssetLoaded) {
+                    onAssetLoaded(asset);
+                }
+                
+                console.log(`Asset ${asset.info.name} (${asset.info.ticker}) loaded: ${asset.balance}`);
+            }
+        };
+
+        // Function to fetch single asset info with retry logic
+        const fetchAssetInfo = async (processId: SupportedAssetId): Promise<AssetBalance | null> => {
             try {
-                const result = await withTimeout(
-                    Promise.all([
-                        dryrun({
-                            process: processId,
-                            tags: [{ name: "Action", value: "Info" }],
-                            data: ""
-                        }),
-                        dryrun({
+                // If the asset is already in our known assets cache, skip it
+                if (loadedAssets.has(processId)) {
+                    return null;
+                }
+                
+                // Try to get predefined asset info first (faster path)
+                const predefinedInfo = ASSET_INFO[processId];
+                if (predefinedInfo) {
+                    console.log(`Using predefined info for asset ${processId}`);
+                    // Just need to get the balance
+                    try {
+                        const balanceResult = await dryrun({
                             process: processId,
                             tags: [{ name: "Action", value: "Balances" }],
                             data: ""
-                        })
-                    ]),
-                    WAITTIMEOUIT
-                );
-
-                if (!result) {
-                    console.warn(`Timeout for asset ${processId}`);
-                    return null;
+                        });
+                        
+                        let balance = 0;
+                        if (balanceResult?.Messages && balanceResult.Messages.length > 0) {
+                            const balanceData = JSON.parse(balanceResult.Messages[0].Data);
+                            balance = parseInt(balanceData[wallet.address] || "0");
+                        }
+                        
+                        const assetBalance = {
+                            info: predefinedInfo,
+                            balance
+                        };
+                        
+                        // Process this asset
+                        processLoadedAsset(assetBalance);
+                        return assetBalance;
+                    } catch (error) {
+                        console.error(`Error getting balance for ${processId}:`, error);
+                        return null;
+                    }
                 }
+                
+                // Otherwise, need to get both info and balance
+                try {
+                    // First try to get info
+                    const infoResult = await dryrun({
+                        process: processId,
+                        tags: [{ name: "Action", value: "Info" }],
+                        data: ""
+                    });
+                    
+                    // Extract asset info from response
+                    let assetInfo: AssetInfo;
+                    if (infoResult.Messages && infoResult.Messages.length > 0) {
+                        const infoTags = infoResult.Messages[0].Tags;
+                        const logo = infoTags.find(t => t.name === "Logo")?.value;
+                        const name = infoTags.find(t => t.name === "Name")?.value;
+                        const ticker = infoTags.find(t => t.name === "Ticker")?.value;
+                        const denomination = parseInt(infoTags.find(t => t.name === "Denomination")?.value || "0");
 
-                const [infoResult, balanceResult] = result as [ResultType, ResultType];
+                        if (!logo || !name || !ticker) {
+                            console.warn(`Missing required info for asset ${processId}`);
+                            return null;
+                        }
 
-                // Check if we have predefined info for this asset
-                const predefinedInfo = ASSET_INFO[processId];
-                let assetInfo: AssetInfo;
-
-                if (predefinedInfo) {
-                    assetInfo = predefinedInfo;
-                } else if (infoResult.Messages && infoResult.Messages.length > 0) {
-                    // If no predefined info, try to get from contract
-                    const infoTags = infoResult.Messages[0].Tags;
-                    const logo = infoTags.find(t => t.name === "Logo")?.value;
-                    const name = infoTags.find(t => t.name === "Name")?.value;
-                    const ticker = infoTags.find(t => t.name === "Ticker")?.value;
-                    const denomination = parseInt(infoTags.find(t => t.name === "Denomination")?.value);
-
-                    if (!logo || !name || !ticker) {
+                        assetInfo = { processId, logo, name, ticker, denomination: denomination || 0 };
+                    } else {
+                        console.warn(`No info messages for asset ${processId}`);
                         return null;
                     }
 
-                    assetInfo = { processId, logo, name, ticker, denomination };
-                } else {
+                    // Now try to get balance
+                    const balanceResult = await dryrun({
+                        process: processId,
+                        tags: [{ name: "Action", value: "Balances" }],
+                        data: ""
+                    });
+                    
+                    // Parse balance
+                    let balance = 0;
+                    if (balanceResult.Messages && balanceResult.Messages.length > 0) {
+                        try {
+                            const balanceData = JSON.parse(balanceResult.Messages[0].Data);
+                            balance = parseInt(balanceData[wallet.address] || "0");
+                        } catch (e) {
+                            console.error(`Error parsing balance for ${processId}:`, e);
+                        }
+                    }
+
+                    const assetBalance = {
+                        info: assetInfo,
+                        balance
+                    };
+                    
+                    // Process this asset
+                    processLoadedAsset(assetBalance);
+                    return assetBalance;
+                } catch (error) {
+                    console.error(`Error loading asset ${processId}:`, error);
                     return null;
                 }
-
-                let balance = 0;
-                if (balanceResult.Messages && balanceResult.Messages.length > 0) {
-                    const balanceData = JSON.parse(balanceResult.Messages[0].Data);
-                    balance = parseInt(balanceData[wallet.address] || "0");
-                }
-
-                return {
-                    info: assetInfo,
-                    balance
-                };
             } catch (error) {
                 console.error(`Error loading asset ${processId}:`, error);
                 return null;
             }
-        });
+        };
 
-        const results = await Promise.all(assetPromises);
-        const validResults = results.filter((result): result is AssetBalance => result !== null);
+        // Function to retry loading failed assets
+        const retryFailedAssets = async (failedAssetIds: string[], retries: number = 1) => {
+            if (failedAssetIds.length === 0 || retries > MAX_RETRIES) return;
+            
+            console.log(`Retry #${retries} for ${failedAssetIds.length} assets: ${failedAssetIds.join(', ')}`);
+            
+            // Wait before retrying
+            await new Promise(resolve => setTimeout(resolve, RETRY_DELAY));
+            
+            // Try to fetch these assets again
+            const retryPromises = failedAssetIds.map(id => fetchAssetInfo(id as SupportedAssetId));
+            const retryResults = await Promise.all(retryPromises);
+            
+            // Collect failed assets for next retry round
+            const stillFailed = failedAssetIds.filter((_, i) => retryResults[i] === null);
+            
+            // Recursively retry remaining failed assets
+            if (stillFailed.length > 0 && retries < MAX_RETRIES) {
+                await retryFailedAssets(stillFailed, retries + 1);
+            }
+        };
 
-        console.log("Final asset balances:", validResults);
-        return validResults;
+        // Initial attempt to fetch all assets
+        const assetPromises = SUPPORTED_ASSET_IDS.map(fetchAssetInfo);
+        const initialResults = await Promise.all(assetPromises);
+        
+        // Determine which assets failed to load in the first attempt
+        const failedAssetIds = SUPPORTED_ASSET_IDS.filter((id, i) => 
+            initialResults[i] === null && !loadedAssets.has(id)
+        );
+        
+        // Retry failed assets
+        if (failedAssetIds.length > 0) {
+            await retryFailedAssets(failedAssetIds);
+        }
+
+        return Array.from(loadedAssets.values());
     } catch (error) {
-        console.error("Error getting berry balances:", error);
+        console.error("Error getting asset balances:", error);
         return [];
     }
 };
@@ -1612,4 +1793,3 @@ export const openLootBox = async (wallet: any, refreshCallback?: () => void): Pr
       return null;
     }
   };
-  

@@ -1,6 +1,7 @@
 import React, { createContext, useContext, useState, useEffect, useCallback, useRef } from 'react';
 import { checkWalletStatus, WalletStatus, getAssetBalances } from '../utils/aoHelpers';
 import type { AssetBalance } from '../utils/interefaces';
+import { SUPPORTED_ASSET_IDS } from '../constants/Constants';
 
 interface WalletContextType {
   wallet: any | null;
@@ -10,10 +11,12 @@ interface WalletContextType {
   refreshTrigger: number;
   assetBalances: AssetBalance[];
   isLoadingAssets: boolean;
+  pendingAssets: Set<string>;
   connectWallet: (force?: boolean) => Promise<void>;
   setDarkMode: (mode: boolean) => void;
   triggerRefresh: () => void;
   refreshAssets: () => Promise<void>;
+  addAssetBalance: (asset: AssetBalance) => void;
 }
 
 const WalletContext = createContext<WalletContextType | undefined>(undefined);
@@ -29,6 +32,8 @@ export const WalletProvider: React.FC<{ children: React.ReactNode }> = ({ childr
   const [refreshTrigger, setRefreshTrigger] = useState<number>(0);
   const [assetBalances, setAssetBalances] = useState<AssetBalance[]>([]);
   const [isLoadingAssets, setIsLoadingAssets] = useState<boolean>(false);
+  // Track which assets are still being loaded
+  const [pendingAssets, setPendingAssets] = useState<Set<string>>(new Set(SUPPORTED_ASSET_IDS));
   
   // Use a ref to track ongoing asset refresh to prevent duplicate requests
   const isRefreshingRef = useRef(false);
@@ -36,6 +41,30 @@ export const WalletProvider: React.FC<{ children: React.ReactNode }> = ({ childr
   const lastRefreshTimeRef = useRef(0);
   // Minimum time between refreshes (3 seconds)
   const MIN_REFRESH_INTERVAL = 3000;
+
+  // Function to add a single asset to the balances
+  const addAssetBalance = useCallback((asset: AssetBalance) => {
+    setAssetBalances(prev => {
+      // First, check if this asset already exists in our balances
+      const existing = prev.findIndex(a => a.info.processId === asset.info.processId);
+      if (existing >= 0) {
+        // If it exists, replace it
+        const newBalances = [...prev];
+        newBalances[existing] = asset;
+        return newBalances;
+      } else {
+        // Otherwise, add it to the end
+        return [...prev, asset];
+      }
+    });
+    
+    // Remove this asset from pending
+    setPendingAssets(prev => {
+      const newPending = new Set(prev);
+      newPending.delete(asset.info.processId);
+      return newPending;
+    });
+  }, []);
 
   const triggerRefresh = useCallback(() => {
     console.log('[WalletContext] Refresh triggered from message');
@@ -46,7 +75,6 @@ export const WalletProvider: React.FC<{ children: React.ReactNode }> = ({ childr
         console.log('[WalletContext] Incrementing refresh trigger from', prev, 'to', prev + 1);
         checkAndUpdateWalletStatus(true);
         return prev + 1;
-        
       });
     }, 5000);
   }, []);
@@ -61,7 +89,7 @@ export const WalletProvider: React.FC<{ children: React.ReactNode }> = ({ childr
       return;
     }
     
-    // Check if we've refreshed recently
+    // Check if we've refreshed recently and not specifically requested
     if (now - lastRefreshTimeRef.current < MIN_REFRESH_INTERVAL) {
       console.log('[WalletContext] Recent refresh detected, using cached data');
       return;
@@ -71,16 +99,12 @@ export const WalletProvider: React.FC<{ children: React.ReactNode }> = ({ childr
       isRefreshingRef.current = true;
       setIsLoadingAssets(true);
       
-      console.log('[WalletContext] Starting asset refresh');
-      const balances = await getAssetBalances(wallet);
+      // Mark all assets as pending to start
+      setPendingAssets(new Set(SUPPORTED_ASSET_IDS));
       
-      // Only update if we got valid data and balances is not empty
-      if (balances && balances.length > 0) {
-        console.log('[WalletContext] Asset balances refreshed:', balances);
-        setAssetBalances(balances);
-      } else {
-        console.log('[WalletContext] No asset balances returned, keeping current data');
-      }
+      console.log('[WalletContext] Starting asset refresh');
+      // Call getAssetBalances with the addAssetBalance callback
+      await getAssetBalances(wallet, addAssetBalance);
       
       // Update last refresh time
       lastRefreshTimeRef.current = Date.now();
@@ -90,7 +114,7 @@ export const WalletProvider: React.FC<{ children: React.ReactNode }> = ({ childr
       setIsLoadingAssets(false);
       isRefreshingRef.current = false;
     }
-  }, [wallet]);
+  }, [wallet, addAssetBalance]);
 
   const checkAndUpdateWalletStatus = async (force: boolean = false) => {
     try {
@@ -179,6 +203,7 @@ export const WalletProvider: React.FC<{ children: React.ReactNode }> = ({ childr
       setWallet(null);
       setWalletStatus(null);
       setAssetBalances([]);
+      setPendingAssets(new Set());
     };
 
     // @ts-ignore
@@ -207,10 +232,12 @@ export const WalletProvider: React.FC<{ children: React.ReactNode }> = ({ childr
     refreshTrigger,
     assetBalances,
     isLoadingAssets,
+    pendingAssets,
     connectWallet,
     setDarkMode,
     triggerRefresh,
-    refreshAssets
+    refreshAssets,
+    addAssetBalance
   };
 
   return <WalletContext.Provider value={value}>{children}</WalletContext.Provider>;
