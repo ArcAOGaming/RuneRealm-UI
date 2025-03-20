@@ -100,7 +100,8 @@ export const SUPPORTED_ASSET_IDS = [
     "rNVB_bYcNLk6OgcbyG8MEmxjGo76oj3gFzLBCWOhqXI",  // Ruby
     "R5UGOfFboMv-zlaSSDgRqxRILmGgPPe5BlnPf5F4i3A",  // Topaz
     "wOrb8b_V8QixWyXZub48Ki5B6OIDyf_p1ngoonsaRpQ",  // TRUNK token
-    "OsK9Vgjxo0ypX_HLz2iJJuh4hp3I80yA9KArsJjIloU"   // NAB token
+    "OsK9Vgjxo0ypX_HLz2iJJuh4hp3I80yA9KArsJjIloU",  // NAB token
+    "5ZR9uegKoEhE9fJMbs-MvWLIztMNCVxgpzfeBVE3vqI"   // RNG token
 ] as const;
 
 export type SupportedAssetId = typeof SUPPORTED_ASSET_IDS[number];

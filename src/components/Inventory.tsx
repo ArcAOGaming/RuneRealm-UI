@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import { useWallet } from '../hooks/useWallet';
 import { formatTokenAmount } from '../utils/aoHelpers';
 import { currentTheme } from '../constants/theme';
-import { Gateway } from '../constants/Constants';
+import { Gateway, SUPPORTED_ASSET_IDS, ASSET_INFO } from '../constants/Constants';
 
 interface InventorySection {
   title: string;
@@ -12,7 +12,7 @@ interface InventorySection {
 const INVENTORY_SECTIONS: InventorySection[] = [
   {
     title: "Value",
-    items: ["TRUNK", "NAB"]
+    items: ["TRUNK", "NAB", "RAND"]
   },
   {
     title: "Gems",
@@ -71,6 +71,30 @@ const Inventory = () => {
     }));
   };
 
+  // Helper function to find processId by ticker name
+  const findProcessIdByTicker = (ticker: string): string => {
+    // Look through ASSET_INFO for the ticker
+    for (const processId of SUPPORTED_ASSET_IDS) {
+      const info = ASSET_INFO[processId];
+      if (info && info.ticker.toLowerCase() === ticker.toLowerCase()) {
+        return processId;
+      }
+    }
+    
+    // If we didn't find it in ASSET_INFO, check the assetBalances
+    const asset = assetBalances.find(a => 
+      a.info.ticker.toLowerCase() === ticker.toLowerCase() ||
+      a.info.name.toLowerCase() === ticker.toLowerCase()
+    );
+    
+    if (asset) {
+      return asset.info.processId;
+    }
+    
+    // As a fallback, use the ticker name itself
+    return ticker;
+  };
+
   const getAssetsBySection = (sectionItems: string[]) => {
     // Get all assets that match the section items, including those with 0 balance
     const matchingAssets = assetBalances.filter(asset => 
@@ -87,16 +111,24 @@ const Inventory = () => {
         a.info.name.toLowerCase() === item.toLowerCase()
       );
       
-      return asset || {
-        info: {
-          processId: item,
-          logo: "", // Default logo if needed
-          name: item,
-          ticker: item,
-          denomination: 0
-        },
-        balance: 0
-      };
+      if (asset) {
+        return asset;
+      } else {
+        // Try to find the process ID for this ticker
+        const processId = findProcessIdByTicker(item);
+        
+        // Create a placeholder asset
+        return {
+          info: {
+            processId: processId,
+            logo: "", // Default logo if needed
+            name: item,
+            ticker: item,
+            denomination: 0
+          },
+          balance: 0
+        };
+      }
     });
 
     return result;
