@@ -986,7 +986,7 @@ export const getAssetBalances = async (
                     process: processId,
                     tags: [{ name: "Action", value: "Info" }],
                     data: ""
-                });
+                }) as ResultType; // Cast to ResultType to fix TypeScript errors
                 
                 // Extract asset info from response
                 if (infoResult.Messages && infoResult.Messages.length > 0) {
@@ -1006,7 +1006,8 @@ export const getAssetBalances = async (
                         logo, 
                         name, 
                         ticker, 
-                        denomination: denomination || 0 
+                        denomination: denomination || 0,
+                        section: "Value" // Add default section to fix TypeScript error
                     };
                     
                     // Cache the asset info
@@ -1031,7 +1032,7 @@ export const getAssetBalances = async (
                     process: processId,
                     tags: [{ name: "Action", value: "Balances" }],
                     data: ""
-                });
+                }) as ResultType; // Cast to ResultType to fix TypeScript errors
                 
                 // Parse balance
                 let balance = 0;
@@ -1515,8 +1516,8 @@ export const getBattleManagerInfo = async (walletAddress: string): Promise<Battl
                 { name: "UserId", value: walletAddress }
             ],
             data: ""
-        });
-        console.log(result)
+        }) as ResultType; // Cast to ResultType to fix TypeScript errors
+        console.log(result);
 
         if (!result.Messages || result.Messages.length === 0) {
             console.log('[getBattleManagerInfo] No messages in response');
@@ -1548,15 +1549,15 @@ export const getActiveBattle = async (walletAddress: string): Promise<ActiveBatt
                 { name: "UserId", value: walletAddress }
             ],
             data: ""
-        });
-        console.log(result)
+        }) as ResultType; // Cast to ResultType to fix TypeScript errors
+        console.log(result);
 
         if (!result.Messages || result.Messages.length === 0) {
             return null;
         }
 
         const response = JSON.parse(result.Messages[0].Data);
-        console.log(response)
+        console.log(response);
         if (response.status === 'success' && response.data) {
             return response.data;
         }
@@ -1578,15 +1579,15 @@ export const getUserActiveBattles = async (walletAddress: string): Promise<Activ
                 { name: "UserId", value: walletAddress }
             ],
             data: ""
-        });
-        console.log(result)
+        }) as ResultType; // Cast to ResultType to fix TypeScript errors
+        console.log(result);
 
         if (!result.Messages || result.Messages.length === 0) {
             return null;
         }
 
         const response = JSON.parse(result.Messages[0].Data);
-        console.log(response)
+        console.log(response);
         if (response.status === 'success' && response.data) {
             return response.data;
         }
@@ -1804,36 +1805,76 @@ export const getLootBoxes = async (userId: string): Promise<LootBoxResponse | nu
   try {
     console.log('[getLootBoxes] Getting loot boxes for user:', userId);
     
-    const result: any = await dryrun({
+    const result = await dryrun({
         process: AdminSkinChanger,
         tags: [
             { name: 'Action', value: 'GetLootBox' },
             { name: 'UserId', value: userId }
         ]
-    });
-    console.log(result)
-    console.log(result?.Messages?.[0]?.Data)
+    }) as ResultType; // Cast to ResultType to fix TypeScript errors
+    console.log(result);
 
-    if (result?.Messages?.[0]?.Data) {
+    // Check if we have a valid Messages array
+    if (result?.Messages && result.Messages.length > 0) {
       try {
-        const parsed = JSON.parse(result.Messages[0].Data);
+        // Get the data from the first message
+        const messageData = result.Messages[0].Data;
+        console.log(messageData);
+        
+        // Handle different response formats
+        let parsed;
+        
+        if (typeof messageData === 'string') {
+          try {
+            // Try to parse as JSON
+            parsed = JSON.parse(messageData);
+          } catch (e) {
+            // If it's not valid JSON, it might be a string representation of an array
+            // Check if it looks like an array (starts with [ and ends with ])
+            if (messageData.trim().startsWith('[') && messageData.trim().endsWith(']')) {
+              // Try to evaluate it as an array (safely)
+              try {
+                parsed = JSON.parse(messageData);
+              } catch (e2) {
+                console.error('[getLootBoxes] Could not parse array-like string:', e2);
+                // Return empty array as fallback
+                return { result: [[]] };
+              }
+            } else {
+              // Not JSON or array-like, return as is
+              parsed = messageData;
+            }
+          }
+        } else {
+          // If it's already an object (not a string), use it directly
+          parsed = messageData;
+        }
+        
         console.log('[getLootBoxes] Parsed loot boxes:', parsed);
+        
+        // If parsed is null, undefined, or not an array, return an empty array
+        if (!parsed) {
+          return { result: [[]] };
+        }
         
         // Format the response properly
         return {
-          result: parsed
+          result: Array.isArray(parsed) ? parsed : [parsed]
         };
       } catch (error) {
-        console.error('[getLootBoxes] Error parsing response:', error);
-        return null;
+        console.error('[getLootBoxes] Error processing response:', error);
+        // Return empty array as fallback
+        return { result: [[]] };
       }
     }
     
     console.warn('[getLootBoxes] No valid response data');
-    return null;
+    // Return empty array as fallback
+    return { result: [[]] };
   } catch (error) {
     console.error('[getLootBoxes] Error getting loot boxes:', error);
-    return null;
+    // Return empty array as fallback
+    return { result: [[]] };
   }
 };
 

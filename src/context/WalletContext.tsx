@@ -3,7 +3,7 @@ import { checkWalletStatus, WalletStatus, getAssetBalances } from '../utils/aoHe
 import type { AssetBalance } from '../utils/interefaces';
 import { SUPPORTED_ASSET_IDS, ASSET_INFO } from '../constants/Constants';
 
-let ASSET_REFRESH_INTERVAL = 15000; // 15 seconds, set to 0 to disable
+let ASSET_REFRESH_INTERVAL = 25000; // 5 seconds, set to 0 to disable
 
 interface WalletContextType {
   wallet: any | null;
