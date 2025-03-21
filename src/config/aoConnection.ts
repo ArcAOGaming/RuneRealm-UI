@@ -60,27 +60,30 @@ function withTimeout(promise, ms) {
  * Always starts with the default CU, and only falls back if it fails.
  */
 async function attemptWithFallback(fn, timeout = 15000) {
-  const cuList = [AO_CONFIG.CU_URL, ...backupCUs];
-
-  for (const cuUrl of cuList) {
-    if (USE_ONLY_DEFAULT_CU && cuUrl !== AO_CONFIG.CU_URL) {
-      logMessage("warn", `🔒 Backup CUs disabled. Only using default.`);
-      break;
+  if (USE_ONLY_DEFAULT_CU) {
+    logMessage("warn", `🔒 Backup CUs disabled. Only using default.`);
+    try {
+      return await withTimeout(fn(AO_CONFIG.CU_URL), timeout);
+    } catch (error) {
+      logMessage("error", `❌ Default CU failed, but backups are disabled.`, error);
+      throw new Error("🚨 Default CU failed and backups are disabled.");
     }
+  }
 
+  // If backups are allowed, attempt them in order
+  const cuList = [AO_CONFIG.CU_URL, ...backupCUs];
+  for (const cuUrl of cuList) {
     try {
       logMessage("info", `🔄 Trying CU: ${cuUrl}`);
       return await withTimeout(fn(cuUrl), timeout);
     } catch (error) {
       logMessage("warn", `❌ CU Failed: ${cuUrl}`, error);
-      if (cuUrl === AO_CONFIG.CU_URL) {
-        logMessage("warn", `⚠️ Default CU failed. Trying backups...`);
-      }
     }
   }
 
   throw new Error("🚨 All Compute Units (CUs) failed after retries.");
 }
+
 
 /**
  * Creates a connection instance using the default CU.

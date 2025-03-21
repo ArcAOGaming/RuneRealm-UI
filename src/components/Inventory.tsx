@@ -12,7 +12,7 @@ interface InventorySection {
 const INVENTORY_SECTIONS: InventorySection[] = [
   {
     title: "Value",
-    items: ["TRUNK", "NAB", "RAND"]
+    items: ["TRUNK", "NAB", "RandAOTest"]
   },
   {
     title: "Gems",
