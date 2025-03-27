@@ -124,25 +124,7 @@ export const ASSET_INFO: Partial<Record<string, AssetInfo>> = {
     name: "RUNE",
     ticker: "RUNE",
     denomination: 0,
-    section: "Value",
-  },
-  C19KuCwx1VRH4WItj9wYUu1DIkdvareU3aMmojVZJf4: {
-    processId: "C19KuCwx1VRH4WItj9wYUu1DIkdvareU3aMmojVZJf4",
-    logo: "lCRSEsSOrDhYUqJtsYN7CJoEm553a9cRLySW2lCxDWs",
-    name: "Emerald",
-    ticker: "Emerald",
-    spriteMap: "agk0Smr--B_d8QaKl0znL7ok0vH5JMqmUy-pWe8emTg",
-    denomination: 0,
-    section: "Value",
-  },
-  "R5UGOfFboMv-zlaSSDgRqxRILmGgPPe5BlnPf5F4i3A": {
-    processId: "R5UGOfFboMv-zlaSSDgRqxRILmGgPPe5BlnPf5F4i3A",
-    logo: "tu3Mpqk29s5f1w9A635C1YAZrfMDg9XOl0sB9icZFDM",
-    name: "Topaz",
-    ticker: "Topaz",
-    spriteMap: "ibvf6xYrRHTPiqrbTPizh1wT7uu8Sp3LKC3b_dLWoHY",
-    denomination: 0,
-    section: "Value",
+    section: "Utility",
   },
   f1KnnMFYR125aQo0zYKgL0PzgJL__fO8JOtDfuIDdHo: {
     processId: "f1KnnMFYR125aQo0zYKgL0PzgJL__fO8JOtDfuIDdHo",
@@ -151,7 +133,25 @@ export const ASSET_INFO: Partial<Record<string, AssetInfo>> = {
     ticker: "Scroll",
     spriteMap: "BuXEu4Ml9LRjqYnTtNX8kth4yjx8VkN_4r_NkfABIec",
     denomination: 0,
-    section: "Value",
+    section: "Utility",
+  },
+  C19KuCwx1VRH4WItj9wYUu1DIkdvareU3aMmojVZJf4: {
+    processId: "C19KuCwx1VRH4WItj9wYUu1DIkdvareU3aMmojVZJf4",
+    logo: "lCRSEsSOrDhYUqJtsYN7CJoEm553a9cRLySW2lCxDWs",
+    name: "Emerald",
+    ticker: "Emerald",
+    spriteMap: "agk0Smr--B_d8QaKl0znL7ok0vH5JMqmUy-pWe8emTg",
+    denomination: 0,
+    section: "Gems",
+  },
+  "R5UGOfFboMv-zlaSSDgRqxRILmGgPPe5BlnPf5F4i3A": {
+    processId: "R5UGOfFboMv-zlaSSDgRqxRILmGgPPe5BlnPf5F4i3A",
+    logo: "tu3Mpqk29s5f1w9A635C1YAZrfMDg9XOl0sB9icZFDM",
+    name: "Topaz",
+    ticker: "Topaz",
+    spriteMap: "ibvf6xYrRHTPiqrbTPizh1wT7uu8Sp3LKC3b_dLWoHY",
+    denomination: 0,
+    section: "Gems",
   },
   rNVB_bYcNLk6OgcbyG8MEmxjGo76oj3gFzLBCWOhqXI: {
     processId: "rNVB_bYcNLk6OgcbyG8MEmxjGo76oj3gFzLBCWOhqXI",
@@ -160,7 +160,7 @@ export const ASSET_INFO: Partial<Record<string, AssetInfo>> = {
     ticker: "Ruby",
     spriteMap: "HPqCmJ9QevXtCCzZt3gSgqJ6khjDJY4GkUdqAyPQfEM",
     denomination: 0,
-    section: "Value",
+    section: "Gems",
   },
   twFZ4HTvL_0XAIOMPizxs_S3YH5J5yGvJ8zKiMReWF0: {
     processId: "twFZ4HTvL_0XAIOMPizxs_S3YH5J5yGvJ8zKiMReWF0",
@@ -168,7 +168,7 @@ export const ASSET_INFO: Partial<Record<string, AssetInfo>> = {
     name: "Water Berries",
     ticker: "Water Berries",
     denomination: 0,
-    section: "Value",
+    section: "Berry",
   },
   XJjSdWaorbQ2q0YkaQSmylmuADWH1fh2PvgfdLmXlzA: {
     processId: "XJjSdWaorbQ2q0YkaQSmylmuADWH1fh2PvgfdLmXlzA",
@@ -176,7 +176,7 @@ export const ASSET_INFO: Partial<Record<string, AssetInfo>> = {
     name: "Air Berries",
     ticker: "Air Berries",
     denomination: 0,
-    section: "Value",
+    section: "Berry",
   },
   "2NoNsZNyHMWOzTqeQUJW9Xvcga3iTonocFIsgkWIiPM": {
     processId: "2NoNsZNyHMWOzTqeQUJW9Xvcga3iTonocFIsgkWIiPM",
@@ -184,7 +184,7 @@ export const ASSET_INFO: Partial<Record<string, AssetInfo>> = {
     name: "Rock Berries",
     ticker: "Rock Berries",
     denomination: 0,
-    section: "Value",
+    section: "Berry",
   },
   "30cPTQXrHN76YZ3bLfNAePIEYDb5Xo1XnbQ-xmLMOM0": {
     processId: "30cPTQXrHN76YZ3bLfNAePIEYDb5Xo1XnbQ-xmLMOM0",
@@ -192,7 +192,7 @@ export const ASSET_INFO: Partial<Record<string, AssetInfo>> = {
     name: "Fire Berries",
     ticker: "Fire Berries",
     denomination: 0,
-    section: "Value",
+    section: "Berry",
   },
 };
 
