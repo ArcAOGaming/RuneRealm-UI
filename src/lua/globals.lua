@@ -27,7 +27,7 @@ TOPOZ_TOKEN="R5UGOfFboMv-zlaSSDgRqxRILmGgPPe5BlnPf5F4i3A"
 PurchaseTokens = {
   {
     token = TRUNK_TOKEN,  -- TRUNK token
-    amount = "3000",
+    amount = "4000",
     name = "TRUNK",
     icon="hqg-Em9DdYHYmMysyVi8LuTGF8IF_F7ZacgjYiSpj0k",
     denomination = 3  
@@ -41,7 +41,7 @@ PurchaseTokens = {
   },
   {
     token = NAB_TOKEN,
-    amount = "50000000000",
+    amount = "75000000000",
     name = "NAB" ,
     icon="LQ4crOHN9qO6JsLNs253AaTch6MgAMbM8PKqBxs4hgI",
     denomination = 8 

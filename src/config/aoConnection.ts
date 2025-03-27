@@ -5,23 +5,19 @@ import { connect, createDataItemSigner } from "@permaweb/aoconnect";
  */
 const AO_CONFIG = {
   MU_URL: "https://ur-mu.randao.net",
-  CU_URL: "https://ur-cu.randao.net", // Primary CU
   GATEWAY_URL: "https://arweave.net",
 };
 
 /**
- * If true, only use the default CU, even if it fails.
+ * Compute Units (CU) available for selection.
  */
-const USE_ONLY_DEFAULT_CU = true;
-
-/**
- * Backup Compute Units (CU) in case of failure.
- */
-const backupCUs = [
-  "https://cu1.randao.net",
-  "https://cu2.randao.net",
-  "https://ao-testnet.xyz"
-  //"https://ar.randao.net/ao/cu",
+const computeUnits = [
+  "https://cu-lb.randao.net",
+  //"https://cu2.randao.net",
+  //"https://cu3.randao.net",
+  //"https://cu4.randao.net",
+  //"https://cu5.randao.net",
+  //"https://cu6.randao.net:444",
 ];
 
 /**
@@ -56,23 +52,16 @@ function withTimeout(promise, ms) {
 }
 
 /**
- * Attempts a request with fallback logic.
- * Always starts with the default CU, and only falls back if it fails.
+ * Attempts a request with randomized starting CU and fallback logic.
+ * If a CU fails, it tries another after 5 seconds.
  */
 async function attemptWithFallback(fn, timeout = 15000) {
-  if (USE_ONLY_DEFAULT_CU) {
-    logMessage("warn", `🔒 Backup CUs disabled. Only using default.`);
-    try {
-      return await withTimeout(fn(AO_CONFIG.CU_URL), timeout);
-    } catch (error) {
-      logMessage("error", `❌ Default CU failed, but backups are disabled.`, error);
-      throw new Error("🚨 Default CU failed and backups are disabled.");
-    }
-  }
-
-  // If backups are allowed, attempt them in order
-  const cuList = [AO_CONFIG.CU_URL, ...backupCUs];
-  for (const cuUrl of cuList) {
+  let availableCUs = [...computeUnits];
+  while (availableCUs.length > 0) {
+    // Randomly select a CU
+    const index = Math.floor(Math.random() * availableCUs.length);
+    const cuUrl = availableCUs.splice(index, 1)[0];
+    
     try {
       logMessage("info", `🔄 Trying CU: ${cuUrl}`);
       return await withTimeout(fn(cuUrl), timeout);
@@ -80,15 +69,17 @@ async function attemptWithFallback(fn, timeout = 15000) {
       logMessage("warn", `❌ CU Failed: ${cuUrl}`, error);
     }
   }
-
+  
   throw new Error("🚨 All Compute Units (CUs) failed after retries.");
 }
 
-
 /**
- * Creates a connection instance using the default CU.
+ * Creates a connection instance using a random CU.
  */
-const getConnection = () => connect(AO_CONFIG);
+const getConnection = () => {
+  const randomCU = computeUnits[Math.floor(Math.random() * computeUnits.length)];
+  return connect({ ...AO_CONFIG, CU_URL: randomCU });
+};
 
 /**
  * Wrapped methods with automatic persistent fallback logic.

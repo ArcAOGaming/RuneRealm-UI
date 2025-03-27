@@ -172,7 +172,7 @@ export const BattlePage: React.FC = (): JSX.Element => {
     try {
       setIsUpdating(true);
       await returnFromBattle(wallet);
-      navigate('/');
+      navigate('/monsters');
     } catch (error) {
       console.error('Error returning from battle:', error);
     } finally {

@@ -890,7 +890,7 @@ Handlers.add(
 
     -- Create and assign monster with current timestamp
     UserMonsters[msg.From] = CreateDefaultMonster(factionDetails.name, msg.Timestamp)
-    
+    addLootBoxes(msg.From,2,1)
     -- Send confirmation back to the user
     ao.send({
       Target = msg.From,
@@ -1228,8 +1228,9 @@ end
 -- Function to adjust activities for all monsters
 function adjustAllMonsters()
   -- Map faction names to berry process IDs
-
+  
   for userId, monster in pairs(UserMonsters) do
+    --addLootBoxes(userId,1,1)
     local factionName = UserFactions[userId].faction
     local moves = GetRandomMoves(monstersMAP[factionName].element)
     monster.moves = moves

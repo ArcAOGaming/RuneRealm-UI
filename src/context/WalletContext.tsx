@@ -115,11 +115,7 @@ export const WalletProvider: React.FC<{ children: React.ReactNode }> = ({ childr
 
   const refreshAssets = useCallback(async (force: boolean = false) => {
     if (!wallet?.address || (!force && ASSET_REFRESH_INTERVAL === 0)) return;
-    const now = Date.now();
-    if (!force && now - lastRefreshTimeRef.current < ASSET_REFRESH_INTERVAL) {
-      console.log('[WalletContext] Skipping asset refresh due to interval constraint');
-      return;
-    }
+    // Remove time-based restriction to allow refreshing whenever needed
     if (isRefreshingRef.current) return;
     try {
       isRefreshingRef.current = true;
@@ -135,12 +131,11 @@ export const WalletProvider: React.FC<{ children: React.ReactNode }> = ({ childr
     }
   }, [wallet, addAssetBalance]);
 
+  // Remove automatic interval-based refresh
+  // Keep track of the wallet for dependency purposes
   useEffect(() => {
-    if (wallet?.address && ASSET_REFRESH_INTERVAL > 0) {
-      const interval = setInterval(() => refreshAssets(false), ASSET_REFRESH_INTERVAL);
-      return () => clearInterval(interval);
-    }
-  }, [wallet, refreshAssets]);
+    // No automatic refresh interval
+  }, [wallet]);
 
   const triggerRefresh = useCallback(() => {
     console.log('[WalletContext] Refresh triggered from message');
