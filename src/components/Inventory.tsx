@@ -1,4 +1,4 @@
-import React, { useState, useMemo, useCallback } from 'react';
+import React, { useState, useMemo, useCallback, useEffect } from 'react';
 import { useWallet } from '../hooks/useWallet';
 import { formatTokenAmount } from '../utils/aoHelpers';
 import { currentTheme } from '../constants/theme';
@@ -16,7 +16,8 @@ const Inventory = () => {
     assetBalances, 
     isLoadingAssets, 
     pendingAssets,
-    refreshAssets 
+    refreshAssets,
+    querySpecificAssets
   } = useWallet();
   
   const theme = currentTheme(darkMode);
@@ -58,6 +59,45 @@ const Inventory = () => {
     });
     return sections;
   });
+
+  // Map ticker names to their processIds
+  const tickerToProcessId = useMemo(() => {
+    const mapping: Record<string, string> = {};
+    
+    Object.entries(ASSET_INFO).forEach(([processId, info]) => {
+      if (info && info.ticker) {
+        mapping[info.ticker.toLowerCase()] = processId;
+      }
+    });
+    
+    return mapping;
+  }, []);
+
+  // Effect to query specific assets based on sections that are open
+  useEffect(() => {
+    if (!wallet?.address) return;
+    
+    // Collect all assets that need to be loaded based on open sections
+    const assetsToLoad: string[] = [];
+    
+    inventorySections.forEach(section => {
+      if (openSections[section.title]) {
+        // For each ticker in this section, find its processId and add to the list
+        section.items.forEach(ticker => {
+          const processId = tickerToProcessId[ticker.toLowerCase()];
+          if (processId) {
+            assetsToLoad.push(processId);
+          }
+        });
+      }
+    });
+    
+    // Only proceed if we have assets to load
+    if (assetsToLoad.length > 0) {
+      console.log(`[Inventory] Loading ${assetsToLoad.length} assets for open sections`);
+      querySpecificAssets(assetsToLoad);
+    }
+  }, [wallet?.address, openSections, inventorySections, tickerToProcessId, querySpecificAssets]);
 
   // Memoize the findAssetByTicker function to prevent unnecessary re-renders
   const findAssetByTicker = useCallback((ticker: string) => {
@@ -118,16 +158,16 @@ const Inventory = () => {
           {isLoadingAssets ? (
             <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-[#F4860A]"></div>
           ) : (
-            <button 
-              onClick={(e) => {
-                e.stopPropagation();
-                refreshAssets();
-              }} 
-              className="text-sm hover:text-[#F4860A] transition-colors"
-              title="Refresh assets"
-            >
-              ↻
-            </button>
+      <button 
+        onClick={(e) => {
+          e.stopPropagation();
+          refreshAssets();
+        }} 
+        className="text-sm hover:text-[#F4860A] transition-colors"
+        title="Refresh all assets"
+      >
+        ↻
+      </button>
           )}
         </div>
       </div>

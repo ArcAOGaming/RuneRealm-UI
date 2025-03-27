@@ -20,6 +20,7 @@ interface WalletContextType {
   setDarkMode: (mode: boolean) => void;
   triggerRefresh: () => void;
   refreshAssets: (force?: boolean) => Promise<void>;
+  querySpecificAssets: (assetIds: string[]) => Promise<void>;
   addAssetBalance: (asset: AssetBalance) => void;
 }
 
@@ -307,6 +308,48 @@ export const WalletProvider: React.FC<{ children: React.ReactNode }> = ({ childr
     localStorage.setItem('darkMode', darkMode.toString());
   }, [darkMode]);
 
+  /**
+   * Query specific assets by their process IDs
+   * This function can be used when we need to load specific assets instead of all supported assets
+   * @param assetIds Array of asset process IDs to query
+   */
+  const querySpecificAssets = useCallback(async (assetIds: string[]) => {
+    if (!wallet?.address) return;
+    
+    try {
+      console.log('[WalletContext] Querying specific assets:', assetIds);
+      setIsLoadingAssets(true);
+      
+      // Add these assets to pending sets to show loading indicators
+      setPendingAssets(prev => {
+        const newPending = new Set(prev);
+        assetIds.forEach(id => newPending.add(id));
+        return newPending;
+      });
+      
+      setPendingInfo(prev => {
+        const newPending = new Set(prev);
+        assetIds.forEach(id => newPending.add(id));
+        return newPending;
+      });
+      
+      // Create a custom function to pass to getAssetBalances that only processes the specified assets
+      const processSpecificAssets = (asset: AssetBalance) => {
+        if (assetIds.includes(asset.info.processId)) {
+          addAssetBalance(asset);
+        }
+      };
+      
+      // Call getAssetBalances with our custom callback
+      await getAssetBalances(wallet, processSpecificAssets);
+      
+    } catch (error) {
+      console.error('[WalletContext] Error querying specific assets:', error);
+    } finally {
+      setIsLoadingAssets(false);
+    }
+  }, [wallet, addAssetBalance]);
+
   const value = {
     wallet,
     walletStatus,
@@ -322,6 +365,7 @@ export const WalletProvider: React.FC<{ children: React.ReactNode }> = ({ childr
     setDarkMode,
     triggerRefresh: () => setRefreshTrigger(prev => prev + 1),
     refreshAssets,
+    querySpecificAssets,
     addAssetBalance
   };
 
