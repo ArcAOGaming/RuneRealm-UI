@@ -12,7 +12,7 @@ const AO_CONFIG = {
  * Compute Units (CU) available for selection.
  */
 const computeUnits = [
-  "https://cu-lb.randao.net",
+  "https://ur-cu.randao.net",
   //"https://cu2.randao.net",
   //"https://cu3.randao.net",
   //"https://cu4.randao.net",
