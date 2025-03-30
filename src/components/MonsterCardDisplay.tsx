@@ -1,6 +1,6 @@
 import React, { useState, useCallback, useEffect, useRef } from 'react';
 import { MonsterStats } from '../utils/aoHelpers';
-import { Gateway } from '../constants/Constants';
+import { Gateway, CARD_CONSTANTS } from '../constants/Constants';
 import { CARD_LAYOUT, CARD_ZOOM } from '../constants/CardLayout';
 import { currentTheme } from '../constants/theme';
 
@@ -102,7 +102,7 @@ const CARD = {
     },
     WIDTH: 417,    // Width of the expanded section (full size of background image)
     BACKGROUND: {
-      COLOR: '#f8f9fa', // Light gray background
+      COLOR: 'transparent', // Transparent background
       BORDER: {
         COLOR: '#ddd',
         WIDTH: 2,
@@ -503,8 +503,9 @@ export const MonsterCardDisplay: React.FC<MonsterCardDisplayProps> = ({ monster,
         // Draw the side image as the background for the expanded section
         if (sideImg) {
           // Side image is 417px x 1065px according to specification
-          // Draw it to fill the expanded area
-          ctx.drawImage(sideImg, expandedAreaX, expandedAreaY, expandedAreaWidth, expandedAreaHeight);
+          // Draw it to fill the expanded area, with 2px offset to the left
+          const offsetX = expandedAreaX - CARD_CONSTANTS.EXPANDED_SECTION.BACKGROUND_OFFSET;
+          ctx.drawImage(sideImg, offsetX, expandedAreaY, expandedAreaWidth, expandedAreaHeight);
         }
         
           // Draw just the border for the expanded section with rounded corners

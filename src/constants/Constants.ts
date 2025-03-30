@@ -25,6 +25,13 @@ export const ACTIVITY_POINTS = {
   MISSION: 3,
 } as const;
 
+// Card constants
+export const CARD_CONSTANTS = {
+  EXPANDED_SECTION: {
+    BACKGROUND_OFFSET: 2, // 2px offset for background image
+  }
+} as const;
+
 export const SPRITE_CATEGORIES: SpriteCategory[] = [
   {
     name: "Hair",
