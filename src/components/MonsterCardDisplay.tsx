@@ -331,10 +331,10 @@ export const MonsterCardDisplay: React.FC<MonsterCardDisplayProps> = ({
     ctx.fillStyle = "rgba(0, 0, 0, 0.8)"; // Black background with opacity
     ctx.fillRect(temporaryBoxX, temporaryBoxY, temporaryBoxWidth, temporaryBoxHeight);
     
-    // Add a thick border
-    ctx.strokeStyle = "black";
-    ctx.lineWidth = 3;
-    ctx.strokeRect(temporaryBoxX, temporaryBoxY, temporaryBoxWidth, temporaryBoxHeight);
+    // // Add a thick border
+    // ctx.strokeStyle = "black";
+    // ctx.lineWidth = 3;
+    // ctx.strokeRect(temporaryBoxX, temporaryBoxY, temporaryBoxWidth, temporaryBoxHeight);
     
     // Draw moves section
     const lastMoveY = await drawMovesSection(ctx, monster, expandedAreaX, expandedAreaY, expandedAreaWidth, originalCardWidth, temporaryBoxX, temporaryBoxY, temporaryBoxWidth);

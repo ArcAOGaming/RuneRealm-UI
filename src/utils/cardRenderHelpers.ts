@@ -363,28 +363,29 @@ export const drawInventorySlots = (
       // If item has an image, draw it
       // This would require loading the image - implementing a placeholder here
       if (item.rarity) {
-        // Add a small colored dot indicating rarity at top right of slot
-        const rarityColors: {[key: string]: string} = {
-          common: '#aaaaaa',
-          uncommon: '#00cc00',
-          rare: '#0066ff',
-          epic: '#cc00ff',
-          legendary: '#ffaa00'
+        // Use the same rarity colors as defined in MOVES.FONT.RARITY
+        // This ensures consistency with the rarity display in moves
+        const rarityColor = 'gold'; // Use the same gold color as in CARD.EXPANDED.MOVES.FONT.RARITY
+        
+        // Draw rarity stars based on rarity level
+        const rarityLevels: {[key: string]: number} = {
+          common: 1,
+          uncommon: 2,
+          rare: 3,
+          epic: 4,
+          legendary: 5
         };
         
-        const rarityColor = rarityColors[item.rarity.toLowerCase()] || rarityColors.common;
+        const rarityLevel = rarityLevels[item.rarity.toLowerCase()] || 1;
+        
+        // Use font style from config
+        ctx.font = `normal 20px Arial, sans-serif`;
         ctx.fillStyle = rarityColor;
+        ctx.textAlign = 'right';
         
-        // Draw a glowing rarity indicator
-        ctx.shadowColor = rarityColor;
-        ctx.shadowBlur = 4;
-        ctx.beginPath();
-        ctx.arc(slotX + slotWidth - 10, slotY + 10, 5, 0, Math.PI * 2);
-        ctx.fill();
-        
-        // Reset shadow
-        ctx.shadowColor = 'transparent';
-        ctx.shadowBlur = 0;
+        // Draw stars based on rarity level (similar to the move rarity display)
+        const stars = '★'.repeat(rarityLevel);
+        ctx.fillText(stars, slotX + slotWidth - 5, slotY + 20);
       }
     } else {
       // Draw empty text if no item
@@ -499,6 +500,7 @@ export const drawMoves = (
     
     // Get the grid configuration
     const grid = moveConfig.STATS.LAYOUT.GRID;
+    const rarity = moveConfig.FONT.RARITY;
     const background = moveConfig.STATS.LAYOUT.BACKGROUND;
     const statFont = moveConfig.STATS.LAYOUT.FONT;
     
@@ -542,10 +544,10 @@ export const drawMoves = (
     
     // Draw rarity stars if available
     if ((moveData as any).rarity) {
-      ctx.font = `bold 35px Arial, sans-serif`;
-      ctx.fillStyle = 'gold';
+      ctx.font = `bold ${rarity.SIZE}px Arial, sans-serif`;
+      ctx.fillStyle = rarity.COLOR;
       ctx.textAlign = 'right';
-      ctx.fillText('★'.repeat((moveData as any).rarity), expandedAreaX + expandedAreaWidth - 30, moveY + 70);
+      ctx.fillText('★'.repeat((moveData as any).rarity), expandedAreaX + expandedAreaWidth - rarity.OFFSET_X, moveY + rarity.OFFSET_Y);
     }
   });
   

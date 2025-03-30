@@ -194,7 +194,7 @@ export const CARD = {
     MOVES: {
       HEIGHT: 100,           // Height of each move box
       SPACING: 15,           // Vertical space between move boxes
-      SECTION_SPACING: 10,   // Space between different sections
+      SECTION_SPACING: 25,   // Space between different sections
       TITLE_OFFSET: 5,      // Space above the title
       FIRST_MOVE_OFFSET: 0, // Space after title before first move
       BACKGROUND: {
@@ -233,9 +233,9 @@ export const CARD = {
         RARITY: {
           FAMILY: 'Arial, sans-serif',
           WEIGHT: 'normal',
-          SIZE: 30,
+          SIZE: 25,
           COLOR: 'gold', // Keep gold for rarity as it's a standard indication
-          OFFSET_X: 30,
+          OFFSET_X: 55,
           OFFSET_Y: 70
         }
       },
