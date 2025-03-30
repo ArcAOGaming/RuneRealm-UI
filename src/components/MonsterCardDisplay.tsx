@@ -317,8 +317,7 @@ export const MonsterCardDisplay: React.FC<MonsterCardDisplayProps> = ({
       ctx.globalAlpha = 1.0; // Reset opacity
     }
     
-    // Draw themed border box around the entire expanded section
-    drawExpandedBorder(ctx, expandedAreaX, expandedAreaY, expandedAreaWidth, expandedAreaHeight);
+    // No border box needed anymore
     
     // Draw moves section
     const contentX = expandedAreaX + CARD.EXPANDED.PADDING.OVERLAY_LEFT + 10;
@@ -645,38 +644,6 @@ export const MonsterCardDisplay: React.FC<MonsterCardDisplayProps> = ({
     );
   };
 
-  // Draw border for expanded section with theme color - no longer used but kept for reference
-  const drawExpandedBorder = (
-    ctx: CanvasRenderingContext2D, 
-    expandedAreaX: number, 
-    expandedAreaY: number, 
-    expandedAreaWidth: number, 
-    expandedAreaHeight: number
-  ) => {
-    const radius = CARD.EXPANDED.BACKGROUND.BORDER.RADIUS;
-    
-    // Make the overlay just a bit smaller than full width 
-    const overlayWidth = expandedAreaWidth * 1.0 - CARD.EXPANDED.PADDING.OVERLAY_LEFT;
-    const overlayX = expandedAreaX + CARD.EXPANDED.PADDING.OVERLAY_LEFT;
-    
-    // Draw only the border of the rounded rectangle
-    ctx.beginPath();
-    ctx.moveTo(overlayX + radius, expandedAreaY);
-    ctx.lineTo(overlayX + overlayWidth - radius, expandedAreaY);
-    ctx.arcTo(overlayX + overlayWidth, expandedAreaY, overlayX + overlayWidth, expandedAreaY + radius, radius);
-    ctx.lineTo(overlayX + overlayWidth, expandedAreaHeight - radius);
-    ctx.arcTo(overlayX + overlayWidth, expandedAreaHeight, overlayX + overlayWidth - radius, expandedAreaHeight, radius);
-    ctx.lineTo(overlayX + radius, expandedAreaHeight);
-    ctx.arcTo(overlayX, expandedAreaHeight, overlayX, expandedAreaHeight - radius, radius);
-    ctx.lineTo(overlayX, expandedAreaY + radius);
-    ctx.arcTo(overlayX, expandedAreaY, overlayX + radius, expandedAreaY, radius);
-    ctx.closePath();
-  
-    // Draw only the border with theme-appropriate color
-    ctx.strokeStyle = borderColor;
-    ctx.lineWidth = CARD.EXPANDED.BACKGROUND.BORDER.WIDTH;
-    ctx.stroke();
-  };
 
   // Export card function
   const exportCard = async () => {

@@ -233,16 +233,16 @@ export const CARD = {
         RARITY: {
           FAMILY: 'Arial, sans-serif',
           WEIGHT: 'normal',
-          SIZE: 25,
+          SIZE: 30,
           COLOR: 'gold', // Keep gold for rarity as it's a standard indication
-          OFFSET_X: 55,
+          OFFSET_X: 35,
           OFFSET_Y: 70
         }
       },
       // Configuration for element type images
       ELEMENT_IMAGE: {
         HEIGHT: 400,
-        OFFSET_X: 50,
+        OFFSET_X: 35,
         OFFSET_Y: 155,
         FALLBACK: {          // Fallback badge when image is not available
           WIDTH: 80,
