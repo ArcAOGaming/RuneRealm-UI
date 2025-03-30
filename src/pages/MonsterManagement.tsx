@@ -351,8 +351,6 @@ export const MonsterManagement: React.FC = (): JSX.Element => {
 
         <div className={`monster-management-content ${theme.text}`}>
           <div className="monster-management-wrapper">
-            <h1 className={`monster-management-title ${theme.text}`}>Monster Management</h1>
-            
             {!walletStatus?.isUnlocked ? (
               <div className={`no-monster-card ${theme.container} border ${theme.border} backdrop-blur-md`}>
                 <h2 className={`no-monster-title ${theme.text}`}>Unlock Access to Manage Monsters</h2>
