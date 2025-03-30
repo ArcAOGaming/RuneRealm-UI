@@ -5,8 +5,15 @@ export interface Theme {
   container: string;
   buttonBg: string;
   buttonHover: string;
-  cardBg: string; // Only adding a few essential card colors
+  cardBg: string;
   cardBorder: string;
+  // Additional card colors
+  cardText: string;
+  cardTitle: string;
+  cardAccent: string;
+  statusEnergy: string;
+  statusHappiness: string;
+  statusExperience: string;
 }
 
 export const currentTheme = (isDark: boolean): Theme => ({
@@ -19,5 +26,12 @@ export const currentTheme = (isDark: boolean): Theme => ({
   buttonBg: isDark ? 'bg-[#814E33]/20' : 'bg-white/50',
   buttonHover: isDark ? 'hover:bg-[#814E33]/30' : 'hover:bg-[#814E33]/10',
   cardBg: isDark ? '#0D0705' : '#FCF5D8',
-  cardBorder: isDark ? '#F4860A' : '#814E33'
+  cardBorder: isDark ? '#F4860A' : '#814E33',
+  cardText: isDark ? '#FCF5D8' : '#0D0705',
+  cardTitle: isDark ? '#FCF5D8' : '#0D0705',
+  cardAccent: isDark ? '#F4860A' : '#814E33',
+  // Keep consistent colors for status bars as they convey meaning
+  statusEnergy: '#F59E0B', // amber
+  statusHappiness: '#EC4899', // pink
+  statusExperience: '#3B82F6' // blue
 });

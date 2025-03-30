@@ -60,7 +60,7 @@ export const CardImages = {
   },
 };
 
-// Card dimensions and layout
+// This structure defines layout and dimensions, but leaves colors to be replaced at runtime with theme values
 export const CARD = {
   DIMENSIONS: {
     WIDTH: 648,
@@ -82,7 +82,7 @@ export const CARD = {
       FAMILY: 'Arial, sans-serif',
       WEIGHT: '1000',
       SIZE_RATIO: 0.025,
-      COLOR: 'white'
+      COLOR: 'white' // Kept as white for visibility on level badge
     },
     POSITION: {
       LEFT_RATIO: 0.073,
@@ -96,7 +96,7 @@ export const CARD = {
       FAMILY: 'Courier New, monospace',
       WEIGHT: '600',
       SIZE_RATIO: 0.035,
-      COLOR: 'white'
+      COLOR: 'white' // Kept as white for visibility on card frame
     },
     POSITION: {
       START_X_RATIO: 0.26,
@@ -110,7 +110,7 @@ export const CARD = {
       FAMILY: 'Arial, sans-serif',
       WEIGHT: '1000',
       SIZE_RATIO: 0.06,
-      COLOR: 'white'
+      COLOR: 'white' // Kept as white for visibility on card frame
     },
     POSITION: {
       TOP_RATIO: 0.09,
@@ -123,13 +123,13 @@ export const CARD = {
         FAMILY: 'Arial, sans-serif',
         WEIGHT: '800',
         SIZE_RATIO: 0.035,
-        COLOR: 'white'
+        COLOR: 'white' // Kept as white for visibility on card frame
       },
       STATS: {
         FAMILY: 'Arial, sans-serif',
         WEIGHT: '600',
         SIZE_RATIO: 0.035,
-        COLOR: 'white'
+        COLOR: 'white' // Kept as white for visibility on card frame
       }
     },
     POSITION: {
@@ -153,14 +153,14 @@ export const CARD = {
     PADDING: {
       LEFT: 20,    // Left padding from original card width
       RIGHT: 20,   // Right padding from card width
-      TOP: 80,     // Top padding for the expanded area (increased to move moves section down)
+      TOP: 80,     // Top padding for the expanded area
       OVERLAY_LEFT: 15  // Left indentation for the overlay box
     },
     WIDTH: 417,    // Width of the expanded section (full size of background image)
     BACKGROUND: {
       COLOR: 'transparent', // Transparent background
       BORDER: {
-        COLOR: '#ddd',
+        COLOR: '', // Will be replaced with theme.cardBorder at runtime
         WIDTH: 2,
         RADIUS: 10
       }
@@ -171,15 +171,15 @@ export const CARD = {
         FAMILY: 'Arial, sans-serif',
         WEIGHT: 'bold',
         SIZE: 36,
-        COLOR: '#333333'
+        COLOR: '' // Will be replaced with theme.cardTitle at runtime
       },
       SPACING: {
         BOTTOM: 10,     // Space below the title text before the underline
         AFTER: 20       // Space after the underline before section content
       },
       UNDERLINE: {
-        COLOR: '#5b87cc', // More vibrant blue color
-        WIDTH: 3,         // Slightly thicker
+        COLOR: '', // Will be replaced with theme.cardAccent at runtime
+        WIDTH: 3,
         GRADIENT: true    // Use gradient for more gaming aesthetic
       },
       ICON_SIZE: 24,      // Size of the section icons
@@ -194,16 +194,16 @@ export const CARD = {
     MOVES: {
       HEIGHT: 100,           // Height of each move box
       SPACING: 15,           // Vertical space between move boxes
-      SECTION_SPACING: 30,   // Space between different sections (reduced)
+      SECTION_SPACING: 30,   // Space between different sections
       TITLE_OFFSET: 5,      // Space above the title
-      FIRST_MOVE_OFFSET: 0, // Space after title before first move (further reduced to make moves closer to title)
+      FIRST_MOVE_OFFSET: 0, // Space after title before first move
       BACKGROUND: {
-        COLOR: 'rgba(255, 255, 255, 0.7)'
+        COLOR: '' // Will be replaced with theme container value at runtime
       },
       BORDER: {
-        COLOR: '#7e91ac',    // More game-like bluish border
-        WIDTH: 2,            // Thicker border
-        RADIUS: 8            // Rounded corners
+        COLOR: '', // Will be replaced with theme border value at runtime
+        WIDTH: 2,
+        RADIUS: 8
       },
       SHADOW: {
         COLOR: 'rgba(0, 0, 0, 0.15)',
@@ -217,46 +217,46 @@ export const CARD = {
           FAMILY: 'Arial, sans-serif',
           WEIGHT: 'bold',
           SIZE: 28,
-          COLOR: 'black',
-          OFFSET_X: 15,      // Left padding for move name
-          OFFSET_Y: 30       // Top padding for move name from moveY
+          COLOR: '', // Will be replaced with theme.cardText at runtime
+          OFFSET_X: 15,
+          OFFSET_Y: 30
         },
         STATS: {
           FAMILY: 'Arial, sans-serif',
           WEIGHT: 'normal',
           SIZE: 22,
-          COLOR: 'black',
-          OFFSET_X: 12,      // Left padding for stats
-          OFFSET_Y: 60,      // Vertical position of stats from moveY
-          SPACING: 10        // Horizontal spacing between stats
+          COLOR: '', // Will be replaced with theme.cardText at runtime
+          OFFSET_X: 12,
+          OFFSET_Y: 60,
+          SPACING: 10
         },
         RARITY: {
           FAMILY: 'Arial, sans-serif',
           WEIGHT: 'normal',
           SIZE: 35,
-          COLOR: 'gold',
-          OFFSET_X: 30,      // Right padding for rarity stars
-          OFFSET_Y: 70       // Vertical position of rarity from moveY
+          COLOR: 'gold', // Keep gold for rarity as it's a standard indication
+          OFFSET_X: 30,
+          OFFSET_Y: 70
         }
       },
       // Configuration for element type images
       ELEMENT_IMAGE: {
-        HEIGHT: 400,         // Height of element type image
-        OFFSET_X: 20,        // Right padding from card edge
-        OFFSET_Y: 150,       // Additional vertical offset for positioning
+        HEIGHT: 400,
+        OFFSET_X: 20,
+        OFFSET_Y: 150,
         FALLBACK: {          // Fallback badge when image is not available
           WIDTH: 80,
           HEIGHT: 25,
-          OFFSET_X: 120,     // Right padding from card edge
-          OFFSET_Y: 10,      // Top padding from moveY
+          OFFSET_X: 120,
+          OFFSET_Y: 10,
           FONT: {
             FAMILY: 'Arial, sans-serif',
             WEIGHT: 'bold',
             SIZE: 16,
-            COLOR: 'white'
+            COLOR: 'white' // Kept as white for contrast
           },
-          TEXT_OFFSET_X: 80, // Center position of text
-          TEXT_OFFSET_Y: 27  // Vertical position of text from moveY
+          TEXT_OFFSET_X: 80,
+          TEXT_OFFSET_Y: 27
         }
       },
       // Stat icons and display configuration
@@ -273,49 +273,49 @@ export const CARD = {
           GRID: {
             ROWS: 2,
             COLS: 3,
-            WIDTH: 85,         // Increased cell width
-            HEIGHT: 30,        // Increased cell height
-            START_Y: 40,       // Moved up from 55 to 40
-            START_X: 15,       // Starting X position from expandedAreaX
-            X_GAP: 0,          // Removed gap between cells horizontally
-            Y_GAP: 0,          // Removed gap between cells vertically
-            INNER_PADDING: 3   // Added minimal inner padding
+            WIDTH: 85,
+            HEIGHT: 30,
+            START_Y: 40,
+            START_X: 15,
+            X_GAP: 0,
+            Y_GAP: 0,
+            INNER_PADDING: 3
           },
           BACKGROUND: {
-            COLOR: 'rgba(255, 255, 255, 0.7)',
-            BORDER_COLOR: 'rgba(180, 180, 180, 0.7)',
+            COLOR: '', // Will be replaced with theme container value at runtime
+            BORDER_COLOR: '', // Will be replaced with theme border value at runtime
             BORDER_WIDTH: 1,
-            RADIUS: 0          // Removed rounded corners since cells are touching
+            RADIUS: 0
           },
           FONT: {
             FAMILY: 'Arial, sans-serif',
             WEIGHT: 'bold',
             SIZE: 20,
-            COLOR: 'black'
+            COLOR: '' // Will be replaced with theme.cardText at runtime
           }
         }
       }
     },
     // Inventory section configuration
     INVENTORY: {
-      TITLE_OFFSET: 10,      // Space above the title
-      SECTION_SPACING: 5,    // Space between different sections (further reduced to move inventory higher)
-      ITEM_HEIGHT: 70,       // Height of each item slot
-      ITEM_WIDTH: 70,        // Width of each item slot
-      ITEM_SPACING: 20,      // Horizontal spacing between item slots
-      ITEM_START_Y: 30,      // Vertical spacing after the title
+      TITLE_OFFSET: 10,
+      SECTION_SPACING: 5,
+      ITEM_HEIGHT: 70,
+      ITEM_WIDTH: 70,
+      ITEM_SPACING: 20,
+      ITEM_START_Y: 30,
       FONT: {
         NAME: {
           FAMILY: 'Arial, sans-serif',
           WEIGHT: 'bold',
           SIZE: 18,
-          COLOR: 'black'
+          COLOR: '' // Will be replaced with theme.cardText at runtime
         }
       },
       SLOT: {
         BACKGROUND: {
-          COLOR: 'rgba(255, 255, 255, 0.7)',
-          BORDER_COLOR: 'rgba(180, 180, 180, 0.7)',
+          COLOR: '', // Will be replaced with theme container value at runtime
+          BORDER_COLOR: '', // Will be replaced with theme border value at runtime
           BORDER_WIDTH: 2
         },
         EMPTY_TEXT: {
@@ -324,7 +324,7 @@ export const CARD = {
             FAMILY: 'Arial, sans-serif',
             WEIGHT: 'normal',
             SIZE: 14,
-            COLOR: '#888'
+            COLOR: '' // Will be replaced with semi-transparent theme.cardText at runtime
           }
         }
       }

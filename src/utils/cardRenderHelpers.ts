@@ -1,6 +1,7 @@
 import { MonsterStats } from './aoHelpers';
 import { InventoryItem } from '../constants/CardConfig';
 import { Gateway } from '../constants/Constants';
+import { Theme } from '../constants/theme';
 
 // Helper function to shade a color (positive percent brightens, negative percent darkens)
 export const shadeColor = (color: string, percent: number): string => {
@@ -72,6 +73,22 @@ export const calculateProgress = (since: number, until: number): number => {
   return Math.min(100, Math.max(0, (elapsed / total) * 100));
 };
 
+// Extract color from tailwind class (utility function)
+export const extractColorFromClass = (textClass: string): string => {
+  return textClass.replace('text-', '').replace('bg-', '').replace('[', '').replace(']', '');
+};
+
+// Create a semi-transparent color version
+export const createSemiTransparentColor = (color: string, opacity: number = 0.5): string => {
+  if (color.startsWith('#')) {
+    const r = parseInt(color.slice(1, 3), 16);
+    const g = parseInt(color.slice(3, 5), 16);
+    const b = parseInt(color.slice(5, 7), 16);
+    return `rgba(${r}, ${g}, ${b}, ${opacity})`;
+  }
+  return `${color.split(')')[0]})`.replace('rgb', 'rgba').replace(')', `, ${opacity})`);
+};
+
 // Load image helper
 export const loadImage = (src: string): Promise<HTMLImageElement> => {
   return new Promise((resolve) => {
@@ -80,6 +97,33 @@ export const loadImage = (src: string): Promise<HTMLImageElement> => {
     img.onload = () => resolve(img);
     img.src = src;
   });
+};
+
+// Draw rounded rectangle helper
+export const drawRoundedRect = (
+  ctx: CanvasRenderingContext2D,
+  x: number,
+  y: number,
+  width: number,
+  height: number,
+  radius: number,
+  fill: boolean = true,
+  stroke: boolean = false
+) => {
+  ctx.beginPath();
+  ctx.moveTo(x + radius, y);
+  ctx.lineTo(x + width - radius, y);
+  ctx.arcTo(x + width, y, x + width, y + radius, radius);
+  ctx.lineTo(x + width, y + height - radius);
+  ctx.arcTo(x + width, y + height, x + width - radius, y + height, radius);
+  ctx.lineTo(x + radius, y + height);
+  ctx.arcTo(x, y + height, x, y + height - radius, radius);
+  ctx.lineTo(x, y + radius);
+  ctx.arcTo(x, y, x + radius, y, radius);
+  ctx.closePath();
+  
+  if (fill) ctx.fill();
+  if (stroke) ctx.stroke();
 };
 
 // Draw status bar helper
@@ -97,7 +141,7 @@ export const drawStatusBar = (
   },
   titleWidth: number,
   valueText?: string,
-  textColor?: string // Added optional text color parameter
+  textColor?: string
 ) => {
   // Draw label with theme-appropriate color if provided
   ctx.font = 'bold 18px Arial, sans-serif';
@@ -128,18 +172,7 @@ export const drawStatusBar = (
   ctx.fillStyle = bgGradient;
   
   // Draw rounded background bar
-  ctx.beginPath();
-  ctx.moveTo(expandedAreaX + radius, barY);
-  ctx.lineTo(expandedAreaX + barWidth - radius, barY);
-  ctx.arcTo(expandedAreaX + barWidth, barY, expandedAreaX + barWidth, barY + radius, radius);
-  ctx.lineTo(expandedAreaX + barWidth, barY + barHeight - radius);
-  ctx.arcTo(expandedAreaX + barWidth, barY + barHeight, expandedAreaX + barWidth - radius, barY + barHeight, radius);
-  ctx.lineTo(expandedAreaX + radius, barY + barHeight);
-  ctx.arcTo(expandedAreaX, barY + barHeight, expandedAreaX, barY + barHeight - radius, radius);
-  ctx.lineTo(expandedAreaX, barY + radius);
-  ctx.arcTo(expandedAreaX, barY, expandedAreaX + radius, barY, radius);
-  ctx.closePath();
-  ctx.fill();
+  drawRoundedRect(ctx, expandedAreaX, barY, barWidth, barHeight, radius, true, false);
   
   // Draw progress bar with gradient
   // Cap the visual progress at 100% while preserving the actual value for display
@@ -195,18 +228,7 @@ export const drawStatusBar = (
   // Draw border around bar
   ctx.strokeStyle = '#aaa';
   ctx.lineWidth = 1;
-  ctx.beginPath();
-  ctx.moveTo(expandedAreaX + radius, barY);
-  ctx.lineTo(expandedAreaX + barWidth - radius, barY);
-  ctx.arcTo(expandedAreaX + barWidth, barY, expandedAreaX + barWidth, barY + radius, radius);
-  ctx.lineTo(expandedAreaX + barWidth, barY + barHeight - radius);
-  ctx.arcTo(expandedAreaX + barWidth, barY + barHeight, expandedAreaX + barWidth - radius, barY + barHeight, radius);
-  ctx.lineTo(expandedAreaX + radius, barY + barHeight);
-  ctx.arcTo(expandedAreaX, barY + barHeight, expandedAreaX, barY + barHeight - radius, radius);
-  ctx.lineTo(expandedAreaX, barY + radius);
-  ctx.arcTo(expandedAreaX, barY, expandedAreaX + radius, barY, radius);
-  ctx.closePath();
-  ctx.stroke();
+  drawRoundedRect(ctx, expandedAreaX, barY, barWidth, barHeight, radius, false, true);
 };
 
 // Draw section title and underline helper
@@ -307,18 +329,7 @@ export const drawInventorySlots = (
     ctx.fillStyle = inventoryConfig.SLOT.BACKGROUND.COLOR;
     const radius = 5; // Rounded corners for inventory slots
     
-    ctx.beginPath();
-    ctx.moveTo(slotX + radius, slotY);
-    ctx.lineTo(slotX + slotWidth - radius, slotY);
-    ctx.arcTo(slotX + slotWidth, slotY, slotX + slotWidth, slotY + radius, radius);
-    ctx.lineTo(slotX + slotWidth, slotY + inventoryHeight - radius);
-    ctx.arcTo(slotX + slotWidth, slotY + inventoryHeight, slotX + slotWidth - radius, slotY + inventoryHeight, radius);
-    ctx.lineTo(slotX + radius, slotY + inventoryHeight);
-    ctx.arcTo(slotX, slotY + inventoryHeight, slotX, slotY + inventoryHeight - radius, radius);
-    ctx.lineTo(slotX, slotY + radius);
-    ctx.arcTo(slotX, slotY, slotX + radius, slotY, radius);
-    ctx.closePath();
-    ctx.fill();
+    drawRoundedRect(ctx, slotX, slotY, slotWidth, inventoryHeight, radius, true, false);
     
     // Draw slot border
     ctx.strokeStyle = inventoryConfig.SLOT.BACKGROUND.BORDER_COLOR;
@@ -419,39 +430,17 @@ export const drawMoves = (
     // Draw move background with rounded corners if specified
     ctx.fillStyle = moveConfig.BACKGROUND.COLOR;
     
-    if (moveConfig.BORDER.RADIUS > 0) {
-      // Draw rounded rectangle
-      const radius = moveConfig.BORDER.RADIUS;
-      const moveBoxX = titleX;
-      const moveBoxWidth = titleWidth - padding.RIGHT;
-      
-      ctx.beginPath();
-      ctx.moveTo(moveBoxX + radius, moveY);
-      ctx.lineTo(moveBoxX + moveBoxWidth - radius, moveY);
-      ctx.arcTo(moveBoxX + moveBoxWidth, moveY, moveBoxX + moveBoxWidth, moveY + radius, radius);
-      ctx.lineTo(moveBoxX + moveBoxWidth, moveY + moveHeight - radius);
-      ctx.arcTo(moveBoxX + moveBoxWidth, moveY + moveHeight, moveBoxX + moveBoxWidth - radius, moveY + moveHeight, radius);
-      ctx.lineTo(moveBoxX + radius, moveY + moveHeight);
-      ctx.arcTo(moveBoxX, moveY + moveHeight, moveBoxX, moveY + moveHeight - radius, radius);
-      ctx.lineTo(moveBoxX, moveY + radius);
-      ctx.arcTo(moveBoxX, moveY, moveBoxX + radius, moveY, radius);
-      ctx.closePath();
-      
-      ctx.fill();
-      
-      // Draw move border
-      ctx.strokeStyle = moveConfig.BORDER.COLOR;
-      ctx.lineWidth = moveConfig.BORDER.WIDTH;
-      ctx.stroke();
-    } else {
-      // Draw regular rectangle (matching the overlay width)
-      ctx.fillRect(titleX, moveY, titleWidth - padding.RIGHT, moveHeight);
-      
-      // Draw move border
-      ctx.strokeStyle = moveConfig.BORDER.COLOR;
-      ctx.lineWidth = moveConfig.BORDER.WIDTH;
-      ctx.strokeRect(titleX, moveY, titleWidth - padding.RIGHT, moveHeight);
-    }
+    // Draw move box
+    const radius = moveConfig.BORDER.RADIUS;
+    const moveBoxX = titleX;
+    const moveBoxWidth = titleWidth - padding.RIGHT;
+    
+    drawRoundedRect(ctx, moveBoxX, moveY, moveBoxWidth, moveHeight, radius, true, false);
+    
+    // Draw move border
+    ctx.strokeStyle = moveConfig.BORDER.COLOR;
+    ctx.lineWidth = moveConfig.BORDER.WIDTH;
+    ctx.stroke();
     
     // Reset shadow
     ctx.shadowColor = 'transparent';
@@ -459,7 +448,7 @@ export const drawMoves = (
     ctx.shadowOffsetX = 0;
     ctx.shadowOffsetY = 0;
     
-    // Draw move name (within the narrower container)
+    // Draw move name
     ctx.font = `${moveConfig.FONT.NAME.WEIGHT} ${moveConfig.FONT.NAME.SIZE}px ${moveConfig.FONT.NAME.FAMILY}`;
     ctx.fillStyle = moveConfig.FONT.NAME.COLOR;
     ctx.textAlign = 'left';
