@@ -1,7 +1,8 @@
 import React, { useState, useCallback, useEffect, useRef } from 'react';
 import { MonsterStats } from '../utils/aoHelpers';
+import { Gateway } from '../constants/Constants';
 import { CARD_ZOOM } from '../constants/CardLayout';
-import { currentTheme } from '../constants/theme';
+import { currentTheme, Theme } from '../constants/theme';
 import { CARD, CardImages, InventoryItem } from '../constants/CardConfig';
 import {
   getFibonacciExp,
@@ -12,22 +13,29 @@ import {
   drawInventorySlots,
   drawMoves
 } from '../utils/cardRenderHelpers';
+import { useWallet } from '../hooks/useWallet';
 
 interface MonsterCardDisplayProps {
   monster: MonsterStats;
   className?: string;
   expanded?: boolean;
   inventoryItems?: InventoryItem[];
+  darkMode?: boolean; // Allow passing darkMode directly
 }
 
 export const MonsterCardDisplay: React.FC<MonsterCardDisplayProps> = ({ 
   monster, 
   className = '', 
   expanded = false, 
-  inventoryItems = [] 
+  inventoryItems = [],
+  darkMode: propDarkMode 
 }) => {
+  // Get darkMode from context if not passed as a prop
+  const { darkMode: contextDarkMode } = useWallet();
+  const darkMode = propDarkMode !== undefined ? propDarkMode : contextDarkMode;
+  
   const [isZoomed, setIsZoomed] = useState(false);
-  const theme = currentTheme(false); // Default to light theme for card expanded section
+  const theme = currentTheme(darkMode || false);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const [cardImage, setCardImage] = useState<string | null>(null);
 
@@ -62,9 +70,12 @@ export const MonsterCardDisplay: React.FC<MonsterCardDisplayProps> = ({
     // Clear canvas
     ctx.clearRect(0, 0, canvas.width, canvas.height);
 
-    // If expanded, prepare the expanded area
+    // If expanded, prepare the expanded area with theme-appropriate background
     if (expanded) {
-      ctx.fillStyle = 'white';
+      // Parse the background color from theme.container
+      // For light theme, it's bg-white/50, for dark theme it's bg-[#814E33]/20
+      const bgColor = darkMode ? 'rgba(129, 78, 51, 0.2)' : 'rgba(255, 255, 255, 0.5)';
+      ctx.fillStyle = bgColor;
       ctx.fillRect(0, 0, canvas.width, canvas.height);
     }
 
@@ -94,8 +105,8 @@ export const MonsterCardDisplay: React.FC<MonsterCardDisplayProps> = ({
 
       // If expanded, draw the expanded section
       if (expanded) {
-        // Draw the expanded section
-        await drawExpandedSection(ctx, cardImages, monster, originalCardWidth, cardHeight, inventoryItems);
+        // Draw the expanded section using the theme
+        await drawExpandedSection(ctx, cardImages, monster, originalCardWidth, cardHeight, inventoryItems, theme);
       }
 
       // Store the final rendered image
@@ -202,7 +213,8 @@ export const MonsterCardDisplay: React.FC<MonsterCardDisplayProps> = ({
     monster: MonsterStats, 
     originalCardWidth: number, 
     cardHeight: number,
-    inventoryItems: InventoryItem[]
+    inventoryItems: InventoryItem[],
+    theme: Theme
   ) => {
     const { sideImg } = cardImages;
     
@@ -212,34 +224,50 @@ export const MonsterCardDisplay: React.FC<MonsterCardDisplayProps> = ({
     const expandedAreaWidth = CARD.EXPANDED.WIDTH;
     const expandedAreaHeight = cardHeight;
     
-    // Draw the side image as background
+    // Draw the side image as background with theme-appropriate transparency
     if (sideImg) {
       const offsetX = expandedAreaX - 2; // Background offset
+      
+      // Apply a theme-appropriate background by first drawing a semi-transparent
+      // colored rectangle and then drawing the side image with reduced opacity
+      
+      // First, fill with theme background color
+      const bgColor = darkMode 
+        ? 'rgba(129, 78, 51, 0.2)' // dark mode container background
+        : 'rgba(255, 255, 255, 0.5)'; // light mode container background
+      
+      ctx.fillStyle = bgColor;
+      ctx.fillRect(offsetX, expandedAreaY, expandedAreaWidth, expandedAreaHeight);
+      
+      // Draw the side image with reduced opacity to blend with theme
+      ctx.globalAlpha = 0.85; // Reduced opacity to blend with theme
       ctx.drawImage(sideImg, offsetX, expandedAreaY, expandedAreaWidth, expandedAreaHeight);
+      ctx.globalAlpha = 1.0; // Reset opacity
     }
     
-    // Draw border for expanded section
+    // Draw border for expanded section with theme-appropriate color
     if (CARD.EXPANDED.BACKGROUND) {
-      drawExpandedBorder(ctx, expandedAreaX, expandedAreaY, expandedAreaWidth, expandedAreaHeight);
+      drawExpandedBorder(ctx, expandedAreaX, expandedAreaY, expandedAreaWidth, expandedAreaHeight, theme);
     }
     
     // Draw moves section
-    const lastMoveY = await drawMovesSection(ctx, monster, expandedAreaX, expandedAreaY, expandedAreaWidth, originalCardWidth);
+    const lastMoveY = await drawMovesSection(ctx, monster, expandedAreaX, expandedAreaY, expandedAreaWidth, originalCardWidth, theme);
     
     // Draw status section (energy, happiness, experience)
-    const lastStatusY = drawStatusSection(ctx, monster, expandedAreaX, expandedAreaWidth, originalCardWidth, lastMoveY);
+    const lastStatusY = drawStatusSection(ctx, monster, expandedAreaX, expandedAreaWidth, originalCardWidth, lastMoveY, theme);
     
     // Draw inventory section
-    drawInventorySection(ctx, inventoryItems, lastStatusY, expandedAreaX, expandedAreaWidth, originalCardWidth);
+    drawInventorySection(ctx, inventoryItems, lastStatusY, expandedAreaX, expandedAreaWidth, originalCardWidth, theme);
   };
 
-  // Draw border for expanded section
+  // Draw border for expanded section with theme color
   const drawExpandedBorder = (
     ctx: CanvasRenderingContext2D, 
     expandedAreaX: number, 
     expandedAreaY: number, 
     expandedAreaWidth: number, 
-    expandedAreaHeight: number
+    expandedAreaHeight: number,
+    theme: Theme
   ) => {
     const radius = CARD.EXPANDED.BACKGROUND.BORDER.RADIUS;
     
@@ -260,27 +288,29 @@ export const MonsterCardDisplay: React.FC<MonsterCardDisplayProps> = ({
     ctx.arcTo(overlayX, expandedAreaY, overlayX + radius, expandedAreaY, radius);
     ctx.closePath();
   
-    // Draw only the border
-    ctx.strokeStyle = CARD.EXPANDED.BACKGROUND.BORDER.COLOR;
+    // Draw only the border with theme-appropriate color
+    const borderColor = darkMode ? 'rgba(244, 134, 10, 0.3)' : 'rgba(129, 78, 51, 0.3)'; // from theme.border
+    ctx.strokeStyle = borderColor;
     ctx.lineWidth = CARD.EXPANDED.BACKGROUND.BORDER.WIDTH;
     ctx.stroke();
   };
 
-  // Draw moves section
+  // Draw moves section with theme-appropriate colors
   const drawMovesSection = async (
     ctx: CanvasRenderingContext2D, 
     monster: MonsterStats, 
     expandedAreaX: number, 
     expandedAreaY: number, 
     expandedAreaWidth: number,
-    originalCardWidth: number
+    originalCardWidth: number,
+    theme: Theme
   ) => {
     // Start drawing with padding from top
     let currentY = expandedAreaY + CARD.EXPANDED.PADDING.TOP;
     
     // Get position values for title and content
     const movesTitleY = currentY;
-    // Corrected: Use fixed position rather than subtraction which resulted in zero
+    // Use fixed position rather than subtraction which resulted in zero
     const titleX = expandedAreaX + CARD.EXPANDED.PADDING.OVERLAY_LEFT;
     const titleWidth = expandedAreaWidth - CARD.EXPANDED.PADDING.RIGHT - CARD.EXPANDED.PADDING.OVERLAY_LEFT;
     
@@ -293,14 +323,61 @@ export const MonsterCardDisplay: React.FC<MonsterCardDisplayProps> = ({
       movesTitleY, 
       titleX, 
       titleWidth, 
-      CARD.EXPANDED.SECTION_TITLE,
+      {
+        ...CARD.EXPANDED.SECTION_TITLE,
+        FONT: {
+          ...CARD.EXPANDED.SECTION_TITLE.FONT,
+          COLOR: darkMode ? '#FCF5D8' : '#0D0705', // Use theme text color
+        },
+        UNDERLINE: {
+          ...CARD.EXPANDED.SECTION_TITLE.UNDERLINE,
+          COLOR: darkMode ? '#F4860A' : '#814E33', // Use theme border color without transparency
+        }
+      },
       CARD.EXPANDED.PADDING
     );
     
     // Load move type images for all the monster's moves
     const moveTypeImages = await loadMoveTypeImages(monster, CardImages);
     
-    // Draw all the moves
+    // Draw all the moves with theme-appropriate section styling
+    const updatedMoveConfig = {
+      ...CARD.EXPANDED.MOVES,
+      BACKGROUND: {
+        COLOR: darkMode ? 'rgba(129, 78, 51, 0.3)' : 'rgba(255, 255, 255, 0.7)', // theme container color
+      },
+      BORDER: {
+        ...CARD.EXPANDED.MOVES.BORDER,
+        COLOR: darkMode ? 'rgba(244, 134, 10, 0.3)' : 'rgba(129, 78, 51, 0.3)', // theme border color
+      },
+      FONT: {
+        ...CARD.EXPANDED.MOVES.FONT,
+        NAME: {
+          ...CARD.EXPANDED.MOVES.FONT.NAME,
+          COLOR: darkMode ? '#FCF5D8' : '#0D0705', // theme text color
+        },
+        STATS: {
+          ...CARD.EXPANDED.MOVES.FONT.STATS,
+          COLOR: darkMode ? '#FCF5D8' : '#0D0705', // theme text color
+        }
+      },
+      STATS: {
+        ...CARD.EXPANDED.MOVES.STATS,
+        LAYOUT: {
+          ...CARD.EXPANDED.MOVES.STATS.LAYOUT,
+          BACKGROUND: {
+            ...CARD.EXPANDED.MOVES.STATS.LAYOUT.BACKGROUND,
+            COLOR: darkMode ? 'rgba(129, 78, 51, 0.3)' : 'rgba(255, 255, 255, 0.7)', // theme container color
+            BORDER_COLOR: darkMode ? 'rgba(244, 134, 10, 0.3)' : 'rgba(129, 78, 51, 0.3)', // theme border color
+          },
+          FONT: {
+            ...CARD.EXPANDED.MOVES.STATS.LAYOUT.FONT,
+            COLOR: darkMode ? '#FCF5D8' : '#0D0705', // theme text color
+          }
+        }
+      }
+    };
+    
     return drawMoves(
       ctx, 
       monster, 
@@ -310,27 +387,28 @@ export const MonsterCardDisplay: React.FC<MonsterCardDisplayProps> = ({
       titleX, 
       titleWidth, 
       CARD.EXPANDED.PADDING,
-      CARD.EXPANDED.MOVES,
+      updatedMoveConfig,
       moveTypeImages
     );
   };
 
-  // Draw status section with energy, happiness and experience bars
+  // Draw status section with energy, happiness and experience bars using theme colors
   const drawStatusSection = (
     ctx: CanvasRenderingContext2D, 
     monster: MonsterStats, 
     expandedAreaX: number, 
     expandedAreaWidth: number,
     originalCardWidth: number,
-    lastMoveY: number
+    lastMoveY: number,
+    theme: Theme
   ) => {
     // Calculate position for Status section using the last Y position of moves
     const statusTitleY = lastMoveY + CARD.EXPANDED.MOVES.SECTION_SPACING;
-    // Corrected: Use fixed position rather than subtraction which resulted in zero
+    // Use fixed position rather than subtraction which resulted in zero
     const titleX = expandedAreaX + CARD.EXPANDED.PADDING.OVERLAY_LEFT;
     const titleWidth = expandedAreaWidth - CARD.EXPANDED.PADDING.RIGHT - CARD.EXPANDED.PADDING.OVERLAY_LEFT;
     
-    // Draw "Status" title with underline
+    // Draw "Status" title with underline using theme colors
     const statusContentY = drawSectionTitle(
       ctx, 
       'Status', 
@@ -339,7 +417,17 @@ export const MonsterCardDisplay: React.FC<MonsterCardDisplayProps> = ({
       statusTitleY, 
       titleX, 
       titleWidth, 
-      CARD.EXPANDED.SECTION_TITLE,
+      {
+        ...CARD.EXPANDED.SECTION_TITLE,
+        FONT: {
+          ...CARD.EXPANDED.SECTION_TITLE.FONT,
+          COLOR: darkMode ? '#FCF5D8' : '#0D0705', // Use theme text color
+        },
+        UNDERLINE: {
+          ...CARD.EXPANDED.SECTION_TITLE.UNDERLINE,
+          COLOR: darkMode ? '#F4860A' : '#814E33', // Use theme border color without transparency
+        }
+      },
       CARD.EXPANDED.PADDING
     );
     
@@ -357,7 +445,9 @@ export const MonsterCardDisplay: React.FC<MonsterCardDisplayProps> = ({
       expandedAreaWidth, 
       statusY, 
       CARD.EXPANDED.PADDING, 
-      titleWidth
+      titleWidth,
+      undefined,
+      darkMode ? '#FCF5D8' : '#0D0705' // Use theme text color
     );
     statusY += 50;
     
@@ -372,7 +462,9 @@ export const MonsterCardDisplay: React.FC<MonsterCardDisplayProps> = ({
       expandedAreaWidth, 
       statusY, 
       CARD.EXPANDED.PADDING, 
-      titleWidth
+      titleWidth,
+      undefined,
+      darkMode ? '#FCF5D8' : '#0D0705' // Use theme text color
     );
     statusY += 50;
     
@@ -389,7 +481,8 @@ export const MonsterCardDisplay: React.FC<MonsterCardDisplayProps> = ({
       statusY, 
       CARD.EXPANDED.PADDING, 
       titleWidth,
-      `${monster.exp || 0}/${expNeeded}`
+      `${monster.exp || 0}/${expNeeded}`,
+      darkMode ? '#FCF5D8' : '#0D0705' // Use theme text color
     );
     statusY += 50;
     
@@ -397,22 +490,23 @@ export const MonsterCardDisplay: React.FC<MonsterCardDisplayProps> = ({
     return statusY + 30;
   };
 
-  // Draw inventory section
+  // Draw inventory section using theme colors
   const drawInventorySection = (
     ctx: CanvasRenderingContext2D, 
     inventoryItems: InventoryItem[], 
     lastStatusY: number, 
     expandedAreaX: number, 
     expandedAreaWidth: number,
-    originalCardWidth: number
+    originalCardWidth: number,
+    theme: Theme
   ) => {
     // Calculate position for inventory section
     const inventoryTitleY = lastStatusY + CARD.EXPANDED.INVENTORY.SECTION_SPACING;
-    // Corrected: Use fixed position rather than subtraction which resulted in zero
+    // Use fixed position rather than subtraction which resulted in zero
     const titleX = expandedAreaX + CARD.EXPANDED.PADDING.OVERLAY_LEFT;
     const titleWidth = expandedAreaWidth - CARD.EXPANDED.PADDING.RIGHT - CARD.EXPANDED.PADDING.OVERLAY_LEFT;
     
-    // Draw "Inventory" title with underline
+    // Draw "Inventory" title with underline using theme colors
     const inventoryContentY = drawSectionTitle(
       ctx, 
       'Inventory', 
@@ -421,13 +515,50 @@ export const MonsterCardDisplay: React.FC<MonsterCardDisplayProps> = ({
       inventoryTitleY, 
       titleX, 
       titleWidth, 
-      CARD.EXPANDED.SECTION_TITLE,
+      {
+        ...CARD.EXPANDED.SECTION_TITLE,
+        FONT: {
+          ...CARD.EXPANDED.SECTION_TITLE.FONT,
+          COLOR: darkMode ? '#FCF5D8' : '#0D0705', // Use theme text color
+        },
+        UNDERLINE: {
+          ...CARD.EXPANDED.SECTION_TITLE.UNDERLINE,
+          COLOR: darkMode ? '#F4860A' : '#814E33', // Use theme border color without transparency
+        }
+      },
       CARD.EXPANDED.PADDING
     );
     
     // Draw inventory slots
     const inventoryY = inventoryContentY;
     const inventoryX = titleX;
+    
+    // Update inventory config with theme colors
+    const updatedInventoryConfig = {
+      ...CARD.EXPANDED.INVENTORY,
+      FONT: {
+        ...CARD.EXPANDED.INVENTORY.FONT,
+        NAME: {
+          ...CARD.EXPANDED.INVENTORY.FONT.NAME,
+          COLOR: darkMode ? '#FCF5D8' : '#0D0705', // theme text color
+        }
+      },
+      SLOT: {
+        ...CARD.EXPANDED.INVENTORY.SLOT,
+        BACKGROUND: {
+          ...CARD.EXPANDED.INVENTORY.SLOT.BACKGROUND,
+          COLOR: darkMode ? 'rgba(129, 78, 51, 0.3)' : 'rgba(255, 255, 255, 0.7)', // theme container color
+          BORDER_COLOR: darkMode ? 'rgba(244, 134, 10, 0.3)' : 'rgba(129, 78, 51, 0.3)', // theme border color
+        },
+        EMPTY_TEXT: {
+          ...CARD.EXPANDED.INVENTORY.SLOT.EMPTY_TEXT,
+          FONT: {
+            ...CARD.EXPANDED.INVENTORY.SLOT.EMPTY_TEXT.FONT,
+            COLOR: darkMode ? '#FCF5D8' : '#888', // light gray for empty slots in dark mode, darker in light mode
+          }
+        }
+      }
+    };
     
     drawInventorySlots(
       ctx, 
@@ -438,7 +569,7 @@ export const MonsterCardDisplay: React.FC<MonsterCardDisplayProps> = ({
       CARD.EXPANDED.PADDING, 
       expandedAreaX, 
       expandedAreaWidth, 
-      CARD.EXPANDED.INVENTORY
+      updatedInventoryConfig
     );
   };
 
@@ -493,7 +624,7 @@ export const MonsterCardDisplay: React.FC<MonsterCardDisplayProps> = ({
   // Run rendering when monster or element type changes
   useEffect(() => {
     renderToCanvas();
-  }, [monster, elementType, expanded, inventoryItems]);
+  }, [monster, elementType, expanded, inventoryItems, darkMode]);
 
   // Main component render
   return (

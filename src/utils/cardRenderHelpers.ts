@@ -96,15 +96,16 @@ export const drawStatusBar = (
     RIGHT: number;
   },
   titleWidth: number,
-  valueText?: string
+  valueText?: string,
+  textColor?: string // Added optional text color parameter
 ) => {
-  // Draw label
+  // Draw label with theme-appropriate color if provided
   ctx.font = 'bold 18px Arial, sans-serif';
-  ctx.fillStyle = 'black';
+  ctx.fillStyle = textColor || 'black'; // Use provided text color or default to black
   ctx.textAlign = 'left';
   ctx.fillText(label, expandedAreaX, y);
   
-  // Draw value text
+  // Draw value text with theme-appropriate color if provided
   const text = valueText || `${current}/${max}`;
   ctx.textAlign = 'right';
   ctx.fillText(text, expandedAreaX + expandedAreaWidth - padding.RIGHT, y);
@@ -617,7 +618,7 @@ export const loadCardImages = async (elementType: string, monster: MonsterStats,
 };
 
 // Load move type images
-export const loadMoveTypeImages = async (monster: MonsterStats, CardImages: any) => {
+export const loadMoveTypeImages = async (monster: MonsterStats, CardImages: any): Promise<Record<string, HTMLImageElement>> => {
   const moveTypeImages: Record<string, HTMLImageElement> = {};
   const validMoveTypes = Object.keys(CardImages);
   
