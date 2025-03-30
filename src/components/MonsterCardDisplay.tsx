@@ -257,6 +257,22 @@ export const MonsterCardDisplay: React.FC<MonsterCardDisplayProps> = ({
       drawExpandedBorder(ctx, expandedAreaX, expandedAreaY, expandedAreaWidth, expandedAreaHeight);
     }
     
+    // TEMPORARY: Add black container box for the extra section's content (moves, status, inventory)
+    // This box is used for formatting and will be removed later
+    const temporaryBoxX = expandedAreaX + CARD.EXPANDED.PADDING.OVERLAY_LEFT + 3;
+    const temporaryBoxY = CARD.EXPANDED.PADDING.TOP - 5;
+    const temporaryBoxWidth = expandedAreaWidth - CARD.EXPANDED.PADDING.RIGHT - CARD.EXPANDED.PADDING.OVERLAY_LEFT - 6;
+    const temporaryBoxHeight = expandedAreaHeight - CARD.EXPANDED.PADDING.TOP - 10;
+    
+    // Draw a thicker black border box that doesn't follow the theme
+    ctx.fillStyle = "rgba(0, 0, 0, 0.8)"; // Black background with opacity
+    ctx.fillRect(temporaryBoxX, temporaryBoxY, temporaryBoxWidth, temporaryBoxHeight);
+    
+    // Add a thick border
+    ctx.strokeStyle = "black";
+    ctx.lineWidth = 3;
+    ctx.strokeRect(temporaryBoxX, temporaryBoxY, temporaryBoxWidth, temporaryBoxHeight);
+    
     // Draw moves section
     const lastMoveY = await drawMovesSection(ctx, monster, expandedAreaX, expandedAreaY, expandedAreaWidth, originalCardWidth);
     
@@ -309,14 +325,19 @@ export const MonsterCardDisplay: React.FC<MonsterCardDisplayProps> = ({
     expandedAreaWidth: number,
     originalCardWidth: number
   ) => {
-    // Start drawing with padding from top
-    let currentY = expandedAreaY + CARD.EXPANDED.PADDING.TOP;
+    // TEMPORARY: Reference the black box dimensions
+    const temporaryBoxX = expandedAreaX + CARD.EXPANDED.PADDING.OVERLAY_LEFT + 3;
+    const temporaryBoxY = CARD.EXPANDED.PADDING.TOP - 5;
+    const temporaryBoxWidth = expandedAreaWidth - CARD.EXPANDED.PADDING.RIGHT - CARD.EXPANDED.PADDING.OVERLAY_LEFT - 6;
     
-    // Get position values for title and content
+    // Start drawing with padding from top but inside the black box
+    let currentY = temporaryBoxY + 15; // Add some padding inside the black box
+    
+    // Get position values for title and content - within the black box
     const movesTitleY = currentY;
-    // Use fixed position rather than subtraction which resulted in zero
-    const titleX = expandedAreaX + CARD.EXPANDED.PADDING.OVERLAY_LEFT;
-    const titleWidth = expandedAreaWidth - CARD.EXPANDED.PADDING.RIGHT - CARD.EXPANDED.PADDING.OVERLAY_LEFT;
+    // Use the temporary black box's x position plus some padding
+    const titleX = temporaryBoxX + 10;
+    const titleWidth = temporaryBoxWidth - 20; // Add some padding on both sides
     
     // Draw "Moves" title with underline
     const movesContentY = drawSectionTitle(
@@ -405,11 +426,16 @@ export const MonsterCardDisplay: React.FC<MonsterCardDisplayProps> = ({
     originalCardWidth: number,
     lastMoveY: number
   ) => {
+    // TEMPORARY: Reference the black box dimensions
+    const temporaryBoxX = expandedAreaX + CARD.EXPANDED.PADDING.OVERLAY_LEFT + 3;
+    const temporaryBoxY = CARD.EXPANDED.PADDING.TOP - 5;
+    const temporaryBoxWidth = expandedAreaWidth - CARD.EXPANDED.PADDING.RIGHT - CARD.EXPANDED.PADDING.OVERLAY_LEFT - 6;
+    
     // Calculate position for Status section using the last Y position of moves
     const statusTitleY = lastMoveY + CARD.EXPANDED.MOVES.SECTION_SPACING;
-    // Use fixed position rather than subtraction which resulted in zero
-    const titleX = expandedAreaX + CARD.EXPANDED.PADDING.OVERLAY_LEFT;
-    const titleWidth = expandedAreaWidth - CARD.EXPANDED.PADDING.RIGHT - CARD.EXPANDED.PADDING.OVERLAY_LEFT;
+    // Use the temporary black box's x position plus some padding
+    const titleX = temporaryBoxX + 10;
+    const titleWidth = temporaryBoxWidth - 20; // Add some padding on both sides
     
     // Draw "Status" title with underline using theme colors
     const statusContentY = drawSectionTitle(
@@ -444,10 +470,12 @@ export const MonsterCardDisplay: React.FC<MonsterCardDisplayProps> = ({
       monster.energy || 0, // Default to 0 if undefined
       100, 
       theme.statusEnergy, // Use theme energy color
-      expandedAreaX, 
-      expandedAreaWidth, 
+      titleX, // Use black box x position instead of expandedAreaX
+      titleWidth, // Use black box width instead of expandedAreaWidth
       statusY, 
-      CARD.EXPANDED.PADDING, 
+      {
+        RIGHT: 0 // Keep only RIGHT property as that's what drawStatusBar expects
+      }, 
       titleWidth,
       undefined,
       theme.cardText // Use theme text color
@@ -461,10 +489,12 @@ export const MonsterCardDisplay: React.FC<MonsterCardDisplayProps> = ({
       monster.happiness || 0, // Default to 0 if undefined
       100, 
       theme.statusHappiness, // Use theme happiness color
-      expandedAreaX, 
-      expandedAreaWidth, 
+      titleX, // Use black box x position instead of expandedAreaX
+      titleWidth, // Use black box width instead of expandedAreaWidth
       statusY, 
-      CARD.EXPANDED.PADDING, 
+      {
+        RIGHT: 0 // Keep only RIGHT property as that's what drawStatusBar expects
+      }, 
       titleWidth,
       undefined,
       theme.cardText // Use theme text color
@@ -479,10 +509,12 @@ export const MonsterCardDisplay: React.FC<MonsterCardDisplayProps> = ({
       monster.exp || 0, // Default to 0 if undefined
       expNeeded, 
       theme.statusExperience, // Use theme experience color
-      expandedAreaX, 
-      expandedAreaWidth, 
+      titleX, // Use black box x position instead of expandedAreaX
+      titleWidth, // Use black box width instead of expandedAreaWidth
       statusY, 
-      CARD.EXPANDED.PADDING, 
+      {
+        RIGHT: 0 // Keep only RIGHT property as that's what drawStatusBar expects
+      }, 
       titleWidth,
       `${monster.exp || 0}/${expNeeded}`,
       theme.cardText // Use theme text color
@@ -502,11 +534,16 @@ export const MonsterCardDisplay: React.FC<MonsterCardDisplayProps> = ({
     expandedAreaWidth: number,
     originalCardWidth: number
   ) => {
+    // TEMPORARY: Reference the black box dimensions
+    const temporaryBoxX = expandedAreaX + CARD.EXPANDED.PADDING.OVERLAY_LEFT + 3;
+    const temporaryBoxY = CARD.EXPANDED.PADDING.TOP - 5;
+    const temporaryBoxWidth = expandedAreaWidth - CARD.EXPANDED.PADDING.RIGHT - CARD.EXPANDED.PADDING.OVERLAY_LEFT - 6;
+    
     // Calculate position for inventory section
     const inventoryTitleY = lastStatusY + CARD.EXPANDED.INVENTORY.SECTION_SPACING;
-    // Use fixed position rather than subtraction which resulted in zero
-    const titleX = expandedAreaX + CARD.EXPANDED.PADDING.OVERLAY_LEFT;
-    const titleWidth = expandedAreaWidth - CARD.EXPANDED.PADDING.RIGHT - CARD.EXPANDED.PADDING.OVERLAY_LEFT;
+    // Use the temporary black box's x position plus some padding
+    const titleX = temporaryBoxX + 10;
+    const titleWidth = temporaryBoxWidth - 20; // Add some padding on both sides
     
     // Draw "Inventory" title with underline using theme colors
     const inventoryContentY = drawSectionTitle(
@@ -568,9 +605,11 @@ export const MonsterCardDisplay: React.FC<MonsterCardDisplayProps> = ({
       inventoryY, 
       inventoryX, 
       titleWidth, 
-      CARD.EXPANDED.PADDING, 
-      expandedAreaX, 
-      expandedAreaWidth, 
+      {
+        RIGHT: 0 // Keep only RIGHT property as that's what drawInventorySlots expects
+      }, 
+      titleX, // Use black box x position instead of expandedAreaX
+      titleWidth, // Use black box width instead of expandedAreaWidth
       updatedInventoryConfig
     );
   };
