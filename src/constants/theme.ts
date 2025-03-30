@@ -25,7 +25,7 @@ export const currentTheme = (isDark: boolean): Theme => ({
   container: isDark ? 'bg-[#814E33]/20' : 'bg-white/50',
   buttonBg: isDark ? 'bg-[#814E33]/20' : 'bg-white/50',
   buttonHover: isDark ? 'hover:bg-[#814E33]/30' : 'hover:bg-[#814E33]/10',
-  cardBg: isDark ? '#0D0705' : '#FCF5D8',
+  cardBg: isDark ? 'transparent' : 'transparent',
   cardBorder: isDark ? '#F4860A' : '#814E33',
   cardText: isDark ? '#FCF5D8' : '#0D0705',
   cardTitle: isDark ? '#FCF5D8' : '#0D0705',
