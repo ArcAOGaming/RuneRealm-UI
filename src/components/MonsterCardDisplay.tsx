@@ -317,33 +317,22 @@ export const MonsterCardDisplay: React.FC<MonsterCardDisplayProps> = ({
       ctx.globalAlpha = 1.0; // Reset opacity
     }
     
-    // REMOVED: themed border box around the entire expanded section
-    // We're using the black temporary box instead
-    
-    // TEMPORARY: Add black container box for the extra section's content (moves, status, inventory)
-    // This box is used for formatting and will be removed later
-    const temporaryBoxX = expandedAreaX + CARD.EXPANDED.PADDING.OVERLAY_LEFT + 3;
-    const temporaryBoxY = CARD.EXPANDED.PADDING.TOP - 5;
-    const temporaryBoxWidth = expandedAreaWidth - CARD.EXPANDED.PADDING.RIGHT - CARD.EXPANDED.PADDING.OVERLAY_LEFT - 6;
-    const temporaryBoxHeight = expandedAreaHeight - CARD.EXPANDED.PADDING.TOP - 10;
-    
-    // Draw a thicker black border box that doesn't follow the theme
-    ctx.fillStyle = "rgba(0, 0, 0, 0.8)"; // Black background with opacity
-    ctx.fillRect(temporaryBoxX, temporaryBoxY, temporaryBoxWidth, temporaryBoxHeight);
-    
-    // // Add a thick border
-    // ctx.strokeStyle = "black";
-    // ctx.lineWidth = 3;
-    // ctx.strokeRect(temporaryBoxX, temporaryBoxY, temporaryBoxWidth, temporaryBoxHeight);
+    // Draw themed border box around the entire expanded section
+    drawExpandedBorder(ctx, expandedAreaX, expandedAreaY, expandedAreaWidth, expandedAreaHeight);
     
     // Draw moves section
-    const lastMoveY = await drawMovesSection(ctx, monster, expandedAreaX, expandedAreaY, expandedAreaWidth, originalCardWidth, temporaryBoxX, temporaryBoxY, temporaryBoxWidth);
+    const contentX = expandedAreaX + CARD.EXPANDED.PADDING.OVERLAY_LEFT + 10;
+    const contentWidth = expandedAreaWidth - CARD.EXPANDED.PADDING.RIGHT - CARD.EXPANDED.PADDING.OVERLAY_LEFT - 20;
+    const contentY = CARD.EXPANDED.PADDING.TOP + 10;
+    
+    // Draw moves section
+    const lastMoveY = await drawMovesSection(ctx, monster, expandedAreaX, expandedAreaY, expandedAreaWidth, originalCardWidth, contentX, contentY, contentWidth);
     
     // Draw status section (energy, happiness, experience)
-    const lastStatusY = drawStatusSection(ctx, monster, expandedAreaX, expandedAreaWidth, originalCardWidth, lastMoveY, temporaryBoxX, temporaryBoxWidth);
+    const lastStatusY = drawStatusSection(ctx, monster, expandedAreaX, expandedAreaWidth, originalCardWidth, lastMoveY, contentX, contentWidth);
     
     // Draw inventory section
-    drawInventorySection(ctx, inventoryItems, lastStatusY, expandedAreaX, expandedAreaWidth, originalCardWidth, temporaryBoxX, temporaryBoxWidth);
+    drawInventorySection(ctx, inventoryItems, lastStatusY, expandedAreaX, expandedAreaWidth, originalCardWidth, contentX, contentWidth);
   };
 
   // Draw moves section with theme-appropriate colors
@@ -354,24 +343,22 @@ export const MonsterCardDisplay: React.FC<MonsterCardDisplayProps> = ({
     expandedAreaY: number, 
     expandedAreaWidth: number,
     originalCardWidth: number,
-    temporaryBoxX: number,
-    temporaryBoxY: number,
-    temporaryBoxWidth: number
+    contentX: number,
+    contentY: number,
+    contentWidth: number
   ) => {
-    // Start drawing with padding from top but inside the black box
-    let currentY = temporaryBoxY + 15; // Add some padding inside the black box
+    // Start drawing with padding from top
+    let currentY = contentY;
     
-    // Get position values for title and content - within the black box
+    // Get position values for title and content
     const movesTitleY = currentY;
-    // Use the temporary black box's x position plus some padding - moved more to the right
-    const titleX = temporaryBoxX + 25; // Moved further right
-    const titleWidth = temporaryBoxWidth - 50; // Adjusted for more padding on both sides
+    const titleX = contentX;
+    const titleWidth = contentWidth;
     
   // Draw "Moves" title with underline
-  // Shift titleX further right by another 20px
-  const sectionTitleX = titleX + 20;
-  // Make underline 20% smaller than titleWidth
-  const underlineWidth = titleWidth * 0.8;
+  const sectionTitleX = titleX + 10;
+  // Make underline slightly smaller than titleWidth
+  const underlineWidth = titleWidth * 0.9;
 
   const movesContentY = drawCustomSectionTitle(
     ctx, 
@@ -463,20 +450,18 @@ export const MonsterCardDisplay: React.FC<MonsterCardDisplayProps> = ({
     expandedAreaWidth: number,
     originalCardWidth: number,
     lastMoveY: number,
-    temporaryBoxX: number,
-    temporaryBoxWidth: number
+    contentX: number,
+    contentWidth: number
   ) => {
     // Calculate position for Status section using the last Y position of moves
     const statusTitleY = lastMoveY + CARD.EXPANDED.MOVES.SECTION_SPACING;
-    // Use the temporary black box's x position plus some padding - moved more to the right
-    const titleX = temporaryBoxX + 25; // Moved further right
-    const titleWidth = temporaryBoxWidth - 50; // Adjusted for more padding on both sides
+    const titleX = contentX;
+    const titleWidth = contentWidth;
     
   // Draw "Status" title with underline using theme colors
-  // Shift titleX further right by another 20px
-  const sectionTitleX = titleX + 20;
-  // Make underline 20% smaller than titleWidth
-  const underlineWidth = titleWidth * 0.8;
+  const sectionTitleX = titleX + 10;
+  // Make underline slightly smaller than titleWidth
+  const underlineWidth = titleWidth * 0.9;
   
   const statusContentY = drawCustomSectionTitle(
     ctx, 
@@ -576,20 +561,18 @@ export const MonsterCardDisplay: React.FC<MonsterCardDisplayProps> = ({
     expandedAreaX: number, 
     expandedAreaWidth: number,
     originalCardWidth: number,
-    temporaryBoxX: number,
-    temporaryBoxWidth: number
+    contentX: number,
+    contentWidth: number
   ) => {
     // Calculate position for inventory section
     const inventoryTitleY = lastStatusY + CARD.EXPANDED.INVENTORY.SECTION_SPACING;
-    // Use the temporary black box's x position plus some padding - moved more to the right
-    const titleX = temporaryBoxX + 25; // Moved further right
-    const titleWidth = temporaryBoxWidth - 50; // Adjusted for more padding on both sides
+    const titleX = contentX;
+    const titleWidth = contentWidth;
     
   // Draw "Inventory" title with underline using theme colors
-  // Shift titleX further right by another 20px
-  const sectionTitleX = titleX + 20;
-  // Make underline 20% smaller than titleWidth
-  const underlineWidth = titleWidth * 0.8;
+  const sectionTitleX = titleX + 10;
+  // Make underline slightly smaller than titleWidth
+  const underlineWidth = titleWidth * 0.9;
   
   const inventoryContentY = drawCustomSectionTitle(
     ctx, 
