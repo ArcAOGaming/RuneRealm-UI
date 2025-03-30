@@ -153,8 +153,8 @@ export const CARD = {
     PADDING: {
       LEFT: 20,    // Left padding from original card width
       RIGHT: 20,   // Right padding from card width
-      TOP: 80,     // Top padding for the expanded area
-      OVERLAY_LEFT: 15  // Left indentation for the overlay box
+      TOP: 60,     // Top padding for the expanded area
+      OVERLAY_LEFT: 20  // Left indentation for the overlay box
     },
     WIDTH: 417,    // Width of the expanded section (full size of background image)
     BACKGROUND: {
@@ -174,7 +174,7 @@ export const CARD = {
         COLOR: '' // Will be replaced with theme.cardTitle at runtime
       },
       SPACING: {
-        BOTTOM: 10,     // Space below the title text before the underline
+        BOTTOM: 15,     // Space below the title text before the underline
         AFTER: 20       // Space after the underline before section content
       },
       UNDERLINE: {
@@ -194,7 +194,7 @@ export const CARD = {
     MOVES: {
       HEIGHT: 100,           // Height of each move box
       SPACING: 15,           // Vertical space between move boxes
-      SECTION_SPACING: 30,   // Space between different sections
+      SECTION_SPACING: 10,   // Space between different sections
       TITLE_OFFSET: 5,      // Space above the title
       FIRST_MOVE_OFFSET: 0, // Space after title before first move
       BACKGROUND: {
@@ -216,10 +216,10 @@ export const CARD = {
         NAME: {
           FAMILY: 'Arial, sans-serif',
           WEIGHT: 'bold',
-          SIZE: 28,
+          SIZE: 24,
           COLOR: '', // Will be replaced with theme.cardText at runtime
-          OFFSET_X: 15,
-          OFFSET_Y: 30
+          OFFSET_X: 10,
+          OFFSET_Y: 25
         },
         STATS: {
           FAMILY: 'Arial, sans-serif',
@@ -233,7 +233,7 @@ export const CARD = {
         RARITY: {
           FAMILY: 'Arial, sans-serif',
           WEIGHT: 'normal',
-          SIZE: 35,
+          SIZE: 30,
           COLOR: 'gold', // Keep gold for rarity as it's a standard indication
           OFFSET_X: 30,
           OFFSET_Y: 70
@@ -242,8 +242,8 @@ export const CARD = {
       // Configuration for element type images
       ELEMENT_IMAGE: {
         HEIGHT: 400,
-        OFFSET_X: 20,
-        OFFSET_Y: 150,
+        OFFSET_X: 50,
+        OFFSET_Y: 155,
         FALLBACK: {          // Fallback badge when image is not available
           WIDTH: 80,
           HEIGHT: 25,
@@ -273,13 +273,13 @@ export const CARD = {
           GRID: {
             ROWS: 2,
             COLS: 3,
-            WIDTH: 85,
+            WIDTH: 75,
             HEIGHT: 30,
             START_Y: 40,
             START_X: 15,
             X_GAP: 0,
             Y_GAP: 0,
-            INNER_PADDING: 3
+            INNER_PADDING: 5
           },
           BACKGROUND: {
             COLOR: '', // Will be replaced with theme container value at runtime

@@ -218,6 +218,71 @@ export const MonsterCardDisplay: React.FC<MonsterCardDisplayProps> = ({
     ctx.fillText(name, nameX, nameY);
   };
 
+  // Custom section title drawing function that aligns underline with the title
+  const drawCustomSectionTitle = (
+    ctx: CanvasRenderingContext2D,
+    title: string,
+    expandedAreaX: number,
+    expandedAreaWidth: number,
+    titleY: number,
+    titleX: number,
+    titleWidth: number,
+    sectionTitleConfig: any,
+    padding: {
+      RIGHT: number;
+      OVERLAY_LEFT: number;
+    }
+  ) => {
+    // Add shadow to the title
+    if (sectionTitleConfig.SHADOW) {
+      ctx.shadowColor = sectionTitleConfig.SHADOW.COLOR;
+      ctx.shadowBlur = sectionTitleConfig.SHADOW.BLUR;
+      ctx.shadowOffsetX = sectionTitleConfig.SHADOW.OFFSET_X;
+      ctx.shadowOffsetY = sectionTitleConfig.SHADOW.OFFSET_Y;
+    }
+    
+    ctx.font = `${sectionTitleConfig.FONT.WEIGHT} ${sectionTitleConfig.FONT.SIZE}px ${sectionTitleConfig.FONT.FAMILY}`;
+    ctx.fillStyle = sectionTitleConfig.FONT.COLOR;
+    ctx.textAlign = 'left';
+    ctx.fillText(title, titleX, titleY);
+    
+    // Reset shadow
+    ctx.shadowColor = 'transparent';
+    ctx.shadowBlur = 0;
+    ctx.shadowOffsetX = 0;
+    ctx.shadowOffsetY = 0;
+    
+    // Draw underline below the title
+    const underlineY = titleY + sectionTitleConfig.SPACING.BOTTOM;
+    
+    // Draw a gradient underline if specified
+    if (sectionTitleConfig.UNDERLINE.GRADIENT) {
+      const gradient = ctx.createLinearGradient(
+        titleX, 
+        underlineY, 
+        titleX + titleWidth, 
+        underlineY
+      );
+      gradient.addColorStop(0, sectionTitleConfig.UNDERLINE.COLOR);
+      gradient.addColorStop(0.5, '#9bc1ff'); // Lighter middle
+      gradient.addColorStop(1, sectionTitleConfig.UNDERLINE.COLOR);
+      
+      ctx.strokeStyle = gradient;
+    } else {
+      ctx.strokeStyle = sectionTitleConfig.UNDERLINE.COLOR;
+    }
+    
+    ctx.lineWidth = sectionTitleConfig.UNDERLINE.WIDTH;
+    
+    // Start and end the underline at the title position
+    ctx.beginPath();
+    ctx.moveTo(titleX, underlineY);
+    ctx.lineTo(titleX + titleWidth, underlineY);
+    ctx.stroke();
+    
+    return underlineY + sectionTitleConfig.SPACING.AFTER;
+  };
+
   // Draw the expanded section with moves, status, and inventory
   const drawExpandedSection = async (
     ctx: CanvasRenderingContext2D, 
@@ -252,10 +317,8 @@ export const MonsterCardDisplay: React.FC<MonsterCardDisplayProps> = ({
       ctx.globalAlpha = 1.0; // Reset opacity
     }
     
-    // Draw border for expanded section with theme-appropriate color
-    if (CARD.EXPANDED.BACKGROUND) {
-      drawExpandedBorder(ctx, expandedAreaX, expandedAreaY, expandedAreaWidth, expandedAreaHeight);
-    }
+    // REMOVED: themed border box around the entire expanded section
+    // We're using the black temporary box instead
     
     // TEMPORARY: Add black container box for the extra section's content (moves, status, inventory)
     // This box is used for formatting and will be removed later
@@ -274,46 +337,13 @@ export const MonsterCardDisplay: React.FC<MonsterCardDisplayProps> = ({
     ctx.strokeRect(temporaryBoxX, temporaryBoxY, temporaryBoxWidth, temporaryBoxHeight);
     
     // Draw moves section
-    const lastMoveY = await drawMovesSection(ctx, monster, expandedAreaX, expandedAreaY, expandedAreaWidth, originalCardWidth);
+    const lastMoveY = await drawMovesSection(ctx, monster, expandedAreaX, expandedAreaY, expandedAreaWidth, originalCardWidth, temporaryBoxX, temporaryBoxY, temporaryBoxWidth);
     
     // Draw status section (energy, happiness, experience)
-    const lastStatusY = drawStatusSection(ctx, monster, expandedAreaX, expandedAreaWidth, originalCardWidth, lastMoveY);
+    const lastStatusY = drawStatusSection(ctx, monster, expandedAreaX, expandedAreaWidth, originalCardWidth, lastMoveY, temporaryBoxX, temporaryBoxWidth);
     
     // Draw inventory section
-    drawInventorySection(ctx, inventoryItems, lastStatusY, expandedAreaX, expandedAreaWidth, originalCardWidth);
-  };
-
-  // Draw border for expanded section with theme color
-  const drawExpandedBorder = (
-    ctx: CanvasRenderingContext2D, 
-    expandedAreaX: number, 
-    expandedAreaY: number, 
-    expandedAreaWidth: number, 
-    expandedAreaHeight: number
-  ) => {
-    const radius = CARD.EXPANDED.BACKGROUND.BORDER.RADIUS;
-    
-    // Make the overlay just a bit smaller than full width 
-    const overlayWidth = expandedAreaWidth * 1.0 - CARD.EXPANDED.PADDING.OVERLAY_LEFT;
-    const overlayX = expandedAreaX + CARD.EXPANDED.PADDING.OVERLAY_LEFT;
-    
-    // Draw only the border of the rounded rectangle
-    ctx.beginPath();
-    ctx.moveTo(overlayX + radius, expandedAreaY);
-    ctx.lineTo(overlayX + overlayWidth - radius, expandedAreaY);
-    ctx.arcTo(overlayX + overlayWidth, expandedAreaY, overlayX + overlayWidth, expandedAreaY + radius, radius);
-    ctx.lineTo(overlayX + overlayWidth, expandedAreaHeight - radius);
-    ctx.arcTo(overlayX + overlayWidth, expandedAreaHeight, overlayX + overlayWidth - radius, expandedAreaHeight, radius);
-    ctx.lineTo(overlayX + radius, expandedAreaHeight);
-    ctx.arcTo(overlayX, expandedAreaHeight, overlayX, expandedAreaHeight - radius, radius);
-    ctx.lineTo(overlayX, expandedAreaY + radius);
-    ctx.arcTo(overlayX, expandedAreaY, overlayX + radius, expandedAreaY, radius);
-    ctx.closePath();
-  
-    // Draw only the border with theme-appropriate color
-    ctx.strokeStyle = borderColor;
-    ctx.lineWidth = CARD.EXPANDED.BACKGROUND.BORDER.WIDTH;
-    ctx.stroke();
+    drawInventorySection(ctx, inventoryItems, lastStatusY, expandedAreaX, expandedAreaWidth, originalCardWidth, temporaryBoxX, temporaryBoxWidth);
   };
 
   // Draw moves section with theme-appropriate colors
@@ -323,44 +353,50 @@ export const MonsterCardDisplay: React.FC<MonsterCardDisplayProps> = ({
     expandedAreaX: number, 
     expandedAreaY: number, 
     expandedAreaWidth: number,
-    originalCardWidth: number
+    originalCardWidth: number,
+    temporaryBoxX: number,
+    temporaryBoxY: number,
+    temporaryBoxWidth: number
   ) => {
-    // TEMPORARY: Reference the black box dimensions
-    const temporaryBoxX = expandedAreaX + CARD.EXPANDED.PADDING.OVERLAY_LEFT + 3;
-    const temporaryBoxY = CARD.EXPANDED.PADDING.TOP - 5;
-    const temporaryBoxWidth = expandedAreaWidth - CARD.EXPANDED.PADDING.RIGHT - CARD.EXPANDED.PADDING.OVERLAY_LEFT - 6;
-    
     // Start drawing with padding from top but inside the black box
     let currentY = temporaryBoxY + 15; // Add some padding inside the black box
     
     // Get position values for title and content - within the black box
     const movesTitleY = currentY;
-    // Use the temporary black box's x position plus some padding
-    const titleX = temporaryBoxX + 10;
-    const titleWidth = temporaryBoxWidth - 20; // Add some padding on both sides
+    // Use the temporary black box's x position plus some padding - moved more to the right
+    const titleX = temporaryBoxX + 25; // Moved further right
+    const titleWidth = temporaryBoxWidth - 50; // Adjusted for more padding on both sides
     
-    // Draw "Moves" title with underline
-    const movesContentY = drawSectionTitle(
-      ctx, 
-      'Moves', 
-      expandedAreaX, 
-      expandedAreaWidth, 
-      movesTitleY, 
-      titleX, 
-      titleWidth, 
-      {
-        ...CARD.EXPANDED.SECTION_TITLE,
-        FONT: {
-          ...CARD.EXPANDED.SECTION_TITLE.FONT,
-          COLOR: theme.cardTitle, // Use theme title color
-        },
-        UNDERLINE: {
-          ...CARD.EXPANDED.SECTION_TITLE.UNDERLINE,
-          COLOR: theme.cardAccent, // Use theme accent color
-        }
+  // Draw "Moves" title with underline
+  // Shift titleX further right by another 20px
+  const sectionTitleX = titleX + 20;
+  // Make underline 20% smaller than titleWidth
+  const underlineWidth = titleWidth * 0.8;
+
+  const movesContentY = drawCustomSectionTitle(
+    ctx, 
+    'Moves', 
+    expandedAreaX, 
+    expandedAreaWidth, 
+    movesTitleY, 
+    sectionTitleX, // Use the shifted position
+    underlineWidth, // Use the smaller width for underline
+    {
+      ...CARD.EXPANDED.SECTION_TITLE,
+      FONT: {
+        ...CARD.EXPANDED.SECTION_TITLE.FONT,
+        COLOR: theme.cardTitle, // Use theme title color
       },
-      CARD.EXPANDED.PADDING
-    );
+      UNDERLINE: {
+        ...CARD.EXPANDED.SECTION_TITLE.UNDERLINE,
+        COLOR: theme.cardAccent, // Use theme accent color
+      }
+    },
+    {
+      RIGHT: CARD.EXPANDED.PADDING.RIGHT,
+      OVERLAY_LEFT: CARD.EXPANDED.PADDING.OVERLAY_LEFT // Use the config values
+    }
+  );
     
     // Load move type images for all the monster's moves
     const moveTypeImages = await loadMoveTypeImages(monster, CardImages);
@@ -411,7 +447,9 @@ export const MonsterCardDisplay: React.FC<MonsterCardDisplayProps> = ({
       movesContentY, 
       titleX, 
       titleWidth, 
-      CARD.EXPANDED.PADDING,
+      {
+        RIGHT: 0 // Simple padding object with just RIGHT property
+      },
       updatedMoveConfig,
       moveTypeImages
     );
@@ -424,41 +462,46 @@ export const MonsterCardDisplay: React.FC<MonsterCardDisplayProps> = ({
     expandedAreaX: number, 
     expandedAreaWidth: number,
     originalCardWidth: number,
-    lastMoveY: number
+    lastMoveY: number,
+    temporaryBoxX: number,
+    temporaryBoxWidth: number
   ) => {
-    // TEMPORARY: Reference the black box dimensions
-    const temporaryBoxX = expandedAreaX + CARD.EXPANDED.PADDING.OVERLAY_LEFT + 3;
-    const temporaryBoxY = CARD.EXPANDED.PADDING.TOP - 5;
-    const temporaryBoxWidth = expandedAreaWidth - CARD.EXPANDED.PADDING.RIGHT - CARD.EXPANDED.PADDING.OVERLAY_LEFT - 6;
-    
     // Calculate position for Status section using the last Y position of moves
     const statusTitleY = lastMoveY + CARD.EXPANDED.MOVES.SECTION_SPACING;
-    // Use the temporary black box's x position plus some padding
-    const titleX = temporaryBoxX + 10;
-    const titleWidth = temporaryBoxWidth - 20; // Add some padding on both sides
+    // Use the temporary black box's x position plus some padding - moved more to the right
+    const titleX = temporaryBoxX + 25; // Moved further right
+    const titleWidth = temporaryBoxWidth - 50; // Adjusted for more padding on both sides
     
-    // Draw "Status" title with underline using theme colors
-    const statusContentY = drawSectionTitle(
-      ctx, 
-      'Status', 
-      expandedAreaX, 
-      expandedAreaWidth, 
-      statusTitleY, 
-      titleX, 
-      titleWidth, 
-      {
-        ...CARD.EXPANDED.SECTION_TITLE,
-        FONT: {
-          ...CARD.EXPANDED.SECTION_TITLE.FONT,
-          COLOR: theme.cardTitle, // Use theme title color
-        },
-        UNDERLINE: {
-          ...CARD.EXPANDED.SECTION_TITLE.UNDERLINE,
-          COLOR: theme.cardAccent, // Use theme accent color
-        }
+  // Draw "Status" title with underline using theme colors
+  // Shift titleX further right by another 20px
+  const sectionTitleX = titleX + 20;
+  // Make underline 20% smaller than titleWidth
+  const underlineWidth = titleWidth * 0.8;
+  
+  const statusContentY = drawCustomSectionTitle(
+    ctx, 
+    'Status', 
+    expandedAreaX, 
+    expandedAreaWidth, 
+    statusTitleY, 
+    sectionTitleX, // Use the shifted position
+    underlineWidth, // Use the smaller width for underline
+    {
+      ...CARD.EXPANDED.SECTION_TITLE,
+      FONT: {
+        ...CARD.EXPANDED.SECTION_TITLE.FONT,
+        COLOR: theme.cardTitle, // Use theme title color
       },
-      CARD.EXPANDED.PADDING
-    );
+      UNDERLINE: {
+        ...CARD.EXPANDED.SECTION_TITLE.UNDERLINE,
+        COLOR: theme.cardAccent, // Use theme accent color
+      }
+    },
+    {
+      RIGHT: CARD.EXPANDED.PADDING.RIGHT,
+      OVERLAY_LEFT: CARD.EXPANDED.PADDING.OVERLAY_LEFT // Use the config values
+    }
+  );
     
     // Draw status bars
     let statusY = statusContentY;
@@ -532,41 +575,46 @@ export const MonsterCardDisplay: React.FC<MonsterCardDisplayProps> = ({
     lastStatusY: number, 
     expandedAreaX: number, 
     expandedAreaWidth: number,
-    originalCardWidth: number
+    originalCardWidth: number,
+    temporaryBoxX: number,
+    temporaryBoxWidth: number
   ) => {
-    // TEMPORARY: Reference the black box dimensions
-    const temporaryBoxX = expandedAreaX + CARD.EXPANDED.PADDING.OVERLAY_LEFT + 3;
-    const temporaryBoxY = CARD.EXPANDED.PADDING.TOP - 5;
-    const temporaryBoxWidth = expandedAreaWidth - CARD.EXPANDED.PADDING.RIGHT - CARD.EXPANDED.PADDING.OVERLAY_LEFT - 6;
-    
     // Calculate position for inventory section
     const inventoryTitleY = lastStatusY + CARD.EXPANDED.INVENTORY.SECTION_SPACING;
-    // Use the temporary black box's x position plus some padding
-    const titleX = temporaryBoxX + 10;
-    const titleWidth = temporaryBoxWidth - 20; // Add some padding on both sides
+    // Use the temporary black box's x position plus some padding - moved more to the right
+    const titleX = temporaryBoxX + 25; // Moved further right
+    const titleWidth = temporaryBoxWidth - 50; // Adjusted for more padding on both sides
     
-    // Draw "Inventory" title with underline using theme colors
-    const inventoryContentY = drawSectionTitle(
-      ctx, 
-      'Inventory', 
-      expandedAreaX, 
-      expandedAreaWidth, 
-      inventoryTitleY, 
-      titleX, 
-      titleWidth, 
-      {
-        ...CARD.EXPANDED.SECTION_TITLE,
-        FONT: {
-          ...CARD.EXPANDED.SECTION_TITLE.FONT,
-          COLOR: theme.cardTitle, // Use theme title color
-        },
-        UNDERLINE: {
-          ...CARD.EXPANDED.SECTION_TITLE.UNDERLINE,
-          COLOR: theme.cardAccent, // Use theme accent color
-        }
+  // Draw "Inventory" title with underline using theme colors
+  // Shift titleX further right by another 20px
+  const sectionTitleX = titleX + 20;
+  // Make underline 20% smaller than titleWidth
+  const underlineWidth = titleWidth * 0.8;
+  
+  const inventoryContentY = drawCustomSectionTitle(
+    ctx, 
+    'Inventory', 
+    expandedAreaX, 
+    expandedAreaWidth, 
+    inventoryTitleY, 
+    sectionTitleX, // Use the shifted position
+    underlineWidth, // Use the smaller width for underline
+    {
+      ...CARD.EXPANDED.SECTION_TITLE,
+      FONT: {
+        ...CARD.EXPANDED.SECTION_TITLE.FONT,
+        COLOR: theme.cardTitle, // Use theme title color
       },
-      CARD.EXPANDED.PADDING
-    );
+      UNDERLINE: {
+        ...CARD.EXPANDED.SECTION_TITLE.UNDERLINE,
+        COLOR: theme.cardAccent, // Use theme accent color
+      }
+    },
+    {
+      RIGHT: CARD.EXPANDED.PADDING.RIGHT,
+      OVERLAY_LEFT: CARD.EXPANDED.PADDING.OVERLAY_LEFT // Use the config values
+    }
+  );
     
     // Draw inventory slots
     const inventoryY = inventoryContentY;
@@ -612,6 +660,39 @@ export const MonsterCardDisplay: React.FC<MonsterCardDisplayProps> = ({
       titleWidth, // Use black box width instead of expandedAreaWidth
       updatedInventoryConfig
     );
+  };
+
+  // Draw border for expanded section with theme color - no longer used but kept for reference
+  const drawExpandedBorder = (
+    ctx: CanvasRenderingContext2D, 
+    expandedAreaX: number, 
+    expandedAreaY: number, 
+    expandedAreaWidth: number, 
+    expandedAreaHeight: number
+  ) => {
+    const radius = CARD.EXPANDED.BACKGROUND.BORDER.RADIUS;
+    
+    // Make the overlay just a bit smaller than full width 
+    const overlayWidth = expandedAreaWidth * 1.0 - CARD.EXPANDED.PADDING.OVERLAY_LEFT;
+    const overlayX = expandedAreaX + CARD.EXPANDED.PADDING.OVERLAY_LEFT;
+    
+    // Draw only the border of the rounded rectangle
+    ctx.beginPath();
+    ctx.moveTo(overlayX + radius, expandedAreaY);
+    ctx.lineTo(overlayX + overlayWidth - radius, expandedAreaY);
+    ctx.arcTo(overlayX + overlayWidth, expandedAreaY, overlayX + overlayWidth, expandedAreaY + radius, radius);
+    ctx.lineTo(overlayX + overlayWidth, expandedAreaHeight - radius);
+    ctx.arcTo(overlayX + overlayWidth, expandedAreaHeight, overlayX + overlayWidth - radius, expandedAreaHeight, radius);
+    ctx.lineTo(overlayX + radius, expandedAreaHeight);
+    ctx.arcTo(overlayX, expandedAreaHeight, overlayX, expandedAreaHeight - radius, radius);
+    ctx.lineTo(overlayX, expandedAreaY + radius);
+    ctx.arcTo(overlayX, expandedAreaY, overlayX + radius, expandedAreaY, radius);
+    ctx.closePath();
+  
+    // Draw only the border with theme-appropriate color
+    ctx.strokeStyle = borderColor;
+    ctx.lineWidth = CARD.EXPANDED.BACKGROUND.BORDER.WIDTH;
+    ctx.stroke();
   };
 
   // Export card function
