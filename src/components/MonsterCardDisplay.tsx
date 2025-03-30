@@ -39,6 +39,16 @@ export const MonsterCardDisplay: React.FC<MonsterCardDisplayProps> = ({
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const [cardImage, setCardImage] = useState<string | null>(null);
 
+  // Extract theme colors for consistent use
+  const textColor = theme.text.replace('text-', '').replace('[', '').replace(']', '');
+  const containerColor = darkMode 
+    ? 'rgba(129, 78, 51, 0.2)' // from theme.container
+    : 'rgba(255, 255, 255, 0.5)'; // from theme.container
+  const borderColor = darkMode 
+    ? 'rgba(244, 134, 10, 0.3)' // from theme.border
+    : 'rgba(129, 78, 51, 0.3)'; // from theme.border
+  const borderSolid = theme.cardBorder;
+
   // Event handlers
   const handleClick = useCallback((e: React.MouseEvent) => {
     e.stopPropagation();
@@ -72,10 +82,8 @@ export const MonsterCardDisplay: React.FC<MonsterCardDisplayProps> = ({
 
     // If expanded, prepare the expanded area with theme-appropriate background
     if (expanded) {
-      // Parse the background color from theme.container
-      // For light theme, it's bg-white/50, for dark theme it's bg-[#814E33]/20
-      const bgColor = darkMode ? 'rgba(129, 78, 51, 0.2)' : 'rgba(255, 255, 255, 0.5)';
-      ctx.fillStyle = bgColor;
+      // Use the card background color from theme
+      ctx.fillStyle = theme.cardBg; 
       ctx.fillRect(0, 0, canvas.width, canvas.height);
     }
 
@@ -106,7 +114,7 @@ export const MonsterCardDisplay: React.FC<MonsterCardDisplayProps> = ({
       // If expanded, draw the expanded section
       if (expanded) {
         // Draw the expanded section using the theme
-        await drawExpandedSection(ctx, cardImages, monster, originalCardWidth, cardHeight, inventoryItems, theme);
+        await drawExpandedSection(ctx, cardImages, monster, originalCardWidth, cardHeight, inventoryItems);
       }
 
       // Store the final rendered image
@@ -213,8 +221,7 @@ export const MonsterCardDisplay: React.FC<MonsterCardDisplayProps> = ({
     monster: MonsterStats, 
     originalCardWidth: number, 
     cardHeight: number,
-    inventoryItems: InventoryItem[],
-    theme: Theme
+    inventoryItems: InventoryItem[]
   ) => {
     const { sideImg } = cardImages;
     
@@ -232,11 +239,7 @@ export const MonsterCardDisplay: React.FC<MonsterCardDisplayProps> = ({
       // colored rectangle and then drawing the side image with reduced opacity
       
       // First, fill with theme background color
-      const bgColor = darkMode 
-        ? 'rgba(129, 78, 51, 0.2)' // dark mode container background
-        : 'rgba(255, 255, 255, 0.5)'; // light mode container background
-      
-      ctx.fillStyle = bgColor;
+      ctx.fillStyle = containerColor; // using theme-derived container color
       ctx.fillRect(offsetX, expandedAreaY, expandedAreaWidth, expandedAreaHeight);
       
       // Draw the side image with reduced opacity to blend with theme
@@ -247,17 +250,17 @@ export const MonsterCardDisplay: React.FC<MonsterCardDisplayProps> = ({
     
     // Draw border for expanded section with theme-appropriate color
     if (CARD.EXPANDED.BACKGROUND) {
-      drawExpandedBorder(ctx, expandedAreaX, expandedAreaY, expandedAreaWidth, expandedAreaHeight, theme);
+      drawExpandedBorder(ctx, expandedAreaX, expandedAreaY, expandedAreaWidth, expandedAreaHeight);
     }
     
     // Draw moves section
-    const lastMoveY = await drawMovesSection(ctx, monster, expandedAreaX, expandedAreaY, expandedAreaWidth, originalCardWidth, theme);
+    const lastMoveY = await drawMovesSection(ctx, monster, expandedAreaX, expandedAreaY, expandedAreaWidth, originalCardWidth);
     
     // Draw status section (energy, happiness, experience)
-    const lastStatusY = drawStatusSection(ctx, monster, expandedAreaX, expandedAreaWidth, originalCardWidth, lastMoveY, theme);
+    const lastStatusY = drawStatusSection(ctx, monster, expandedAreaX, expandedAreaWidth, originalCardWidth, lastMoveY);
     
     // Draw inventory section
-    drawInventorySection(ctx, inventoryItems, lastStatusY, expandedAreaX, expandedAreaWidth, originalCardWidth, theme);
+    drawInventorySection(ctx, inventoryItems, lastStatusY, expandedAreaX, expandedAreaWidth, originalCardWidth);
   };
 
   // Draw border for expanded section with theme color
@@ -266,8 +269,7 @@ export const MonsterCardDisplay: React.FC<MonsterCardDisplayProps> = ({
     expandedAreaX: number, 
     expandedAreaY: number, 
     expandedAreaWidth: number, 
-    expandedAreaHeight: number,
-    theme: Theme
+    expandedAreaHeight: number
   ) => {
     const radius = CARD.EXPANDED.BACKGROUND.BORDER.RADIUS;
     
@@ -289,8 +291,7 @@ export const MonsterCardDisplay: React.FC<MonsterCardDisplayProps> = ({
     ctx.closePath();
   
     // Draw only the border with theme-appropriate color
-    const borderColor = darkMode ? 'rgba(244, 134, 10, 0.3)' : 'rgba(129, 78, 51, 0.3)'; // from theme.border
-    ctx.strokeStyle = borderColor;
+    ctx.strokeStyle = borderColor; // using theme-derived border color
     ctx.lineWidth = CARD.EXPANDED.BACKGROUND.BORDER.WIDTH;
     ctx.stroke();
   };
@@ -302,8 +303,7 @@ export const MonsterCardDisplay: React.FC<MonsterCardDisplayProps> = ({
     expandedAreaX: number, 
     expandedAreaY: number, 
     expandedAreaWidth: number,
-    originalCardWidth: number,
-    theme: Theme
+    originalCardWidth: number
   ) => {
     // Start drawing with padding from top
     let currentY = expandedAreaY + CARD.EXPANDED.PADDING.TOP;
@@ -327,11 +327,11 @@ export const MonsterCardDisplay: React.FC<MonsterCardDisplayProps> = ({
         ...CARD.EXPANDED.SECTION_TITLE,
         FONT: {
           ...CARD.EXPANDED.SECTION_TITLE.FONT,
-          COLOR: darkMode ? '#FCF5D8' : '#0D0705', // Use theme text color
+          COLOR: textColor, // Using extracted text color 
         },
         UNDERLINE: {
           ...CARD.EXPANDED.SECTION_TITLE.UNDERLINE,
-          COLOR: darkMode ? '#F4860A' : '#814E33', // Use theme border color without transparency
+          COLOR: borderSolid, // Using extracted border color
         }
       },
       CARD.EXPANDED.PADDING
@@ -344,21 +344,21 @@ export const MonsterCardDisplay: React.FC<MonsterCardDisplayProps> = ({
     const updatedMoveConfig = {
       ...CARD.EXPANDED.MOVES,
       BACKGROUND: {
-        COLOR: darkMode ? 'rgba(129, 78, 51, 0.3)' : 'rgba(255, 255, 255, 0.7)', // theme container color
+        COLOR: containerColor, // Using theme container color
       },
       BORDER: {
         ...CARD.EXPANDED.MOVES.BORDER,
-        COLOR: darkMode ? 'rgba(244, 134, 10, 0.3)' : 'rgba(129, 78, 51, 0.3)', // theme border color
+        COLOR: borderColor, // Using theme border color
       },
       FONT: {
         ...CARD.EXPANDED.MOVES.FONT,
         NAME: {
           ...CARD.EXPANDED.MOVES.FONT.NAME,
-          COLOR: darkMode ? '#FCF5D8' : '#0D0705', // theme text color
+          COLOR: textColor, // Using theme text color
         },
         STATS: {
           ...CARD.EXPANDED.MOVES.FONT.STATS,
-          COLOR: darkMode ? '#FCF5D8' : '#0D0705', // theme text color
+          COLOR: textColor, // Using theme text color
         }
       },
       STATS: {
@@ -367,12 +367,12 @@ export const MonsterCardDisplay: React.FC<MonsterCardDisplayProps> = ({
           ...CARD.EXPANDED.MOVES.STATS.LAYOUT,
           BACKGROUND: {
             ...CARD.EXPANDED.MOVES.STATS.LAYOUT.BACKGROUND,
-            COLOR: darkMode ? 'rgba(129, 78, 51, 0.3)' : 'rgba(255, 255, 255, 0.7)', // theme container color
-            BORDER_COLOR: darkMode ? 'rgba(244, 134, 10, 0.3)' : 'rgba(129, 78, 51, 0.3)', // theme border color
+            COLOR: containerColor, // Using theme container color
+            BORDER_COLOR: borderColor, // Using theme border color
           },
           FONT: {
             ...CARD.EXPANDED.MOVES.STATS.LAYOUT.FONT,
-            COLOR: darkMode ? '#FCF5D8' : '#0D0705', // theme text color
+            COLOR: textColor, // Using theme text color
           }
         }
       }
@@ -399,8 +399,7 @@ export const MonsterCardDisplay: React.FC<MonsterCardDisplayProps> = ({
     expandedAreaX: number, 
     expandedAreaWidth: number,
     originalCardWidth: number,
-    lastMoveY: number,
-    theme: Theme
+    lastMoveY: number
   ) => {
     // Calculate position for Status section using the last Y position of moves
     const statusTitleY = lastMoveY + CARD.EXPANDED.MOVES.SECTION_SPACING;
@@ -421,11 +420,11 @@ export const MonsterCardDisplay: React.FC<MonsterCardDisplayProps> = ({
         ...CARD.EXPANDED.SECTION_TITLE,
         FONT: {
           ...CARD.EXPANDED.SECTION_TITLE.FONT,
-          COLOR: darkMode ? '#FCF5D8' : '#0D0705', // Use theme text color
+          COLOR: textColor, // Using theme text color
         },
         UNDERLINE: {
           ...CARD.EXPANDED.SECTION_TITLE.UNDERLINE,
-          COLOR: darkMode ? '#F4860A' : '#814E33', // Use theme border color without transparency
+          COLOR: borderSolid, // Using theme border color
         }
       },
       CARD.EXPANDED.PADDING
@@ -440,14 +439,14 @@ export const MonsterCardDisplay: React.FC<MonsterCardDisplayProps> = ({
       'Energy', 
       monster.energy || 0, // Default to 0 if undefined
       100, 
-      '#F59E0B', 
+      '#F59E0B', // Keep energy color (amber)
       expandedAreaX, 
       expandedAreaWidth, 
       statusY, 
       CARD.EXPANDED.PADDING, 
       titleWidth,
       undefined,
-      darkMode ? '#FCF5D8' : '#0D0705' // Use theme text color
+      textColor // Using theme text color
     );
     statusY += 50;
     
@@ -457,14 +456,14 @@ export const MonsterCardDisplay: React.FC<MonsterCardDisplayProps> = ({
       'Happiness', 
       monster.happiness || 0, // Default to 0 if undefined
       100, 
-      '#EC4899', 
+      '#EC4899', // Keep happiness color (pink)
       expandedAreaX, 
       expandedAreaWidth, 
       statusY, 
       CARD.EXPANDED.PADDING, 
       titleWidth,
       undefined,
-      darkMode ? '#FCF5D8' : '#0D0705' // Use theme text color
+      textColor // Using theme text color
     );
     statusY += 50;
     
@@ -475,14 +474,14 @@ export const MonsterCardDisplay: React.FC<MonsterCardDisplayProps> = ({
       'Experience', 
       monster.exp || 0, // Default to 0 if undefined
       expNeeded, 
-      '#3B82F6', 
+      '#3B82F6', // Keep experience color (blue)
       expandedAreaX, 
       expandedAreaWidth, 
       statusY, 
       CARD.EXPANDED.PADDING, 
       titleWidth,
       `${monster.exp || 0}/${expNeeded}`,
-      darkMode ? '#FCF5D8' : '#0D0705' // Use theme text color
+      textColor // Using theme text color
     );
     statusY += 50;
     
@@ -497,8 +496,7 @@ export const MonsterCardDisplay: React.FC<MonsterCardDisplayProps> = ({
     lastStatusY: number, 
     expandedAreaX: number, 
     expandedAreaWidth: number,
-    originalCardWidth: number,
-    theme: Theme
+    originalCardWidth: number
   ) => {
     // Calculate position for inventory section
     const inventoryTitleY = lastStatusY + CARD.EXPANDED.INVENTORY.SECTION_SPACING;
@@ -519,11 +517,11 @@ export const MonsterCardDisplay: React.FC<MonsterCardDisplayProps> = ({
         ...CARD.EXPANDED.SECTION_TITLE,
         FONT: {
           ...CARD.EXPANDED.SECTION_TITLE.FONT,
-          COLOR: darkMode ? '#FCF5D8' : '#0D0705', // Use theme text color
+          COLOR: textColor, // Using theme text color
         },
         UNDERLINE: {
           ...CARD.EXPANDED.SECTION_TITLE.UNDERLINE,
-          COLOR: darkMode ? '#F4860A' : '#814E33', // Use theme border color without transparency
+          COLOR: borderSolid, // Using theme border color
         }
       },
       CARD.EXPANDED.PADDING
@@ -540,21 +538,21 @@ export const MonsterCardDisplay: React.FC<MonsterCardDisplayProps> = ({
         ...CARD.EXPANDED.INVENTORY.FONT,
         NAME: {
           ...CARD.EXPANDED.INVENTORY.FONT.NAME,
-          COLOR: darkMode ? '#FCF5D8' : '#0D0705', // theme text color
+          COLOR: textColor, // Using theme text color
         }
       },
       SLOT: {
         ...CARD.EXPANDED.INVENTORY.SLOT,
         BACKGROUND: {
           ...CARD.EXPANDED.INVENTORY.SLOT.BACKGROUND,
-          COLOR: darkMode ? 'rgba(129, 78, 51, 0.3)' : 'rgba(255, 255, 255, 0.7)', // theme container color
-          BORDER_COLOR: darkMode ? 'rgba(244, 134, 10, 0.3)' : 'rgba(129, 78, 51, 0.3)', // theme border color
+          COLOR: containerColor, // Using theme container color
+          BORDER_COLOR: borderColor, // Using theme border color
         },
         EMPTY_TEXT: {
           ...CARD.EXPANDED.INVENTORY.SLOT.EMPTY_TEXT,
           FONT: {
             ...CARD.EXPANDED.INVENTORY.SLOT.EMPTY_TEXT.FONT,
-            COLOR: darkMode ? '#FCF5D8' : '#888', // light gray for empty slots in dark mode, darker in light mode
+            COLOR: darkMode ? 'rgba(252, 245, 216, 0.5)' : 'rgba(13, 7, 5, 0.5)', // Semi-transparent version of text color
           }
         }
       }
