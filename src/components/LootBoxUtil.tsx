@@ -1,8 +1,11 @@
 import React, { useEffect, useState } from 'react';
 import { useWallet } from '../hooks/useWallet';
-import { getLootBoxes, openLootBox, LootBoxResponse } from '../utils/aoHelpers';
+import { getLootBoxes, openLootBox, LootBoxResponse, message } from '../utils/aoHelpers';
 import { currentTheme } from '../constants/theme';
+import { AdminSkinChanger } from '../constants/Constants';
+import { createDataItemSigner, result } from '../config/aoConnection';
 import Confetti from 'react-confetti';
+import '../styles/LootBoxUtil.css';
 
 interface LootBoxProps {
   className?: string;
@@ -14,11 +17,6 @@ interface LootBox {
   displayName: string;
 }
 
-// Animation frames for loot box opening
-const ANIMATION_FRAMES = [
-  "📦", "✨📦", "✨📦✨", "🎁✨", "🎁", "🎊🎁🎊", "🎊🎁🎊"
-];
-
 const LootBoxUtil: React.FC<LootBoxProps> = ({ className = '' }) => {
   const { wallet, darkMode, triggerRefresh, refreshTrigger, assetBalances } = useWallet();
   const [lootBoxes, setLootBoxes] = useState<LootBox[]>([]);
@@ -27,7 +25,8 @@ const LootBoxUtil: React.FC<LootBoxProps> = ({ className = '' }) => {
   const [openResult, setOpenResult] = useState<LootBoxResponse | null>(null);
   const [showConfetti, setShowConfetti] = useState(false);
   const [assets, setAssets] = useState<{[key: string]: {name: string, ticker: string, logo?: string}}>({});
-  const [animationFrame, setAnimationFrame] = useState(0);
+  const [isShaking, setIsShaking] = useState(false);
+  const [isExploding, setIsExploding] = useState(false);
   const [selectedRarity, setSelectedRarity] = useState<number | null>(null);
   
   const theme = currentTheme(darkMode);
@@ -150,6 +149,57 @@ const LootBoxUtil: React.FC<LootBoxProps> = ({ className = '' }) => {
     }
   };
   
+  // Custom openLootBox function that accepts a rarity parameter
+  const openLootBoxWithRarity = async (walletInfo: any, rarity: number, refreshCallback?: () => void): Promise<LootBoxResponse | null> => {
+    if (!walletInfo?.address) {
+      console.error('[openLootBoxWithRarity] No wallet address provided');
+      return null;
+    }
+  
+    try {
+      console.log(`[openLootBoxWithRarity] Opening loot box with rarity ${rarity} for user:`, walletInfo.address);
+      const signer = createDataItemSigner(window.arweaveWallet);
+  
+      // Send message with rarity tag
+      const messageresult: any = await message({
+        process: AdminSkinChanger,
+        tags: [
+          { name: 'Action', value: 'OpenLootBox' },
+          { name: 'From', value: walletInfo.address },
+          { name: 'rarity', value: rarity.toString() } // Add the rarity tag as a string
+        ],
+        signer
+      }, refreshCallback);
+      
+      // Get the result
+      const boxResult = await result({
+        message: messageresult,
+        process: AdminSkinChanger
+      }) as { Messages: Array<{ Data: string, Tags?: Array<{ name: string, value: string }> }> };
+  
+      // Process the result similar to the original function
+      if (boxResult?.Messages && boxResult.Messages.length > 0) {
+        const lastMessage = boxResult.Messages[boxResult.Messages.length - 1];
+        
+        if (lastMessage?.Data) {
+          try {
+            const parsedData = JSON.parse(lastMessage.Data);
+            return {
+              result: parsedData.result
+            };
+          } catch (error) {
+            console.error('[openLootBoxWithRarity] Error parsing response:', error);
+            return null;
+          }
+        }
+      }
+      return null;
+    } catch (error) {
+      console.error('[openLootBoxWithRarity] Error opening loot box:', error);
+      return null;
+    }
+  };
+
   // Handle opening a loot box
   const handleOpenLootBox = async (rarity: number) => {
     if (!wallet?.address || isOpening || lootBoxes.filter(box => box.rarity === rarity).length === 0) return;
@@ -158,34 +208,59 @@ const LootBoxUtil: React.FC<LootBoxProps> = ({ className = '' }) => {
     setOpenResult(null);
     setSelectedRarity(rarity);
     
-    // Run animation
-    for (let i = 0; i < ANIMATION_FRAMES.length; i++) {
-      await new Promise(resolve => setTimeout(resolve, 200));
-      setAnimationFrame(i);
-    }
-    
     try {
-      const result = await openLootBox(wallet, triggerRefresh);
+      // Start shaking animation with increasing intensity
+      setIsShaking(true);
+      
+      // Shake for the full animation sequence (around 2 seconds)
+      await new Promise(resolve => setTimeout(resolve, 2000));
+      
+      // Prepare for explosion, stop shaking and start exploding
+      setIsShaking(false);
+      setIsExploding(true);
+      
+      // Small pause before confetti
+      await new Promise(resolve => setTimeout(resolve, 150));
+      
+      // Explode with confetti!
+      setShowConfetti(true);
+      
+      // Get the results from server, passing the rarity parameter
+      const result = await openLootBoxWithRarity(wallet, rarity, triggerRefresh);
       
       if (result) {
-        // Show confetti animation
-        setShowConfetti(true);
-        setTimeout(() => setShowConfetti(false), 5000);
-        
         // Store the structured result
         setOpenResult(result);
         
-        // Refresh loot boxes after a short delay to allow animation to complete
+        // Hide confetti after 4 seconds
+        setTimeout(() => setShowConfetti(false), 4000);
+        
+        // Manually update local state to reduce the loot box count
+        setLootBoxes(prevBoxes => {
+          const updatedBoxes = [...prevBoxes];
+          // Find the box with matching rarity and remove one instance
+          const boxIndex = updatedBoxes.findIndex(box => box.rarity === rarity);
+          if (boxIndex >= 0) {
+            // Remove one instance of this box
+            updatedBoxes.splice(boxIndex, 1);
+          }
+          return updatedBoxes;
+        });
+        
+        // Reset UI states after a delay
         setTimeout(() => {
-          triggerRefresh();
-          setAnimationFrame(0);
           setSelectedRarity(null);
+          setIsExploding(false);
+          // Also refresh from server to ensure data consistency
+          triggerRefresh();
         }, 2000);
       }
     } catch (error) {
       console.error('Error opening loot box:', error);
-      setAnimationFrame(0);
+      setIsShaking(false);
+      setIsExploding(false);
       setSelectedRarity(null);
+      setShowConfetti(false);
     } finally {
       setIsOpening(false);
     }
@@ -260,8 +335,8 @@ const LootBoxUtil: React.FC<LootBoxProps> = ({ className = '' }) => {
               title={`Open ${rarityName} Loot Box`}
               onClick={() => !isOpening && handleOpenLootBox(rarity)}
             >
-              <div className="loot-box-icon text-3xl mb-1">
-                {isSelected ? ANIMATION_FRAMES[animationFrame] : "📦"}
+              <div className={`loot-box-icon text-3xl mb-1 ${isSelected && isShaking ? 'shake-animation' : ''} ${isSelected && isExploding ? 'explode-animation' : ''}`}>
+                📦
               </div>
               <span className="font-medium text-xs text-center">{rarityName}</span>
               <div className="absolute top-1 right-1 bg-black bg-opacity-50 rounded-full w-5 h-5 flex items-center justify-center text-xs">
@@ -283,7 +358,21 @@ const LootBoxUtil: React.FC<LootBoxProps> = ({ className = '' }) => {
   
   return (
     <div className={`loot-box-container relative ${theme.container} border ${theme.border} backdrop-blur-md p-4 ${className}`}>
-      {showConfetti && <Confetti recycle={false} numberOfPieces={200} />}
+      {showConfetti && (
+        <div className="confetti-wrapper">
+          <Confetti 
+            recycle={false} 
+            numberOfPieces={500}
+            gravity={0.3}
+            initialVelocityY={30}
+            initialVelocityX={{min: -15, max: 15}}
+            width={window.innerWidth}
+            height={window.innerHeight}
+            tweenDuration={100}
+            colors={['#FFD700', '#FFA500', '#FF4500', '#ff0000', '#00ff00', '#0000ff', '#800080']}
+          />
+        </div>
+      )}
       
       <h3 className={`text-lg font-bold ${theme.text} mb-3`}>Treasure Vault</h3>
       
@@ -293,36 +382,37 @@ const LootBoxUtil: React.FC<LootBoxProps> = ({ className = '' }) => {
         <p className={`${theme.text} text-sm`}>Your vault is empty. Complete activities to earn treasure!</p>
       ) : (
         <div className="space-y-2">
-          <div className="loot-box-sections flex flex-col sm:flex-row gap-3">
-            <div className="flex-1">
+          <div className="loot-box-sections">
+            <div className="flex flex-wrap gap-3 justify-center">
               {rarityLevels.map(renderRaritySection)}
             </div>
-            
-            {openResult && openResult.result && (
-              <div className={`result-container flex-1 p-3 rounded-lg ${theme.container} border ${theme.border}`}>
-                <h3 className={`text-sm font-bold ${theme.text} mb-2`}>Rewards:</h3>
-                <div className="grid grid-cols-1 gap-2">
-                  {Array.isArray(openResult.result) && openResult.result.map((item, index) => (
-                    <div 
-                      key={index} 
-                      className={`berry-item p-2 rounded-lg border ${getBerryColor(item.token)} flex items-center justify-between text-sm`}
-                    >
-                      <div className="flex items-center">
-                        <span className="text-xl mr-2">
-                          {getBerryEmoji(item.token)}
-                        </span>
-                        <span className="font-medium">{getTokenName(item.token)}</span>
-                      </div>
-                      <span className="font-bold">x{item.quantity}</span>
-                    </div>
-                  ))}
-                </div>
-                <p className={`${theme.text} mt-2 text-xs`}>
-                  Added to inventory!
-                </p>
-              </div>
-            )}
           </div>
+          
+          {/* Rewards section - now at the bottom */}
+          {openResult && openResult.result && (
+            <div className={`result-container mt-6 p-3 rounded-lg ${theme.container} border ${theme.border}`}>
+              <h3 className={`text-sm font-bold ${theme.text} mb-2`}>Rewards:</h3>
+              <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-2">
+                {Array.isArray(openResult.result) && openResult.result.map((item, index) => (
+                  <div 
+                    key={index} 
+                    className={`berry-item p-2 rounded-lg border ${getBerryColor(item.token)} flex items-center justify-between text-sm`}
+                  >
+                    <div className="flex items-center">
+                      <span className="text-xl mr-2">
+                        {getBerryEmoji(item.token)}
+                      </span>
+                      <span className="font-medium">{getTokenName(item.token)}</span>
+                    </div>
+                    <span className="font-bold">x{item.quantity}</span>
+                  </div>
+                ))}
+              </div>
+              <p className={`${theme.text} mt-2 text-xs text-center`}>
+                Added to inventory!
+              </p>
+            </div>
+          )}
           
           <div className="text-xs text-center text-gray-400 mt-2">
             Click on a loot box to open it

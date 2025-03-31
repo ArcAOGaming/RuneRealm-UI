@@ -1,8 +1,8 @@
--- Name: PremiumPass
--- ProcessId: j7NcraZUL6GZlgdPEoph12Q5rk_dydvQDecLNxYi8rI
-local json = require("json")
--- require("globals")
--- require("MonsterTrainingHelpers")
+-- PremiumPass
+  -- ProcessId: j7NcraZUL6GZlgdPEoph12Q5rk_dydvQDecLNxYi8rI
+  local json = require("json")
+  -- require("globals")
+  -- require("MonsterTrainingHelpers")
 
 
 -- Initialize storage
@@ -890,7 +890,9 @@ Handlers.add(
 
     -- Create and assign monster with current timestamp
     UserMonsters[msg.From] = CreateDefaultMonster(factionDetails.name, msg.Timestamp)
-    addLootBoxes(msg.From,2,1)
+    addLootBoxes(msg.From,3,1)
+    -- addLootBoxes(msg.From,2,2)
+    -- addLootBoxes(msg.From,1,3)
     -- Send confirmation back to the user
     ao.send({
       Target = msg.From,
@@ -1306,8 +1308,9 @@ Handlers.add(
 
     print("Returning from battle")
     local userId = msg.Tags.UserId
-    --RollLootChest(1,msg.Tags.UserId)
     addLootBoxes(userId,1,1)
+    addLootBoxes(userId,1,2)
+    addLootBoxes(userId,1,3)
     local monster = UserMonsters[userId]
     if not monster then
       print("No monster found for user:", userId)
@@ -1322,7 +1325,7 @@ Handlers.add(
     end
 
     if monster.status.type ~= "Battle" then
-      print("Monster is not on Battle:", monster.status.type)
+      print("Monster is not in Battle:", monster.status.type)
       ao.send({
         Target = msg.From,
         Data = json.encode({
@@ -1357,14 +1360,40 @@ Handlers.add(
   function(msg)
     print("Opening loot box")
     local userId = msg.From
+    local rarityOverride = msg.Tags and tonumber(msg.Tags.rarity) -- Convert rarity to a number if it's present
 
     -- Ensure the user has loot boxes
     if UserLootBoxes[userId] and #UserLootBoxes[userId] > 0 then
-        -- Get the first loot box's rarity
-        local rarity = table.remove(UserLootBoxes[userId], 1) -- Remove the first loot box
+        local rarityIndex = nil
+        local rarity = nil
 
-        -- Roll the loot chest based on the rarity
-        RollLootChest(rarity, userId)
+        if rarityOverride then
+            -- Find and remove the loot box of the specified rarity
+            for i, r in ipairs(UserLootBoxes[userId]) do
+                if r == rarityOverride then
+                    rarityIndex = i
+                    rarity = r
+                    break
+                end
+            end
+        else
+            -- Default to removing the first available loot box
+            rarityIndex = 1
+            rarity = UserLootBoxes[userId][1]
+        end
+
+        if rarityIndex then
+            table.remove(UserLootBoxes[userId], rarityIndex) -- Remove the specified rarity box
+            RollLootChest(rarity, userId)
+        else
+            -- If the user doesn't have the specified rarity
+            ao.send({
+              Target = userId,
+              Data = json.encode({
+                result = "You do not have a loot box of this rarity!"
+              })
+            })
+        end
     else
         -- If no loot boxes left
         ao.send({
@@ -1376,6 +1405,7 @@ Handlers.add(
     end
   end
 )
+
 
 -- Handler for returning from battle
 Handlers.add(
@@ -1408,108 +1438,77 @@ function addLootBoxes(userId, numLootBoxes, rarity)
 end
 
 
--- Function to handle loot chest roll based on rarity
+-- Constants to define base probabilities and unlock requirements
+local BASE_PROBABILITIES = {
+  fireBerry = { chance = 800, minBox = 1, baseAmount = 5 },
+  waterBerry = { chance = 800, minBox = 1, baseAmount = 5 },
+  rockBerry = { chance = 800, minBox = 1, baseAmount = 5 },
+  airBerry = { chance = 800, minBox = 1, baseAmount = 5 },
+  ruby = { chance = 400, minBox = 2, baseAmount = 3 },
+  emerald = { chance = 500, minBox = 2, baseAmount = 3 },
+  topaz = { chance = 300, minBox = 3, baseAmount = 2 },
+  scroll = { chance = 200, minBox = 3, baseAmount = 1 },
+  diamond = { chance = 100, minBox = 4, baseAmount = 1 },
+  legendaryScroll = { chance = 50, minBox = 5, baseAmount = 1 }
+}
+
+-- Function to roll a loot chest
 function RollLootChest(rarity, userId)
+  local lootRewards = {}
+  local baseMultiplier = 1.5 ^ (rarity - 1)  -- Increases reward chances for higher tiers
+  local roll = getRandom(1, 1000)  -- Single roll to determine loot
+
+  for item, data in pairs(BASE_PROBABILITIES) do
+      if rarity >= data.minBox and getRandom(1, 1000) <= (data.chance * baseMultiplier) then
+          local unluckyRoll = getRandom(1, 100)  -- Chance to get more or less
+          local amount = data.baseAmount
+          if unluckyRoll <= 20 then
+              amount = math.max(1, math.floor(amount * 0.5))  -- 20% chance to get half
+          elseif unluckyRoll >= 80 then
+              amount = math.ceil(amount * 1.5)  -- 20% chance to get 1.5x
+          end
+          lootRewards[item] = amount
+      end
+  end
+
+  -- Prepare the reward list for sending
   local AllTokenshandedout = {}
+  local tokenMapping = {
+      fireBerry = FIRE_BERRY,
+      waterBerry = WATER_BERRY,
+      rockBerry = ROCK_BERRY,
+      airBerry = AIR_BERRY,
+      ruby = RUBY_TOKEN,
+      emerald = EMERALD_TOKEN,
+      topaz = TOPOZ_TOKEN,
+      scroll = SCROLL_TOKEN,
+      diamond = DIAMOND_TOKEN,
+      legendaryScroll = LEGENDARY_SCROLL_TOKEN
+  }
 
-  -- Berry tokens (common)
-  local fireBerryCount = 0
-  local waterBerryCount = 0
-  local rockBerryCount = 0
-  local airBerryCount = 0
-  
-  -- Gem tokens (rarer)
-  local rubyCount = 0
-  local emeraldCount = 0
-  local topazCount = 0
-
-  -- Scroll token (very rare)
-  local scrollCount = 0
-
-  -- Adjust the rarity logic
-  if rarity == 1 then  -- Common loot
-      -- Give out more berries
-      fireBerryCount = getRandom(5, 15)
-      waterBerryCount = getRandom(5, 15)
-      rockBerryCount = getRandom(5, 15)
-      airBerryCount = getRandom(5, 15)
-      
-  elseif rarity == 2 then  -- Uncommon loot
-      -- Give fewer berries, some gems
-      fireBerryCount = getRandom(3, 10)
-      waterBerryCount = getRandom(3, 10)
-      rockBerryCount = getRandom(3, 10)
-      airBerryCount = getRandom(3, 10)
-      
-      -- Add a chance for gems
-      if getRandom(1, 100) <= 40 then
-          rubyCount = getRandom(1, 3)
-      end
-      if getRandom(1, 100) <= 60 then
-          emeraldCount = getRandom(1, 3)
-      end
-      
-  elseif rarity == 3 then  -- Rare loot
-      -- Very few berries, mostly gems and scrolls
-      fireBerryCount = getRandom(1, 5)
-      waterBerryCount = getRandom(1, 5)
-      rockBerryCount = getRandom(1, 5)
-      airBerryCount = getRandom(1, 5)
-
-      -- Rare gems and scrolls
-      rubyCount = getRandom(1, 2)
-      emeraldCount = getRandom(1, 2)
-      topazCount = getRandom(1, 2)
-
-      -- Scroll token very rare
-      if getRandom(1, 100) <= 10 then
-          scrollCount = getRandom(1, 1)
-      end
+  for reward, count in pairs(lootRewards) do
+      table.insert(AllTokenshandedout, { token = tokenMapping[reward], quantity = count })
   end
 
-  -- Add all the tokens to the handout list
-  if fireBerryCount > 0 then
-      table.insert(AllTokenshandedout, { token = FIRE_BERRY, quantity = fireBerryCount })
-  end
-  if waterBerryCount > 0 then
-      table.insert(AllTokenshandedout, { token = WATER_BERRY, quantity = waterBerryCount })
-  end
-  if rockBerryCount > 0 then
-      table.insert(AllTokenshandedout, { token = ROCK_BERRY, quantity = rockBerryCount })
-  end
-  if airBerryCount > 0 then
-      table.insert(AllTokenshandedout, { token = AIR_BERRY, quantity = airBerryCount })
-  end
-  if rubyCount > 0 then
-      table.insert(AllTokenshandedout, { token = RUBY_TOKEN, quantity = rubyCount })
-  end
-  if emeraldCount > 0 then
-      table.insert(AllTokenshandedout, { token = EMERALD_TOKEN, quantity = emeraldCount })
-  end
-  if topazCount > 0 then
-      table.insert(AllTokenshandedout, { token = TOPOZ_TOKEN, quantity = topazCount })
-  end
-  if scrollCount > 0 then
-      table.insert(AllTokenshandedout, { token = SCROLL_TOKEN, quantity = scrollCount })
-  end
-
-  -- Send out the loot to the user
+  -- Grant rewards to the user
   for _, item in ipairs(AllTokenshandedout) do
       ao.send({
           Target = item.token,
           Action = "Grant",
           Quantity = tostring(item.quantity),
-          Recipient = userId,
+          Recipient = userId
       })
   end
 
-  -- Final message to the user
+  -- Send final loot message to the user
   ao.send({
       Target = userId,
       Data = json.encode({
-          result = AllTokenshandedout
+          result = AllTokenshandedout,
+          rarity = rarity
       })
   })
 end
+
 
 print("Loaded NEW PremPass.lua")
