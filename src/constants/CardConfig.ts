@@ -262,7 +262,7 @@ export const CARD = {
       // Stat icons and display configuration
       STATS: {
         ICONS: {
-          count: 'X',
+          count: '#️⃣',
           speed: '⚡',
           health: '❤️',
           defense: '🛡️',

@@ -14,6 +14,11 @@ interface LootBox {
   displayName: string;
 }
 
+// Animation frames for loot box opening
+const ANIMATION_FRAMES = [
+  "📦", "✨📦", "✨📦✨", "🎁✨", "🎁", "🎊🎁🎊", "🎊🎁🎊"
+];
+
 const LootBoxUtil: React.FC<LootBoxProps> = ({ className = '' }) => {
   const { wallet, darkMode, triggerRefresh, refreshTrigger, assetBalances } = useWallet();
   const [lootBoxes, setLootBoxes] = useState<LootBox[]>([]);
@@ -22,6 +27,8 @@ const LootBoxUtil: React.FC<LootBoxProps> = ({ className = '' }) => {
   const [openResult, setOpenResult] = useState<LootBoxResponse | null>(null);
   const [showConfetti, setShowConfetti] = useState(false);
   const [assets, setAssets] = useState<{[key: string]: {name: string, ticker: string, logo?: string}}>({});
+  const [animationFrame, setAnimationFrame] = useState(0);
+  const [selectedRarity, setSelectedRarity] = useState<number | null>(null);
   
   const theme = currentTheme(darkMode);
   
@@ -111,32 +118,53 @@ const LootBoxUtil: React.FC<LootBoxProps> = ({ className = '' }) => {
   const getRarityColorClass = (rarity: number): string => {
     switch (rarity) {
       case 1: // Common
-        return 'bg-gray-200 text-gray-800';
+        return 'bg-gray-700 text-gray-100 border-gray-500';
       case 2: // Uncommon
-        return 'bg-green-200 text-green-800';
+        return 'bg-green-700 text-green-100 border-green-500';
       case 3: // Rare
-        return 'bg-blue-200 text-blue-800';
+        return 'bg-blue-700 text-blue-100 border-blue-500';
       case 4: // Epic
-        return 'bg-purple-200 text-purple-800';
+        return 'bg-purple-700 text-purple-100 border-purple-500';
       case 5: // Legendary
-        return 'bg-yellow-200 text-yellow-800';
+        return 'bg-yellow-700 text-yellow-100 border-yellow-500';
       default:
-        return 'bg-gray-200 text-gray-800';
+        return 'bg-gray-700 text-gray-100 border-gray-500';
+    }
+  };
+  
+  // Get glow effects based on rarity
+  const getRarityGlowClass = (rarity: number): string => {
+    switch (rarity) {
+      case 1: // Common
+        return '';
+      case 2: // Uncommon
+        return 'shadow-sm shadow-green-400';
+      case 3: // Rare
+        return 'shadow-md shadow-blue-400';
+      case 4: // Epic
+        return 'shadow-lg shadow-purple-400 animate-pulse';
+      case 5: // Legendary
+        return 'shadow-xl shadow-yellow-400 animate-pulse';
+      default:
+        return '';
     }
   };
   
   // Handle opening a loot box
-  const handleOpenLootBox = async () => {
-    if (!wallet?.address || isOpening || lootBoxes.length === 0) return;
+  const handleOpenLootBox = async (rarity: number) => {
+    if (!wallet?.address || isOpening || lootBoxes.filter(box => box.rarity === rarity).length === 0) return;
     
     setIsOpening(true);
     setOpenResult(null);
+    setSelectedRarity(rarity);
+    
+    // Run animation
+    for (let i = 0; i < ANIMATION_FRAMES.length; i++) {
+      await new Promise(resolve => setTimeout(resolve, 200));
+      setAnimationFrame(i);
+    }
     
     try {
-      // Get the first available loot box rarity to show in the opening message
-      const lootBoxToOpen = lootBoxes[0];
-      const rarityName = lootBoxToOpen ? lootBoxToOpen.displayName : '';
-      
       const result = await openLootBox(wallet, triggerRefresh);
       
       if (result) {
@@ -150,10 +178,14 @@ const LootBoxUtil: React.FC<LootBoxProps> = ({ className = '' }) => {
         // Refresh loot boxes after a short delay to allow animation to complete
         setTimeout(() => {
           triggerRefresh();
-        }, 1000);
+          setAnimationFrame(0);
+          setSelectedRarity(null);
+        }, 2000);
       }
     } catch (error) {
       console.error('Error opening loot box:', error);
+      setAnimationFrame(0);
+      setSelectedRarity(null);
     } finally {
       setIsOpening(false);
     }
@@ -179,78 +211,122 @@ const LootBoxUtil: React.FC<LootBoxProps> = ({ className = '' }) => {
   // Helper function to get berry color based on token ID
   const getBerryColor = (tokenId: string): string => {
     const berryColors: {[key: string]: string} = {
-      "30cPTQXrHN76YZ3bLfNAePIEYDb5Xo1XnbQ-xmLMOM0": "bg-red-200 text-red-800",
-      "twFZ4HTvL_0XAIOMPizxs_S3YH5J5yGvJ8zKiMReWF0": "bg-blue-200 text-blue-800",
-      "2NoNsZNyHMWOzTqeQUJW9Xvcga3iTonocFIsgkWIiPM": "bg-stone-200 text-stone-800",
-      "XJjSdWaorbQ2q0YkaQSmylmuADWH1fh2PvgfdLmXlzA": "bg-sky-200 text-sky-800",
+      "30cPTQXrHN76YZ3bLfNAePIEYDb5Xo1XnbQ-xmLMOM0": "bg-red-700 text-red-100 border-red-500",
+      "twFZ4HTvL_0XAIOMPizxs_S3YH5J5yGvJ8zKiMReWF0": "bg-blue-700 text-blue-100 border-blue-500",
+      "2NoNsZNyHMWOzTqeQUJW9Xvcga3iTonocFIsgkWIiPM": "bg-stone-700 text-stone-100 border-stone-500",
+      "XJjSdWaorbQ2q0YkaQSmylmuADWH1fh2PvgfdLmXlzA": "bg-sky-700 text-sky-100 border-sky-500",
     };
     
-    return berryColors[tokenId] || "bg-gray-200 text-gray-800";
+    return berryColors[tokenId] || "bg-gray-700 text-gray-100 border-gray-500";
+  };
+  
+  // Get Berry Emoji
+  const getBerryEmoji = (tokenId: string): string => {
+    const berryEmojis: {[key: string]: string} = {
+      "30cPTQXrHN76YZ3bLfNAePIEYDb5Xo1XnbQ-xmLMOM0": "🔥",
+      "twFZ4HTvL_0XAIOMPizxs_S3YH5J5yGvJ8zKiMReWF0": "💧",
+      "2NoNsZNyHMWOzTqeQUJW9Xvcga3iTonocFIsgkWIiPM": "🪨",
+      "XJjSdWaorbQ2q0YkaQSmylmuADWH1fh2PvgfdLmXlzA": "💨",
+    };
+    
+    return berryEmojis[tokenId] || "🌟";
+  };
+  
+  // Group lootboxes by rarity
+  const groupedLootboxes = lootBoxes.reduce<{[key: number]: number}>((acc, box) => {
+    acc[box.rarity] = (acc[box.rarity] || 0) + 1;
+    return acc;
+  }, {});
+  
+  // Sort rarity levels for consistent display
+  const rarityLevels = Object.keys(groupedLootboxes).map(Number).sort((a, b) => a - b);
+  
+  // Render each rarity section
+  const renderRaritySection = (rarity: number) => {
+    const count = groupedLootboxes[rarity] || 0;
+    const rarityName = getRarityName(rarity);
+    const colorClass = getRarityColorClass(rarity);
+    const glowClass = getRarityGlowClass(rarity);
+    
+    const isSelected = selectedRarity === rarity && isOpening;
+    
+    return (
+      <div key={rarity} className="mb-3">
+        <h3 className={`text-sm font-bold ${theme.text} mb-1`}>{rarityName}</h3>
+        <div className="flex gap-2">
+          {count > 0 ? (
+            <div 
+              className={`loot-box-item relative p-4 rounded-lg border-2 ${colorClass} ${glowClass} flex flex-col items-center justify-center transition-transform hover:scale-105 cursor-pointer w-24 h-24 ${isSelected ? 'scale-110' : ''}`}
+              title={`Open ${rarityName} Loot Box`}
+              onClick={() => !isOpening && handleOpenLootBox(rarity)}
+            >
+              <div className="loot-box-icon text-3xl mb-1">
+                {isSelected ? ANIMATION_FRAMES[animationFrame] : "📦"}
+              </div>
+              <span className="font-medium text-xs text-center">{rarityName}</span>
+              <div className="absolute top-1 right-1 bg-black bg-opacity-50 rounded-full w-5 h-5 flex items-center justify-center text-xs">
+                {count}
+              </div>
+            </div>
+          ) : (
+            <div 
+              className={`loot-box-item-empty relative p-4 rounded-lg border-2 border-gray-700 bg-gray-800 bg-opacity-50 flex flex-col items-center justify-center w-24 h-24`}
+            >
+              <div className="loot-box-icon text-3xl mb-1 opacity-30">📦</div>
+              <span className="font-medium text-xs text-center opacity-30">{rarityName}</span>
+            </div>
+          )}
+        </div>
+      </div>
+    );
   };
   
   return (
-    <div className={`loot-box-container ${theme.container} border ${theme.border} backdrop-blur-md p-6 ${className}`}>
+    <div className={`loot-box-container relative ${theme.container} border ${theme.border} backdrop-blur-md p-4 ${className}`}>
       {showConfetti && <Confetti recycle={false} numberOfPieces={200} />}
       
-      <h2 className={`text-2xl font-bold ${theme.text} mb-4`}>Loot Boxes</h2>
+      <h3 className={`text-lg font-bold ${theme.text} mb-3`}>Treasure Vault</h3>
       
       {isLoading ? (
-        <p className={`${theme.text}`}>Loading loot boxes...</p>
+        <p className={`${theme.text}`}>Loading treasures...</p>
       ) : lootBoxes.length === 0 ? (
-        <p className={`${theme.text}`}>You don't have any loot boxes yet.</p>
+        <p className={`${theme.text} text-sm`}>Your vault is empty. Complete activities to earn treasure!</p>
       ) : (
-        <div className="space-y-4">
-          <div className="loot-box-list grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-2 mb-4">
-            {lootBoxes.map((box, index) => (
-              <div 
-                key={index}
-                className={`loot-box-item p-3 rounded-lg ${getRarityColorClass(box.rarity)} flex items-center justify-between transition-transform hover:scale-105 cursor-pointer`}
-                title={`Open ${box.displayName} Loot Box`}
-                onClick={() => !isOpening && handleOpenLootBox()}
-              >
-                <span className="font-medium">{box.displayName} Box</span>
-                <div className="loot-box-icon">📦</div>
+        <div className="space-y-2">
+          <div className="loot-box-sections flex flex-col sm:flex-row gap-3">
+            <div className="flex-1">
+              {rarityLevels.map(renderRaritySection)}
+            </div>
+            
+            {openResult && openResult.result && (
+              <div className={`result-container flex-1 p-3 rounded-lg ${theme.container} border ${theme.border}`}>
+                <h3 className={`text-sm font-bold ${theme.text} mb-2`}>Rewards:</h3>
+                <div className="grid grid-cols-1 gap-2">
+                  {Array.isArray(openResult.result) && openResult.result.map((item, index) => (
+                    <div 
+                      key={index} 
+                      className={`berry-item p-2 rounded-lg border ${getBerryColor(item.token)} flex items-center justify-between text-sm`}
+                    >
+                      <div className="flex items-center">
+                        <span className="text-xl mr-2">
+                          {getBerryEmoji(item.token)}
+                        </span>
+                        <span className="font-medium">{getTokenName(item.token)}</span>
+                      </div>
+                      <span className="font-bold">x{item.quantity}</span>
+                    </div>
+                  ))}
+                </div>
+                <p className={`${theme.text} mt-2 text-xs`}>
+                  Added to inventory!
+                </p>
               </div>
-            ))}
+            )}
           </div>
           
-          <button
-            onClick={handleOpenLootBox}
-            disabled={isOpening || lootBoxes.length === 0}
-            className={`open-button w-full py-3 ${theme.buttonBg} ${theme.buttonHover} ${theme.text} rounded-lg ${
-              isOpening || lootBoxes.length === 0 ? 'opacity-50 cursor-not-allowed' : ''
-            }`}
-          >
-            {isOpening ? 'Opening...' : 'Open Loot Box'}
-          </button>
-          
-          {openResult && openResult.result && (
-            <div className={`result-container mt-4 p-4 rounded-lg ${theme.container} border ${theme.border}`}>
-              <h3 className={`text-lg font-bold ${theme.text} mb-3`}>You received:</h3>
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                {Array.isArray(openResult.result) && openResult.result.map((item, index) => (
-                  <div 
-                    key={index} 
-                    className={`berry-item p-3 rounded-lg ${getBerryColor(item.token)} flex items-center justify-between`}
-                  >
-                    <div className="flex items-center">
-                      <span className="text-2xl mr-2">
-                        {item.token === "30cPTQXrHN76YZ3bLfNAePIEYDb5Xo1XnbQ-xmLMOM0" ? "🔥" : 
-                         item.token === "twFZ4HTvL_0XAIOMPizxs_S3YH5J5yGvJ8zKiMReWF0" ? "💧" :
-                         item.token === "2NoNsZNyHMWOzTqeQUJW9Xvcga3iTonocFIsgkWIiPM" ? "🪨" :
-                         item.token === "XJjSdWaorbQ2q0YkaQSmylmuADWH1fh2PvgfdLmXlzA" ? "💨" : "🌟"}
-                      </span>
-                      <span className="font-medium">{getTokenName(item.token)}</span>
-                    </div>
-                    <span className="font-bold">x{item.quantity}</span>
-                  </div>
-                ))}
-              </div>
-              <p className={`${theme.text} mt-3 text-sm`}>
-                These items have been added to your inventory!
-              </p>
-            </div>
-          )}
+          <div className="text-xs text-center text-gray-400 mt-2">
+            Click on a loot box to open it
+          </div>
         </div>
       )}
     </div>

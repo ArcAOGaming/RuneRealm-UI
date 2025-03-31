@@ -280,7 +280,12 @@ export const MonsterManagement: React.FC = (): JSX.Element => {
               theme={theme}
             />
             
-            {/* Level Up Button - Moved below activities */}
+            {/* Loot Box Section - Added below activities */}
+            <div className={`loot-box-section ${theme.container} rounded-lg p-4 mt-4`}>
+              <LootBoxUtil className="w-full" />
+            </div>
+            
+            {/* Level Up Button - Moved below loot boxes */}
             {monster.status.type === 'Home' && monster.exp >= getFibonacciExp(monster.level) && (
               <div className={`level-up-section ${theme.container} rounded-lg p-4 mt-4`}>
                 <div className="flex justify-between items-center">
@@ -375,11 +380,7 @@ export const MonsterManagement: React.FC = (): JSX.Element => {
               renderMonsterCard
             )}
             
-            {walletStatus?.isUnlocked && walletStatus?.faction && (
-              <div className="mt-8">
-                <LootBoxUtil className="max-w-2xl mx-auto" />
-              </div>
-            )}
+            {/* Loot boxes now appear within the monster card component */}
           </div>
         </div>
         <Footer darkMode={darkMode} />
