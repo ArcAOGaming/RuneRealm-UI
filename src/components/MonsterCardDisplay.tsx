@@ -44,14 +44,14 @@ export const MonsterCardDisplay: React.FC<MonsterCardDisplayProps> = ({
     return textClass.replace('text-', '').replace('[', '').replace(']', '');
   };
 
-  // Theme colors extracted for direct usage in canvas
+  // Theme colors extracted for direct usage in canvas - removed transparency
   const textColor = extractTextColor(theme.text);
   const containerColor = darkMode 
-    ? 'rgba(129, 78, 51, 0.2)' // from theme.container
-    : 'rgba(255, 255, 255, 0.5)'; // from theme.container
+    ? 'rgb(129, 78, 51)' // removed transparency 
+    : 'rgb(255, 255, 255)'; // removed transparency
   const borderColor = darkMode 
-    ? 'rgba(244, 134, 10, 0.3)' // from theme.border
-    : 'rgba(129, 78, 51, 0.3)'; // from theme.border
+    ? 'rgb(244, 134, 10)' // removed transparency
+    : 'rgb(129, 78, 51)'; // removed transparency
 
   // Event handlers
   const handleClick = useCallback((e: React.MouseEvent) => {
@@ -300,21 +300,12 @@ export const MonsterCardDisplay: React.FC<MonsterCardDisplayProps> = ({
     const expandedAreaWidth = CARD.EXPANDED.WIDTH;
     const expandedAreaHeight = cardHeight;
     
-    // Draw the side image as background with theme-appropriate transparency
+    // Draw the side image as background without filters
     if (sideImg) {
       const offsetX = expandedAreaX - 2; // Background offset
       
-      // Apply a theme-appropriate background by first drawing a semi-transparent
-      // colored rectangle and then drawing the side image with reduced opacity
-      
-      // First, fill with theme background color
-      ctx.fillStyle = containerColor;
-      ctx.fillRect(offsetX, expandedAreaY, expandedAreaWidth, expandedAreaHeight);
-      
-      // Draw the side image with reduced opacity to blend with theme
-      ctx.globalAlpha = 0.85; // Reduced opacity to blend with theme
+      // Draw the side image with full opacity - no filtering
       ctx.drawImage(sideImg, offsetX, expandedAreaY, expandedAreaWidth, expandedAreaHeight);
-      ctx.globalAlpha = 1.0; // Reset opacity
     }
     
     // No border box needed anymore
@@ -623,7 +614,7 @@ export const MonsterCardDisplay: React.FC<MonsterCardDisplayProps> = ({
           ...CARD.EXPANDED.INVENTORY.SLOT.EMPTY_TEXT,
           FONT: {
             ...CARD.EXPANDED.INVENTORY.SLOT.EMPTY_TEXT.FONT,
-            COLOR: darkMode ? 'rgba(252, 245, 216, 0.5)' : 'rgba(13, 7, 5, 0.5)', // Semi-transparent version of text color
+            COLOR: darkMode ? 'rgb(252, 245, 216)' : 'rgb(13, 7, 5)', // Solid colors without transparency
           }
         }
       }

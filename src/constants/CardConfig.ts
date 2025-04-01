@@ -14,49 +14,49 @@ export const CardImages = {
     cardframe: "AsRyajmJKrIFvmc6k3H-GKYveWb1TDvgIPg7HVH1B9k",
     elementtypes: "FwbLZYa0r0twYUvkP8su81L7yMhvs4EPkulUEm1X52U",
     level: "Bnvgn5yi9_6iRsRlKD9rhQvH5i0XhXvEeDTKu3LhJOI",
-    side:"-nnSDId268Dzo9Sb7ERnum2zC5H8Cn9f8p_BOpbg2y0"
+    side:"KssoyLlXixIcVWMKdjybBWnaiN0X4Y56_ev3jO4fW7I"
   },
   rock:{
     backgrounds: "arPti-7FScNGuPAzcaypGYv_aKk6v5Xk2TBbSeTq9Vc",
     cardframe: "m1GudORk0Q_46kkF0Z_SYvP9EVz3r9EvDMckn7XmwgA",
     elementtypes: "b2pyHeYmaHkE4pzCqIGoqVzjrkXSA71pVruHY9wbv10",
     level: "whQ3nCw8fNrO3gPCSlBOTOlQ2WmLBZH3FeSogwtXmFg",
-    side:"-nnSDId268Dzo9Sb7ERnum2zC5H8Cn9f8p_BOpbg2y0"
+    side:"KssoyLlXixIcVWMKdjybBWnaiN0X4Y56_ev3jO4fW7I"
   },
   fire:{
     backgrounds: "_c3YdO2buD9WYhjst7XiaNRu5CsJ2_dZtSGISB_naQs",
     cardframe: "leecHc-g-zitMPrrMuO_P22ovyFc9OjW3u_F2rFkmSM",
     elementtypes: "1TMMbDFfPFuU60wNZVMN8mlI1c9J-7XPg7T_14SP480",
     level: "qlKFPHcG5xCWkrcFNeHGdKVv4qGS4NyTPOT-CYkmVsY",
-    side:"-nnSDId268Dzo9Sb7ERnum2zC5H8Cn9f8p_BOpbg2y0"
+    side:"KssoyLlXixIcVWMKdjybBWnaiN0X4Y56_ev3jO4fW7I"
   },
   water:{
     backgrounds: "cHmLdp4ozWmhMfnjhGe5noaMB7Jl9ieSg2cGnkovb7Y",
     cardframe: "ts_msM47WJdKVkDphg3TwKgwi_r0Cx6N10qxa8cHhbo",
     elementtypes: "MvwTMcUOAClFOUrQG_BONbuVLCUuzzu2ep_0KXo03lA",
     level: "k8qbJykA3KTUrLQ_O2TraH_LkJWlbGwOwYZs-E-bIjU",
-    side:"-nnSDId268Dzo9Sb7ERnum2zC5H8Cn9f8p_BOpbg2y0"
+    side:"KssoyLlXixIcVWMKdjybBWnaiN0X4Y56_ev3jO4fW7I"
   },
   heal:{
     backgrounds: "cHmLdp4ozWmhMfnjhGe5noaMB7Jl9ieSg2cGnkovb7Y",
     cardframe: "ts_msM47WJdKVkDphg3TwKgwi_r0Cx6N10qxa8cHhbo",
     elementtypes: "FwbLZYa0r0twYUvkP8su81L7yMhvs4EPkulUEm1X52U",
     level: "k8qbJykA3KTUrLQ_O2TraH_LkJWlbGwOwYZs-E-bIjU",
-    side:"-nnSDId268Dzo9Sb7ERnum2zC5H8Cn9f8p_BOpbg2y0"
+    side:"KssoyLlXixIcVWMKdjybBWnaiN0X4Y56_ev3jO4fW7I"
   },
   boost:{
     backgrounds: "cHmLdp4ozWmhMfnjhGe5noaMB7Jl9ieSg2cGnkovb7Y",
     cardframe: "ts_msM47WJdKVkDphg3TwKgwi_r0Cx6N10qxa8cHhbo",
     elementtypes: "MvwTMcUOAClFOUrQG_BONbuVLCUuzzu2ep_0KXo03lA",
     level: "k8qbJykA3KTUrLQ_O2TraH_LkJWlbGwOwYZs-E-bIjU",
-    side:"-nnSDId268Dzo9Sb7ERnum2zC5H8Cn9f8p_BOpbg2y0"
+    side:"KssoyLlXixIcVWMKdjybBWnaiN0X4Y56_ev3jO4fW7I"
   },
   normal:{
     backgrounds: "cHmLdp4ozWmhMfnjhGe5noaMB7Jl9ieSg2cGnkovb7Y",
     cardframe: "ts_msM47WJdKVkDphg3TwKgwi_r0Cx6N10qxa8cHhbo",
     elementtypes: "MvwTMcUOAClFOUrQG_BONbuVLCUuzzu2ep_0KXo03lA",
     level: "k8qbJykA3KTUrLQ_O2TraH_LkJWlbGwOwYZs-E-bIjU",
-    side:"-nnSDId268Dzo9Sb7ERnum2zC5H8Cn9f8p_BOpbg2y0"
+    side:"KssoyLlXixIcVWMKdjybBWnaiN0X4Y56_ev3jO4fW7I"
   },
 };
 

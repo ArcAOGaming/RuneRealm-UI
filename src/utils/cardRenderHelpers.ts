@@ -167,8 +167,8 @@ export const drawStatusBar = (
     expandedAreaX, 
     barY + barHeight
   );
-  bgGradient.addColorStop(0, 'rgba(255, 255, 255, 0.5)');
-  bgGradient.addColorStop(1, 'rgba(240, 240, 240, 0.5)');
+  bgGradient.addColorStop(0, 'rgb(255, 255, 255)');
+  bgGradient.addColorStop(1, 'rgb(240, 240, 240)');
   ctx.fillStyle = bgGradient;
   
   // Draw rounded background bar
@@ -214,15 +214,7 @@ export const drawStatusBar = (
     ctx.closePath();
     ctx.fill();
     
-    // Add shine effect to progress bar
-    ctx.beginPath();
-    ctx.moveTo(expandedAreaX, barY);
-    ctx.lineTo(expandedAreaX + progressWidth, barY);
-    ctx.lineTo(expandedAreaX + progressWidth, barY + barHeight/3);
-    ctx.lineTo(expandedAreaX, barY + barHeight/3);
-    ctx.closePath();
-    ctx.fillStyle = 'rgba(255, 255, 255, 0.3)';
-    ctx.fill();
+    // Remove shine effect with transparency
   }
   
   // Draw border around bar
@@ -319,11 +311,11 @@ export const drawInventorySlots = (
     const slotY = inventoryY;
     const item = inventoryItems[i];
     
-    // Add shadow to the inventory slots
-    ctx.shadowColor = 'rgba(0, 0, 0, 0.1)';
-    ctx.shadowBlur = 3;
-    ctx.shadowOffsetX = 1;
-    ctx.shadowOffsetY = 1;
+    // Remove shadow effect
+    ctx.shadowColor = 'transparent';
+    ctx.shadowBlur = 0;
+    ctx.shadowOffsetX = 0;
+    ctx.shadowOffsetY = 0;
     
     // Draw slot background with rounded corners
     ctx.fillStyle = inventoryConfig.SLOT.BACKGROUND.COLOR;
