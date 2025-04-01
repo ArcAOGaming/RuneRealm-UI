@@ -264,7 +264,7 @@ export const MonsterCardDisplay: React.FC<MonsterCardDisplayProps> = ({
         underlineY
       );
       gradient.addColorStop(0, sectionTitleConfig.UNDERLINE.COLOR);
-      gradient.addColorStop(0.5, '#9bc1ff'); // Lighter middle
+      // gradient.addColorStop(0.5, '#9bc1ff'); // Lighter middle
       gradient.addColorStop(1, sectionTitleConfig.UNDERLINE.COLOR);
       
       ctx.strokeStyle = gradient;
