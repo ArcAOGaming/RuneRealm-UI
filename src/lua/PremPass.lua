@@ -1308,9 +1308,9 @@ Handlers.add(
 
     print("Returning from battle")
     local userId = msg.Tags.UserId
-    addLootBoxes(userId,1,1)
-    addLootBoxes(userId,1,2)
-    addLootBoxes(userId,1,3)
+    -- addLootBoxes(userId,1,1)
+    -- addLootBoxes(userId,1,2)
+    -- addLootBoxes(userId,1,3)
     local monster = UserMonsters[userId]
     if not monster then
       print("No monster found for user:", userId)
