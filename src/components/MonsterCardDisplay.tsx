@@ -302,10 +302,8 @@ export const MonsterCardDisplay: React.FC<MonsterCardDisplayProps> = ({
     
     // Draw the side image as background without filters
     if (sideImg) {
-      const offsetX = expandedAreaX - 2; // Background offset
-      
-      // Draw the side image with full opacity - no filtering
-      ctx.drawImage(sideImg, offsetX, expandedAreaY, expandedAreaWidth, expandedAreaHeight);
+      // Draw the side image with full opacity at exact position without offset
+      ctx.drawImage(sideImg, expandedAreaX, expandedAreaY, expandedAreaWidth, expandedAreaHeight);
     }
     
     // No border box needed anymore
