@@ -1,9 +1,9 @@
 -- Battle Manager
-  -- 8hnue8PYCrgOB4OKHB6HS-ujbPOVuikOaTyICQjQJYQ
-  json = require("json")
-  -- require("globals")
-  -- require("attacklogic")
-  -- require("battlehelpers")
+-- 3ZN5im7LNLjr8cMTXO2buhTPOfw6zz00CZqNyMWeJvs
+json = require("json")
+-- require("globals")
+-- require("attacklogic")
+-- require("battlehelpers")
   
   
   -- Attack Logic
@@ -903,7 +903,7 @@
       ao.send({
         Target = TARGET_PREMPASS_PID,
         Tags = {
-          Action = "ReturnFromBattle",
+          Action = "ReturnFrom-BATTLE",
           UserId = userId
         },
         Data = json.encode({
@@ -974,7 +974,7 @@
       ao.send({
         Target = TARGET_PREMPASS_PID,
         Tags = {
-          Action = "ReturnFromBattle",
+          Action = "ReturnFrom-BATTLE",
           UserId = userId
         },
         Data = json.encode({

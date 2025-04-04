@@ -15,8 +15,8 @@ UserLootBoxes = UserLootBoxes or {}
 
 -- Handler for returning from mission
 Handlers.add(
-  "ReturnFromMission",
-  Handlers.utils.hasMatchingTag("Action", "ReturnFromMission"),
+  "ReturnFrom-MISSION",
+  Handlers.utils.hasMatchingTag("Action", "ReturnFrom-MISSION"),
   function(msg)
     print("Returning from mission")
     local userId = msg.From
@@ -81,8 +81,8 @@ Handlers.add(
 
 -- Handler for returning from play
 Handlers.add(
-  "ReturnFromPlay",
-  Handlers.utils.hasMatchingTag("Action", "ReturnFromPlay"),
+  "ReturnFrom-PLAY",
+  Handlers.utils.hasMatchingTag("Action", "ReturnFrom-PLAY"),
   function(msg)
     print("Returning from play")
     local userId = msg.From
@@ -431,7 +431,7 @@ Handlers.add(
     end
 
         -- Check if this is a feeding action
-        if msg.Tags["X-Action"] == "Play" then
+        if msg.Tags["X-Action"] == "PLAY" then
           print("Handling playing:", userId)
           
           local monster = UserMonsters[userId]
@@ -479,7 +479,7 @@ Handlers.add(
         end
 
     -- If X-Action is Battle, handle battle initiation
-    if msg.Tags["X-Action"] == "Battle" then
+    if msg.Tags["X-Action"] == "BATTLE" then
       print("Handling battle token from:", userId)
       
       local monster = UserMonsters[userId]
@@ -539,7 +539,7 @@ Handlers.add(
     end
 
     -- If not feeding, battle, or mission, handle as purchase
-    if msg.Tags["X-Action"] == "Mission" then
+    if msg.Tags["X-Action"] == "MISSION" then
       print("Handling mission fuel from:", userId)
       
       local monster = UserMonsters[userId]
@@ -1301,8 +1301,8 @@ Handlers.add(
 
 -- Handler for returning from battle
 Handlers.add(
-  "ReturnFromBattle",
-  Handlers.utils.hasMatchingTag("Action", "ReturnFromBattle"),
+  "ReturnFrom-BATTLE",
+  Handlers.utils.hasMatchingTag("Action", "ReturnFrom-BATTLE"),
   function(msg)
     if not ensureAdmin(msg) then return end
 

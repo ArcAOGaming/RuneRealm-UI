@@ -89,214 +89,61 @@ const MonsterActivities: React.FC<MonsterActivitiesProps> = ({
                    (monster.status.type === 'Battle' && canReturn);
 
   // Handle feed monster
-  const handleFeedMonster = async () => {
+  const monsterInteraction = async (actionType) => {
     if (!monster) return;
-    
-    const feedConfig = activities.feed.cost;
-    console.log('Using berry process ID:', feedConfig.token);
-
-    const asset = assetBalances.find(a => a.info.processId === feedConfig.token);
-    console.log('Found asset:', asset);
-    if (!asset || asset.balance < feedConfig.amount) {
-      console.error('Not enough berries', {
-        token: feedConfig.token,
+  
+    const actionKey = actionType.toLowerCase();
+    const config = activities[actionKey];
+    const targetProcessId = 'j7NcraZUL6GZlgdPEoph12Q5rk_dydvQDecLNxYi8rI';
+  
+    const isCurrentAction = monster.status.type.toLowerCase() === actionKey;
+    const canReturn = isCurrentAction && Date.now() > monster.status.until_time;
+  
+    const asset = assetBalances.find(a => a.info.processId === config.cost.token);
+  
+    if (!canReturn && (!asset || asset.balance < config.cost.amount)) {
+      console.error(`Not enough resources for action: ${actionType}`, {
+        token: config.cost.token,
         asset,
         currentBalance: asset?.balance || 0,
-        required: feedConfig.amount
+        required: config.cost.amount
       });
       return;
     }
-
+  
     try {
-      setIsFeeding(true);
-      console.log('Feeding monster with berry process:', feedConfig.token);
-      
+      if (actionType === 'FEED') setIsFeeding(true);
+      else if (actionType === 'PLAY') setIsPlaying(true);
+      else if (actionType === 'BATTLE') setIsInBattle(true);
+      else if (actionType === 'MISSION') setIsOnMission(true);
+  
       const signer = createDataItemSigner(window.arweaveWallet);
+  
       await message({
-        process: feedConfig.token,
-        tags: [
+        process: canReturn ? targetProcessId : config.cost.token,
+        tags: canReturn ? [
+          { name: "Action", value: `ReturnFrom-${actionType}` }
+        ] : [
           { name: "Action", value: "Transfer" },
-          { name: "Quantity", value: feedConfig.amount.toString() },
-          { name: "Recipient", value: "j7NcraZUL6GZlgdPEoph12Q5rk_dydvQDecLNxYi8rI" },
-          { name: "X-Action", value: "FEED" }
+          { name: "Quantity", value: config.cost.amount.toString() },
+          { name: "Recipient", value: targetProcessId },
+          { name: "X-Action", value: actionType }
         ],
         signer,
         data: ""
       }, triggerRefresh);
-
+  
+      if (actionType === 'Battle' && !canReturn) navigate('/battle');
+  
       refreshAssets();
+  
     } catch (error) {
-      console.error('Error feeding monster:', error);
+      console.error(`Error handling ${actionType}:`, error);
     } finally {
-      setIsFeeding(false);
-    }
-  };
-
-  // Handle play monster
-  const handlePlayMonster = async () => {
-    if (!monster) return;
-    
-    const playConfig = activities.play.cost;
-    console.log('Using berry process ID:', playConfig.token);
-
-    const isPlaytime = monster.status.type === 'Play';
-    const canReturn = isPlaytime && Date.now() > monster.status.until_time;
-
-    if (!canReturn) {
-      const asset = assetBalances.find(a => a.info.processId === playConfig.token);
-      console.log('Found asset:', asset);
-      if (!asset || asset.balance < playConfig.amount) {
-        console.error('Not enough berries', {
-          token: playConfig.token,
-          asset,
-          currentBalance: asset?.balance || 0,
-          required: playConfig.amount
-        });
-        return;
-      }
-    }
-
-    try {
-      setIsPlaying(true);
-      console.log('Playing with monster');
-      
-      const signer = createDataItemSigner(window.arweaveWallet);
-
-      if (canReturn) {
-        await message({
-          process: "j7NcraZUL6GZlgdPEoph12Q5rk_dydvQDecLNxYi8rI",
-          tags: [
-            { name: "Action", value: "ReturnFromPlay" }
-          ],
-          signer,
-          data: ""
-        }, triggerRefresh);
-      } else {
-        await message({
-          process: playConfig.token,
-          tags: [
-            { name: "Action", value: "Transfer" },
-            { name: "Quantity", value: playConfig.amount.toString() },
-            { name: "Recipient", value: "j7NcraZUL6GZlgdPEoph12Q5rk_dydvQDecLNxYi8rI" },
-            { name: "X-Action", value: "Play" }
-          ],
-          signer,
-          data: ""
-        }, triggerRefresh);
-      }
-
-      refreshAssets();
-    } catch (error) {
-      console.error('Error with play action:', error);
-    } finally {
-      setIsPlaying(false);
-    }
-  };
-
-  // Handle battle
-  const handleBattle = async () => {
-    if (!monster) return;
-
-    const isBattleTime = monster.status.type === 'Battle';
-    const canReturn = isBattleTime && Date.now() > monster.status.until_time;
-
-    try {
-      setIsInBattle(true);
-      console.log('Handling battle');
-      
-      const signer = createDataItemSigner(window.arweaveWallet);
-
-      if (canReturn) {
-        await message({
-          process: TARGET_BATTLE_PID,
-          tags: [
-            { name: "Action", value: "ReturnFromBattle" }
-          ],
-          signer,
-          data: ""
-        }, triggerRefresh);
-      } else {
-        const battleConfig = activities.battle;
-        const fuelAsset = assetBalances.find(a => a.info.processId === battleConfig.cost.token);
-        
-        if (!fuelAsset || fuelAsset.balance < battleConfig.cost.amount) {
-          console.error('Not enough battle fuel');
-          return;
-        }
-
-        await message({
-          process: battleConfig.cost.token,
-          tags: [
-            { name: "Action", value: "Transfer" },
-            { name: "Quantity", value: battleConfig.cost.amount.toString() },
-            { name: "Recipient", value: "j7NcraZUL6GZlgdPEoph12Q5rk_dydvQDecLNxYi8rI" },
-            { name: "X-Action", value: "Battle" }
-          ],
-          signer,
-          data: ""
-        }, triggerRefresh);
-
-        // Navigate to battle page
-        navigate('/battle');
-      }
-
-      refreshAssets();
-    } catch (error) {
-      console.error('Error with battle:', error);
-    } finally {
-      setIsInBattle(false);
-    }
-  };
-
-  // Handle mission
-  const handleMission = async () => {
-    if (!monster) return;
-
-    const isMissionTime = monster.status.type === 'Mission';
-    const canReturn = isMissionTime && Date.now() > monster.status.until_time;
-
-    try {
-      setIsOnMission(true);
-      console.log('Handling mission');
-      
-      const signer = createDataItemSigner(window.arweaveWallet);
-
-      if (canReturn) {
-        await message({
-          process: "j7NcraZUL6GZlgdPEoph12Q5rk_dydvQDecLNxYi8rI",
-          tags: [
-            { name: "Action", value: "ReturnFromMission" }
-          ],
-          signer,
-          data: ""
-        }, triggerRefresh);
-      } else {
-        const missionConfig = activities.mission;
-        const fuelAsset = assetBalances.find(a => a.info.processId === missionConfig.cost.token);
-        
-        if (!fuelAsset || fuelAsset.balance < missionConfig.cost.amount) {
-          console.error('Not enough mission fuel');
-          return;
-        }
-
-        await message({
-          process: missionConfig.cost.token,
-          tags: [
-            { name: "Action", value: "Transfer" },
-            { name: "Quantity", value: missionConfig.cost.amount.toString() },
-            { name: "Recipient", value: "j7NcraZUL6GZlgdPEoph12Q5rk_dydvQDecLNxYi8rI" },
-            { name: "X-Action", value: "Mission" }
-          ],
-          signer,
-          data: ""
-        }, triggerRefresh);
-      }
-
-      refreshAssets();
-    } catch (error) {
-      console.error('Error with mission:', error);
-    } finally {
-      setIsOnMission(false);
+      if (actionType === 'FEED') setIsFeeding(false);
+      else if (actionType === 'Play') setIsPlaying(false);
+      else if (actionType === 'Battle') setIsInBattle(false);
+      else if (actionType === 'Mission') setIsOnMission(false);
     }
   };
   return (
@@ -316,7 +163,7 @@ const MonsterActivities: React.FC<MonsterActivitiesProps> = ({
           rewards={[
             { icon: "✨", text: `+${activities.feed.energyGain} Energy`, color: "green-500" }
           ]}
-          onAction={handleFeedMonster}
+          onAction={() => monsterInteraction('FEED')}
           isLoading={isFeeding}
           isDisabled={!canFeed}
           actionText="Feed"
@@ -340,7 +187,7 @@ const MonsterActivities: React.FC<MonsterActivitiesProps> = ({
           rewards={[
             { icon: "💝", text: `+${activities.play.happinessGain} Happy`, color: "pink-500" }
           ]}
-          onAction={handlePlayMonster}
+          onAction={() => monsterInteraction('PLAY')}
           isLoading={isPlaying}
           isDisabled={!canPlay || (monster.status.type !== 'Home' && monster.status.type !== 'Play')}
           actionText={(monster.status.type === 'Play' && timeUp) ? 'Return from Play' : 'Play'}
@@ -365,7 +212,7 @@ const MonsterActivities: React.FC<MonsterActivitiesProps> = ({
           rewards={[
             { icon: "⚔️", text: "4 Battles", color: "purple-500" }
           ]}
-          onAction={handleBattle}
+          onAction={() => monsterInteraction('BATTLE')}
           isLoading={isInBattle}
           isDisabled={!canBattle || (monster.status.type !== 'Home' && monster.status.type !== 'Battle')}
           actionText={(monster.status.type === 'Battle' && canReturn) ? 'Return from Battle' : 'Start Battle'}
@@ -390,7 +237,7 @@ const MonsterActivities: React.FC<MonsterActivitiesProps> = ({
           rewards={[
             { icon: "✨", text: "+1 EXP", color: "blue-500" }
           ]}
-          onAction={handleMission}
+          onAction={() => monsterInteraction('MISSION')}
           isLoading={isOnMission}
           isDisabled={!canMission || (monster.status.type !== 'Home' && monster.status.type !== 'Mission')}
           actionText={(monster.status.type === 'Mission' && timeUp) ? 'Return from Mission' : 'Start Mission'}

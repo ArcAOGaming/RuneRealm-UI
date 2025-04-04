@@ -1,5 +1,5 @@
 -- Battle Manager
--- 8hnue8PYCrgOB4OKHB6HS-ujbPOVuikOaTyICQjQJYQ
+-- 3ZN5im7LNLjr8cMTXO2buhTPOfw6zz00CZqNyMWeJvs
 json = require("json")
 -- require("globals")
 -- require("attacklogic")
@@ -948,7 +948,7 @@ Handlers.add(
     ao.send({
       Target = TARGET_PREMPASS_PID,
       Tags = {
-        Action = "ReturnFromBattle",
+        Action = "ReturnFrom-BATTLE",
         UserId = userId
       },
       Data = json.encode({
@@ -1000,7 +1000,7 @@ Handlers.add(
     ao.send({
       Target = TARGET_PREMPASS_PID,
       Tags = {
-        Action = "ReturnFromBattle",
+        Action = "ReturnFrom-BATTLE",
         UserId = userId
       },
       Data = json.encode({
