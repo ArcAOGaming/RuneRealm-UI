@@ -3,6 +3,18 @@ import { useWallet } from '../hooks/useWallet';
 import { defaultInteraction, getUserOfferings, type OfferingData } from '../utils/aoHelpers';
 import { currentTheme } from '../constants/theme';
 
+// Cache key prefix - will be combined with wallet address
+const OFFERING_CACHE_PREFIX = 'premium-rune-offering-data';
+const CACHE_TIMESTAMP_PREFIX = 'premium-rune-offering-timestamp';
+
+// Get wallet-specific cache keys
+const getWalletCacheKeys = (walletAddress: string) => {
+  return {
+    offeringKey: `${OFFERING_CACHE_PREFIX}-${walletAddress}`,
+    timestampKey: `${CACHE_TIMESTAMP_PREFIX}-${walletAddress}`
+  };
+};
+
 interface CheckInButtonProps {
   onOfferingComplete?: () => void;
 }
@@ -18,6 +30,24 @@ const CheckInButton: React.FC<CheckInButtonProps> = ({ onOfferingComplete }) => 
   const getCurrentDay = () => {
     const MS_PER_DAY = 24 * 60 * 60 * 1000;
     return Math.floor(Date.now() / MS_PER_DAY);
+  };
+
+  // Check if cache is expired (after UTC midnight)
+  const isCacheExpired = (walletAddress: string) => {
+    if (!walletAddress) return true;
+    
+    const { timestampKey } = getWalletCacheKeys(walletAddress);
+    const cacheTimestamp = localStorage.getItem(timestampKey);
+    if (!cacheTimestamp) return true;
+    
+    // Get timestamp of next UTC midnight when the cache was created
+    const cachedTime = parseInt(cacheTimestamp, 10);
+    const cachedDate = new Date(cachedTime);
+    const nextMidnight = new Date(cachedDate);
+    nextMidnight.setUTCHours(24, 0, 0, 0);
+    
+    // If current time is past the next UTC midnight from when cache was set
+    return Date.now() >= nextMidnight.getTime();
   };
 
   // Update next check-in time
@@ -50,12 +80,35 @@ const CheckInButton: React.FC<CheckInButtonProps> = ({ onOfferingComplete }) => 
     const checkOfferingStatus = async () => {
       if (!wallet?.address) return;
       
+      const { offeringKey, timestampKey } = getWalletCacheKeys(wallet.address);
+      
+      // Check if we have cached offering data that hasn't expired for this specific wallet
+      const cachedData = localStorage.getItem(offeringKey);
+      
+      if (cachedData && !isCacheExpired(wallet.address)) {
+        // Use cached data if it exists and hasn't expired
+        try {
+          const parsedData = JSON.parse(cachedData);
+          console.log(`Using cached offering data for wallet ${wallet.address}:`, parsedData);
+          setOfferingData(parsedData);
+          return;
+        } catch (e) {
+          console.error('Error parsing cached offering data:', e);
+          // Continue to fetch fresh data if parse fails
+        }
+      }
+      
+      // Fetch fresh data if cache is expired or doesn't exist
       try {
         const response = await getUserOfferings(wallet.address);
-        console.log('Offering data:', response);
+        console.log(`Fetched new offering data for wallet ${wallet.address}:`, response);
         setOfferingData(response);
+        
+        // Cache the new data with wallet-specific keys
+        localStorage.setItem(offeringKey, JSON.stringify(response));
+        localStorage.setItem(timestampKey, Date.now().toString());
       } catch (error) {
-        console.error('Error checking offering status:', error);
+        console.error(`Error checking offering status for wallet ${wallet.address}:`, error);
         setOfferingData(null);
       }
     };
@@ -65,17 +118,34 @@ const CheckInButton: React.FC<CheckInButtonProps> = ({ onOfferingComplete }) => 
 
   const handleCheckIn = async () => {
     if (!wallet?.address) return;
+    
+    const { offeringKey, timestampKey } = getWalletCacheKeys(wallet.address);
 
     try {
       setIsChecking(true);
-      console.log('Starting check-in process...');
+      console.log(`Starting check-in process for wallet ${wallet.address}...`);
       await defaultInteraction(wallet, triggerRefresh);
       console.log('Check-in completed successfully');
+      
+      // Update local cache after successful check-in
+      const currentDay = getCurrentDay();
+      const updatedData: OfferingData = {
+        ...(offeringData || {}),
+        LastOffering: currentDay,
+        Streak: (offeringData?.Streak || 0) + 1
+      } as OfferingData;
+      
+      setOfferingData(updatedData);
+      
+      // Store with wallet-specific keys
+      localStorage.setItem(offeringKey, JSON.stringify(updatedData));
+      localStorage.setItem(timestampKey, Date.now().toString());
+      
       if (onOfferingComplete) {
         onOfferingComplete();
       }
     } catch (error) {
-      console.error('Error during check-in:', error);
+      console.error(`Error during check-in for wallet ${wallet.address}:`, error);
     } finally {
       setIsChecking(false);
     }
