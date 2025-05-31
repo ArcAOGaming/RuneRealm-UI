@@ -4,6 +4,9 @@ import { formatTokenAmount } from '../utils/aoHelpers';
 import { currentTheme } from '../constants/theme';
 import { Gateway, ASSET_INFO } from '../constants/Constants';
 
+// Maximum number of decimal places to display for token amounts
+const MAX_DECIMALS = 3;
+
 interface InventorySection {
   title: string;
   items: string[];
@@ -22,6 +25,27 @@ const Inventory = () => {
   
   const theme = currentTheme(darkMode);
 
+  // Initialize openSections state once on component mount
+  const [openSections, setOpenSections] = useState<{ [key: string]: boolean}>(() => {
+    // Start with main section open and initialize other sections
+    const sections: { [key: string]: boolean } = { main: true };
+    
+    // Map through ASSET_INFO to find all unique sections
+    const uniqueSections = new Set<string>();
+    Object.values(ASSET_INFO).forEach(info => {
+      if (info && info.section) {
+        uniqueSections.add(info.section);
+      }
+    });
+    
+    // Set all sections to open by default
+    uniqueSections.forEach(section => {
+      sections[section] = true;
+    });
+    
+    return sections;
+  });
+
   const toggleSection = (section: string) => {
     setOpenSections(prev => ({
       ...prev,
@@ -31,7 +55,6 @@ const Inventory = () => {
 
   // Group assets by section from ASSET_INFO - this is static data
   const inventorySections = useMemo(() => {
-    // Create a map of sections to their assets
     const sectionMap: Record<string, string[]> = {};
     
     // Populate the map from ASSET_INFO
@@ -51,15 +74,6 @@ const Inventory = () => {
     }));
   }, []); // ASSET_INFO is constant, so no dependencies needed
 
-  // Initialize openSections state once on component mount
-  const [openSections, setOpenSections] = useState<{ [key: string]: boolean}>(() => {
-    const sections: { [key: string]: boolean } = { main: true };
-    inventorySections.forEach(section => {
-      sections[section.title] = true;
-    });
-    return sections;
-  });
-
   // Map ticker names to their processIds
   const tickerToProcessId = useMemo(() => {
     const mapping: Record<string, string> = {};
@@ -76,6 +90,9 @@ const Inventory = () => {
   // Effect to query specific assets based on sections that are open
   useEffect(() => {
     if (!wallet?.address) return;
+    
+    // Skip fetching if main section is closed
+    if (!openSections.main) return;
     
     // Collect all assets that need to be loaded based on open sections
     const assetsToLoad: string[] = [];
@@ -99,7 +116,17 @@ const Inventory = () => {
     }
   }, [wallet?.address, openSections, inventorySections, tickerToProcessId, querySpecificAssets]);
 
-  // Memoize the findAssetByTicker function to prevent unnecessary re-renders
+  // Function to refresh a single token by its processId
+  const refreshSingleToken = useCallback((processId: string, e: React.MouseEvent) => {
+    e.stopPropagation();
+    
+    if (processId && wallet?.address) {
+      console.log(`[Inventory] Refreshing single token: ${processId}`);
+      querySpecificAssets([processId]);
+    }
+  }, [wallet?.address, querySpecificAssets]);
+
+  // Find asset by ticker, looking first in assetBalances and then in ASSET_INFO
   const findAssetByTicker = useCallback((ticker: string) => {
     // First try to find in assetBalances
     const asset = assetBalances.find(a => 
@@ -138,12 +165,12 @@ const Inventory = () => {
       },
       balance: 0
     };
-  }, [assetBalances]); // Only recreate when assetBalances changes
+  }, [assetBalances]);
 
-  // Memoize the getAssetsBySection function to prevent unnecessary re-renders
+  // Get assets for a section
   const getAssetsBySection = useCallback((sectionItems: string[]) => {
     return sectionItems.map(item => findAssetByTicker(item));
-  }, [findAssetByTicker]); // Only recreate when findAssetByTicker changes
+  }, [findAssetByTicker]);
 
   if (!wallet?.address) return null;
 
@@ -158,16 +185,18 @@ const Inventory = () => {
           {isLoadingAssets ? (
             <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-[#F4860A]"></div>
           ) : (
-      <button 
-        onClick={(e) => {
-          e.stopPropagation();
-          refreshAssets();
-        }} 
-        className="text-sm hover:text-[#F4860A] transition-colors"
-        title="Refresh all assets"
-      >
-        ↻
-      </button>
+            <button 
+              onClick={(e) => {
+                e.stopPropagation();
+                if (openSections.main) {
+                  refreshAssets();
+                }
+              }} 
+              className="text-sm hover:text-[#F4860A] transition-colors"
+              title="Refresh all assets"
+            >
+              ↻
+            </button>
           )}
         </div>
       </div>
@@ -190,20 +219,38 @@ const Inventory = () => {
                   {getAssetsBySection(section.items).map((asset) => (
                     <div key={asset.info.processId} className={`flex justify-between items-center gap-2 ${theme.text}`}>
                       <div className="flex items-center gap-1">
-                        <img 
-                          src={`${Gateway}${asset.info.logo}`}
-                          alt={asset.info.name}
-                          className="w-6 h-6 object-cover rounded-full"
-                        />
+                        <button 
+                          onClick={(e) => refreshSingleToken(asset.info.processId, e)}
+                          className="relative group" 
+                          title={`Refresh ${asset.info.ticker} balance`}
+                        >
+                          <img 
+                            src={`${Gateway}${asset.info.logo}`}
+                            alt={asset.info.name}
+                            className="w-6 h-6 object-cover rounded-full"
+                          />
+                          <span className="absolute inset-0 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity bg-black bg-opacity-50 rounded-full text-white text-xs">
+                            ↻
+                          </span>
+                        </button>
                         <span>{asset.info.ticker}:</span>
                       </div>
                       <span className="font-bold">
-                        {isLoadingAssets || pendingAssets.has(asset.info.processId) ? (
+                        {pendingAssets.has(asset.info.processId) ? (
                           <div className="w-8 flex justify-end">
                             <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-[#F4860A]"></div>
                           </div>
                         ) : (
-                          formatTokenAmount(asset.balance.toString(), asset.info.denomination || 0)
+                          (() => {
+                            // Format token amount and then limit to MAX_DECIMALS decimal places
+                            const formatted = formatTokenAmount(asset.balance.toString(), asset.info.denomination || 0);
+                            const parts = formatted.split('.');
+                            if (parts.length === 1) {
+                              return formatted;
+                            } else {
+                              return `${parts[0]}.${parts[1].slice(0, MAX_DECIMALS)}`;
+                            }
+                          })()
                         )}
                       </span>
                     </div>

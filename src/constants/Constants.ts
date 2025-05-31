@@ -85,7 +85,8 @@ export const SUPPORTED_ASSET_IDS = [
   "R5UGOfFboMv-zlaSSDgRqxRILmGgPPe5BlnPf5F4i3A", // Topaz
   "wOrb8b_V8QixWyXZub48Ki5B6OIDyf_p1ngoonsaRpQ", // TRUNK token
   "OsK9Vgjxo0ypX_HLz2iJJuh4hp3I80yA9KArsJjIloU", // NAB token
-  "5ZR9uegKoEhE9fJMbs-MvWLIztMNCVxgpzfeBVE3vqI", // RNG token
+  "rPpsRk9Rm8_SJ1JF8m9_zjTalkv9Soaa_5U0tYUloeY", // RNG token
+  "s6jcB3ctSbiDNwR-paJgy5iOAhahXahLul8exSLHbGE", // GAME token
 ] as const;
 
 export type SupportedAssetId = (typeof SUPPORTED_ASSET_IDS)[number];
@@ -101,9 +102,9 @@ export interface AssetInfo {
 }
 
 export const ASSET_INFO: Partial<Record<string, AssetInfo>> = {
-  "5ZR9uegKoEhE9fJMbs-MvWLIztMNCVxgpzfeBVE3vqI": {
-    processId: "5ZR9uegKoEhE9fJMbs-MvWLIztMNCVxgpzfeBVE3vqI",
-    logo: "jXeIbfkq1Z3TjvSumJI9YS-WCv3nONNweBOSsaetlqo",
+  "rPpsRk9Rm8_SJ1JF8m9_zjTalkv9Soaa_5U0tYUloeY": {
+    processId: "rPpsRk9Rm8_SJ1JF8m9_zjTalkv9Soaa_5U0tYUloeY",
+    logo: "AY7kSgZXnun5glz7AT3rhG8kRvtvy6q3MCogYF6JO80",
     name: "RandAOTest",
     ticker: "TestRNG",
     denomination: 18,
@@ -123,6 +124,14 @@ export const ASSET_INFO: Partial<Record<string, AssetInfo>> = {
     name: "NAB Token",
     ticker: "NAB",
     denomination: 8,
+    section: "Value",
+  },
+  "s6jcB3ctSbiDNwR-paJgy5iOAhahXahLul8exSLHbGE": {
+    processId: "s6jcB3ctSbiDNwR-paJgy5iOAhahXahLul8exSLHbGE",
+    logo: "-c4VdpgmfuS4YadtLuxVZzTd2DQ3ipodA6cz8pwjn20",
+    name: "ArcAO",
+    ticker: "GAME",
+    denomination: 18,
     section: "Value",
   },
   "4sKr4cf3kvbzFyhM6HmUsYG_Jz9bFZoNUrUX5KoVe0Q": {
