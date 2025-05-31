@@ -21,6 +21,7 @@ interface WalletContextType {
   triggerRefresh: () => void;
   refreshAssets: (force?: boolean) => Promise<void>;
   querySpecificAssets: (assetIds: string[]) => Promise<void>;
+  forceRefreshSingleAsset: (assetId: string) => Promise<void>;
   addAssetBalance: (asset: AssetBalance) => void;
 }
 
@@ -87,6 +88,8 @@ export const WalletProvider: React.FC<{ children: React.ReactNode }> = ({ childr
   const [pendingAssets, setPendingAssets] = useState<Set<string>>(new Set(SUPPORTED_ASSET_IDS));
   const isRefreshingRef = useRef(false);
   const lastRefreshTimeRef = useRef(0);
+  // Add a ref to track which assets are currently being requested to avoid duplicates
+  const balanceCacheRef = useRef<Map<string, number>>(new Map());
 
   // Debug log for pendingAssets
   useEffect(() => {
@@ -116,14 +119,40 @@ export const WalletProvider: React.FC<{ children: React.ReactNode }> = ({ childr
 
   const refreshAssets = useCallback(async (force: boolean = false) => {
     if (!wallet?.address || (!force && ASSET_REFRESH_INTERVAL === 0)) return;
-    // Remove time-based restriction to allow refreshing whenever needed
     if (isRefreshingRef.current) return;
+
     try {
       isRefreshingRef.current = true;
       setIsLoadingAssets(true);
-      setPendingAssets(new Set(SUPPORTED_ASSET_IDS));
-      await getAssetBalances(wallet, addAssetBalance);
-      lastRefreshTimeRef.current = Date.now();
+      
+      // Clear the balance cache if forced refresh
+      if (force) {
+        balanceCacheRef.current.clear();
+      }
+      
+      // Only request assets that haven't been requested recently (within last 30 seconds)
+      const now = Date.now();
+      const assetsToRequest = SUPPORTED_ASSET_IDS.filter(assetId => {
+        const lastRequested = balanceCacheRef.current.get(assetId) || 0;
+        return force || (now - lastRequested > 30000); // 30 seconds cache
+      });
+      
+      console.log(`[WalletContext] Refreshing ${assetsToRequest.length} assets out of ${SUPPORTED_ASSET_IDS.length} total`);
+      
+      if (assetsToRequest.length > 0) {
+        setPendingAssets(new Set(assetsToRequest));
+        
+        // Update the cache with current timestamp for these assets
+        assetsToRequest.forEach(assetId => {
+          balanceCacheRef.current.set(assetId, now);
+        });
+        
+        await getAssetBalances(wallet, addAssetBalance);
+      } else {
+        console.log('[WalletContext] All assets already cached recently, skipping refresh');
+      }
+      
+      lastRefreshTimeRef.current = now;
     } catch (error) {
       console.error('[WalletContext] Error refreshing assets:', error);
     } finally {
@@ -312,30 +341,57 @@ export const WalletProvider: React.FC<{ children: React.ReactNode }> = ({ childr
    * Query specific assets by their process IDs
    * This function can be used when we need to load specific assets instead of all supported assets
    * @param assetIds Array of asset process IDs to query
+   * @param force Whether to force refresh these assets, ignoring the cache
    */
-  const querySpecificAssets = useCallback(async (assetIds: string[]) => {
+  const querySpecificAssets = useCallback(async (assetIds: string[], force: boolean = false) => {
     if (!wallet?.address) return;
     
     try {
-      console.log('[WalletContext] Querying specific assets:', assetIds);
+      const now = Date.now();
+      
+      // If force is true, clear the cache for these specific assets
+      if (force) {
+        assetIds.forEach(id => {
+          balanceCacheRef.current.delete(id);
+        });
+        console.log(`[WalletContext] Force refreshing assets:`, assetIds);
+      }
+      
+      // Filter out assets that have been requested recently (within last 30 seconds)
+      const assetsToRequest = assetIds.filter(assetId => {
+        const lastRequested = balanceCacheRef.current.get(assetId) || 0;
+        return force || (now - lastRequested > 30000); // 30 seconds cache
+      });
+      
+      if (assetsToRequest.length === 0) {
+        console.log('[WalletContext] All requested assets already cached recently, skipping query');
+        return;
+      }
+      
+      console.log('[WalletContext] Querying specific assets:', assetsToRequest);
       setIsLoadingAssets(true);
       
       // Add these assets to pending sets to show loading indicators
       setPendingAssets(prev => {
         const newPending = new Set(prev);
-        assetIds.forEach(id => newPending.add(id));
+        assetsToRequest.forEach(id => newPending.add(id));
         return newPending;
       });
       
       setPendingInfo(prev => {
         const newPending = new Set(prev);
-        assetIds.forEach(id => newPending.add(id));
+        assetsToRequest.forEach(id => newPending.add(id));
         return newPending;
+      });
+      
+      // Update the cache with current timestamp for these assets
+      assetsToRequest.forEach(assetId => {
+        balanceCacheRef.current.set(assetId, now);
       });
       
       // Create a custom function to pass to getAssetBalances that only processes the specified assets
       const processSpecificAssets = (asset: AssetBalance) => {
-        if (assetIds.includes(asset.info.processId)) {
+        if (assetsToRequest.includes(asset.info.processId)) {
           addAssetBalance(asset);
         }
       };
@@ -347,6 +403,48 @@ export const WalletProvider: React.FC<{ children: React.ReactNode }> = ({ childr
       console.error('[WalletContext] Error querying specific assets:', error);
     } finally {
       setIsLoadingAssets(false);
+    }
+  }, [wallet, addAssetBalance]);
+
+  /**
+   * Force refresh a single asset, bypassing the time-based cache
+   * @param assetId Process ID of the asset to refresh
+   */
+  const forceRefreshSingleAsset = useCallback(async (assetId: string) => {
+    if (!wallet?.address) return;
+    
+    try {
+      console.log(`[WalletContext] Force refreshing single asset: ${assetId}`);
+      
+      // Add this asset to pending set to show loading indicator
+      setPendingAssets(prev => {
+        const newPending = new Set(prev);
+        newPending.add(assetId);
+        return newPending;
+      });
+      
+      // Create a custom function to process just this asset
+      const processSingleAsset = (asset: AssetBalance) => {
+        if (asset.info.processId === assetId) {
+          addAssetBalance(asset);
+        }
+      };
+      
+      // Call getAssetBalances with our custom callback
+      await getAssetBalances(wallet, processSingleAsset);
+      
+      // Update the cache with current timestamp for this asset
+      balanceCacheRef.current.set(assetId, Date.now());
+      
+    } catch (error) {
+      console.error(`[WalletContext] Error force refreshing asset ${assetId}:`, error);
+    } finally {
+      // Remove this asset from pending set
+      setPendingAssets(prev => {
+        const newPending = new Set(prev);
+        newPending.delete(assetId);
+        return newPending;
+      });
     }
   }, [wallet, addAssetBalance]);
 
@@ -366,6 +464,7 @@ export const WalletProvider: React.FC<{ children: React.ReactNode }> = ({ childr
     triggerRefresh: () => setRefreshTrigger(prev => prev + 1),
     refreshAssets,
     querySpecificAssets,
+    forceRefreshSingleAsset,
     addAssetBalance
   };
 

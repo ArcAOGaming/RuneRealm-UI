@@ -20,7 +20,8 @@ const Inventory = () => {
     isLoadingAssets, 
     pendingAssets,
     refreshAssets,
-    querySpecificAssets
+    querySpecificAssets,
+    forceRefreshSingleAsset
   } = useWallet();
   
   const theme = currentTheme(darkMode);
@@ -121,10 +122,11 @@ const Inventory = () => {
     e.stopPropagation();
     
     if (processId && wallet?.address) {
-      console.log(`[Inventory] Refreshing single token: ${processId}`);
-      querySpecificAssets([processId]);
+      console.log(`[Inventory] Force refreshing single token: ${processId}`);
+      // Use the new forceRefreshSingleAsset function to bypass cache
+      forceRefreshSingleAsset(processId);
     }
-  }, [wallet?.address, querySpecificAssets]);
+  }, [wallet?.address, forceRefreshSingleAsset]);
 
   // Find asset by ticker, looking first in assetBalances and then in ASSET_INFO
   const findAssetByTicker = useCallback((ticker: string) => {
@@ -172,7 +174,9 @@ const Inventory = () => {
     return sectionItems.map(item => findAssetByTicker(item));
   }, [findAssetByTicker]);
 
-  if (!wallet?.address) return null;
+  // Always render the component structure even if wallet isn't connected yet
+  // This helps the UI appear immediately without waiting for assets to load
+  const hasWallet = !!wallet?.address;
 
   return (
     <div className={`fixed right-4 top-32 ${theme.container} border ${theme.border} backdrop-blur-md transition-all duration-300 rounded-xl z-40 inventory-container max-w-[280px]`}>
@@ -182,9 +186,9 @@ const Inventory = () => {
           <h2 className="text-lg font-bold">Inventory</h2>
         </div>
         <div className="flex items-center gap-2">
-          {isLoadingAssets ? (
+          {hasWallet && isLoadingAssets ? (
             <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-[#F4860A]"></div>
-          ) : (
+          ) : hasWallet ? (
             <button 
               onClick={(e) => {
                 e.stopPropagation();
@@ -197,70 +201,76 @@ const Inventory = () => {
             >
               ↻
             </button>
-          )}
+          ) : null}
         </div>
       </div>
-      <div className={`overflow-hidden transition-all duration-300 ${openSections.main ? 'max-h-fit w-full p-3' : 'max-h-0 w-0 p-0'}`}>
-        <div className="space-y-3">
-          {inventorySections.map((section) => (
-            <div key={section.title} className="border-b border-[#F4860A]/30 last:border-b-0 pb-3 last:pb-0">
-              <button
-                onClick={(e) => {
-                  e.stopPropagation();
-                  toggleSection(section.title);
-                }}
-                className={`w-full flex items-center justify-between mb-2 ${theme.text} hover:opacity-80 transition-opacity`}
-              >
-                <span className="font-bold">{section.title}</span>
-                <span className="transform transition-transform duration-200" style={{ transform: openSections[section.title] ? 'rotate(90deg)' : 'rotate(0deg)' }}>›</span>
-              </button>
-              {openSections[section.title] && (
-                <div className="space-y-2 pl-2">
-                  {getAssetsBySection(section.items).map((asset) => (
-                    <div key={asset.info.processId} className={`flex justify-between items-center gap-2 ${theme.text}`}>
-                      <div className="flex items-center gap-1">
-                        <button 
-                          onClick={(e) => refreshSingleToken(asset.info.processId, e)}
-                          className="relative group" 
-                          title={`Refresh ${asset.info.ticker} balance`}
-                        >
-                          <img 
-                            src={`${Gateway}${asset.info.logo}`}
-                            alt={asset.info.name}
-                            className="w-6 h-6 object-cover rounded-full"
-                          />
-                          <span className="absolute inset-0 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity bg-black bg-opacity-50 rounded-full text-white text-xs">
-                            ↻
-                          </span>
-                        </button>
-                        <span>{asset.info.ticker}:</span>
+      {!hasWallet && openSections.main ? (
+        <div className="p-3 text-center">
+          <p className={`${theme.text} text-sm`}>Connect wallet to view assets</p>
+        </div>
+      ) : (
+        <div className={`overflow-hidden transition-all duration-300 ${openSections.main ? 'max-h-fit w-full p-3' : 'max-h-0 w-0 p-0'}`}>
+          <div className="space-y-3">
+            {inventorySections.map((section) => (
+              <div key={section.title} className="border-b border-[#F4860A]/30 last:border-b-0 pb-3 last:pb-0">
+                <button
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    toggleSection(section.title);
+                  }}
+                  className={`w-full flex items-center justify-between mb-2 ${theme.text} hover:opacity-80 transition-opacity`}
+                >
+                  <span className="font-bold">{section.title}</span>
+                  <span className="transform transition-transform duration-200" style={{ transform: openSections[section.title] ? 'rotate(90deg)' : 'rotate(0deg)' }}>›</span>
+                </button>
+                {hasWallet && openSections[section.title] && (
+                  <div className="space-y-2 pl-2">
+                    {getAssetsBySection(section.items).map((asset) => (
+                      <div key={asset.info.processId} className={`flex justify-between items-center gap-2 ${theme.text}`}>
+                        <div className="flex items-center gap-1">
+                          <button 
+                            onClick={(e) => refreshSingleToken(asset.info.processId, e)}
+                            className="relative group" 
+                            title={`Refresh ${asset.info.ticker} balance`}
+                          >
+                            <img 
+                              src={`${Gateway}${asset.info.logo}`}
+                              alt={asset.info.name}
+                              className="w-6 h-6 object-cover rounded-full"
+                            />
+                            <span className="absolute inset-0 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity bg-black bg-opacity-50 rounded-full text-white text-xs">
+                              ↻
+                            </span>
+                          </button>
+                          <span>{asset.info.ticker}:</span>
+                        </div>
+                        <span className="font-bold">
+                          {pendingAssets.has(asset.info.processId) ? (
+                            <div className="w-8 flex justify-end">
+                              <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-[#F4860A]"></div>
+                            </div>
+                          ) : (
+                            (() => {
+                              // Format token amount and then limit to MAX_DECIMALS decimal places
+                              const formatted = formatTokenAmount(asset.balance.toString(), asset.info.denomination || 0);
+                              const parts = formatted.split('.');
+                              if (parts.length === 1) {
+                                return formatted;
+                              } else {
+                                return `${parts[0]}.${parts[1].slice(0, MAX_DECIMALS)}`;
+                              }
+                            })()
+                          )}
+                        </span>
                       </div>
-                      <span className="font-bold">
-                        {pendingAssets.has(asset.info.processId) ? (
-                          <div className="w-8 flex justify-end">
-                            <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-[#F4860A]"></div>
-                          </div>
-                        ) : (
-                          (() => {
-                            // Format token amount and then limit to MAX_DECIMALS decimal places
-                            const formatted = formatTokenAmount(asset.balance.toString(), asset.info.denomination || 0);
-                            const parts = formatted.split('.');
-                            if (parts.length === 1) {
-                              return formatted;
-                            } else {
-                              return `${parts[0]}.${parts[1].slice(0, MAX_DECIMALS)}`;
-                            }
-                          })()
-                        )}
-                      </span>
-                    </div>
-                  ))}
-                </div>
-              )}
-            </div>
-          ))}
+                    ))}
+                  </div>
+                )}
+              </div>
+            ))}
+          </div>
         </div>
-      </div>
+      )}
     </div>
   );
 };
