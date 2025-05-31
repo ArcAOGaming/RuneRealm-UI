@@ -1,7 +1,16 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { useWallet } from '../hooks/useWallet';
 import { defaultInteraction, getUserOfferings, type OfferingData } from '../utils/aoHelpers';
 import { currentTheme } from '../constants/theme';
+
+// Style for grow-shrink animation
+const growShrinkStyle = {
+  animation: 'growShrink 1.5s ease-in-out infinite',
+  display: 'inline-block',
+  transformOrigin: 'center'
+};
+
+// CSS keyframes are defined in global.css
 
 // Cache key prefix - will be combined with wallet address
 const OFFERING_CACHE_PREFIX = 'premium-rune-offering-data';
@@ -76,45 +85,47 @@ const CheckInButton: React.FC<CheckInButtonProps> = ({ onOfferingComplete }) => 
     return () => clearInterval(timer);
   }, []);
 
-  useEffect(() => {
-    const checkOfferingStatus = async () => {
-      if (!wallet?.address) return;
-      
-      const { offeringKey, timestampKey } = getWalletCacheKeys(wallet.address);
-      
-      // Check if we have cached offering data that hasn't expired for this specific wallet
-      const cachedData = localStorage.getItem(offeringKey);
-      
-      if (cachedData && !isCacheExpired(wallet.address)) {
-        // Use cached data if it exists and hasn't expired
-        try {
-          const parsedData = JSON.parse(cachedData);
-          console.log(`Using cached offering data for wallet ${wallet.address}:`, parsedData);
-          setOfferingData(parsedData);
-          return;
-        } catch (e) {
-          console.error('Error parsing cached offering data:', e);
-          // Continue to fetch fresh data if parse fails
-        }
-      }
-      
-      // Fetch fresh data if cache is expired or doesn't exist
+  // Function to check offering status - extracted as a callback so it can be reused
+  const checkOfferingStatus = useCallback(async () => {
+    if (!wallet?.address) return;
+    
+    const { offeringKey, timestampKey } = getWalletCacheKeys(wallet.address);
+    
+    // Check if we have cached offering data that hasn't expired for this specific wallet
+    const cachedData = localStorage.getItem(offeringKey);
+    
+    if (cachedData && !isCacheExpired(wallet.address)) {
+      // Use cached data if it exists and hasn't expired
       try {
-        const response = await getUserOfferings(wallet.address);
-        console.log(`Fetched new offering data for wallet ${wallet.address}:`, response);
-        setOfferingData(response);
-        
-        // Cache the new data with wallet-specific keys
-        localStorage.setItem(offeringKey, JSON.stringify(response));
-        localStorage.setItem(timestampKey, Date.now().toString());
-      } catch (error) {
-        console.error(`Error checking offering status for wallet ${wallet.address}:`, error);
-        setOfferingData(null);
+        const parsedData = JSON.parse(cachedData);
+        console.log(`Using cached offering data for wallet ${wallet.address}:`, parsedData);
+        setOfferingData(parsedData);
+        return;
+      } catch (e) {
+        console.error('Error parsing cached offering data:', e);
+        // Continue to fetch fresh data if parse fails
       }
-    };
-
-    checkOfferingStatus();
+    }
+    
+    // Fetch fresh data if cache is expired or doesn't exist
+    try {
+      const response = await getUserOfferings(wallet.address);
+      console.log(`Fetched new offering data for wallet ${wallet.address}:`, response);
+      setOfferingData(response);
+      
+      // Cache the new data with wallet-specific keys
+      localStorage.setItem(offeringKey, JSON.stringify(response));
+      localStorage.setItem(timestampKey, Date.now().toString());
+    } catch (error) {
+      console.error(`Error checking offering status for wallet ${wallet.address}:`, error);
+      setOfferingData(null);
+    }
   }, [wallet?.address]);
+
+  // Effect to load offering status on component mount or wallet change
+  useEffect(() => {
+    checkOfferingStatus();
+  }, [checkOfferingStatus]);
 
   const handleCheckIn = async () => {
     if (!wallet?.address) return;
@@ -124,6 +135,8 @@ const CheckInButton: React.FC<CheckInButtonProps> = ({ onOfferingComplete }) => 
     try {
       setIsChecking(true);
       console.log(`Starting check-in process for wallet ${wallet.address}...`);
+      
+      // Make sure to properly await the check-in interaction
       await defaultInteraction(wallet, triggerRefresh);
       console.log('Check-in completed successfully');
       
@@ -144,6 +157,12 @@ const CheckInButton: React.FC<CheckInButtonProps> = ({ onOfferingComplete }) => 
       if (onOfferingComplete) {
         onOfferingComplete();
       }
+      
+      // Wait 0.5 seconds before refreshing data
+      await new Promise(resolve => setTimeout(resolve, 500));
+      
+      // Refresh the offering data to show updated status
+      await checkOfferingStatus();
     } catch (error) {
       console.error(`Error during check-in for wallet ${wallet.address}:`, error);
     } finally {
@@ -163,7 +182,7 @@ const CheckInButton: React.FC<CheckInButtonProps> = ({ onOfferingComplete }) => 
       {/* Streak Display */}
       <div className={`flex items-center gap-1 px-2 py-1 rounded-md bg-[#814E33]/20 border border-[#F4860A]/30`}>
         <span className={`text-sm font-bold ${theme.text}`}>{offeringData?.Streak || 0}</span>
-        <span className="text-lg animate-pulse">🔥</span>
+        <span className="text-lg" style={growShrinkStyle}>🔥</span>
       </div>
 
       {hasCheckedToday ? (

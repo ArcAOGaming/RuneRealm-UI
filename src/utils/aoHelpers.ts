@@ -1169,7 +1169,7 @@ export interface MonsterStatsUpdate {
   image?: string;
   name?: string;
   status?: {
-    type: 'Home' | 'Play' | 'Mission';
+    type: 'Home' | 'Play' | 'Mission' | "Battle";
     since: number;
     until_time: number;
   };
@@ -1265,6 +1265,42 @@ export const executeBattle = async (wallet: any, refreshCallback?: () => void) =
         return JSON.parse(transferResult.Messages[0].Data);
     } catch (error) {
         console.error("Error executing battle:", error);
+        throw error;
+    }
+};
+
+// Execute a battle in the current session
+export const executeActivity = async (wallet: any, activity:string, canReturn:boolean, token: string, cost: string, refreshCallback?: () => void) => {
+    if (!wallet?.address) {
+        throw new Error("No wallet connected");
+    }
+
+    try {
+        console.log("Executing battle for wallet:", wallet.address);
+        const signer = createDataItemSigner(window.arweaveWallet);
+        const messageResult =  await message({
+            process: canReturn ? AdminSkinChanger : token,
+            tags: canReturn ? [
+              { name: "Action", value: `ReturnFrom-${activity}` }
+            ] : [
+              { name: "Action", value: "Transfer" },
+              { name: "Quantity", value: cost },
+              { name: "Recipient", value: AdminSkinChanger },
+              { name: "X-Action", value: activity }
+            ],
+            signer,
+            data: ""
+          }, refreshCallback);
+
+        const transferResult = await result({
+            message: messageResult,
+            process: TARGET_BATTLE_PID
+        }) as ResultType;
+
+
+        return JSON.parse(transferResult.Messages[0].Data);
+    } catch (error) {
+        console.error("Error executing activity:", error);
         throw error;
     }
 };

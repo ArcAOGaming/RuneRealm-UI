@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { MonsterStats, message } from '../utils/aoHelpers';
+import { MonsterStats, executeActivity, message } from '../utils/aoHelpers';
 import { ActivityCard } from './ActivityCard';
 import { Theme } from '../constants/theme';
 import { createDataItemSigner } from '../config/aoConnection';
@@ -117,7 +117,7 @@ const MonsterActivities: React.FC<MonsterActivitiesProps> = ({
       else if (actionType === 'BATTLE') setIsInBattle(true);
       else if (actionType === 'MISSION') setIsOnMission(true);
   
-      const signer = createDataItemSigner(window.arweaveWallet);
+      const signer = await createDataItemSigner(window.arweaveWallet);
   
       await message({
         process: canReturn ? targetProcessId : config.cost.token,
@@ -132,8 +132,9 @@ const MonsterActivities: React.FC<MonsterActivitiesProps> = ({
         signer,
         data: ""
       }, triggerRefresh);
+      //executeActivity(signer,actionType,canReturn,config.cost.token,config.cost.amount.toString())
   
-      if (actionType === 'Battle' && !canReturn) navigate('/battle');
+      if (actionType === 'BATTLE' && !canReturn) navigate('/battle');
   
       refreshAssets();
   

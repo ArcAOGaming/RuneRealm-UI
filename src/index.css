@@ -2,6 +2,12 @@
 @import 'tailwindcss/components';
 @import 'tailwindcss/utilities';
 
+/* Custom animation for fire emoji */
+@keyframes growShrink {
+  0%, 100% { transform: scale(1); }
+  50% { transform: scale(1.2); }
+}
+
 /* Mobile orientation handling */
 @media screen and (max-width: 768px) and (orientation: portrait) {
   body[data-rotate="true"] {
