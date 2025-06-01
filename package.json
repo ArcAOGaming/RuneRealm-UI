@@ -13,7 +13,7 @@
   "dependencies": {
     "@ardrive/turbo-sdk": "^1.21.0",
     "@permaweb/aoconnect": "^0.0.62",
-    "ao-process-clients": "^4.1.15",
+    "ao-process-clients": "^6.0.66",
     "arweave": "^1.15.5",
     "chart.js": "^4.4.7",
     "crypto-browserify": "^3.12.1",

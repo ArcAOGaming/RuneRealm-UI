@@ -950,6 +950,20 @@ export const getAssetBalances = async (
                 if (onAssetLoaded && existing.balance !== asset.balance) {
                     onAssetLoaded(updatedAsset);
                     console.log(`Asset ${asset.info.name} balance updated: ${asset.balance}`);
+                    
+                    // Dispatch an event for our AssetContext to pick up
+                    try {
+                        const event = new CustomEvent('assetUpdate', {
+                            detail: {
+                                type: 'ASSET_UPDATED',
+                                asset: updatedAsset
+                            }
+                        });
+                        window.dispatchEvent(event);
+                        console.log(`[aoHelpers] Dispatched asset update event for ${asset.info.ticker}`);
+                    } catch (e) {
+                        console.error('[aoHelpers] Error dispatching asset update event:', e);
+                    }
                 }
             } else {
                 // New asset, add it to our collections
@@ -959,6 +973,20 @@ export const getAssetBalances = async (
                 // Call the callback for new assets
                 if (onAssetLoaded) {
                     onAssetLoaded(asset);
+                    
+                    // Dispatch an event for our AssetContext to pick up
+                    try {
+                        const event = new CustomEvent('assetUpdate', {
+                            detail: {
+                                type: 'ASSET_UPDATED',
+                                asset: asset
+                            }
+                        });
+                        window.dispatchEvent(event);
+                        console.log(`[aoHelpers] Dispatched asset update event for new asset ${asset.info.ticker}`);
+                    } catch (e) {
+                        console.error('[aoHelpers] Error dispatching asset update event:', e);
+                    }
                 }
                 
                 console.log(`Asset ${asset.info.name} (${asset.info.ticker}) loaded: ${asset.balance}`);

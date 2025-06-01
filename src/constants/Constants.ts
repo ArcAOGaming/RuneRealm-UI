@@ -212,6 +212,8 @@ export const ASSET_INFO: Partial<Record<string, AssetInfo>> = {
   },
 };
 
+
+
 // Triple the timeout value for asset loading as requested
 export const WAITTIMEOUIT = 22500;
 export const MAX_RETRIES = 3; // Number of retries for failed asset loads

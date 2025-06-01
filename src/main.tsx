@@ -7,6 +7,7 @@ import {MonsterManagement} from './pages/MonsterManagement'
 import Admin from './pages/Admin'
 import MonsterTest from './pages/MonsterTest'
 import { WalletProvider } from './context/WalletContext'
+import { TokenProvider } from './context/TokenContext'
 import { useWallet } from './hooks/useWallet';
 import { WalletStatus } from './utils/interefaces';
 import './index.css'
@@ -68,7 +69,9 @@ const AppContent = () => {
 const App = () => (
   <Router>
     <WalletProvider>
-      <AppContent />
+      <TokenProvider>
+        <AppContent />
+      </TokenProvider>
     </WalletProvider>
   </Router>
 );

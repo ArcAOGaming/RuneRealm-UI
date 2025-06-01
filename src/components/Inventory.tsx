@@ -1,8 +1,9 @@
 import React, { useState, useMemo, useCallback, useEffect } from 'react';
 import { useWallet } from '../hooks/useWallet';
+import { useTokens } from '../context/TokenContext';
 import { formatTokenAmount } from '../utils/aoHelpers';
 import { currentTheme } from '../constants/theme';
-import { Gateway, ASSET_INFO } from '../constants/Constants';
+import { Gateway, ASSET_INFO, SupportedAssetId } from '../constants/Constants';
 
 // Maximum number of decimal places to display for token amounts
 const MAX_DECIMALS = 3;
@@ -13,16 +14,16 @@ interface InventorySection {
 }
 
 const Inventory = () => {
+  // Get wallet info from WalletContext
+  const { wallet, darkMode } = useWallet();
+  
+  // Get token info from TokenContext
   const { 
-    wallet, 
-    darkMode, 
-    assetBalances, 
-    isLoadingAssets, 
-    pendingAssets,
-    refreshAssets,
-    querySpecificAssets,
-    forceRefreshSingleAsset
-  } = useWallet();
+    tokenBalances, 
+    refreshAllTokens,
+    retryToken,
+    isLoading
+  } = useTokens();
   
   const theme = currentTheme(darkMode);
 
@@ -88,59 +89,46 @@ const Inventory = () => {
     return mapping;
   }, []);
 
-  // Effect to query specific assets based on sections that are open
+  // Effect to load tokens based on sections that are open
   useEffect(() => {
     if (!wallet?.address) return;
     
     // Skip fetching if main section is closed
     if (!openSections.main) return;
     
-    // Collect all assets that need to be loaded based on open sections
-    const assetsToLoad: string[] = [];
+    // Refresh all tokens when sections change
+    // The TokenContext will handle loading all supported tokens
+    refreshAllTokens();
     
-    inventorySections.forEach(section => {
-      if (openSections[section.title]) {
-        // For each ticker in this section, find its processId and add to the list
-        section.items.forEach(ticker => {
-          const processId = tickerToProcessId[ticker.toLowerCase()];
-          if (processId) {
-            assetsToLoad.push(processId);
-          }
-        });
-      }
-    });
-    
-    // Only proceed if we have assets to load
-    if (assetsToLoad.length > 0) {
-      console.log(`[Inventory] Loading ${assetsToLoad.length} assets for open sections`);
-      querySpecificAssets(assetsToLoad);
-    }
-  }, [wallet?.address, openSections, inventorySections, tickerToProcessId, querySpecificAssets]);
+    // Log the current state of tokens
+    console.log('[Inventory] Current state of tokens:', tokenBalances);
+  }, [wallet?.address, openSections, refreshAllTokens]);
 
   // Function to refresh a single token by its processId
   const refreshSingleToken = useCallback((processId: string, e: React.MouseEvent) => {
     e.stopPropagation();
     
     if (processId && wallet?.address) {
-      console.log(`[Inventory] Force refreshing single token: ${processId}`);
-      // Use the new forceRefreshSingleAsset function to bypass cache
-      forceRefreshSingleAsset(processId);
+      console.log(`[Inventory] Refreshing single token: ${processId}`);
+      // Use the retryToken function 
+      retryToken(processId as SupportedAssetId);
     }
-  }, [wallet?.address, forceRefreshSingleAsset]);
+  }, [wallet?.address, retryToken]);
 
-  // Find asset by ticker, looking first in assetBalances and then in ASSET_INFO
+  // Find asset by ticker, looking first in tokenBalances and then in ASSET_INFO
   const findAssetByTicker = useCallback((ticker: string) => {
-    // First try to find in assetBalances
-    const asset = assetBalances.find(a => 
-      a.info.ticker.toLowerCase() === ticker.toLowerCase() ||
-      a.info.name.toLowerCase() === ticker.toLowerCase()
-    );
-    
-    if (asset) {
-      return asset;
+    // First try to find in tokenBalances by matching ticker
+    for (const assetId of Object.keys(tokenBalances) as SupportedAssetId[]) {
+      const token = tokenBalances[assetId];
+      if (token && 
+        (token.info.ticker.toLowerCase() === ticker.toLowerCase() ||
+         token.info.name.toLowerCase() === ticker.toLowerCase())
+      ) {
+        return token;
+      }
     }
     
-    // If not found in balances, look in ASSET_INFO
+    // If not found in tokenBalances, look in ASSET_INFO
     for (const [processId, info] of Object.entries(ASSET_INFO)) {
       if (info && info.ticker.toLowerCase() === ticker.toLowerCase()) {
         return {
@@ -152,6 +140,7 @@ const Inventory = () => {
             denomination: info.denomination || 0
           },
           balance: 0,
+          // Always set state to loading for assets not in tokenBalances
           state: 'loading'
         };
       }
@@ -169,7 +158,7 @@ const Inventory = () => {
       balance: 0,
       state: 'loading'
     };
-  }, [assetBalances]);
+  }, [tokenBalances]);
 
   // Get assets for a section
   const getAssetsBySection = useCallback((sectionItems: string[]) => {
@@ -188,14 +177,12 @@ const Inventory = () => {
           <h2 className="text-lg font-bold">Inventory</h2>
         </div>
         <div className="flex items-center gap-2">
-          {hasWallet && isLoadingAssets ? (
-            <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-[#F4860A]"></div>
-          ) : hasWallet ? (
+          {hasWallet ? (
             <button 
               onClick={(e) => {
                 e.stopPropagation();
                 if (openSections.main) {
-                  refreshAssets();
+                  refreshAllTokens();
                 }
               }} 
               className="text-sm hover:text-[#F4860A] transition-colors"
@@ -240,23 +227,43 @@ const Inventory = () => {
                               alt={asset.info.name}
                               className="w-6 h-6 object-cover rounded-full"
                             />
-                            <span className="absolute inset-0 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity bg-black bg-opacity-50 rounded-full text-white text-xs">
-                              ↻
-                            </span>
+                            {asset.state === 'loading' ? (
+                              <span className="absolute inset-0 flex items-center justify-center bg-black bg-opacity-50 rounded-full text-white text-xs">
+                                <div className="animate-spin rounded-full h-3 w-3 border-b-2 border-[#F4860A]"></div>
+                              </span>
+                            ) : (
+                              <span className="absolute inset-0 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity bg-black bg-opacity-50 rounded-full text-white text-xs">
+                                ↻
+                              </span>
+                            )}
                           </button>
                           <span>{asset.info.ticker}:</span>
                         </div>
                         <span className="font-bold">
-                          {pendingAssets.has(asset.info.processId) || asset.state === 'loading' ? (
-                            <div className="w-8 flex justify-end">
-                              <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-[#F4860A]"></div>
-                            </div>
-                          ) : asset.state === 'error' ? (
-                            <div className="w-8 flex justify-end">
-                              <div className="text-red-500 text-sm">Error</div>
-                            </div>
-                          ) : (
-                            (() => {
+                          {(() => {
+                            const hasTrueBalance = asset.balance > 0;
+                            
+                            // Determine if we should show loading state
+                            // An asset should show loading if:
+                            // 1. It's explicitly in loading state OR
+                            // 2. It has zero balance and isn't explicitly marked as loaded (might be initializing)
+                            const isLoading = 
+                              asset.state === 'loading' || 
+                              (asset.balance === 0 && asset.state !== 'loaded');
+                            
+                            if (isLoading) {
+                              return (
+                                <div className="w-8 flex justify-end">
+                                  <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-[#F4860A]"></div>
+                                </div>
+                              );
+                            } else if (asset.state === 'error') {
+                              return (
+                                <div className="w-8 flex justify-end">
+                                  <div className="text-red-500 text-sm">Error</div>
+                                </div>
+                              );
+                            } else {
                               // Format token amount and then limit to MAX_DECIMALS decimal places
                               const formatted = formatTokenAmount(asset.balance.toString(), asset.info.denomination || 0);
                               const parts = formatted.split('.');
@@ -265,8 +272,8 @@ const Inventory = () => {
                               } else {
                                 return `${parts[0]}.${parts[1].slice(0, MAX_DECIMALS)}`;
                               }
-                            })()
-                          )}
+                            }
+                          })()}
                         </span>
                       </div>
                     ))}
