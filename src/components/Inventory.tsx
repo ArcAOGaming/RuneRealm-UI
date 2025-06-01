@@ -89,20 +89,17 @@ const Inventory = () => {
     return mapping;
   }, []);
 
-  // Effect to load tokens based on sections that are open
+  // Effect to log token states when sections change - uses already loaded tokens
   useEffect(() => {
     if (!wallet?.address) return;
     
-    // Skip fetching if main section is closed
+    // Skip if main section is closed
     if (!openSections.main) return;
     
-    // Refresh all tokens when sections change
-    // The TokenContext will handle loading all supported tokens
-    refreshAllTokens();
-    
-    // Log the current state of tokens
-    console.log('[Inventory] Current state of tokens:', tokenBalances);
-  }, [wallet?.address, openSections, refreshAllTokens]);
+    // Log the current state of tokens but don't refresh them
+    // TokenContext already handles the initial loading of tokens
+    console.log('[Inventory] Using current state of tokens:', tokenBalances);
+  }, [wallet?.address, openSections, tokenBalances]);
 
   // Function to refresh a single token by its processId
   const refreshSingleToken = useCallback((processId: string, e: React.MouseEvent) => {
