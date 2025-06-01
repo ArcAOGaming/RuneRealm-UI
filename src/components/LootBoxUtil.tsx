@@ -1,8 +1,9 @@
 import React, { useEffect, useState } from 'react';
 import { useWallet } from '../hooks/useWallet';
+import { useTokens } from '../context/TokenContext';
 import { getLootBoxes, openLootBox, LootBoxResponse, message } from '../utils/aoHelpers';
 import { currentTheme } from '../constants/theme';
-import { AdminSkinChanger } from '../constants/Constants';
+import { AdminSkinChanger, SupportedAssetId } from '../constants/Constants';
 import { createDataItemSigner, result } from '../config/aoConnection';
 import Confetti from 'react-confetti';
 import '../styles/LootBoxUtil.css';
@@ -18,7 +19,8 @@ interface LootBox {
 }
 
 const LootBoxUtil: React.FC<LootBoxProps> = ({ className = '' }) => {
-  const { wallet, darkMode, triggerRefresh, refreshTrigger, assetBalances } = useWallet();
+  const { wallet, darkMode, triggerRefresh, refreshTrigger } = useWallet();
+  const { tokenBalances } = useTokens();
   const [lootBoxes, setLootBoxes] = useState<LootBox[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [isOpening, setIsOpening] = useState(false);
@@ -98,20 +100,24 @@ const LootBoxUtil: React.FC<LootBoxProps> = ({ className = '' }) => {
   
   // Map assets for token name mapping
   useEffect(() => {
-    if (!wallet?.address || !assetBalances.length) return;
+    if (!wallet?.address || !tokenBalances) return;
     
     const assetMap: {[key: string]: {name: string, ticker: string, logo?: string}} = {};
     
-    assetBalances.forEach(asset => {
-      assetMap[asset.info.processId] = {
-        name: asset.info.name,
-        ticker: asset.info.ticker,
-        logo: asset.info.logo
-      };
+    // Convert tokenBalances object to asset map
+    Object.keys(tokenBalances).forEach((processId) => {
+      const asset = tokenBalances[processId as SupportedAssetId];
+      if (asset) {
+        assetMap[processId] = {
+          name: asset.info.name,
+          ticker: asset.info.ticker,
+          logo: asset.info.logo
+        };
+      }
     });
     
     setAssets(assetMap);
-  }, [wallet?.address, assetBalances]);
+  }, [wallet?.address, tokenBalances]);
   
   // Get color class based on rarity
   const getRarityColorClass = (rarity: number): string => {

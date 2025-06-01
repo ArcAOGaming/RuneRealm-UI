@@ -3,9 +3,10 @@ import { MonsterStats, executeActivity, message } from '../utils/aoHelpers';
 import { ActivityCard } from './ActivityCard';
 import { Theme } from '../constants/theme';
 import { createDataItemSigner } from '../config/aoConnection';
-import { TARGET_BATTLE_PID } from '../constants/Constants';
+import { TARGET_BATTLE_PID, SupportedAssetId } from '../constants/Constants';
 import { useNavigate } from 'react-router-dom';
 import { useWallet } from '../hooks/useWallet';
+import { useTokens } from '../context/TokenContext';
 
 interface Asset {
   info: {
@@ -50,7 +51,8 @@ const MonsterActivities: React.FC<MonsterActivitiesProps> = ({
   className = ''
 }) => {
   const navigate = useNavigate();
-  const { assetBalances, triggerRefresh, refreshAssets } = useWallet();
+  const { triggerRefresh } = useWallet();
+  const { tokenBalances, refreshAllTokens } = useTokens();
   const [isFeeding, setIsFeeding] = useState(false);
   const [isPlaying, setIsPlaying] = useState(false);
   const [isInBattle, setIsInBattle] = useState(false);
@@ -61,9 +63,9 @@ const MonsterActivities: React.FC<MonsterActivitiesProps> = ({
                 monster.status.until_time && 
                 Date.now() > monster.status.until_time;
   
-  // Get token balances from wallet context
-  const berryBalance = assetBalances.find(a => a.info.processId === activities.feed.cost.token)?.balance || 0;
-  const fuelBalance = assetBalances.find(a => a.info.processId === activities.battle.cost.token)?.balance || 0;
+  // Get token balances from token context
+  const berryBalance = tokenBalances[activities.feed.cost.token as SupportedAssetId]?.balance || 0;
+  const fuelBalance = tokenBalances[activities.battle.cost.token as SupportedAssetId]?.balance || 0;
   
   // Calculate if monster can feed
   const canFeed = monster.status.type === 'Home' && berryBalance >= activities.feed.cost.amount;
@@ -99,7 +101,7 @@ const MonsterActivities: React.FC<MonsterActivitiesProps> = ({
     const isCurrentAction = monster.status.type.toLowerCase() === actionKey;
     const canReturn = isCurrentAction && Date.now() > monster.status.until_time;
   
-    const asset = assetBalances.find(a => a.info.processId === config.cost.token);
+    const asset = tokenBalances[config.cost.token as SupportedAssetId];
   
     if (!canReturn && (!asset || asset.balance < config.cost.amount)) {
       console.error(`Not enough resources for action: ${actionType}`, {
@@ -136,7 +138,7 @@ const MonsterActivities: React.FC<MonsterActivitiesProps> = ({
   
       if (actionType === 'BATTLE' && !canReturn) navigate('/battle');
   
-      refreshAssets();
+      refreshAllTokens();
   
     } catch (error) {
       console.error(`Error handling ${actionType}:`, error);
@@ -157,7 +159,7 @@ const MonsterActivities: React.FC<MonsterActivitiesProps> = ({
           badgeColor="yellow"
           gradientFrom="yellow-400"
           gradientTo="orange-500"
-          tokenLogo={assetBalances.find(a => a.info.processId === activities.feed.cost.token)?.info.logo}
+          tokenLogo={tokenBalances[activities.feed.cost.token as SupportedAssetId]?.info.logo}
           tokenBalance={berryBalance}
           tokenRequired={activities.feed.cost.amount}
           costs={[]}
@@ -179,7 +181,7 @@ const MonsterActivities: React.FC<MonsterActivitiesProps> = ({
           badgeColor="green"
           gradientFrom="green-400"
           gradientTo="emerald-500"
-          tokenLogo={assetBalances.find(a => a.info.processId === activities.play.cost.token)?.info.logo}
+          tokenLogo={tokenBalances[activities.play.cost.token as SupportedAssetId]?.info.logo}
           tokenBalance={berryBalance}
           tokenRequired={activities.play.cost.amount}
           costs={[
@@ -203,7 +205,7 @@ const MonsterActivities: React.FC<MonsterActivitiesProps> = ({
           badgeColor="red"
           gradientFrom="red-400"
           gradientTo="purple-500"
-          tokenLogo={assetBalances.find(a => a.info.processId === activities.battle.cost.token)?.info.logo}
+          tokenLogo={tokenBalances[activities.battle.cost.token as SupportedAssetId]?.info.logo}
           tokenBalance={fuelBalance}
           tokenRequired={activities.battle.cost.amount}
           costs={[
@@ -228,7 +230,7 @@ const MonsterActivities: React.FC<MonsterActivitiesProps> = ({
           badgeColor="blue"
           gradientFrom="blue-400"
           gradientTo="indigo-500"
-          tokenLogo={assetBalances.find(a => a.info.processId === activities.mission.cost.token)?.info.logo}
+          tokenLogo={tokenBalances[activities.mission.cost.token as SupportedAssetId]?.info.logo}
           tokenBalance={fuelBalance}
           tokenRequired={activities.mission.cost.amount}
           costs={[
