@@ -938,7 +938,9 @@ export const getAssetBalances = async (
                 // Always update with latest info and balance
                 const updatedAsset = {
                     info: { ...existing.info, ...asset.info },
-                    balance: asset.balance
+                    balance: asset.balance,
+                    // Explicitly set state to 'loaded' even if balance is 0
+                    state: 'loaded'
                 };
                 
                 // Update in our map
@@ -1027,7 +1029,7 @@ export const getAssetBalances = async (
         // Function to fetch asset balance only
         const fetchAssetBalance = async (processId: SupportedAssetId, assetInfo: AssetInfo): Promise<AssetBalance | null> => {
             try {
-                console.log(`Fetching balance for asset ${processId}`);
+                console.log(`[aoHelpers] Fetching balance for asset ${processId} (${assetInfo.ticker})`);
                 const balanceResult = await dryrun({
                     process: processId,
                     tags: [{ name: "Action", value: "Balances" }],
@@ -1036,19 +1038,35 @@ export const getAssetBalances = async (
                 
                 // Parse balance
                 let balance = 0;
+                let walletFound = false;
+                
                 if (balanceResult.Messages && balanceResult.Messages.length > 0) {
                     try {
+                        console.log(`[aoHelpers] Got balance data for ${processId} (${assetInfo.ticker}):`, balanceResult.Messages[0].Data);
                         const balanceData = JSON.parse(balanceResult.Messages[0].Data);
-                        balance = parseInt(balanceData[wallet.address] || "0");
+                        
+                        // Check if the wallet address exists in the balance data
+                        if (balanceData.hasOwnProperty(wallet.address)) {
+                            walletFound = true;
+                            balance = parseInt(balanceData[wallet.address] || "0");
+                            console.log(`[aoHelpers] Wallet address found in balance data for ${assetInfo.ticker}. Balance: ${balance}`);
+                        } else {
+                            // Wallet not in list, balance is 0
+                            console.log(`[aoHelpers] Wallet address NOT found in balance data for ${assetInfo.ticker}. Setting balance to 0.`);
+                        }
                     } catch (e) {
-                        console.error(`Error parsing balance for ${processId}:`, e);
+                        console.error(`[aoHelpers] Error parsing balance for ${processId}:`, e);
                     }
+                } else {
+                    console.log(`[aoHelpers] No messages returned for ${processId} (${assetInfo.ticker}) balance request`);
                 }
 
-                // Create the complete asset balance object
+                // Create the complete asset balance object - always set to 'loaded' state
+                // regardless of whether the wallet was found or the balance amount
                 const assetBalance: AssetBalance = {
                     info: assetInfo,
-                    balance
+                    balance,
+                    state: 'loaded'
                 };
                 
                 return assetBalance;
@@ -1078,7 +1096,8 @@ export const getAssetBalances = async (
                     // This allows the UI to show the asset info immediately while balance loads
                     const initialAsset: AssetBalance = {
                         info: assetInfo,
-                        balance: 0
+                        balance: 0,
+                        state: 'loading'
                     };
                     
                     // Process the asset with info but potentially missing balance
@@ -1092,7 +1111,9 @@ export const getAssetBalances = async (
                         // (in case there was a string parsing issue)
                         const finalAsset = {
                             info: assetInfo,
-                            balance: Number(assetWithBalance.balance)
+                            balance: Number(assetWithBalance.balance),
+                            // Always mark as 'loaded' even if balance is 0
+                            state: 'loaded'
                         };
                         
                         // Update with the real balance
@@ -1100,7 +1121,13 @@ export const getAssetBalances = async (
                         return finalAsset;
                     }
                     
-                    return initialAsset;
+                    // If we couldn't get the balance, mark as error
+                    const errorAsset = {
+                        ...initialAsset,
+                        state: 'error'
+                    };
+                    processLoadedAsset(errorAsset);
+                    return errorAsset;
                 } catch (error) {
                     console.error(`Error processing asset ${processId}:`, error);
                     return null;

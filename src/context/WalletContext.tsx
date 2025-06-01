@@ -140,14 +140,32 @@ export const WalletProvider: React.FC<{ children: React.ReactNode }> = ({ childr
       console.log(`[WalletContext] Refreshing ${assetsToRequest.length} assets out of ${SUPPORTED_ASSET_IDS.length} total`);
       
       if (assetsToRequest.length > 0) {
+        // Add these assets to pending set
         setPendingAssets(new Set(assetsToRequest));
+        
+        // Update asset states to 'loading' in the assetBalances array
+        setAssetBalances(prev => {
+          return prev.map(asset => {
+            if (assetsToRequest.includes(asset.info.processId)) {
+              return { ...asset, state: 'loading' };
+            }
+            return asset;
+          });
+        });
         
         // Update the cache with current timestamp for these assets
         assetsToRequest.forEach(assetId => {
           balanceCacheRef.current.set(assetId, now);
         });
         
-        await getAssetBalances(wallet, addAssetBalance);
+        // Create a custom function to properly manage states
+        const processAssets = (asset: AssetBalance) => {
+          // Ensure the state is set to 'loaded' before adding
+          const updatedAsset = { ...asset, state: 'loaded' };
+          addAssetBalance(updatedAsset);
+        };
+        
+        await getAssetBalances(wallet, processAssets);
       } else {
         console.log('[WalletContext] All assets already cached recently, skipping refresh');
       }
@@ -155,6 +173,16 @@ export const WalletProvider: React.FC<{ children: React.ReactNode }> = ({ childr
       lastRefreshTimeRef.current = now;
     } catch (error) {
       console.error('[WalletContext] Error refreshing assets:', error);
+      
+      // Update any assets still in 'loading' state to 'error'
+      setAssetBalances(prev => {
+        return prev.map(asset => {
+          if (asset.state === 'loading') {
+            return { ...asset, state: 'error' };
+          }
+          return asset;
+        });
+      });
     } finally {
       setIsLoadingAssets(false);
       isRefreshingRef.current = false;
@@ -193,7 +221,8 @@ export const WalletProvider: React.FC<{ children: React.ReactNode }> = ({ childr
         // Create asset balance with predefined info and zero balance
         const assetBalance = {
           info: ASSET_INFO[processId],
-          balance: 0
+          balance: 0,
+          state: 'loading'
         };
         
         // Add this asset to our state
@@ -208,7 +237,8 @@ export const WalletProvider: React.FC<{ children: React.ReactNode }> = ({ childr
           // Create asset balance with cached info and zero balance
           const assetBalance = {
             info: cachedInfo,
-            balance: 0
+            balance: 0,
+            state: 'loading'
           };
           
           // Add this asset to our state
@@ -384,6 +414,16 @@ export const WalletProvider: React.FC<{ children: React.ReactNode }> = ({ childr
         return newPending;
       });
       
+      // Update asset states to 'loading' in the assetBalances array
+      setAssetBalances(prev => {
+        return prev.map(asset => {
+          if (assetsToRequest.includes(asset.info.processId)) {
+            return { ...asset, state: 'loading' };
+          }
+          return asset;
+        });
+      });
+      
       // Update the cache with current timestamp for these assets
       assetsToRequest.forEach(assetId => {
         balanceCacheRef.current.set(assetId, now);
@@ -392,7 +432,9 @@ export const WalletProvider: React.FC<{ children: React.ReactNode }> = ({ childr
       // Create a custom function to pass to getAssetBalances that only processes the specified assets
       const processSpecificAssets = (asset: AssetBalance) => {
         if (assetsToRequest.includes(asset.info.processId)) {
-          addAssetBalance(asset);
+          // Make sure the state is set to 'loaded' before adding
+          const updatedAsset = { ...asset, state: 'loaded' };
+          addAssetBalance(updatedAsset);
         }
       };
       
@@ -401,6 +443,16 @@ export const WalletProvider: React.FC<{ children: React.ReactNode }> = ({ childr
       
     } catch (error) {
       console.error('[WalletContext] Error querying specific assets:', error);
+      
+      // Update asset states to 'error' for any assets that failed
+      setAssetBalances(prev => {
+        return prev.map(asset => {
+          if (assetIds.includes(asset.info.processId) && asset.state === 'loading') {
+            return { ...asset, state: 'error' };
+          }
+          return asset;
+        });
+      });
     } finally {
       setIsLoadingAssets(false);
     }
@@ -422,11 +474,23 @@ export const WalletProvider: React.FC<{ children: React.ReactNode }> = ({ childr
         newPending.add(assetId);
         return newPending;
       });
+
+      // Also update the asset state to 'loading' in the asset balances array
+      setAssetBalances(prev => {
+        return prev.map(asset => {
+          if (asset.info.processId === assetId) {
+            return { ...asset, state: 'loading' };
+          }
+          return asset;
+        });
+      });
       
       // Create a custom function to process just this asset
       const processSingleAsset = (asset: AssetBalance) => {
         if (asset.info.processId === assetId) {
-          addAssetBalance(asset);
+          // Ensure the state is set to 'loaded' before adding
+          const updatedAsset = { ...asset, state: 'loaded' };
+          addAssetBalance(updatedAsset);
         }
       };
       
@@ -438,6 +502,16 @@ export const WalletProvider: React.FC<{ children: React.ReactNode }> = ({ childr
       
     } catch (error) {
       console.error(`[WalletContext] Error force refreshing asset ${assetId}:`, error);
+      
+      // In case of error, update the asset state to 'error'
+      setAssetBalances(prev => {
+        return prev.map(asset => {
+          if (asset.info.processId === assetId) {
+            return { ...asset, state: 'error' };
+          }
+          return asset;
+        });
+      });
     } finally {
       // Remove this asset from pending set
       setPendingAssets(prev => {

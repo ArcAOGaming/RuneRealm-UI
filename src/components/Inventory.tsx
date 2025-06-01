@@ -151,7 +151,8 @@ const Inventory = () => {
             ticker: info.ticker,
             denomination: info.denomination || 0
           },
-          balance: 0
+          balance: 0,
+          state: 'loading'
         };
       }
     }
@@ -165,7 +166,8 @@ const Inventory = () => {
         ticker: ticker,
         denomination: 0
       },
-      balance: 0
+      balance: 0,
+      state: 'loading'
     };
   }, [assetBalances]);
 
@@ -245,9 +247,13 @@ const Inventory = () => {
                           <span>{asset.info.ticker}:</span>
                         </div>
                         <span className="font-bold">
-                          {pendingAssets.has(asset.info.processId) ? (
+                          {pendingAssets.has(asset.info.processId) || asset.state === 'loading' ? (
                             <div className="w-8 flex justify-end">
                               <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-[#F4860A]"></div>
+                            </div>
+                          ) : asset.state === 'error' ? (
+                            <div className="w-8 flex justify-end">
+                              <div className="text-red-500 text-sm">Error</div>
                             </div>
                           ) : (
                             (() => {

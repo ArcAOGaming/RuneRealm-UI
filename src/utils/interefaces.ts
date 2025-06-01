@@ -199,6 +199,7 @@ export interface BattleResponse {
 export interface AssetBalance {
   info: AssetInfo;
   balance: number;
+  state: string;
 }
 
 export interface UserInfo {
