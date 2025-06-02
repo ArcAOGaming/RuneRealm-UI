@@ -17,6 +17,7 @@ import { BattlePage } from './pages/BattlePage'
 import { handleReferralLink } from './utils/aoHelpers'
 import { ActiveBattlePage } from './pages/ActiveBattlePage'
 import Inventory from './components/Inventory'
+import { MonsterProvider } from './contexts/MonsterContext'
 
 interface AppContentProps {
   wallet?: { address: string };
@@ -70,7 +71,9 @@ const App = () => (
   <Router>
     <WalletProvider>
       <TokenProvider>
-        <AppContent />
+        <MonsterProvider>
+          <AppContent />
+        </MonsterProvider>
       </TokenProvider>
     </WalletProvider>
   </Router>

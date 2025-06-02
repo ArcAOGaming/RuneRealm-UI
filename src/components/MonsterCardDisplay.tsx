@@ -14,24 +14,31 @@ import {
   drawMoves
 } from '../utils/cardRenderHelpers';
 import { useWallet } from '../hooks/useWallet';
+import { useMonster } from '../contexts/MonsterContext';
 
 interface MonsterCardDisplayProps {
-  monster: MonsterStats;
   className?: string;
   expanded?: boolean;
   inventoryItems?: InventoryItem[];
   darkMode?: boolean; // Allow passing darkMode directly
+  // Monster can be optional now since we can get it from context
+  monster?: MonsterStats;
 }
 
 export const MonsterCardDisplay: React.FC<MonsterCardDisplayProps> = ({ 
-  monster, 
+  monster: propMonster, 
   className = '', 
   expanded = false, 
   inventoryItems = [],
   darkMode: propDarkMode 
 }) => {
+  // Get monster from context if not passed as a prop
+  const { monster: contextMonster } = useMonster();
   // Get darkMode from context if not passed as a prop
   const { darkMode: contextDarkMode } = useWallet();
+  
+  // Use prop values if provided, otherwise fall back to context
+  const monster = propMonster || contextMonster;
   const darkMode = propDarkMode !== undefined ? propDarkMode : contextDarkMode;
   
   const [isZoomed, setIsZoomed] = useState(false);
