@@ -18,6 +18,7 @@ import { handleReferralLink } from './utils/aoHelpers'
 import { ActiveBattlePage } from './pages/ActiveBattlePage'
 import Inventory from './components/Inventory'
 import { MonsterProvider } from './contexts/MonsterContext'
+import DebugView from './pages/DebugView'
 
 interface AppContentProps {
   wallet?: { address: string };
@@ -62,6 +63,7 @@ const AppContent = () => {
         <Route path="/battle" element={<BattlePage />} />
         <Route path="/battle/active" element={<ActiveBattlePage />} />
         <Route path="/monster-test" element={<MonsterTest />} />
+        <Route path="/debug" element={<DebugView />} />
       </Routes>
     </div>
   );

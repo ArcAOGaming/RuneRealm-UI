@@ -28,6 +28,9 @@ interface MonsterContextType {
   // Status calculations
   formatTimeRemaining: (untilTime: number) => string;
   calculateProgress: (sinceTime: number, untilTime: number) => number;
+  
+  // Debug information
+  debugString?: string;
 }
 
 // Create the context with a default value
@@ -368,4 +371,39 @@ export const useMonster = (): MonsterContextType => {
     throw new Error('useMonster must be used within a MonsterProvider');
   }
   return context;
+};
+
+// Debug component to display monster object fields
+export const MonsterDebug: React.FC = () => {
+  const { monster, timeUpdateTrigger, isLoadingMonster, lootBoxes, isLoadingLootBoxes } = useMonster();
+  
+  return (
+    <div className="monster-debug p-4 bg-gray-800 text-white rounded-lg overflow-auto max-h-[80vh] my-4">
+      <h2 className="text-xl font-bold mb-2">Monster Context Debug</h2>
+      
+      <div className="mb-4">
+        <h3 className="text-lg font-semibold text-blue-300">Context Status</h3>
+        <pre className="bg-gray-900 p-2 rounded">
+          {JSON.stringify({
+            hasMonster: !!monster,
+            isLoadingMonster,
+            hasLootBoxes: lootBoxes.length > 0,
+            isLoadingLootBoxes,
+            timeUpdateTrigger
+          }, null, 2)}
+        </pre>
+      </div>
+      
+      {monster ? (
+        <div>
+          <h3 className="text-lg font-semibold text-green-300">Monster Object</h3>
+          <pre className="bg-gray-900 p-2 rounded overflow-auto">
+            {JSON.stringify(monster, null, 2)}
+          </pre>
+        </div>
+      ) : (
+        <div className="text-yellow-300">No monster data available</div>
+      )}
+    </div>
+  );
 };

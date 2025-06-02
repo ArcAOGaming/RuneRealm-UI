@@ -27,6 +27,8 @@ interface ActivityCardProps {
   loadingText: string;
   theme: any;
   highlightSelectable?: boolean;
+  remainingTime?: string;
+  progress?: number;
 }
 
 export const ActivityCard: React.FC<ActivityCardProps> = ({
@@ -46,7 +48,9 @@ export const ActivityCard: React.FC<ActivityCardProps> = ({
   actionText,
   loadingText,
   theme,
-  highlightSelectable = false
+  highlightSelectable = false,
+  remainingTime,
+  progress
 }) => {
   // Enhanced border effect for selectable items
   const borderStyle = !isDisabled && highlightSelectable
@@ -152,6 +156,23 @@ export const ActivityCard: React.FC<ActivityCardProps> = ({
           </div>
         </div>
 
+        {/* Progress bar if activity is in progress */}
+        {progress !== undefined && (
+          <div className="mt-1 mb-1">
+            <div className="h-1.5 w-full bg-gray-200 rounded-full overflow-hidden">
+              <div 
+                className={`h-full bg-gradient-to-r from-${gradientFrom} to-${gradientTo}`} 
+                style={{ width: `${progress}%` }}
+              ></div>
+            </div>
+            {remainingTime && (
+              <div className="text-xs text-center mt-0.5 font-medium text-gray-600">
+                {remainingTime}
+              </div>
+            )}
+          </div>
+        )}
+        
         {/* Action button - always at bottom */}
         <div className="mt-2">
           <button

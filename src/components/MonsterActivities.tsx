@@ -7,6 +7,7 @@ import { TARGET_BATTLE_PID, SupportedAssetId } from '../constants/Constants';
 import { useNavigate } from 'react-router-dom';
 import { useWallet } from '../hooks/useWallet';
 import { useTokens } from '../context/TokenContext';
+import { useMonster } from '../contexts/MonsterContext';
 
 interface Asset {
   info: {
@@ -38,25 +39,70 @@ interface Activities {
 }
 
 interface MonsterActivitiesProps {
-  monster: MonsterStats;
-  activities: Activities;
+  monster?: MonsterStats;
+  activities?: Activities;
   theme: Theme;
   className?: string;
 }
 
 const MonsterActivities: React.FC<MonsterActivitiesProps> = ({
-  monster,
-  activities,
+  monster: monsterProp,
+  activities: activitiesProp,
   theme,
   className = ''
 }) => {
   const navigate = useNavigate();
   const { triggerRefresh } = useWallet();
   const { tokenBalances, refreshAllTokens } = useTokens();
+  const { monster: contextMonster, formatTimeRemaining, calculateProgress } = useMonster();
+  
+  // Use monster from props if provided, otherwise from context
+  const monster = monsterProp || contextMonster;
+  
+  // Default activities configuration if not provided through props
+  const defaultActivities: Activities = {
+    feed: {
+      cost: { token: "AwaDlHVUxx32D0415OPFIzI6jjF2S9OhR7SYnHtV52M", amount: 1 },
+      energyGain: 10,
+      duration: 0
+    },
+    play: {
+      cost: { token: "AwaDlHVUxx32D0415OPFIzI6jjF2S9OhR7SYnHtV52M", amount: 2 },
+      energyCost: 5,
+      happinessGain: 15,
+      duration: 300000 // 5 minutes
+    },
+    battle: {
+      cost: { token: "qL8e7aAj33j-x-33YPz2azk0YVA6cmB0C8o_wR2m20U", amount: 1 },
+      energyCost: 10,
+      happinessCost: 5,
+      duration: 600000 // 10 minutes
+    },
+    mission: {
+      cost: { token: "qL8e7aAj33j-x-33YPz2azk0YVA6cmB0C8o_wR2m20U", amount: 2 },
+      energyCost: 15,
+      happinessCost: 10,
+      duration: 3600000 // 1 hour
+    }
+  };
+  
+  // Use activities from props if provided, otherwise from default configuration
+  const activities = activitiesProp || defaultActivities;
+  
   const [isFeeding, setIsFeeding] = useState(false);
   const [isPlaying, setIsPlaying] = useState(false);
   const [isInBattle, setIsInBattle] = useState(false);
   const [isOnMission, setIsOnMission] = useState(false);
+  
+  // No monster data available
+  if (!monster) {
+    return (
+      <div className={`activities-section ${theme.container} rounded-lg p-4 ${className}`}>
+        <h3 className={`text-xl font-bold mb-2 ${theme.text}`}>Activities</h3>
+        <p className={`${theme.text}`}>Loading monster data...</p>
+      </div>
+    );
+  }
   
   // Calculate if any activity is complete (timeUp is true)
   const timeUp = monster.status.type !== 'Home' && 
@@ -177,7 +223,7 @@ const MonsterActivities: React.FC<MonsterActivitiesProps> = ({
 
         <ActivityCard
           title="Play"
-          badge={`${activities.play.duration / 60000}m`}
+          badge={`${Math.round(activities.play.duration / 60000)}m`}
           badgeColor="green"
           gradientFrom="green-400"
           gradientTo="emerald-500"
@@ -194,6 +240,8 @@ const MonsterActivities: React.FC<MonsterActivitiesProps> = ({
           isLoading={isPlaying}
           isDisabled={!canPlay || (monster.status.type !== 'Home' && monster.status.type !== 'Play')}
           actionText={(monster.status.type === 'Play' && timeUp) ? 'Return from Play' : 'Play'}
+          remainingTime={monster.status.type === 'Play' && monster.status.until_time ? formatTimeRemaining(monster.status.until_time) : undefined}
+          progress={monster.status.type === 'Play' && monster.status.since && monster.status.until_time ? calculateProgress(monster.status.since, monster.status.until_time) : undefined}
           loadingText="Playing..."
           theme={theme}
           highlightSelectable={true}
@@ -219,6 +267,8 @@ const MonsterActivities: React.FC<MonsterActivitiesProps> = ({
           isLoading={isInBattle}
           isDisabled={!canBattle || (monster.status.type !== 'Home' && monster.status.type !== 'Battle')}
           actionText={(monster.status.type === 'Battle' && canReturn) ? 'Return from Battle' : 'Start Battle'}
+          remainingTime={monster.status.type === 'Battle' && monster.status.until_time ? formatTimeRemaining(monster.status.until_time) : undefined}
+          progress={monster.status.type === 'Battle' && monster.status.since && monster.status.until_time ? calculateProgress(monster.status.since, monster.status.until_time) : undefined}
           loadingText="In Battle..."
           theme={theme}
           highlightSelectable={true}
@@ -226,7 +276,7 @@ const MonsterActivities: React.FC<MonsterActivitiesProps> = ({
 
         <ActivityCard
           title="Mission"
-          badge={`${activities.mission.duration / 3600000}h`}
+          badge={`${Math.round(activities.mission.duration / 3600000)}h`}
           badgeColor="blue"
           gradientFrom="blue-400"
           gradientTo="indigo-500"
@@ -244,6 +294,8 @@ const MonsterActivities: React.FC<MonsterActivitiesProps> = ({
           isLoading={isOnMission}
           isDisabled={!canMission || (monster.status.type !== 'Home' && monster.status.type !== 'Mission')}
           actionText={(monster.status.type === 'Mission' && timeUp) ? 'Return from Mission' : 'Start Mission'}
+          remainingTime={monster.status.type === 'Mission' && monster.status.until_time ? formatTimeRemaining(monster.status.until_time) : undefined}
+          progress={monster.status.type === 'Mission' && monster.status.since && monster.status.until_time ? calculateProgress(monster.status.since, monster.status.until_time) : undefined}
           loadingText="On Mission..."
           theme={theme}
           highlightSelectable={true}
