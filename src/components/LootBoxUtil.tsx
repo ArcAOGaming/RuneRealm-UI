@@ -257,13 +257,12 @@ const LootBoxUtil: React.FC<LootBoxProps> = ({
           
           // After the fade animation completes (1 second), reset the entire UI
           setTimeout(() => {
-            console.log('[LootBoxUtil] Resetting UI and refreshing data');
+            console.log('[LootBoxUtil] Resetting UI without refreshing data');
             setSelectedRarity(null);
             setIsExploding(false);
             setIsFadingOut(false);
             setOpenResult(null); // Now clear the result after fade-out
-            // Trigger a refresh to ensure data consistency
-            triggerRefresh();
+            // No refresh trigger - we don't want to refresh at the end
           }, 1000);
         }, 10000); // Show result for full 10 seconds
       } else {
@@ -420,6 +419,7 @@ const LootBoxUtil: React.FC<LootBoxProps> = ({
                       setIsFadingOut(false);
                       setOpenResult(null);
                       setIsExploding(false);
+                      // No refresh trigger here either
                     }, 1000);
                   }} 
                   className="text-xs bg-gray-700 hover:bg-gray-600 text-gray-100 px-2 py-1 rounded-md"
