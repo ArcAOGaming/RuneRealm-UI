@@ -1,4 +1,4 @@
-import React, { useState, useCallback, useEffect, useRef } from 'react';
+import React, { useState, useCallback, useEffect, useRef, useMemo } from 'react';
 import { MonsterStats } from '../utils/aoHelpers';
 import { Gateway } from '../constants/Constants';
 import { CARD_ZOOM } from '../constants/CardLayout';
@@ -35,23 +35,31 @@ export const MonsterCardDisplay: React.FC<MonsterCardDisplayProps> = ({
   const darkMode = propDarkMode !== undefined ? propDarkMode : contextDarkMode;
   
   const [isZoomed, setIsZoomed] = useState(false);
-  const theme = currentTheme(darkMode || false);
-  const canvasRef = useRef<HTMLCanvasElement>(null);
+  const [isRendering, setIsRendering] = useState(false);
+  const [previousRenderedCard, setPreviousRenderedCard] = useState<string | null>(null);
   const [cardImage, setCardImage] = useState<string | null>(null);
+  const canvasRef = useRef<HTMLCanvasElement>(null);
+  const prevMonsterRef = useRef<MonsterStats | null>(null);
+  const prevInventoryRef = useRef<InventoryItem[] | null>(null);
+  
+  // Memoize theme to prevent unnecessary recalculations
+  const theme = useMemo(() => currentTheme(darkMode || false), [darkMode]);
 
   // Extract theme colors for consistent use throughout the component
-  const extractTextColor = (textClass: string) => {
+  const extractTextColor = useCallback((textClass: string) => {
     return textClass.replace('text-', '').replace('[', '').replace(']', '');
-  };
+  }, []);
 
-  // Theme colors extracted for direct usage in canvas - removed transparency
-  const textColor = extractTextColor(theme.text);
-  const containerColor = darkMode 
+  // Memoize theme colors to prevent unnecessary recalculations
+  const textColor = useMemo(() => extractTextColor(theme.text), [theme.text, extractTextColor]);
+  const containerColor = useMemo(() => darkMode 
     ? 'rgb(129, 78, 51)' // removed transparency 
-    : 'rgb(255, 255, 255)'; // removed transparency
-  const borderColor = darkMode 
+    : 'rgb(255, 255, 255)', // removed transparency
+    [darkMode]);
+  const borderColor = useMemo(() => darkMode 
     ? 'rgb(244, 134, 10)' // removed transparency
-    : 'rgb(129, 78, 51)'; // removed transparency
+    : 'rgb(129, 78, 51)', // removed transparency
+    [darkMode]);
 
   // Event handlers
   const handleClick = useCallback((e: React.MouseEvent) => {
@@ -63,35 +71,42 @@ export const MonsterCardDisplay: React.FC<MonsterCardDisplayProps> = ({
     setIsZoomed(false);
   }, []);
 
-  // Get element-specific images
-  const elementType = monster.elementType?.toLowerCase() as keyof typeof CardImages || 'air';
+  // Memoize element type to prevent unnecessary recalculations
+  const elementType = useMemo(() => 
+    monster.elementType?.toLowerCase() as keyof typeof CardImages || 'air', 
+    [monster.elementType]);
 
-  // Main rendering function
-  const renderToCanvas = async () => {
+  // Main rendering function with optimizations to prevent flickering
+  const renderToCanvas = useCallback(async () => {
     const canvas = canvasRef.current;
     if (!canvas) return;
 
     const ctx = canvas.getContext('2d');
     if (!ctx) return;
 
-    // Set canvas dimensions - adjust width if expanded
-    const cardWidth = expanded ? CARD.DIMENSIONS.HEIGHT : CARD.DIMENSIONS.WIDTH;
-    const cardHeight = CARD.DIMENSIONS.HEIGHT;
-    
-    canvas.width = cardWidth;
-    canvas.height = cardHeight;
-    
-    // Clear canvas
-    ctx.clearRect(0, 0, canvas.width, canvas.height);
-
-    // If expanded, prepare the expanded area with theme-appropriate background
-    if (expanded) {
-      // Use the card background color from theme
-      ctx.fillStyle = theme.cardBg; 
-      ctx.fillRect(0, 0, canvas.width, canvas.height);
-    }
+    setIsRendering(true);
 
     try {
+      // Set canvas dimensions - adjust width if expanded
+      const cardWidth = expanded ? CARD.DIMENSIONS.HEIGHT : CARD.DIMENSIONS.WIDTH;
+      const cardHeight = CARD.DIMENSIONS.HEIGHT;
+      
+      // Only resize the canvas if dimensions changed to avoid complete redraw
+      if (canvas.width !== cardWidth || canvas.height !== cardHeight) {
+        canvas.width = cardWidth;
+        canvas.height = cardHeight;
+      }
+      
+      // Clear canvas
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+      // If expanded, prepare the expanded area with theme-appropriate background
+      if (expanded) {
+        // Use the card background color from theme
+        ctx.fillStyle = theme.cardBg; 
+        ctx.fillRect(0, 0, canvas.width, canvas.height);
+      }
+
       // Load all necessary images
       const cardImages = await loadCardImages(elementType, monster, expanded, CardImages);
       
@@ -122,11 +137,24 @@ export const MonsterCardDisplay: React.FC<MonsterCardDisplayProps> = ({
       }
 
       // Store the final rendered image
-      setCardImage(canvas.toDataURL('image/png'));
+      const newCardImage = canvas.toDataURL('image/png');
+      setPreviousRenderedCard(cardImage);
+      setCardImage(newCardImage);
     } catch (error) {
       console.error('Error rendering card:', error);
+    } finally {
+      setIsRendering(false);
+      // Save current monster and inventory for comparison in next render
+      // Use type assertion to store additional properties for comparison
+      prevMonsterRef.current = Object.assign({}, monster) as (MonsterStats & {
+        _darkMode: boolean;
+        _expanded: boolean;
+      });
+      (prevMonsterRef.current as any)._darkMode = darkMode;
+      (prevMonsterRef.current as any)._expanded = expanded;
+      prevInventoryRef.current = [...inventoryItems];
     }
-  };
+  }, [monster, elementType, expanded, inventoryItems, darkMode, theme]);
 
   // Draw the base card elements (background, frame, element type, level image)
   const drawBaseCard = async (
@@ -662,7 +690,7 @@ export const MonsterCardDisplay: React.FC<MonsterCardDisplayProps> = ({
   };
 
   // Render the card with specified scale
-  const renderCard = (scale = 1) => (
+  const renderCard = useCallback((scale = 1) => (
     <div 
       className={`relative w-full ${expanded ? 'aspect-square' : 'aspect-[2.5/3.5]'} ${className}`}
       style={{
@@ -671,52 +699,112 @@ export const MonsterCardDisplay: React.FC<MonsterCardDisplayProps> = ({
         transformOrigin: 'center center'
       }}
     >
+      {/* Show previous card image during render to prevent flickering */}
+      {isRendering && previousRenderedCard && (
+        <img
+          src={previousRenderedCard}
+          alt={monster.name || 'Monster Card'}
+          className="absolute inset-0 w-full h-full transition-opacity duration-200"
+          style={{ 
+            aspectRatio: expanded ? '1/1' : CARD.DIMENSIONS.ASPECT_RATIO,
+            objectFit: 'contain',
+            opacity: 0.7
+          }}
+        />
+      )}
       <canvas
         ref={canvasRef}
-        className="w-full h-full"
+        className={`w-full h-full transition-opacity duration-200 ${isRendering ? 'opacity-0' : 'opacity-100'}`}
         style={{ 
           aspectRatio: expanded ? '1/1' : CARD.DIMENSIONS.ASPECT_RATIO,
           objectFit: 'contain'
         }}
       />
     </div>
-  );
+  ), [className, expanded, isRendering, monster.name, previousRenderedCard]);
 
-  // Run rendering when monster or element type changes
+  // Decide whether a full re-render is needed based on prop changes
+  const needsFullRerender = useCallback(() => {
+    // Always do a full render on first render
+    if (!prevMonsterRef.current || !prevInventoryRef.current) return true;
+    
+    // Check if expanded or darkMode changed - these aren't stored in monster but in component state
+    if (darkMode !== (prevMonsterRef.current as any)._darkMode || expanded !== (prevMonsterRef.current as any)._expanded) {
+      return true;
+    }
+    
+    // Check if inventory items changed significantly
+    const prevItems = prevInventoryRef.current;
+    if (inventoryItems.length !== prevItems.length) {
+      return true;
+    }
+    
+    // Check if the monster stats have changed significantly
+    const prev = prevMonsterRef.current;
+    const significantChanges = 
+      monster.level !== prev.level ||
+      monster.name !== prev.name ||
+      monster.elementType !== prev.elementType ||
+      monster.attack !== prev.attack ||
+      monster.defense !== prev.defense ||
+      monster.speed !== prev.speed ||
+      monster.health !== prev.health;
+    
+    return significantChanges;
+  }, [monster, inventoryItems, expanded, darkMode]);
+  
+  // Optimized rendering that only re-renders when necessary
   useEffect(() => {
-    renderToCanvas();
-  }, [monster, elementType, expanded, inventoryItems, darkMode]);
+    // If we're already rendering, don't start another render
+    if (isRendering) return;
+    
+    // If we don't need a full re-render, don't do one
+    if (prevMonsterRef.current && !needsFullRerender()) return;
+    
+    // Schedule the render with a small delay to batch multiple prop changes
+    const renderTimer = setTimeout(() => {
+      renderToCanvas();
+    }, 10);
+    
+    return () => clearTimeout(renderTimer);
+  }, [renderToCanvas, isRendering, needsFullRerender]);
 
-  // Main component render
+  // Memoize the zoomed view to prevent unnecessary re-renders
+  const zoomedView = useMemo(() => {
+    if (!isZoomed) return null;
+    
+    return (
+      <div 
+        className="fixed inset-0 flex items-center justify-center bg-black bg-opacity-50 cursor-pointer animate-fadeIn"
+        style={{ zIndex: CARD_ZOOM.Z_INDEX }}
+        onClick={handleClose}
+      >
+        <div 
+          className="max-w-[500px] w-full p-4"
+          onClick={(e) => e.stopPropagation()}
+        >
+          <img
+            src={cardImage || ''}
+            alt={monster.name || 'Monster Card'}
+            className="w-full h-full object-contain animate-scaleIn"
+            style={{
+              transform: 'scale(1.5)',
+              transition: `transform ${CARD_ZOOM.DURATION}, opacity 0.2s ease-in-out`,
+              transformOrigin: 'center center'
+            }}
+          />
+        </div>
+      </div>
+    );
+  }, [isZoomed, cardImage, monster.name, handleClose]);
+
+  // Main component render - memoized to prevent unnecessary re-renders
   return (
     <>
       <div onClick={handleClick}>
         {renderCard()}
       </div>
-      
-      {isZoomed && (
-        <div 
-          className="fixed inset-0 flex items-center justify-center bg-black bg-opacity-50 cursor-pointer"
-          style={{ zIndex: CARD_ZOOM.Z_INDEX }}
-          onClick={handleClose}
-        >
-          <div 
-            className="max-w-[500px] w-full p-4"
-            onClick={(e) => e.stopPropagation()}
-          >
-            <img
-              src={cardImage || ''}
-              alt={monster.name || 'Monster Card'}
-              className="w-full h-full object-contain"
-              style={{
-                transform: 'scale(1.5)',
-                transition: `transform ${CARD_ZOOM.DURATION}`,
-                transformOrigin: 'center center'
-              }}
-            />
-          </div>
-        </div>
-      )}
+      {zoomedView}
     </>
   );
 };
