@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useState, useEffect, useCallback } from 'react';
+import React, { createContext, useContext, useState, useEffect, useCallback, useRef } from 'react';
 import { checkWalletStatus, WalletStatus } from '../utils/aoHelpers';
 
 
@@ -27,11 +27,20 @@ export const WalletProvider: React.FC<{ children: React.ReactNode }> = ({ childr
   );
   const [lastCheck, setLastCheck] = useState<number>(0);
   const [refreshTrigger, setRefreshTrigger] = useState<number>(0);
+  // Add a ref to track if status check is in progress to prevent duplicate requests
+  const isStatusCheckInProgressRef = useRef<boolean>(false);
+  // Add a ref to track if initial check is complete
+  const initialCheckCompletedRef = useRef<boolean>(false);
   
 
 
   const triggerRefresh = useCallback(() => {
     console.log('[WalletContext] Refresh triggered from message');
+    // Only schedule refresh if we're not already checking status
+    if (isStatusCheckInProgressRef.current) {
+      console.log('[WalletContext] Status check already in progress, skipping duplicate refresh');
+      return;
+    }
     // Schedule the state update after 5 seconds
     setTimeout(() => {
       console.log('[WalletContext] Updating refresh trigger after 5s delay');
@@ -48,6 +57,12 @@ export const WalletProvider: React.FC<{ children: React.ReactNode }> = ({ childr
 
   const checkAndUpdateWalletStatus = async (force: boolean = false) => {
     try {
+      // Prevent concurrent status checks to avoid duplicate admin skin changer queries
+      if (isStatusCheckInProgressRef.current) {
+        console.log('[WalletContext] Status check already in progress, skipping duplicate check');
+        return walletStatus?.isUnlocked || false;
+      }
+      
       // Only check if forced or if it's been more than 30 seconds since last check
       const now = Date.now();
       if (!force && now - lastCheck < 30000) {
@@ -55,8 +70,16 @@ export const WalletProvider: React.FC<{ children: React.ReactNode }> = ({ childr
         return walletStatus?.isUnlocked || false;
       }
 
-      console.log('[WalletContext] Checking wallet status', { force, timeSinceLastCheck: now - lastCheck });
+      console.log('[WalletContext] Checking wallet status', { 
+        force, 
+        timeSinceLastCheck: now - lastCheck,
+        initialCheckCompleted: initialCheckCompletedRef.current
+      });
+      
+      // Set the in-progress flag to prevent duplicate checks
+      isStatusCheckInProgressRef.current = true;
       setIsCheckingStatus(true);
+      
       // @ts-ignore
       const activeAddress = await window.arweaveWallet?.getActiveAddress();
       if (!activeAddress) {
@@ -67,24 +90,33 @@ export const WalletProvider: React.FC<{ children: React.ReactNode }> = ({ childr
       const walletObj = { address: activeAddress, dispatch: window.arweaveWallet.dispatch };
       setWallet(walletObj);
 
-      // Use our new caching system in checkWalletStatus
-      const status = await checkWalletStatus({ address: activeAddress }, false);
+      // Use our caching system in checkWalletStatus, enabling cache after initial check
+      // This is crucial - we want to use cache for the second call in StrictMode
+      const useCache = initialCheckCompletedRef.current;
+      const status = await checkWalletStatus({ address: activeAddress }, useCache);
       if (!status) {
         console.error('[WalletContext] Failed to get wallet status');
         return false;
       }
+      
       console.log('[WalletContext] Wallet status updated:', status);
       // Only update if we got valid data
       if (status) {
         setWalletStatus(status);
       }
+      
       setLastCheck(now);
+      // Mark that we've completed the initial check
+      initialCheckCompletedRef.current = true;
+      
       return status.isUnlocked;
     } catch (error) {
       console.error('[WalletContext] Error checking wallet status:', error);
       return false;
     } finally {
       setIsCheckingStatus(false);
+      // Reset the in-progress flag
+      isStatusCheckInProgressRef.current = false;
     }
   };
 
@@ -115,7 +147,12 @@ export const WalletProvider: React.FC<{ children: React.ReactNode }> = ({ childr
 
   useEffect(() => {
     // Check wallet status on mount, force initial check
-    checkAndUpdateWalletStatus(true);
+    // We'll use setTimeout to slightly delay this to prevent race conditions
+    // with React strict mode's double rendering
+    const timer = setTimeout(() => {
+      console.log('[WalletContext] Performing initial wallet status check');
+      checkAndUpdateWalletStatus(true);
+    }, 50);
 
     // Set up wallet event listeners
     const handleWalletConnect = () => {
@@ -135,6 +172,7 @@ export const WalletProvider: React.FC<{ children: React.ReactNode }> = ({ childr
     window.addEventListener('walletDisconnect', handleWalletDisconnect);
 
     return () => {
+      clearTimeout(timer);
       // @ts-ignore
       window.removeEventListener('walletConnect', handleWalletConnect);
       // @ts-ignore

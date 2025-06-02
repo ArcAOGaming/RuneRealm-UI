@@ -1,8 +1,8 @@
-import React, { useEffect, useState, useRef } from 'react';
+import React, { useEffect, useState, useRef, useCallback } from 'react';
 import '../styles/MonsterManagement.css';
 import { useNavigate } from 'react-router-dom';
 import { useWallet } from '../hooks/useWallet';
-import { purchaseAccess, TokenOption, adoptMonster, MonsterStats } from '../utils/aoHelpers';
+import { purchaseAccess, TokenOption, adoptMonster, MonsterStats, getLootBoxes } from '../utils/aoHelpers';
 import { createDataItemSigner } from '../config/aoConnection';
 import { message } from '../utils/aoHelpers';
 import { currentTheme } from '../constants/theme';
@@ -45,7 +45,8 @@ const calculateProgress = (sinceTime: number, untilTime: number): number => {
 
 export const MonsterManagement: React.FC = (): JSX.Element => {
   const navigate = useNavigate();
-  const { wallet, walletStatus, darkMode, connectWallet, setDarkMode, triggerRefresh, refreshTrigger, assetBalances, refreshAssets } = useWallet();
+  // Include refreshTrigger for lootbox updates
+  const { wallet, walletStatus, darkMode, connectWallet, setDarkMode, triggerRefresh, refreshTrigger } = useWallet();
   const [isPurchaseModalOpen, setIsPurchaseModalOpen] = useState(false);
   const [showConfetti, setShowConfetti] = useState(false);
   const [isAdopting, setIsAdopting] = useState(false);
@@ -55,33 +56,142 @@ export const MonsterManagement: React.FC = (): JSX.Element => {
   const [timeUpdateTrigger, setTimeUpdateTrigger] = useState<number>(0);
   const theme = currentTheme(darkMode);
   const [, setForceUpdate] = useState({});
+  
+  // Add state for centralized lootbox data management
+  const [lootBoxes, setLootBoxes] = useState<Array<{rarity: number, displayName: string}>>([]);
+  const [isLoadingLootBoxes, setIsLoadingLootBoxes] = useState(false);
+  
+  // Track if this is the initial load to prevent multiple updates
+  const initialLoadRef = useRef(true);
+  // Track the last refresh time to throttle updates
+  const lastRefreshTimeRef = useRef(0);
+  // Track if lootboxes are loaded to prevent duplicate requests
+  const lootBoxesLoadedRef = useRef(false);
+  
+  // Helper function for getting rarity names
+  const getRarityName = (rarity: number): string => {
+    switch(rarity) {
+      case 1: return 'Common';
+      case 2: return 'Uncommon';
+      case 3: return 'Rare';
+      case 4: return 'Epic';
+      case 5: return 'Legendary';
+      default: return `Level ${rarity}`;
+    }
+  };
+  
+  // Store the latest triggerRefresh function in a ref to avoid dependency issues
+  const triggerRefreshRef = useRef(triggerRefresh);
+  
+  // Update the ref whenever triggerRefresh changes
+  useEffect(() => {
+    triggerRefreshRef.current = triggerRefresh;
+  }, [triggerRefresh]);
 
-  // Update local monster when wallet status changes
+  // Throttled refresh function to prevent multiple admin skin changer queries
+  const throttledRefresh = useCallback(() => {
+    const now = Date.now();
+    // Only allow refresh if it's been at least 5 seconds since the last one
+    if (now - lastRefreshTimeRef.current > 5000) {
+      console.log('[MonsterManagement] Executing throttled refresh');
+      lastRefreshTimeRef.current = now;
+      triggerRefreshRef.current();
+    } else {
+      console.log('[MonsterManagement] Skipping refresh - throttled');
+    }
+  }, []);
+  
+  // Centralized function to load lootbox data
+  const loadLootBoxes = useCallback(async () => {
+    if (!wallet?.address) return;
+    
+    setIsLoadingLootBoxes(true);
+    try {
+      console.log('[MonsterManagement] Loading lootbox data centrally');
+      const response = await getLootBoxes(wallet.address);
+      
+      if (response?.result) {
+        // Process lootbox data
+        const boxes: Array<{rarity: number, displayName: string}> = [];
+        
+        if (Array.isArray(response.result) && response.result.length > 0) {
+          response.result.forEach((box: any) => {
+            if (Array.isArray(box)) {
+              box.forEach((rarityLevel: number) => {
+                boxes.push({
+                  rarity: rarityLevel,
+                  displayName: getRarityName(rarityLevel)
+                });
+              });
+            } else if (typeof box === 'number') {
+              boxes.push({
+                rarity: box,
+                displayName: getRarityName(box) // Fix: Use box instead of rarityLevel
+              });
+            }
+          });
+        }
+        
+        setLootBoxes(boxes);
+        console.log('[MonsterManagement] Centrally processed loot boxes:', boxes);
+        lootBoxesLoadedRef.current = true;
+      } else {
+        setLootBoxes([]);
+      }
+    } catch (error) {
+      console.error('[MonsterManagement] Error loading loot boxes:', error);
+      setLootBoxes([]);
+    } finally {
+      setIsLoadingLootBoxes(false);
+    }
+  }, [wallet?.address]);
+
+  // Update local monster and load lootboxes when wallet status changes
   useEffect(() => {
     const updateData = async () => {
       console.log('[MonsterManagement] Checking for updates', {
         hasWallet: !!wallet?.address,
         hasMonster: !!walletStatus?.monster,
-        refreshTrigger
+        initialLoad: initialLoadRef.current,
+        lootBoxesLoaded: lootBoxesLoadedRef.current
       });
       
+      // Update monster data if available
       if (walletStatus?.monster) {
+        // Compare using deep equality to prevent unnecessary updates
         const monsterChanged = JSON.stringify(walletStatus.monster) !== JSON.stringify(localMonster);
         if (monsterChanged) {
-          console.log('[MonsterManagement] Monster state updated:', {
-            old: localMonster,
-            new: walletStatus.monster
-          });
+          console.log('[MonsterManagement] Monster state updated');
           setLocalMonster(walletStatus.monster);
         } else {
           console.log('[MonsterManagement] Monster state unchanged');
         }
       }
+      
+      // Load lootbox data on initial load or when wallet changes
+      if ((initialLoadRef.current || !lootBoxesLoadedRef.current) && wallet?.address) {
+        await loadLootBoxes();
+      }
+      
+      // Mark initial load as complete
+      if (initialLoadRef.current) {
+        initialLoadRef.current = false;
+      }
     };
+    
     updateData();
-  }, [wallet?.address, walletStatus?.monster, refreshTrigger, localMonster]);
+  }, [wallet?.address, walletStatus?.monster, loadLootBoxes]);
+  
+  // Update lootboxes when refresh trigger changes
+  useEffect(() => {
+    // Only update lootboxes on refresh if we've already loaded them once
+    if (lootBoxesLoadedRef.current && wallet?.address) {
+      console.log('[MonsterManagement] Refreshing lootbox data');
+      loadLootBoxes();
+    }
+  }, [refreshTrigger, loadLootBoxes, wallet?.address]);
 
-  // Add effect to update timers every second
+  // Add effect to update timers every second - only for visual updates
   useEffect(() => {
     // Only set interval if monster is active in an activity
     if (localMonster && localMonster.status && localMonster.status.type !== 'Home') {
@@ -93,17 +203,11 @@ export const MonsterManagement: React.FC = (): JSX.Element => {
     }
   }, [localMonster?.status?.type]);
 
-  // Store the latest triggerRefresh function in a ref to avoid dependency issues
-  const triggerRefreshRef = useRef(triggerRefresh);
-  
-  // Update the ref whenever triggerRefresh changes
-  useEffect(() => {
-    triggerRefreshRef.current = triggerRefresh;
-  }, [triggerRefresh]);
+
 
   // Handle timer updates for progress bars and countdowns
   useEffect(() => {
-    if (!localMonster || localMonster.status.type === 'Home') {
+    if (!localMonster || !localMonster.status || localMonster.status.type === 'Home') {
       console.log('[MonsterManagement] No timer needed - monster is home or null');
       return;
     }
@@ -117,9 +221,8 @@ export const MonsterManagement: React.FC = (): JSX.Element => {
         clearInterval(timer);
         // Force one final update to ensure UI shows 100%
         setForceUpdate({});
-        // Trigger a refresh to update the monster state using the ref
-        // This avoids the dependency cycle
-        triggerRefreshRef.current();
+        // Use throttled refresh to prevent multiple refreshes
+        throttledRefresh();
       } else {
         setForceUpdate({});
       }
@@ -129,7 +232,7 @@ export const MonsterManagement: React.FC = (): JSX.Element => {
       console.log('[MonsterManagement] Cleaning up progress timer');
       clearInterval(timer);
     };
-  }, [localMonster?.status.type, localMonster?.status.until_time]); // Removed triggerRefresh from dependencies
+  }, [localMonster?.status.type, localMonster?.status.until_time, throttledRefresh]);
 
   const handleLevelUp = () => {
     if (!walletStatus?.monster || !wallet?.address) return;
@@ -153,7 +256,12 @@ export const MonsterManagement: React.FC = (): JSX.Element => {
         ],
         signer,
         data: ""
-      }, triggerRefresh);
+      }, () => {
+        // Use throttled refresh to prevent redundant admin skin changer queries
+        const now = Date.now();
+        lastRefreshTimeRef.current = now;
+        setTimeout(() => triggerRefresh(), 2000);
+      });
     } catch (error) {
       console.error('Error leveling up monster:', error);
     } finally {
@@ -164,7 +272,12 @@ export const MonsterManagement: React.FC = (): JSX.Element => {
   const handleAdoptMonster = async () => {
     try {
       setIsAdopting(true);
-      const result = await adoptMonster(wallet, triggerRefresh);
+      const result = await adoptMonster(wallet, () => {
+        // Use throttled refresh to prevent redundant admin skin changer queries
+        const now = Date.now();
+        lastRefreshTimeRef.current = now;
+        setTimeout(() => triggerRefresh(), 2000);
+      });
       console.log('Adopt monster result:', result);
       if (result.status === "success") {
         setShowConfetti(true);
@@ -181,7 +294,12 @@ export const MonsterManagement: React.FC = (): JSX.Element => {
 
   const handlePurchase = async (selectedToken: TokenOption) => {
     try {
-      await purchaseAccess(selectedToken, triggerRefresh);
+      await purchaseAccess(selectedToken, () => {
+        // Use throttled refresh to prevent redundant admin skin changer queries
+        const now = Date.now();
+        lastRefreshTimeRef.current = now;
+        setTimeout(() => triggerRefresh(), 2000);
+      });
       setShowConfetti(true);
       setIsPurchaseModalOpen(false);
       setTimeout(() => {
@@ -207,6 +325,12 @@ export const MonsterManagement: React.FC = (): JSX.Element => {
     return b;
   };
 
+  // Memoized helper function to determine if a monster's activity is complete
+  const isActivityComplete = useCallback((monster: MonsterStats | null): boolean => {
+    if (!monster || monster.status.type === 'Home' || monster.status.type === 'Battle') return false;
+    return monster.status.until_time && Date.now() > monster.status.until_time;
+  }, []);
+
   const renderMonsterCard = React.useMemo(() => {
     if (!walletStatus?.monster) {
       return (
@@ -226,10 +350,8 @@ export const MonsterManagement: React.FC = (): JSX.Element => {
     const monster = { ...walletStatus.monster };
     const activities = walletStatus.monster.activities;
     
-    // Calculate if any activity is complete (timeUp is true)
-    const activityTimeUp = monster.status.type !== 'Home' && 
-                        monster.status.until_time && 
-                        Date.now() > monster.status.until_time;
+    // Use the memoized helper function to check if activity is complete
+    const activityTimeUp = isActivityComplete(monster);
 
     return (
       <div className={`monster-card ${theme.container} border ${theme.border} backdrop-blur-md p-6`}>
@@ -282,7 +404,11 @@ export const MonsterManagement: React.FC = (): JSX.Element => {
             
             {/* Loot Box Section - Added below activities */}
             <div className={`loot-box-section ${theme.container} rounded-lg p-4 mt-4`}>
-              <LootBoxUtil className="w-full" />
+              <LootBoxUtil 
+                className="w-full" 
+                externalLootBoxes={lootBoxes} 
+                loadDataIndependently={false} 
+              />
             </div>
             
             {/* Level Up Button - Moved below loot boxes */}
@@ -320,7 +446,8 @@ export const MonsterManagement: React.FC = (): JSX.Element => {
     theme,
     handleAdoptMonster,
     handleLevelUp,
-    timeUpdateTrigger
+    timeUpdateTrigger,
+    isActivityComplete
   ]);
 
   return (

@@ -107,7 +107,7 @@ export const ASSET_INFO: Partial<Record<string, AssetInfo>> = {
     logo: "AY7kSgZXnun5glz7AT3rhG8kRvtvy6q3MCogYF6JO80",
     name: "RandAOTest",
     ticker: "TestRNG",
-    denomination: 18,
+    denomination: 9,
     section: "Value",
   },
   wOrb8b_V8QixWyXZub48Ki5B6OIDyf_p1ngoonsaRpQ: {

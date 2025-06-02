@@ -906,311 +906,6 @@ const cacheAssetInfo = (processId: string, info: AssetInfo): void => {
     }
 };
 
-/**
- * Get asset balances with incremental loading and caching of asset info
- * @param wallet Wallet object
- * @param onAssetLoaded Optional callback that gets called whenever an asset is loaded
- * @returns Promise with array of loaded assets
- */
-export const getAssetBalances = async (
-    wallet: any,
-    onAssetLoaded?: (asset: AssetBalance) => void
-): Promise<AssetBalance[]> => {
-    if (!wallet?.address) {
-        throw new Error("No wallet connected");
-    }
-
-    try {
-        console.log("Getting asset balances for wallet:", wallet.address);
-        
-        // Tracking cache of already loaded assets
-        const loadedAssets = new Map<string, AssetBalance>();
-        const results: AssetBalance[] = [];
-
-        // Process a loaded asset - add to results and call callback if provided
-        const processLoadedAsset = (asset: AssetBalance) => {
-            const processId = asset.info.processId;
-            
-            // Check if we already have this asset
-            if (loadedAssets.has(processId)) {
-                const existing = loadedAssets.get(processId)!;
-                
-                // Always update with latest info and balance
-                const updatedAsset = {
-                    info: { ...existing.info, ...asset.info },
-                    balance: asset.balance,
-                    // Explicitly set state to 'loaded' even if balance is 0
-                    state: 'loaded'
-                };
-                
-                // Update in our map
-                loadedAssets.set(processId, updatedAsset);
-                
-                // Always call the callback when balance changes
-                if (onAssetLoaded && existing.balance !== asset.balance) {
-                    onAssetLoaded(updatedAsset);
-                    console.log(`Asset ${asset.info.name} balance updated: ${asset.balance}`);
-                    
-                    // Dispatch an event for our AssetContext to pick up
-                    try {
-                        const event = new CustomEvent('assetUpdate', {
-                            detail: {
-                                type: 'ASSET_UPDATED',
-                                asset: updatedAsset
-                            }
-                        });
-                        window.dispatchEvent(event);
-                        console.log(`[aoHelpers] Dispatched asset update event for ${asset.info.ticker}`);
-                    } catch (e) {
-                        console.error('[aoHelpers] Error dispatching asset update event:', e);
-                    }
-                }
-            } else {
-                // New asset, add it to our collections
-                loadedAssets.set(processId, asset);
-                results.push(asset);
-                
-                // Call the callback for new assets
-                if (onAssetLoaded) {
-                    onAssetLoaded(asset);
-                    
-                    // Dispatch an event for our AssetContext to pick up
-                    try {
-                        const event = new CustomEvent('assetUpdate', {
-                            detail: {
-                                type: 'ASSET_UPDATED',
-                                asset: asset
-                            }
-                        });
-                        window.dispatchEvent(event);
-                        console.log(`[aoHelpers] Dispatched asset update event for new asset ${asset.info.ticker}`);
-                    } catch (e) {
-                        console.error('[aoHelpers] Error dispatching asset update event:', e);
-                    }
-                }
-                
-                console.log(`Asset ${asset.info.name} (${asset.info.ticker}) loaded: ${asset.balance}`);
-            }
-        };
-        
-        // Function to fetch asset info only (without balance)
-        const fetchAssetInfo = async (processId: SupportedAssetId): Promise<AssetInfo | null> => {
-            try {
-                // Try to get predefined asset info first (fastest path)
-                const predefinedInfo = ASSET_INFO[processId];
-                if (predefinedInfo) {
-                    console.log(`Using predefined info for asset ${processId}`);
-                    return predefinedInfo;
-                }
-                
-                // Try to get cached asset info next (fast path)
-                const cachedInfo = getCachedAssetInfo(processId);
-                if (cachedInfo) {
-                    console.log(`Using cached info for asset ${processId}`);
-                    return cachedInfo;
-                }
-                
-                // Finally, fetch asset info from contract
-                console.log(`Fetching info for asset ${processId} from contract`);
-                const infoResult = await dryrun({
-                    process: processId,
-                    tags: [{ name: "Action", value: "Info" }],
-                    data: ""
-                }) as ResultType; // Cast to ResultType to fix TypeScript errors
-                
-                // Extract asset info from response
-                if (infoResult.Messages && infoResult.Messages.length > 0) {
-                    const infoTags = infoResult.Messages[0].Tags;
-                    const logo = infoTags.find(t => t.name === "Logo")?.value;
-                    const name = infoTags.find(t => t.name === "Name")?.value;
-                    const ticker = infoTags.find(t => t.name === "Ticker")?.value;
-                    const denomination = parseInt(infoTags.find(t => t.name === "Denomination")?.value || "0");
-
-                    if (!logo || !name || !ticker) {
-                        console.warn(`Missing required info for asset ${processId}`);
-                        return null;
-                    }
-
-                    const assetInfo: AssetInfo = { 
-                        processId, 
-                        logo, 
-                        name, 
-                        ticker, 
-                        denomination: denomination || 0,
-                        section: "Value" // Add default section to fix TypeScript error
-                    };
-                    
-                    // Cache the asset info
-                    cacheAssetInfo(processId, assetInfo);
-                    
-                    return assetInfo;
-                } else {
-                    console.warn(`No info messages for asset ${processId}`);
-                    return null;
-                }
-            } catch (error) {
-                console.error(`Error fetching info for asset ${processId}:`, error);
-                return null;
-            }
-        };
-
-        // Function to fetch asset balance only
-        const fetchAssetBalance = async (processId: SupportedAssetId, assetInfo: AssetInfo): Promise<AssetBalance | null> => {
-            try {
-                console.log(`[aoHelpers] Fetching balance for asset ${processId} (${assetInfo.ticker})`);
-                const balanceResult = await dryrun({
-                    process: processId,
-                    tags: [{ name: "Action", value: "Balances" }],
-                    data: ""
-                }) as ResultType; // Cast to ResultType to fix TypeScript errors
-                
-                // Parse balance
-                let balance = 0;
-                let walletFound = false;
-                
-                if (balanceResult.Messages && balanceResult.Messages.length > 0) {
-                    try {
-                        console.log(`[aoHelpers] Got balance data for ${processId} (${assetInfo.ticker}):`, balanceResult.Messages[0].Data);
-                        const balanceData = JSON.parse(balanceResult.Messages[0].Data);
-                        
-                        // Check if the wallet address exists in the balance data
-                        if (balanceData.hasOwnProperty(wallet.address)) {
-                            walletFound = true;
-                            balance = parseInt(balanceData[wallet.address] || "0");
-                            console.log(`[aoHelpers] Wallet address found in balance data for ${assetInfo.ticker}. Balance: ${balance}`);
-                        } else {
-                            // Wallet not in list, balance is 0
-                            console.log(`[aoHelpers] Wallet address NOT found in balance data for ${assetInfo.ticker}. Setting balance to 0.`);
-                        }
-                    } catch (e) {
-                        console.error(`[aoHelpers] Error parsing balance for ${processId}:`, e);
-                    }
-                } else {
-                    console.log(`[aoHelpers] No messages returned for ${processId} (${assetInfo.ticker}) balance request`);
-                }
-
-                // Create the complete asset balance object - always set to 'loaded' state
-                // regardless of whether the wallet was found or the balance amount
-                const assetBalance: AssetBalance = {
-                    info: assetInfo,
-                    balance,
-                    state: 'loaded'
-                };
-                
-                return assetBalance;
-            } catch (error) {
-                console.error(`Error fetching balance for ${processId}:`, error);
-                return null;
-            }
-        };
-
-        // Function to fetch a single asset (info + balance) with retry logic
-        const fetchAsset = async (processId: SupportedAssetId): Promise<AssetBalance | null> => {
-            try {
-                // If the asset is already in our known assets cache, skip it
-                if (loadedAssets.has(processId)) {
-                    return null;
-                }
-                
-                try {
-                    // First get asset info - try to use cache, predefined values, or fetch from contract
-                    const assetInfo = await fetchAssetInfo(processId);
-                    if (!assetInfo) {
-                        console.warn(`Could not get info for asset ${processId}`);
-                        return null;
-                    }
-                    
-                    // Create a initial asset with the info and zero balance
-                    // This allows the UI to show the asset info immediately while balance loads
-                    const initialAsset: AssetBalance = {
-                        info: assetInfo,
-                        balance: 0,
-                        state: 'loading'
-                    };
-                    
-                    // Process the asset with info but potentially missing balance
-                    console.log(`[getAssetBalances] Processing initial asset: ${processId} with info only`);
-                    processLoadedAsset(initialAsset);
-                    
-                    // Then get the balance
-                    const assetWithBalance = await fetchAssetBalance(processId, assetInfo);
-                    if (assetWithBalance) {
-                        // Update with the real balance - force the balance to be a number 
-                        // (in case there was a string parsing issue)
-                        const finalAsset = {
-                            info: assetInfo,
-                            balance: Number(assetWithBalance.balance),
-                            // Always mark as 'loaded' even if balance is 0
-                            state: 'loaded'
-                        };
-                        
-                        // Update with the real balance
-                        processLoadedAsset(finalAsset);
-                        return finalAsset;
-                    }
-                    
-                    // If we couldn't get the balance, mark as error
-                    const errorAsset = {
-                        ...initialAsset,
-                        state: 'error'
-                    };
-                    processLoadedAsset(errorAsset);
-                    return errorAsset;
-                } catch (error) {
-                    console.error(`Error processing asset ${processId}:`, error);
-                    return null;
-                }
-            } catch (error) {
-                console.error(`Error loading asset ${processId}:`, error);
-                return null;
-            }
-        };
-
-        // Function to retry loading failed assets
-        const retryFailedAssets = async (failedAssetIds: string[], retries: number = 1) => {
-            if (failedAssetIds.length === 0 || retries > MAX_RETRIES) return;
-            
-            console.log(`Retry #${retries} for ${failedAssetIds.length} assets: ${failedAssetIds.join(', ')}`);
-            
-            // Wait before retrying
-            await new Promise(resolve => setTimeout(resolve, RETRY_DELAY));
-            
-            // Try to fetch these assets again
-            const retryPromises = failedAssetIds.map(id => fetchAsset(id as SupportedAssetId));
-            const retryResults = await Promise.all(retryPromises);
-            
-            // Collect failed assets for next retry round
-            const stillFailed = failedAssetIds.filter((_, i) => retryResults[i] === null);
-            
-            // Recursively retry remaining failed assets
-            if (stillFailed.length > 0 && retries < MAX_RETRIES) {
-                await retryFailedAssets(stillFailed, retries + 1);
-            }
-        };
-
-        // Initial attempt to fetch all assets
-        const assetPromises = SUPPORTED_ASSET_IDS.map(fetchAsset);
-        const initialResults = await Promise.all(assetPromises);
-        
-        // Determine which assets failed to load in the first attempt
-        const failedAssetIds = SUPPORTED_ASSET_IDS.filter((id, i) => 
-            initialResults[i] === null && !loadedAssets.has(id)
-        );
-        
-        // Retry failed assets
-        if (failedAssetIds.length > 0) {
-            await retryFailedAssets(failedAssetIds);
-        }
-
-        return Array.from(loadedAssets.values());
-    } catch (error) {
-        console.error("Error getting asset balances:", error);
-        return [];
-    }
-};
-
-
-
 export interface MonsterStatsUpdate {
   level?: number;
   exp?: number;
@@ -2035,3 +1730,60 @@ export const openLootBox = async (wallet: any, refreshCallback?: () => void): Pr
       return null;
     }
   };
+
+/**
+ * Open a loot box with specific rarity
+ * @param wallet User's wallet
+ * @param rarity Rarity level of the loot box to open
+ * @param refreshCallback Optional callback to refresh UI after opening
+ * @returns Promise with loot box results
+ */
+export const openLootBoxWithRarity = async (wallet: any, rarity: number, refreshCallback?: () => void): Promise<LootBoxResponse | null> => {
+  if (!wallet?.address) {
+    console.error('[openLootBoxWithRarity] No wallet address provided');
+    return null;
+  }
+
+  try {
+    console.log(`[openLootBoxWithRarity] Opening loot box with rarity ${rarity} for user:`, wallet.address);
+    const signer = createDataItemSigner(window.arweaveWallet);
+
+    // Send message with rarity tag
+    const messageresult: any = await message({
+      process: AdminSkinChanger,
+      tags: [
+        { name: 'Action', value: 'OpenLootBox' },
+        { name: 'From', value: wallet.address },
+        { name: 'rarity', value: rarity.toString() } // Add the rarity tag as a string
+      ],
+      signer
+    }, refreshCallback);
+    
+    // Get the result
+    const boxResult = await result({
+      message: messageresult,
+      process: AdminSkinChanger
+    }) as { Messages: Array<{ Data: string, Tags?: Array<{ name: string, value: string }> }> };
+
+    // Process the result similar to the original function
+    if (boxResult?.Messages && boxResult.Messages.length > 0) {
+      const lastMessage = boxResult.Messages[boxResult.Messages.length - 1];
+      
+      if (lastMessage?.Data) {
+        try {
+          const parsedData = JSON.parse(lastMessage.Data);
+          return {
+            result: parsedData.result
+          };
+        } catch (error) {
+          console.error('[openLootBoxWithRarity] Error parsing response:', error);
+          return null;
+        }
+      }
+    }
+    return null;
+  } catch (error) {
+    console.error('[openLootBoxWithRarity] Error opening loot box:', error);
+    return null;
+  }
+};
