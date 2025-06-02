@@ -37,6 +37,7 @@ const LootBoxUtil: React.FC<LootBoxProps> = ({
   const [isShaking, setIsShaking] = useState(false);
   const [isExploding, setIsExploding] = useState(false);
   const [selectedRarity, setSelectedRarity] = useState<number | null>(null);
+  const [isFadingOut, setIsFadingOut] = useState(false);
   
   const theme = currentTheme(darkMode);
   
@@ -248,18 +249,22 @@ const LootBoxUtil: React.FC<LootBoxProps> = ({
         // Don't trigger any refreshes during this time
         console.log('[LootBoxUtil] Displaying loot for 10 seconds before resetting UI');
         setTimeout(() => {
-          // Only hide confetti first, but KEEP the result visible
+          // Start fade-out animation
+          setIsFadingOut(true);
+          
+          // Hide confetti
           setShowConfetti(false);
           
-          // After the full 10 seconds, reset the entire UI
+          // After the fade animation completes (1 second), reset the entire UI
           setTimeout(() => {
             console.log('[LootBoxUtil] Resetting UI and refreshing data');
             setSelectedRarity(null);
             setIsExploding(false);
-            // Only now trigger a refresh to ensure data consistency
-            // but keep the openResult to show what was received
+            setIsFadingOut(false);
+            setOpenResult(null); // Now clear the result after fade-out
+            // Trigger a refresh to ensure data consistency
             triggerRefresh();
-          }, 500);
+          }, 1000);
         }, 10000); // Show result for full 10 seconds
       } else {
         // If no result, reset everything after 2 seconds
@@ -405,8 +410,24 @@ const LootBoxUtil: React.FC<LootBoxProps> = ({
           
           {/* Rewards section - now at the bottom */}
           {openResult && openResult.result && (
-            <div className={`result-container mt-6 p-3 rounded-lg ${theme.container} border ${theme.border}`}>
-              <h3 className={`text-sm font-bold ${theme.text} mb-2`}>Rewards:</h3>
+            <div className={`result-container mt-6 p-3 rounded-lg ${theme.container} border ${theme.border} transition-all duration-1000 ${isFadingOut ? 'opacity-0' : 'opacity-100'}`}>
+              <div className="flex items-center justify-between mb-2">
+                <h3 className={`text-sm font-bold ${theme.text}`}>Rewards:</h3>
+                <button 
+                  onClick={() => {
+                    setIsFadingOut(true);
+                    setTimeout(() => {
+                      setIsFadingOut(false);
+                      setOpenResult(null);
+                      setIsExploding(false);
+                    }, 1000);
+                  }} 
+                  className="text-xs bg-gray-700 hover:bg-gray-600 text-gray-100 px-2 py-1 rounded-md"
+                  aria-label="Dismiss rewards"
+                >
+                  ✕ Dismiss
+                </button>
+              </div>
               <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-2">
                 {Array.isArray(openResult.result) && openResult.result.length > 0 ? (
                   openResult.result.map((item, index) => (
