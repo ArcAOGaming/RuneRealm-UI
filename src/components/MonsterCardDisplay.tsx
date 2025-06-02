@@ -33,13 +33,16 @@ export const MonsterCardDisplay: React.FC<MonsterCardDisplayProps> = ({
   darkMode: propDarkMode 
 }) => {
   // Get monster from context if not passed as a prop
-  const { monster: contextMonster } = useMonster();
+  const { monster: contextMonster, timeUpdateTrigger } = useMonster();
   // Get darkMode from context if not passed as a prop
   const { darkMode: contextDarkMode } = useWallet();
   
   // Use prop values if provided, otherwise fall back to context
   const monster = propMonster || contextMonster;
   const darkMode = propDarkMode !== undefined ? propDarkMode : contextDarkMode;
+  
+  // Set up a reference to track if we're using context monster
+  const isUsingContextMonster = useRef(propMonster === undefined);
   
   const [isZoomed, setIsZoomed] = useState(false);
   const [isRendering, setIsRendering] = useState(false);
@@ -730,24 +733,19 @@ export const MonsterCardDisplay: React.FC<MonsterCardDisplayProps> = ({
     </div>
   ), [className, expanded, isRendering, monster.name, previousRenderedCard]);
 
-  // Decide whether a full re-render is needed based on prop changes
+  // Compare previous monster and current monster to determine if a full re-render is needed
   const needsFullRerender = useCallback(() => {
-    // Always do a full render on first render
-    if (!prevMonsterRef.current || !prevInventoryRef.current) return true;
+    // Always rerender if this is the first render
+    if (!prevMonsterRef.current) return true;
     
-    // Check if expanded or darkMode changed - these aren't stored in monster but in component state
-    if (darkMode !== (prevMonsterRef.current as any)._darkMode || expanded !== (prevMonsterRef.current as any)._expanded) {
-      return true;
-    }
+    // Always rerender if expanded or darkMode changes
+    const prev = prevMonsterRef.current as any;
+    if (prev._expanded !== expanded || prev._darkMode !== darkMode) return true;
     
-    // Check if inventory items changed significantly
-    const prevItems = prevInventoryRef.current;
-    if (inventoryItems.length !== prevItems.length) {
-      return true;
-    }
+    // Check if inventory has changed
+    if (inventoryItems.length !== (prevInventoryRef.current?.length || 0)) return true;
     
-    // Check if the monster stats have changed significantly
-    const prev = prevMonsterRef.current;
+    // Check if the monster data has changed in ways that affect rendering
     const significantChanges = 
       monster.level !== prev.level ||
       monster.name !== prev.name ||
@@ -755,7 +753,13 @@ export const MonsterCardDisplay: React.FC<MonsterCardDisplayProps> = ({
       monster.attack !== prev.attack ||
       monster.defense !== prev.defense ||
       monster.speed !== prev.speed ||
-      monster.health !== prev.health;
+      monster.health !== prev.health ||
+      // Add status checks to trigger re-render when status changes
+      monster.status?.type !== prev.status?.type ||
+      monster.status?.until_time !== prev.status?.until_time ||
+      monster.energy !== prev.energy ||
+      monster.happiness !== prev.happiness ||
+      monster.exp !== prev.exp;
     
     return significantChanges;
   }, [monster, inventoryItems, expanded, darkMode]);
@@ -775,6 +779,16 @@ export const MonsterCardDisplay: React.FC<MonsterCardDisplayProps> = ({
     
     return () => clearTimeout(renderTimer);
   }, [renderToCanvas, isRendering, needsFullRerender]);
+  
+  // Add a separate effect specifically to handle timeUpdateTrigger changes
+  // This will force a re-render when the context monster changes due to activities
+  useEffect(() => {
+    // Only respond to timeUpdateTrigger if we're using the context monster
+    if (isUsingContextMonster.current && timeUpdateTrigger > 0) {
+      console.log('[MonsterCardDisplay] Context monster updated, refreshing display');
+      renderToCanvas();
+    }
+  }, [timeUpdateTrigger, renderToCanvas]);
 
   // Memoize the zoomed view to prevent unnecessary re-renders
   const zoomedView = useMemo(() => {

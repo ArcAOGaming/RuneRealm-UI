@@ -27,7 +27,8 @@ export const MonsterManagement: React.FC = (): JSX.Element => {
     timeUpdateTrigger,
     getRarityName,
     formatTimeRemaining,
-    calculateProgress
+    calculateProgress,
+    refreshMonsterAfterActivity
   } = useMonster();
   
   const [isPurchaseModalOpen, setIsPurchaseModalOpen] = useState(false);
@@ -82,8 +83,12 @@ export const MonsterManagement: React.FC = (): JSX.Element => {
         data: ""
       }, () => {
         console.log('[MonsterManagement] Activity executed, refreshing soon...');
-        // Refresh to get updated monster data
+        // Trigger the regular refresh
         triggerRefresh();
+        
+        // Also schedule the forced monster refresh to get the updated monster state
+        console.log('[MonsterManagement] Scheduling monster refresh after level up');
+        refreshMonsterAfterActivity();
       });
     } catch (error) {
       console.error('[MonsterManagement] Error executing activity:', error);
@@ -97,8 +102,14 @@ export const MonsterManagement: React.FC = (): JSX.Element => {
     
     setIsAdopting(true);
     try {
-      await adoptMonster(wallet, triggerRefresh);
-      console.log('[MonsterManagement] Monster adoption initiated');
+      await adoptMonster(wallet, () => {
+        // Trigger regular refresh
+        triggerRefresh();
+        
+        // Schedule monster refresh after adoption
+        console.log('[MonsterManagement] Monster adoption initiated, scheduling refresh');
+        refreshMonsterAfterActivity();
+      });
     } catch (error) {
       console.error('[MonsterManagement] Adoption error:', error);
     } finally {
@@ -159,7 +170,8 @@ export const MonsterManagement: React.FC = (): JSX.Element => {
       );
     }
 
-    const monster = { ...walletStatus.monster };
+    // Use monster directly from context instead of walletStatus to ensure we have the latest state
+    const monster = localMonster || walletStatus.monster;
     const activities = walletStatus.monster.activities;
     
     // Use the memoized helper function to check if activity is complete

@@ -21,6 +21,7 @@ interface MonsterContextType {
   loadMonsterData: () => Promise<void>;
   loadLootBoxes: () => Promise<void>;
   updateTimeTracking: () => void;
+  refreshMonsterAfterActivity: () => void;
   
   // Helper functions
   getRarityName: (rarity: number) => string;
@@ -80,6 +81,10 @@ const calculateProgress = (sinceTime: number, untilTime: number): number => {
 export const MonsterProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   // Get wallet data from useWallet hook
   const { wallet, walletStatus, triggerRefresh, refreshTrigger } = useWallet();
+  
+  // Define a constant for the delay before refreshing monster data after activities
+  // We use 10 seconds to allow the blockchain to process the activity
+  const ACTIVITY_REFRESH_DELAY_MS = 10000;
   
   // State for monster data
   const [monster, setMonster] = useState<MonsterStats | null>(null);
@@ -143,6 +148,33 @@ export const MonsterProvider: React.FC<{ children: React.ReactNode }> = ({ child
       setIsLoadingMonster(false);
     }
   }, [wallet, walletStatus]);
+  
+  // Function to force refresh monster data after activities with a delay
+  const refreshMonsterAfterActivity = useCallback(() => {
+    if (!wallet?.address) return;
+    
+    console.log(`[MonsterContext] Activity completed, will refresh monster data in ${ACTIVITY_REFRESH_DELAY_MS/1000} seconds`);
+    
+    // Wait for the specified delay before refreshing
+    setTimeout(async () => {
+      console.log('[MonsterContext] Refreshing monster data after activity...');
+      setIsLoadingMonster(true);
+      try {
+        // Force a direct update from the blockchain, bypassing walletStatus cache
+        const monsterData = await getUserMonster(wallet);
+        if (monsterData) {
+          console.log('[MonsterContext] Monster data refreshed successfully after activity');
+          setMonster(monsterData);
+          // Also update the time trigger to force UI updates
+          setTimeUpdateTrigger(Date.now());
+        }
+      } catch (error) {
+        console.error('[MonsterContext] Error refreshing monster data after activity:', error);
+      } finally {
+        setIsLoadingMonster(false);
+      }
+    }, ACTIVITY_REFRESH_DELAY_MS);
+  }, [wallet]);
   
   // Load loot boxes
   const loadLootBoxes = useCallback(async () => {
@@ -325,13 +357,10 @@ export const MonsterProvider: React.FC<{ children: React.ReactNode }> = ({ child
             console.log(`[MonsterContext] ${statusType} activity complete, clearing timer`);
             clearInterval(timer);
             updateTimeTracking();
-            
-            // Don't trigger a refresh here - it creates a refresh loop with the 5-second delayed implementation
-            // in WalletContext. Instead, the UI will update on the next regular refresh cycle.
           } else {
             updateTimeTracking();
           }
-        }, 3000); // Update every 3 seconds instead of every second
+        }, 3000); // Update every 3 seconds
         
         return () => {
           console.log(`[MonsterContext] Cleaning up ${statusType} timer`);
@@ -340,7 +369,7 @@ export const MonsterProvider: React.FC<{ children: React.ReactNode }> = ({ child
       }
     }
   }, [monster?.status?.type, monster?.status?.until_time, updateTimeTracking]);
-  
+
   // Combine all values and functions to provide through context
   const contextValue: MonsterContextType = {
     monster,
@@ -352,6 +381,7 @@ export const MonsterProvider: React.FC<{ children: React.ReactNode }> = ({ child
     loadMonsterData,
     loadLootBoxes,
     updateTimeTracking,
+    refreshMonsterAfterActivity,
     getRarityName,
     formatTimeRemaining,
     calculateProgress

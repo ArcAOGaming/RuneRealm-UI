@@ -54,7 +54,7 @@ const MonsterActivities: React.FC<MonsterActivitiesProps> = ({
   const navigate = useNavigate();
   const { triggerRefresh } = useWallet();
   const { tokenBalances, refreshAllTokens } = useTokens();
-  const { monster: contextMonster, formatTimeRemaining, calculateProgress } = useMonster();
+  const { monster: contextMonster, formatTimeRemaining, calculateProgress, refreshMonsterAfterActivity } = useMonster();
   
   // Use monster from props if provided, otherwise from context
   const monster = monsterProp || contextMonster;
@@ -179,7 +179,14 @@ const MonsterActivities: React.FC<MonsterActivitiesProps> = ({
         ],
         signer,
         data: ""
-      }, triggerRefresh);
+      }, () => {
+        // First trigger the regular refresh
+        triggerRefresh();
+        
+        // Then schedule the forced monster data refresh after delay
+        console.log(`[MonsterActivities] ${actionType} completed, scheduling monster refresh`);
+        refreshMonsterAfterActivity();
+      });
       //executeActivity(signer,actionType,canReturn,config.cost.token,config.cost.amount.toString())
   
       if (actionType === 'BATTLE' && !canReturn) navigate('/battle');
@@ -190,7 +197,7 @@ const MonsterActivities: React.FC<MonsterActivitiesProps> = ({
       console.error(`Error handling ${actionType}:`, error);
     } finally {
       if (actionType === 'FEED') setIsFeeding(false);
-      else if (actionType === 'Play') setIsPlaying(false);
+      else if (actionType === 'PLAY') setIsPlaying(false);
       else if (actionType === 'Battle') setIsInBattle(false);
       else if (actionType === 'Mission') setIsOnMission(false);
     }
