@@ -49,13 +49,13 @@ export const TokenProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   const fetchTokenBalance = useCallback(async (assetId: SupportedAssetId) => {
     // Skip if there's already a request in progress for this token
     if (pendingRequestsRef.current[assetId]) {
-      console.log(`[TokenContext] Skipping duplicate request for ${ASSET_INFO[assetId]?.ticker || assetId} - already in progress`);
+      //console.log(`[TokenContext] Skipping duplicate request for ${ASSET_INFO[assetId]?.ticker || assetId} - already in progress`);
       try {
         // Wait for the existing request to complete
         await pendingRequestsRef.current[assetId];
         return;
       } catch (error) {
-        console.error(`[TokenContext] Error waiting for pending request:`, error);
+        //console.error(`[TokenContext] Error waiting for pending request:`, error);
         return;
       }
     }
@@ -97,13 +97,13 @@ export const TokenProvider: React.FC<{ children: React.ReactNode }> = ({ childre
           })
           .build();
         
-        console.log(`[TokenContext] Fetching balance for ${ASSET_INFO[assetId]?.ticker || assetId}...`);
+        //console.log(`[TokenContext] Fetching balance for ${ASSET_INFO[assetId]?.ticker || assetId}...`);
         
         // Fetch the balance
         const balanceResult = await tokenClient.balance();
         const balance = parseInt(balanceResult?.toString() || '0', 10) || 0;
         
-        console.log(`[TokenContext] Balance for ${ASSET_INFO[assetId]?.ticker || assetId}: ${balance}`);
+        //console.log(`[TokenContext] Balance for ${ASSET_INFO[assetId]?.ticker || assetId}: ${balance}`);
         
         // Update the token in state with its new balance
         setTokenBalances(prev => ({
@@ -117,7 +117,7 @@ export const TokenProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         
         return { assetId, balance, success: true };
       } catch (error) {
-        console.error(`[TokenContext] Error fetching balance for ${ASSET_INFO[assetId]?.ticker || assetId}:`, error);
+        //console.error(`[TokenContext] Error fetching balance for ${ASSET_INFO[assetId]?.ticker || assetId}:`, error);
         
         // Mark this token as error
         setTokenBalances(prev => ({
@@ -143,7 +143,7 @@ export const TokenProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   
   // Function to fetch all token balances
   const fetchAllTokenBalances = useCallback(async () => {
-    console.log(`[TokenContext] Fetching all token balances...`);
+    //console.log(`[TokenContext] Fetching all token balances...`);
     setIsLoading(true);
     
     try {
@@ -158,7 +158,7 @@ export const TokenProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       // Wait for all requests to complete
       await Promise.all(promises);
     } catch (error) {
-      console.error(`[TokenContext] Error fetching all token balances:`, error);
+      //console.error(`[TokenContext] Error fetching all token balances:`, error);
     } finally {
       setIsLoading(false);
     }
@@ -166,13 +166,13 @@ export const TokenProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   
   // Function to retry fetching a specific token
   const retryToken = useCallback((assetId: SupportedAssetId) => {
-    console.log(`[TokenContext] Retrying token fetch for ${ASSET_INFO[assetId]?.ticker || assetId}`);
+    //console.log(`[TokenContext] Retrying token fetch for ${ASSET_INFO[assetId]?.ticker || assetId}`);
     fetchTokenBalance(assetId);
   }, [fetchTokenBalance]);
   
   // Function to refresh all tokens
   const refreshAllTokens = useCallback(() => {
-    console.log(`[TokenContext] Refreshing all tokens`);
+    //console.log(`[TokenContext] Refreshing all tokens`);
     fetchAllTokenBalances();
   }, [fetchAllTokenBalances]);
   
