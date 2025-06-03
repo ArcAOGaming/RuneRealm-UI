@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { useWallet } from '../hooks/useWallet';
-import { useTokens } from '../context/TokenContext';
+import { useTokens } from '../contexts/TokenContext';
 import { getLootBoxes, openLootBoxWithRarity, LootBoxResponse } from '../utils/aoHelpers';
 import { currentTheme } from '../constants/theme';
 import { SupportedAssetId } from '../constants/Constants';

@@ -1,6 +1,6 @@
 import React, { createContext, useContext, useState, useEffect, useCallback, useRef } from 'react';
 import { TokenClient } from 'ao-process-clients';
-import { SUPPORTED_ASSET_IDS, ASSET_INFO, SupportedAssetId, AssetInfo } from '../constants/Constants';
+import { SUPPORTED_ASSET_IDS, ASSET_INFO, SupportedAssetId } from '../constants/Constants';
 import type { AssetBalance } from '../utils/interefaces';
 
 // Define loading states for tokens

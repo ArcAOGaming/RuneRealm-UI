@@ -6,8 +6,8 @@ import PurchaseInfo from './pages/PurchaseInfo'
 import {MonsterManagement} from './pages/MonsterManagement'
 import Admin from './pages/Admin'
 import MonsterTest from './pages/MonsterTest'
-import { WalletProvider } from './context/WalletContext'
-import { TokenProvider } from './context/TokenContext'
+import { WalletProvider } from './contexts/WalletContext'
+import { TokenProvider } from './contexts/TokenContext'
 import { useWallet } from './hooks/useWallet';
 import { WalletStatus } from './utils/interefaces';
 import './index.css'

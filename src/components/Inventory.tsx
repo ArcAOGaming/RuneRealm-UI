@@ -1,6 +1,6 @@
 import React, { useState, useMemo, useCallback, useEffect } from 'react';
 import { useWallet } from '../hooks/useWallet';
-import { useTokens } from '../context/TokenContext';
+import { useTokens } from '../contexts/TokenContext';
 import { formatTokenAmount } from '../utils/aoHelpers';
 import { currentTheme } from '../constants/theme';
 import { Gateway, ASSET_INFO, SupportedAssetId } from '../constants/Constants';
