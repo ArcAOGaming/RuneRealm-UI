@@ -83,8 +83,8 @@ export const MonsterProvider: React.FC<{ children: React.ReactNode }> = ({ child
   const { wallet, walletStatus, triggerRefresh, refreshTrigger } = useWallet();
   
   // Define a constant for the delay before refreshing monster data after activities
-  // We use 10 seconds to allow the blockchain to process the activity
-  const ACTIVITY_REFRESH_DELAY_MS = 10000;
+  // We use 3 seconds to allow the blockchain to process the activity
+  const ACTIVITY_REFRESH_DELAY_MS = 3000;
   
   // State for monster data
   const [monster, setMonster] = useState<MonsterStats | null>(null);
@@ -348,8 +348,8 @@ export const MonsterProvider: React.FC<{ children: React.ReactNode }> = ({ child
       if (untilTime && Date.now() < untilTime) {
         console.log(`[MonsterContext] Starting timer for ${statusType} activity`);
         
-        // Use a less frequent timer to reduce UI updates and network load
-        // 3 seconds is frequent enough for progress bars while reducing overhead
+        // Use a more frequent timer for smoother UI updates on progress bars.
+        // 100ms provides a good balance between smoothness and performance.
         const timer = setInterval(() => {
           const now = Date.now();
           if (now >= untilTime) {
@@ -360,7 +360,7 @@ export const MonsterProvider: React.FC<{ children: React.ReactNode }> = ({ child
           } else {
             updateTimeTracking();
           }
-        }, 3000); // Update every 3 seconds
+        }, 100); // Update every 100 milliseconds
         
         return () => {
           console.log(`[MonsterContext] Cleaning up ${statusType} timer`);

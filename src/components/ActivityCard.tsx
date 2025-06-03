@@ -23,8 +23,7 @@ interface ActivityCardProps {
   onAction: () => void;
   isLoading: boolean;
   isDisabled: boolean;
-  actionText: string;
-  loadingText: string;
+  buttonText: string;
   theme: any;
   highlightSelectable?: boolean;
   remainingTime?: string;
@@ -35,8 +34,8 @@ export const ActivityCard: React.FC<ActivityCardProps> = ({
   title,
   badge,
   badgeColor,
-  gradientFrom,
-  gradientTo,
+  gradientFrom, // Kept for button, but not for top bar
+  gradientTo,   // Kept for button, but not for top bar
   tokenLogo,
   tokenBalance,
   tokenRequired,
@@ -45,8 +44,7 @@ export const ActivityCard: React.FC<ActivityCardProps> = ({
   onAction,
   isLoading,
   isDisabled,
-  actionText,
-  loadingText,
+  buttonText,
   theme,
   highlightSelectable = false,
   remainingTime,
@@ -87,23 +85,49 @@ export const ActivityCard: React.FC<ActivityCardProps> = ({
       className={`activity-card relative overflow-hidden rounded-xl 
       ${theme.container} ${borderStyle} ${glowEffect} transform ${hoverEffect} 
       transition-all duration-300 h-[200px] w-[180px] flex flex-col`}>
+
+      {/* --- NEW Integrated Progress/Header Bar --- */}
+      {(() => {
+        const isActivityCompleted = progress === 100;
+        const isActivityInProgress = progress !== undefined && progress < 100;
+        const baseBgColor = theme.isDarkMode ? 'bg-[#2A1912]' : 'bg-[#F4E4C1]'; // Theme-aligned dark and light backgrounds
+
+        return (
+          <div 
+            className={`absolute top-0 left-0 w-full h-3 flex items-center justify-center text-white text-xs font-bold overflow-hidden`}
+          >
+            {isActivityCompleted ? (
+              <div className="w-full h-full flex items-center justify-center bg-purple-600 shadow-lg shadow-purple-500/50 text-black">
+                COMPLETE
+              </div>
+            ) : isActivityInProgress ? (
+              <div className={`w-full h-full relative ${baseBgColor} flex items-center justify-center`}>
+                <div 
+                  className="absolute top-0 left-0 h-full bg-gradient-to-r from-purple-500 to-pink-500 animate-magical-progress"
+                  style={{ width: `${progress}%` }}
+                />
+                {remainingTime && <span className="relative z-10 text-black text-xs font-bold">{remainingTime}</span>}
+              </div>
+            ) : (
+              <div className={`w-full h-full ${baseBgColor}`} />
+            )}
+          </div>
+        );
+      })()}
       
-      {/* Gradient bar at top */}
-      <div className={`absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-${gradientFrom} to-${gradientTo}`}></div>
-      
-      {/* Selectable indicator */}
+      {/* Selectable indicator (ensure it's visible on top of the new header) */}
       <SelectableIndicator />
       
-      {/* Main content */}
-      <div className="p-3 flex flex-col h-full">
-        {/* Header */}
-        <div className="flex justify-between items-center mb-2">
+      {/* Main content - Adjusted pt-3 to account for h-2 header */}
+      <div className="p-3 pt-4 flex flex-col h-full">
+        {/* Header (Title and Badge) */}
+        <div className="flex justify-between items-center mb-1"> {/* Reduced mb from mb-2 */}
           <h3 className={`text-base font-bold ${theme.text}`}>{title}</h3>
           <span className={`px-1.5 py-0.5 bg-${badgeColor} text-${badgeColor}-900 rounded-full text-xs font-bold`}>
             {badge}
           </span>
         </div>
-        
+
         {/* Token info and requirements */}
         <div className="flex-grow space-y-2">
           {/* Token display */}
@@ -156,23 +180,6 @@ export const ActivityCard: React.FC<ActivityCardProps> = ({
           </div>
         </div>
 
-        {/* Progress bar if activity is in progress */}
-        {progress !== undefined && (
-          <div className="mt-1 mb-1">
-            <div className="h-1.5 w-full bg-gray-200 rounded-full overflow-hidden">
-              <div 
-                className={`h-full bg-gradient-to-r from-${gradientFrom} to-${gradientTo}`} 
-                style={{ width: `${progress}%` }}
-              ></div>
-            </div>
-            {remainingTime && (
-              <div className="text-xs text-center mt-0.5 font-medium text-gray-600">
-                {remainingTime}
-              </div>
-            )}
-          </div>
-        )}
-        
         {/* Action button - always at bottom */}
         <div className="mt-2">
           <button
@@ -182,7 +189,7 @@ export const ActivityCard: React.FC<ActivityCardProps> = ({
               ${buttonStyle} transition-all duration-300 
               ${!isDisabled && highlightSelectable ? 'ring-2 ring-offset-1 ring-' + gradientFrom : ''}`}
           >
-            {isLoading ? loadingText : actionText}
+            {buttonText}
           </button>
         </div>
       </div>

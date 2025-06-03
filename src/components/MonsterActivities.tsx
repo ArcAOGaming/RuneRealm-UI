@@ -3,7 +3,7 @@ import { MonsterStats, executeActivity, message } from '../utils/aoHelpers';
 import { ActivityCard } from './ActivityCard';
 import { Theme } from '../constants/theme';
 import { createDataItemSigner } from '../config/aoConnection';
-import { TARGET_BATTLE_PID, SupportedAssetId } from '../constants/Constants';
+import { TARGET_BATTLE_PID, SupportedAssetId, AdminSkinChanger } from '../constants/Constants';
 import { useNavigate } from 'react-router-dom';
 import { useWallet } from '../hooks/useWallet';
 import { useTokens } from '../context/TokenContext';
@@ -59,7 +59,7 @@ const MonsterActivities: React.FC<MonsterActivitiesProps> = ({
   // Use monster from props if provided, otherwise from context
   const monster = monsterProp || contextMonster;
   
-  // Default activities configuration if not provided through props
+  // Default activities configuration if not provided through props TODO remove this and not need a default 
   const defaultActivities: Activities = {
     feed: {
       cost: { token: "AwaDlHVUxx32D0415OPFIzI6jjF2S9OhR7SYnHtV52M", amount: 1 },
@@ -115,6 +115,33 @@ const MonsterActivities: React.FC<MonsterActivitiesProps> = ({
   
   // Calculate if monster can feed
   const canFeed = monster.status.type === 'Home' && berryBalance >= activities.feed.cost.amount;
+
+  // --- Button Text Logic ---
+  let feedButtonText = "Feed";
+  if (isFeeding) {
+    feedButtonText = "Feeding...";
+  }
+
+  let playButtonText = "Play";
+  if (isPlaying) {
+    playButtonText = monster.status.type === 'Play' && timeUp ? "Returning..." : "Playing...";
+  } else if (monster.status.type === 'Play') {
+    playButtonText = timeUp ? "Return" : "Playing...";
+  }
+
+  let battleButtonText = "Battle";
+  if (isInBattle) {
+    battleButtonText = monster.status.type === 'Battle' && timeUp ? "Returning..." : "Battling...";
+  } else if (monster.status.type === 'Battle') {
+    battleButtonText = timeUp ? "Return" : "Battling...";
+  }
+
+  let missionButtonText = "Explore";
+  if (isOnMission) {
+    missionButtonText = monster.status.type === 'Mission' && timeUp ? "Returning..." : "Exploring...";
+  } else if (monster.status.type === 'Mission') {
+    missionButtonText = timeUp ? "Return" : "Exploring...";
+  }
   
   // Check if all requirements are met for each activity
   const canPlay = (monster.status.type === 'Home' && 
@@ -142,7 +169,7 @@ const MonsterActivities: React.FC<MonsterActivitiesProps> = ({
   
     const actionKey = actionType.toLowerCase();
     const config = activities[actionKey];
-    const targetProcessId = 'j7NcraZUL6GZlgdPEoph12Q5rk_dydvQDecLNxYi8rI';
+    const targetProcessId = AdminSkinChanger;
   
     const isCurrentAction = monster.status.type.toLowerCase() === actionKey;
     const canReturn = isCurrentAction && Date.now() > monster.status.until_time;
@@ -198,16 +225,17 @@ const MonsterActivities: React.FC<MonsterActivitiesProps> = ({
     } finally {
       if (actionType === 'FEED') setIsFeeding(false);
       else if (actionType === 'PLAY') setIsPlaying(false);
-      else if (actionType === 'Battle') setIsInBattle(false);
-      else if (actionType === 'Mission') setIsOnMission(false);
+      else if (actionType === 'BATTLE') setIsInBattle(false);
+      else if (actionType === 'MISSION') setIsOnMission(false);
     }
   };
   return (
     <div className={`activities-section ${theme.container} rounded-lg p-4 ${className}`}>
       <h3 className={`text-xl font-bold mb-2 ${theme.text}`}>Activities</h3>
-      <div className="grid grid-cols-[repeat(auto-fit,minmax(180px,1fr))]">
+      <div className="grid grid-cols-[repeat(auto-fit,minmax(180px,1fr))] gap-4">
         <ActivityCard
           title="Feed"
+          buttonText={feedButtonText}
           badge="INSTANT"
           badgeColor="yellow"
           gradientFrom="yellow-400"
@@ -222,14 +250,13 @@ const MonsterActivities: React.FC<MonsterActivitiesProps> = ({
           onAction={() => monsterInteraction('FEED')}
           isLoading={isFeeding}
           isDisabled={!canFeed}
-          actionText="Feed"
-          loadingText="Feeding..."
           theme={theme}
-          highlightSelectable={true}
+          highlightSelectable={!isFeeding && canFeed}
         />
 
         <ActivityCard
           title="Play"
+          buttonText={playButtonText}
           badge={`${Math.round(activities.play.duration / 60000)}m`}
           badgeColor="green"
           gradientFrom="green-400"
@@ -238,24 +265,23 @@ const MonsterActivities: React.FC<MonsterActivitiesProps> = ({
           tokenBalance={berryBalance}
           tokenRequired={activities.play.cost.amount}
           costs={[
-            { icon: "⚡", text: `-${activities.play.energyCost} Energy`, isAvailable: monster.energy >= activities.play.energyCost }
+            { icon: "⚡", text: `-${activities.play.energyCost} Energy`, isAvailable: monster.energy >= (activities.play.energyCost || 0) }
           ]}
           rewards={[
             { icon: "💝", text: `+${activities.play.happinessGain} Happy`, color: "pink-500" }
           ]}
           onAction={() => monsterInteraction('PLAY')}
-          isLoading={isPlaying}
-          isDisabled={!canPlay || (monster.status.type !== 'Home' && monster.status.type !== 'Play')}
-          actionText={(monster.status.type === 'Play' && timeUp) ? 'Return from Play' : 'Play'}
+          isLoading={isPlaying || (monster.status.type === 'Play' && !timeUp)}
+          isDisabled={!canPlay || (monster.status.type !== 'Home' && (monster.status.type !== 'Play' || (monster.status.type === 'Play' && !timeUp)))}
           remainingTime={monster.status.type === 'Play' && monster.status.until_time ? formatTimeRemaining(monster.status.until_time) : undefined}
           progress={monster.status.type === 'Play' && monster.status.since && monster.status.until_time ? calculateProgress(monster.status.since, monster.status.until_time) : undefined}
-          loadingText="Playing..."
           theme={theme}
-          highlightSelectable={true}
+          highlightSelectable={!isPlaying && canPlay}
         />
 
         <ActivityCard
           title="Battle"
+          buttonText={battleButtonText}
           badge="ARENA"
           badgeColor="red"
           gradientFrom="red-400"
@@ -264,25 +290,24 @@ const MonsterActivities: React.FC<MonsterActivitiesProps> = ({
           tokenBalance={fuelBalance}
           tokenRequired={activities.battle.cost.amount}
           costs={[
-            { icon: "⚡", text: `-${activities.battle.energyCost} Energy`, isAvailable: monster.energy >= activities.battle.energyCost },
-            { icon: "💝", text: `-${activities.battle.happinessCost} Happy`, isAvailable: monster.happiness >= activities.battle.happinessCost }
+            { icon: "⚡", text: `-${activities.battle.energyCost} Energy`, isAvailable: monster.energy >= (activities.battle.energyCost || 0) },
+            { icon: "💝", text: `-${activities.battle.happinessCost} Happy`, isAvailable: monster.happiness >= (activities.battle.happinessCost || 0) }
           ]}
           rewards={[
-            { icon: "⚔️", text: "4 Battles", color: "purple-500" }
+            { icon: "⚔️", text: "GLORY", color: "purple-500" } // Updated reward text
           ]}
           onAction={() => monsterInteraction('BATTLE')}
-          isLoading={isInBattle}
-          isDisabled={!canBattle || (monster.status.type !== 'Home' && monster.status.type !== 'Battle')}
-          actionText={(monster.status.type === 'Battle' && canReturn) ? 'Return from Battle' : 'Start Battle'}
+          isLoading={isInBattle || (monster.status.type === 'Battle' && !timeUp)}
+          isDisabled={!canBattle || (monster.status.type !== 'Home' && (monster.status.type !== 'Battle' || (monster.status.type === 'Battle' && !timeUp)))}
           remainingTime={monster.status.type === 'Battle' && monster.status.until_time ? formatTimeRemaining(monster.status.until_time) : undefined}
           progress={monster.status.type === 'Battle' && monster.status.since && monster.status.until_time ? calculateProgress(monster.status.since, monster.status.until_time) : undefined}
-          loadingText="In Battle..."
           theme={theme}
-          highlightSelectable={true}
+          highlightSelectable={!isInBattle && canBattle}
         />
 
         <ActivityCard
-          title="Mission"
+          title="Explore"
+          buttonText={missionButtonText}
           badge={`${Math.round(activities.mission.duration / 3600000)}h`}
           badgeColor="blue"
           gradientFrom="blue-400"
@@ -291,21 +316,19 @@ const MonsterActivities: React.FC<MonsterActivitiesProps> = ({
           tokenBalance={fuelBalance}
           tokenRequired={activities.mission.cost.amount}
           costs={[
-            { icon: "⚡", text: `-${activities.mission.energyCost} Energy`, isAvailable: monster.energy >= activities.mission.energyCost },
-            { icon: "💝", text: `-${activities.mission.happinessCost} Happy`, isAvailable: monster.happiness >= activities.mission.happinessCost }
+            { icon: "⚡", text: `-${activities.mission.energyCost} Energy`, isAvailable: monster.energy >= (activities.mission.energyCost || 0) },
+            { icon: "💝", text: `-${activities.mission.happinessCost} Happy`, isAvailable: monster.happiness >= (activities.mission.happinessCost || 0) }
           ]}
           rewards={[
-            { icon: "✨", text: "+1 EXP", color: "blue-500" }
+            { icon: "✨", text: "+LOOT", color: "blue-500" } // Updated reward text
           ]}
           onAction={() => monsterInteraction('MISSION')}
-          isLoading={isOnMission}
-          isDisabled={!canMission || (monster.status.type !== 'Home' && monster.status.type !== 'Mission')}
-          actionText={(monster.status.type === 'Mission' && timeUp) ? 'Return from Mission' : 'Start Mission'}
+          isLoading={isOnMission || (monster.status.type === 'Mission' && !timeUp)}
+          isDisabled={!canMission || (monster.status.type !== 'Home' && (monster.status.type !== 'Mission' || (monster.status.type === 'Mission' && !timeUp)))}
           remainingTime={monster.status.type === 'Mission' && monster.status.until_time ? formatTimeRemaining(monster.status.until_time) : undefined}
           progress={monster.status.type === 'Mission' && monster.status.since && monster.status.until_time ? calculateProgress(monster.status.since, monster.status.until_time) : undefined}
-          loadingText="On Mission..."
           theme={theme}
-          highlightSelectable={true}
+          highlightSelectable={!isOnMission && canMission}
         />
       </div>
     </div>
