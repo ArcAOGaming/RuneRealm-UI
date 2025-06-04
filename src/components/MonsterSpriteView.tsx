@@ -1,5 +1,7 @@
 import React, { useEffect, useRef, useState, useCallback } from 'react';
 
+type EffectType = 'Full Heal' | 'Large Heal' | 'Medium Heal' | 'Small Heal' | 'Revive' | null;
+
 // Extended animation types to support new behaviors
 type AnimationType = 'walkRight' | 'walkLeft' | 'walkUp' | 'walkDown' | 'attack1' | 'attack2' | 
                     'idle' | 'sleep' | 'eat' | 'train' | 'play' | 'happy';
@@ -18,6 +20,8 @@ interface MonsterSpriteViewProps {
   activityType?: string; // Type of activity the monster is doing
   containerWidth?: number; // Width of container for pacing calculations
   containerHeight?: number; // Height of container for animation positioning
+  effect?: EffectType; // Current effect to display
+  onEffectComplete?: () => void; // Callback when effect animation completes
 }
 
 const FRAME_WIDTH = 64;
@@ -25,6 +29,59 @@ const FRAME_HEIGHT = 64;
 const FRAMES_PER_ANIMATION = 4;
 const ANIMATION_ROWS = 6;
 const ANIMATION_SPEED = 1000 / 4; // 1 second total divided by 4 frames = 250ms per frame
+
+const EffectAnimation: React.FC<{ effect: EffectType; onComplete: () => void }> = ({ effect, onComplete }) => {
+  const [currentFrame, setCurrentFrame] = useState(0);
+  const effectRef = useRef<HTMLImageElement | null>(null);
+  const FRAME_COUNT = 8;
+  const ANIMATION_SPEED = 100; // ms per frame
+
+  useEffect(() => {
+    if (!effect) return;
+    
+    const img = new Image();
+    img.src = new URL(`../assets/effects/${effect}.png`, import.meta.url).href;
+    effectRef.current = img;
+
+    const timer = setInterval(() => {
+      setCurrentFrame(prev => {
+        if (prev >= FRAME_COUNT - 1) {
+          clearInterval(timer);
+          onComplete();
+          return 0;
+        }
+        return prev + 1;
+      });
+    }, ANIMATION_SPEED);
+
+    return () => clearInterval(timer);
+  }, [effect, onComplete]);
+
+  if (!effect) return null;
+
+  return (
+    <div className="effect-animation" style={{
+      position: 'absolute',
+      width: '64px',
+      height: '64px',
+      top: '50%',
+      left: '50%',
+      transform: 'translate(-50%, -50%) scale(3.75)',
+      zIndex: 10,
+      pointerEvents: 'none',
+      overflow: 'hidden',
+    }}>
+      <div style={{
+        width: '64px',
+        height: '64px',
+        backgroundImage: effectRef.current ? `url(${effectRef.current.src})` : 'none',
+        backgroundPosition: `-${currentFrame * 64}px 0`,
+        backgroundSize: '512px 64px', // 8 frames * 64px
+        imageRendering: 'pixelated',
+      }} />
+    </div>
+  );
+};
 
 const MonsterSpriteView: React.FC<MonsterSpriteViewProps> = ({ 
   sprite, 
@@ -35,8 +92,23 @@ const MonsterSpriteView: React.FC<MonsterSpriteViewProps> = ({
   behaviorMode = 'static',
   activityType,
   containerWidth = FRAME_WIDTH * 4,
-  containerHeight = FRAME_HEIGHT * 4
+  containerHeight = FRAME_HEIGHT * 4,
+  effect: externalEffect,
+  onEffectComplete
 }) => {
+  const [effect, setEffect] = useState<EffectType>(null);
+
+  // Handle external effect changes
+  useEffect(() => {
+    if (externalEffect && externalEffect !== effect) {
+      setEffect(externalEffect);
+    }
+  }, [externalEffect]);
+
+  const handleEffectComplete = useCallback(() => {
+    setEffect(null);
+    onEffectComplete?.();
+  }, [onEffectComplete]);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const [spriteImage, setSpriteImage] = useState<HTMLImageElement | null>(null);
   const animationFrameRef = useRef<number>(0);
@@ -430,28 +502,40 @@ const MonsterSpriteView: React.FC<MonsterSpriteViewProps> = ({
         height: containerHeight
       }}
     >
-      <canvas
-        ref={canvasRef}
-        width={FRAME_WIDTH}
-        height={FRAME_HEIGHT}
-        className="pixelated absolute" // Ensure pixel-perfect scaling
-        style={{
-          width: FRAME_WIDTH * 3.75, // Scale up 3.75x for better visibility
-          height: FRAME_HEIGHT * 3.75,
-          imageRendering: 'pixelated',
-          transform: isOpponent ? 'scaleX(-1)' : undefined, // Flip opponent sprites horizontally
-          // Position based on behavior mode
-          left: behaviorMode === 'pacing' 
-            ? `${position}px` 
-            : behaviorMode === 'activity' 
-              ? `${positionX}px`
-              : '50%',
-          bottom: behaviorMode === 'activity'
-            ? `${Math.min(90, Math.max(10, positionY))}px`
-            : '10%',
-          marginLeft: behaviorMode === 'pacing' || behaviorMode === 'activity' ? 0 : '-120px' // Center the sprite when not pacing
-        }}
-      />
+      <div style={{
+        position: 'relative',
+        width: FRAME_WIDTH * 3.75,
+        height: FRAME_HEIGHT * 3.75,
+        left: behaviorMode === 'pacing' 
+          ? `${position}px` 
+          : behaviorMode === 'activity' 
+            ? `${positionX}px`
+            : '50%',
+        bottom: behaviorMode === 'activity'
+          ? `${Math.min(90, Math.max(10, positionY))}px`
+          : '10%',
+        marginLeft: behaviorMode === 'pacing' || behaviorMode === 'activity' ? 0 : '-120px',
+        transform: isOpponent ? 'scaleX(-1)' : undefined,
+      }}>
+        <canvas
+          ref={canvasRef}
+          width={FRAME_WIDTH}
+          height={FRAME_HEIGHT}
+          className="pixelated absolute"
+          style={{
+            width: '100%',
+            height: '100%',
+            imageRendering: 'pixelated',
+            zIndex: 1,
+          }}
+        />
+        {effect && (
+          <EffectAnimation 
+            effect={effect} 
+            onComplete={handleEffectComplete} 
+          />
+        )}
+      </div>
     </div>
   );
 };
