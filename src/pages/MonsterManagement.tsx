@@ -15,6 +15,7 @@ import { MonsterCardDisplay } from '../components/MonsterCardDisplay';
 import LootBoxUtil from '../components/LootBoxUtil';
 import MonsterActivities from '../components/MonsterActivities';
 import { useMonster } from '../contexts/MonsterContext';
+import MonsterSpriteView from '../components/MonsterSpriteView';
 
 export const MonsterManagement: React.FC = (): JSX.Element => {
   const navigate = useNavigate();
@@ -191,10 +192,12 @@ export const MonsterManagement: React.FC = (): JSX.Element => {
 
           {/* Right Column - Stats and Info */}
           <div className="flex flex-col md:w-1/2 space-y-6">
-            {/* Monster Status Display - Always visible */}
-            <div className={`status-section ${theme.container} rounded-lg p-4`}>
+            {/* Enhanced Monster Status Display - Always visible */}
+            <div className={`status-section ${theme.container} rounded-lg p-6`}>
               <h3 className={`text-xl font-bold mb-2 ${theme.text}`}>Current Status</h3>
-              <div className="flex flex-col space-y-2">
+              
+              {/* Status information and progress bar */}
+              <div className="flex flex-col space-y-2 mb-4">
                 <div className="flex justify-between items-center">
                   <span className={`font-medium ${theme.text}`}>
                     Status: <span className="font-bold">{monster.status.type}</span>
@@ -216,6 +219,57 @@ export const MonsterManagement: React.FC = (): JSX.Element => {
                     ></div>
                   </div>
                 )}
+              </div>
+              
+              {/* Monster Status Scene */}
+              <div className={`monster-status-scene relative bg-cover bg-center rounded-lg overflow-hidden`} 
+                   style={{
+                     height: '280px', // Fixed height for sprite animations
+                     backgroundImage: monster.status.type === 'Home' 
+                       ? `url(${new URL('../assets/backgrounds/home.png', import.meta.url).href})` 
+                       : monster.status.type === 'Battle'
+                         ? `url(${new URL('../assets/backgrounds/1.png', import.meta.url).href})`
+                         : `url(${new URL('../assets/backgrounds/activity.png', import.meta.url).href})`
+                   }}>
+                
+                {/* Status Bubble - Shows what the monster is doing */}
+                <div className="absolute top-2 right-2 bg-white bg-opacity-80 rounded-full px-3 py-1 z-10 font-semibold text-sm">
+                  {monster.status.type === 'Home' ? 'Resting at Home' : monster.status.type}
+                </div>
+                
+                {/* Animated Monster Sprite */}
+                <MonsterSpriteView 
+                  sprite={monster.sprite}
+                  containerWidth={400}
+                  containerHeight={280}
+                  behaviorMode={monster.status.type === 'Home' ? 'pacing' : 'activity'}
+                  activityType={monster.status.type}
+                />
+                
+                {/* Status Effect Particles - Optional visual effects based on activity */}
+                {monster.status.type === 'Play' && (
+                  <div className="absolute bottom-16 left-1/2 transform -translate-x-1/2">
+                    <div className="flex gap-2">
+                      {[...Array(3)].map((_, i) => (
+                        <div key={i} className="w-2 h-2 bg-yellow-400 rounded-full animate-pulse"></div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+                
+                {/* Status message at bottom */}
+                <div className="absolute bottom-0 inset-x-0 bg-black bg-opacity-50 text-white p-2 text-center text-sm">
+                  {monster.status.type === 'Home' 
+                    ? 'Your monster is relaxing at home' 
+                    : monster.status.type === 'Play'
+                      ? 'Your monster is playing games'
+                      : monster.status.type === 'Mission'
+                        ? 'Your monster is on a mission'
+                        : monster.status.type === 'Battle'
+                          ? 'Your monster is in battle'
+                          : `Your monster is ${monster.status.type}`
+                  }
+                </div>
               </div>
             </div>
             

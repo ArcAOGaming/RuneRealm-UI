@@ -1,7 +1,12 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useRef, useState, useCallback } from 'react';
 
-type AnimationType = 'walkRight' | 'walkLeft' | 'walkUp' | 'walkDown' | 'attack1' | 'attack2';
+// Extended animation types to support new behaviors
+type AnimationType = 'walkRight' | 'walkLeft' | 'walkUp' | 'walkDown' | 'attack1' | 'attack2' | 
+                    'idle' | 'sleep' | 'eat' | 'train' | 'play' | 'happy';
 type PoseType = 'right' | 'left';
+
+// Animation behavior modes
+type BehaviorMode = 'static' | 'pacing' | 'activity';
 
 interface MonsterSpriteViewProps {
   sprite: string; // Arweave transaction ID for the sprite sheet
@@ -9,6 +14,10 @@ interface MonsterSpriteViewProps {
   pose?: PoseType; // Static pose when not animating
   onAnimationComplete?: () => void;
   isOpponent?: boolean; // Used to determine facing direction
+  behaviorMode?: BehaviorMode; // Controls how the sprite behaves
+  activityType?: string; // Type of activity the monster is doing
+  containerWidth?: number; // Width of container for pacing calculations
+  containerHeight?: number; // Height of container for animation positioning
 }
 
 const FRAME_WIDTH = 64;
@@ -22,13 +31,26 @@ const MonsterSpriteView: React.FC<MonsterSpriteViewProps> = ({
   currentAnimation,
   pose,
   onAnimationComplete,
-  isOpponent = false
+  isOpponent = false,
+  behaviorMode = 'static',
+  activityType,
+  containerWidth = FRAME_WIDTH * 4,
+  containerHeight = FRAME_HEIGHT * 4
 }) => {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const [spriteImage, setSpriteImage] = useState<HTMLImageElement | null>(null);
   const animationFrameRef = useRef<number>(0);
   const currentFrameRef = useRef<number>(0);
   const animationTimerRef = useRef<NodeJS.Timeout | null>(null);
+  
+  // Position state for animations
+  const [position, setPosition] = useState(0); // For pacing (horizontal only)
+  const [positionX, setPositionX] = useState(containerWidth / 2); // For 2D movement
+  const [positionY, setPositionY] = useState(containerHeight / 2); // For 2D movement
+  const [direction, setDirection] = useState<'right' | 'left'>('right');
+  const [currentBehavior, setCurrentBehavior] = useState<AnimationType | null>(null);
+  const [activityAnimation, setActivityAnimation] = useState<AnimationType | null>(null);
+  const randomPauseDurationRef = useRef<number>(Math.floor(Math.random() * 3000) + 2000);
 
   // Load sprite sheet from local assets
   useEffect(() => {
@@ -40,6 +62,18 @@ const MonsterSpriteView: React.FC<MonsterSpriteViewProps> = ({
     };
   }, [sprite]);
 
+  // Map activity types to appropriate animations
+  const getActivityAnimation = useCallback((activity: string | undefined): AnimationType => {
+    if (!activity) return 'idle';
+    
+    switch (activity) {
+      case 'Play': return 'play';
+      case 'Mission': return 'walkUp';
+      case 'Battle': return 'attack1';
+      default: return 'idle';
+    }
+  }, []);
+
   // Animation mapping
   const getAnimationRow = (type: AnimationType): number => {
     switch (type) {
@@ -49,6 +83,12 @@ const MonsterSpriteView: React.FC<MonsterSpriteViewProps> = ({
       case 'walkDown': return 3;
       case 'attack1': return 4;
       case 'attack2': return 5;
+      case 'idle': return 0; // Use walkRight row
+      case 'sleep': return 3; // Use walkDown row
+      case 'eat': return 3;  // Use walkDown row
+      case 'train': return 4; // Use attack1 row
+      case 'play': return 0;  // Use walkRight row
+      case 'happy': return 2; // Use walkUp row
     }
   };
 
@@ -70,7 +110,7 @@ const MonsterSpriteView: React.FC<MonsterSpriteViewProps> = ({
     );
   };
 
-  // Handle animation
+  // Handle explicitly provided animation
   useEffect(() => {
     const canvas = canvasRef.current;
     const ctx = canvas?.getContext('2d');
@@ -141,6 +181,233 @@ const MonsterSpriteView: React.FC<MonsterSpriteViewProps> = ({
       }
     };
   }, [spriteImage, currentAnimation, onAnimationComplete]);
+  
+  // Handle behavior-based animations
+  useEffect(() => {
+    const canvas = canvasRef.current;
+    const ctx = canvas?.getContext('2d');
+    if (!canvas || !ctx || !spriteImage || currentAnimation) return;
+    
+    let animation: AnimationType | null = null;
+    
+    // Determine which animation to use based on behavior mode
+    if (behaviorMode === 'pacing' && currentBehavior) {
+      animation = currentBehavior;
+    } else if (behaviorMode === 'activity' && activityAnimation) {
+      animation = activityAnimation;
+    }
+    
+    if (!animation) return;
+    
+    const row = getAnimationRow(animation);
+    let frame = 0;
+    
+    const startAnimation = () => {
+      let startTime: number | null = null;
+      
+      const animate = (timestamp: number) => {
+        if (!startTime) startTime = timestamp;
+        const elapsed = timestamp - startTime;
+        const currentFrame = Math.floor((elapsed / ANIMATION_SPEED) % FRAMES_PER_ANIMATION);
+        
+        if (currentFrame !== frame) {
+          frame = currentFrame;
+          drawFrame(ctx, frame, row);
+          currentFrameRef.current = frame;
+        }
+        
+        animationFrameRef.current = requestAnimationFrame(animate);
+      };
+      
+      if (animationFrameRef.current) {
+        cancelAnimationFrame(animationFrameRef.current);
+      }
+      animationFrameRef.current = requestAnimationFrame(animate);
+    };
+    
+    startAnimation();
+    
+    return () => {
+      if (animationFrameRef.current) {
+        cancelAnimationFrame(animationFrameRef.current);
+      }
+    };
+  }, [spriteImage, currentAnimation, currentBehavior, activityAnimation, behaviorMode]);
+
+  // Pacing animation logic
+  useEffect(() => {
+    if (behaviorMode !== 'pacing' || !spriteImage || currentAnimation) return;
+    
+    let pacingTimer: NodeJS.Timeout;
+    let pauseTimer: NodeJS.Timeout;
+    let isPaused = false;
+    let isMoving = false;
+    
+    const updatePosition = () => {
+      if (isPaused) return;
+      
+      if (isMoving) {
+        setPosition(prevPos => {
+          let newPos = prevPos;
+          const movementRate = 2; // Faster movement rate
+          
+          if (direction === 'right') {
+            newPos += movementRate;
+            if (newPos >= containerWidth - FRAME_WIDTH * 3) {
+              // Reached right boundary, now pause before turning
+              isMoving = false;
+              setCurrentBehavior('idle');
+              setTimeout(() => {
+                setDirection('left');
+                setCurrentBehavior('walkLeft');
+                isMoving = true;
+              }, Math.floor(Math.random() * 1000) + 500); // Random pause before turning
+            }
+          } else {
+            newPos -= movementRate;
+            if (newPos <= 0) {
+              // Reached left boundary, now pause before turning
+              isMoving = false;
+              setCurrentBehavior('idle');
+              setTimeout(() => {
+                setDirection('right');
+                setCurrentBehavior('walkRight');
+                isMoving = true;
+              }, Math.floor(Math.random() * 1000) + 500); // Random pause before turning
+            }
+          }
+          
+          return newPos;
+        });
+      }
+    };
+    
+    const togglePause = () => {
+      isPaused = !isPaused;
+      isMoving = !isPaused;
+      
+      if (isPaused) {
+        // Switch to idle animation when paused
+        setCurrentBehavior('idle');
+        randomPauseDurationRef.current = Math.floor(Math.random() * 3000) + 2000;
+        pauseTimer = setTimeout(() => {
+          isPaused = false;
+          isMoving = true;
+          setCurrentBehavior(direction === 'right' ? 'walkRight' : 'walkLeft');
+        }, randomPauseDurationRef.current);
+      }
+    };
+    
+    // Start with idle animation briefly, then start moving
+    setCurrentBehavior('idle');
+    setTimeout(() => {
+      setCurrentBehavior(direction === 'right' ? 'walkRight' : 'walkLeft');
+      isMoving = true;
+    }, 1500);
+    
+    pacingTimer = setInterval(() => {
+      updatePosition();
+      
+      // Randomly decide to pause (only if currently moving)
+      if (isMoving && !isPaused && Math.random() < 0.01) { // 1% chance to pause per interval
+        togglePause();
+      }
+    }, 33); // Faster update interval for smoother motion
+    
+    return () => {
+      clearInterval(pacingTimer);
+      clearTimeout(pauseTimer);
+    };
+  }, [behaviorMode, containerWidth, direction, spriteImage, currentAnimation]);
+
+  // Activity animation logic
+  useEffect(() => {
+    if (behaviorMode !== 'activity' || !spriteImage || currentAnimation) return;
+    
+    // Set the initial animation based on activity type
+    const baseAnimation = getActivityAnimation(activityType);
+    setActivityAnimation(baseAnimation);
+    
+    // Track whether monster is in a movement animation
+    const isMovementAnimation = (anim: AnimationType) => {
+      return anim === 'walkRight' || anim === 'walkLeft' || anim === 'walkUp' || anim === 'walkDown';
+    };
+    
+    // Position management for movement animations
+    let moveTimerId: NodeJS.Timeout;
+    let currentPos = { x: containerWidth / 2, y: containerHeight / 2 };
+    let targetPos = { x: currentPos.x, y: currentPos.y };
+    let isMoving = false;
+    
+    // Function to move monster around during activity
+    const moveMonster = () => {
+      if (isMovementAnimation(baseAnimation) && Math.random() < 0.4) { // 40% chance to move
+        isMoving = true;
+        // Calculate a random target position within container bounds
+        targetPos = {
+          x: Math.random() * (containerWidth - FRAME_WIDTH * 3.5),
+          y: Math.min(containerHeight * 0.6, Math.max(containerHeight * 0.2, Math.random() * containerHeight * 0.4))
+        };
+        
+        // Determine which direction to walk based on target position
+        if (Math.abs(targetPos.x - currentPos.x) > Math.abs(targetPos.y - currentPos.y)) {
+          // Horizontal movement is dominant
+          setActivityAnimation(targetPos.x > currentPos.x ? 'walkRight' : 'walkLeft');
+        } else {
+          // Vertical movement is dominant
+          setActivityAnimation(targetPos.y > currentPos.y ? 'walkDown' : 'walkUp');
+        }
+        
+        // Set up movement interval
+        moveTimerId = setInterval(() => {
+          setPosition(prevPos => {
+            // Move towards target position
+            const moveSpeed = 1.5;
+            const dx = targetPos.x - currentPos.x;
+            const dy = targetPos.y - currentPos.y;
+            const dist = Math.sqrt(dx * dx + dy * dy);
+            
+            if (dist < moveSpeed) {
+              // Reached target, stop moving and switch to idle
+              currentPos = targetPos;
+              clearInterval(moveTimerId);
+              setActivityAnimation('idle');
+              isMoving = false;
+              return prevPos; // This doesn't matter as we're updating X/Y separately
+            }
+            
+            // Move towards target
+            currentPos.x += (dx / dist) * moveSpeed;
+            currentPos.y += (dy / dist) * moveSpeed;
+            
+            // Update the position state for X and Y
+            setPositionX(currentPos.x);
+            setPositionY(currentPos.y);
+            
+            return prevPos; // This is only used for the horizontal pacing
+          });
+        }, 33);
+      } else {
+        // Not moving, switch between idle and activity-specific animations
+        if (!isMoving) {
+          setActivityAnimation(Math.random() < 0.7 ? baseAnimation : 'idle');
+        }
+      }
+    };
+    
+    // Occasionally change animations to make it more dynamic
+    const activityTimer = setInterval(() => {
+      // Only change animation if not currently moving to a target
+      if (!isMoving) {
+        moveMonster();
+      }
+    }, 3000);
+    
+    return () => {
+      clearInterval(activityTimer);
+      clearInterval(moveTimerId);
+    };
+  }, [behaviorMode, activityType, spriteImage, currentAnimation, getActivityAnimation, containerWidth, containerHeight]);
 
   // Draw idle frame when no animation is playing
   useEffect(() => {
@@ -148,26 +415,44 @@ const MonsterSpriteView: React.FC<MonsterSpriteViewProps> = ({
     const ctx = canvas?.getContext('2d');
     if (!canvas || !ctx || !spriteImage) return;
 
-    if (!currentAnimation) {
+    if (!currentAnimation && !currentBehavior && !activityAnimation) {
       // Always use walkRight as the default pose
       const poseAnimation = 'walkRight';
       drawFrame(ctx, 0, getAnimationRow(poseAnimation));
     }
-  }, [spriteImage, currentAnimation, isOpponent]);
+  }, [spriteImage, currentAnimation, isOpponent, currentBehavior, activityAnimation]);
 
   return (
-    <canvas
-      ref={canvasRef}
-      width={FRAME_WIDTH}
-      height={FRAME_HEIGHT}
-      className="pixelated" // Ensure pixel-perfect scaling
+    <div 
+      className="monster-sprite-container relative"
       style={{
-        width: FRAME_WIDTH * 3.75, // Scale up 3.75x for better visibility
-        height: FRAME_HEIGHT * 3.75,
-        imageRendering: 'pixelated',
-        transform: isOpponent ? 'scaleX(-1)' : undefined // Flip opponent sprites horizontally
+        width: containerWidth,
+        height: containerHeight
       }}
-    />
+    >
+      <canvas
+        ref={canvasRef}
+        width={FRAME_WIDTH}
+        height={FRAME_HEIGHT}
+        className="pixelated absolute" // Ensure pixel-perfect scaling
+        style={{
+          width: FRAME_WIDTH * 3.75, // Scale up 3.75x for better visibility
+          height: FRAME_HEIGHT * 3.75,
+          imageRendering: 'pixelated',
+          transform: isOpponent ? 'scaleX(-1)' : undefined, // Flip opponent sprites horizontally
+          // Position based on behavior mode
+          left: behaviorMode === 'pacing' 
+            ? `${position}px` 
+            : behaviorMode === 'activity' 
+              ? `${positionX}px`
+              : '50%',
+          bottom: behaviorMode === 'activity'
+            ? `${Math.min(90, Math.max(10, positionY))}px`
+            : '10%',
+          marginLeft: behaviorMode === 'pacing' || behaviorMode === 'activity' ? 0 : '-120px' // Center the sprite when not pacing
+        }}
+      />
+    </div>
   );
 };
 
