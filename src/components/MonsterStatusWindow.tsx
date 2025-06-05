@@ -38,6 +38,7 @@ const MonsterStatusWindow: React.FC<MonsterStatusWindowProps> = ({
   const [walkDirection, setWalkDirection] = useState<WalkDirection>('right');
   const [currentAnimation, setCurrentAnimation] = useState<AnimationType>('idle');
   const [containerSize, setContainerSize] = useState({ width: 0, height: 0 });
+  const [selectedBackground, setSelectedBackground] = useState<string>('home');
   const idleTimerRef = useRef<number>();
   const animationRef = useRef<number>();
   const containerRef = useRef<HTMLDivElement>(null);
@@ -175,8 +176,22 @@ const MonsterStatusWindow: React.FC<MonsterStatusWindowProps> = ({
 
   return (
     <div className="monster-status-container flex flex-col h-full bg-[#814E33]/20 rounded-lg p-4">
-      <div className="monster-status-header px-2 py-1">
-        <h3 className={`text-xl font-bold ${theme.text} text-center`}>Current Status</h3>
+      <div className="monster-status-header px-2 py-1 flex justify-between items-center">
+        <div className="text-left">
+          <span className={`font-bold ${theme.text}`}>Status:</span> <span className={theme.text}>{monster.status.type}</span>
+        </div>
+        <div className="text-right">
+          <select 
+            value={selectedBackground} 
+            onChange={(e) => setSelectedBackground(e.target.value)}
+            className="bg-gray-700 text-white text-sm rounded-md px-2 py-1 border border-gray-500"
+          >
+            <option value="home">Home</option>
+            <option value="beach">Beach</option>
+            <option value="forest">Forest</option>
+            <option value="greenhouse">Greenhouse</option>
+          </select>
+        </div>
       </div>
       
       {/* Main Window with 4:2 aspect ratio */}
@@ -195,11 +210,7 @@ const MonsterStatusWindow: React.FC<MonsterStatusWindowProps> = ({
         <div 
           className="monster-window-bg absolute inset-0 w-full h-full"
           style={{
-            backgroundImage: monster.status.type === 'Home' 
-              ? `url(${new URL('../assets/backgrounds/home.png', import.meta.url).href})` 
-              : monster.status.type === 'Battle'
-                ? `url(${new URL('../assets/backgrounds/1.png', import.meta.url).href})`
-                : `url(${new URL('../assets/backgrounds/activity.png', import.meta.url).href})`,
+            backgroundImage: `url(${new URL(`../assets/window-backgrounds/${selectedBackground}.png`, import.meta.url).href})`,
             backgroundSize: 'cover',
             backgroundPosition: 'center',
             borderRadius: '0.5rem',
@@ -211,11 +222,12 @@ const MonsterStatusWindow: React.FC<MonsterStatusWindowProps> = ({
         {/* Monster */}
         {monsterSize > 0 && (
           <div 
-            className="monster-container absolute bottom-0 left-1/2 flex flex-col items-center"
+            className="monster-container absolute left-1/2 flex flex-col items-center"
             style={{
               width: `${monsterSize}px`,
               height: `${monsterSize}px`,
               transform: `translateX(calc(-50% + ${position}px))`,
+              bottom: '2.5%', /* Raised from bottom by 2.5% of container height */
               transition: 'transform 0.1s linear',
               zIndex: 10
             }}
