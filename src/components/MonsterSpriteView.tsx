@@ -30,10 +30,23 @@ const FRAMES_PER_ANIMATION = 4;
 const ANIMATION_ROWS = 6;
 const ANIMATION_SPEED = 1000 / 4; // 1 second total divided by 4 frames = 250ms per frame
 
-const EffectAnimation: React.FC<{ effect: EffectType; onComplete: () => void }> = ({ effect, onComplete }) => {
+interface EffectAnimationProps {
+  effect: EffectType;
+  onComplete: () => void;
+  containerWidth: number;
+  containerHeight: number;
+}
+
+const EffectAnimation: React.FC<EffectAnimationProps> = ({ 
+  effect, 
+  onComplete,
+  containerWidth,
+  containerHeight
+}) => {
   const [currentFrame, setCurrentFrame] = useState(0);
   const effectRef = useRef<HTMLImageElement | null>(null);
   const FRAME_COUNT = 8;
+  const FRAME_SIZE = 64; // Base frame size
   const ANIMATION_SPEED = 100; // ms per frame
 
   useEffect(() => {
@@ -59,26 +72,39 @@ const EffectAnimation: React.FC<{ effect: EffectType; onComplete: () => void }> 
 
   if (!effect) return null;
 
+  // Calculate the scale based on container dimensions
+  const scale = Math.min(containerWidth, containerHeight) / FRAME_SIZE;
+
   return (
-    <div className="effect-animation" style={{
-      position: 'absolute',
-      width: '64px',
-      height: '64px',
-      top: '50%',
-      left: '50%',
-      transform: 'translate(-50%, -50%) scale(3.75)',
-      zIndex: 10,
-      pointerEvents: 'none',
-      overflow: 'hidden',
-    }}>
-      <div style={{
-        width: '64px',
-        height: '64px',
-        backgroundImage: effectRef.current ? `url(${effectRef.current.src})` : 'none',
-        backgroundPosition: `-${currentFrame * 64}px 0`,
-        backgroundSize: '512px 64px', // 8 frames * 64px
-        imageRendering: 'pixelated',
-      }} />
+    <div 
+      className="effect-animation" 
+      style={{
+        position: 'absolute',
+        width: '100%',
+        height: '100%',
+        top: 0,
+        left: 0,
+        zIndex: 10,
+        pointerEvents: 'none',
+        overflow: 'visible',
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+      }}
+    >
+      <div 
+        style={{
+          width: `${FRAME_SIZE}px`,
+          height: `${FRAME_SIZE}px`,
+          backgroundImage: effectRef.current ? `url(${effectRef.current.src})` : 'none',
+          backgroundPosition: `-${currentFrame * FRAME_SIZE}px 0`,
+          backgroundSize: `${FRAME_SIZE * FRAME_COUNT}px ${FRAME_SIZE}px`,
+          backgroundRepeat: 'no-repeat',
+          imageRendering: 'pixelated',
+          transform: `scale(${scale})`,
+          transformOrigin: 'center center',
+        }} 
+      />
     </div>
   );
 };
@@ -97,11 +123,14 @@ const MonsterSpriteView: React.FC<MonsterSpriteViewProps> = ({
   onEffectComplete
 }) => {
   const [effect, setEffect] = useState<EffectType>(null);
+  const [effectKey, setEffectKey] = useState(0);
 
   // Handle external effect changes
   useEffect(() => {
     if (externalEffect && externalEffect !== effect) {
       setEffect(externalEffect);
+      // Increment key to force remount of EffectAnimation
+      setEffectKey(prev => prev + 1);
     }
   }, [externalEffect]);
 
@@ -155,7 +184,9 @@ const MonsterSpriteView: React.FC<MonsterSpriteViewProps> = ({
       case 'walkDown': return 3;
       case 'attack1': return 4;
       case 'attack2': return 5;
-      case 'idle': return 0; // Use walkRight row
+      case 'idle': 
+        // For idle, we'll use the same row as the last direction
+        return direction === 'left' ? 1 : 0; // Use walkLeft or walkRight row based on direction
       case 'sleep': return 3; // Use walkDown row
       case 'eat': return 3;  // Use walkDown row
       case 'train': return 4; // Use attack1 row
@@ -165,13 +196,16 @@ const MonsterSpriteView: React.FC<MonsterSpriteViewProps> = ({
   };
 
   // Draw current frame
-  const drawFrame = (ctx: CanvasRenderingContext2D, frameIndex: number, row: number) => {
+  const drawFrame = (ctx: CanvasRenderingContext2D, frameIndex: number, row: number, animationType?: AnimationType) => {
     if (!spriteImage) return;
+    
+    // For idle animation, always use the first frame
+    const frameToUse = (animationType === 'idle') ? 0 : frameIndex;
     
     ctx.clearRect(0, 0, FRAME_WIDTH, FRAME_HEIGHT);
     ctx.drawImage(
       spriteImage,
-      frameIndex * FRAME_WIDTH,
+      frameToUse * FRAME_WIDTH,
       row * FRAME_HEIGHT,
       FRAME_WIDTH,
       FRAME_HEIGHT,
@@ -192,7 +226,7 @@ const MonsterSpriteView: React.FC<MonsterSpriteViewProps> = ({
     let frame = 0;
 
     const animate = () => {
-      drawFrame(ctx, frame, row);
+      drawFrame(ctx, frame, row, currentAnimation);
       frame = (frame + 1) % FRAMES_PER_ANIMATION;
       currentFrameRef.current = frame;
 
@@ -220,7 +254,7 @@ const MonsterSpriteView: React.FC<MonsterSpriteViewProps> = ({
         
         if (currentFrame !== frame) {
           frame = currentFrame;
-          drawFrame(ctx, frame, row);
+          drawFrame(ctx, frame, row, currentAnimation);
           currentFrameRef.current = frame;
 
           // Check for cycle completion
@@ -321,7 +355,7 @@ const MonsterSpriteView: React.FC<MonsterSpriteViewProps> = ({
       if (isMoving) {
         setPosition(prevPos => {
           let newPos = prevPos;
-          const movementRate = 2; // Faster movement rate
+          const movementRate = 5; // Maximum movement speed for very fast walking
           
           if (direction === 'right') {
             newPos += movementRate;
@@ -488,54 +522,99 @@ const MonsterSpriteView: React.FC<MonsterSpriteViewProps> = ({
     if (!canvas || !ctx || !spriteImage) return;
 
     if (!currentAnimation && !currentBehavior && !activityAnimation) {
-      // Always use walkRight as the default pose
-      const poseAnimation = 'walkRight';
-      drawFrame(ctx, 0, getAnimationRow(poseAnimation));
+      // Use the last known direction for idle pose
+      const poseAnimation = direction === 'left' ? 'walkLeft' : 'walkRight';
+      drawFrame(ctx, 0, getAnimationRow(poseAnimation), 'idle');
     }
-  }, [spriteImage, currentAnimation, isOpponent, currentBehavior, activityAnimation]);
+  }, [spriteImage, currentAnimation, isOpponent, currentBehavior, activityAnimation, direction]);
+
+  // Calculate scaling factor based on container size
+  const scale = Math.min(containerWidth / FRAME_WIDTH, containerHeight / FRAME_HEIGHT);
+  const scaledWidth = FRAME_WIDTH * scale;
+  const scaledHeight = FRAME_HEIGHT * scale;
 
   return (
     <div 
       className="monster-sprite-container relative"
       style={{
-        width: containerWidth,
-        height: containerHeight
+        width: '100%',
+        height: '100%',
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        overflow: 'hidden',
+        position: 'relative'
       }}
     >
-      <div style={{
-        position: 'relative',
-        width: FRAME_WIDTH * 3.75,
-        height: FRAME_HEIGHT * 3.75,
-        left: behaviorMode === 'pacing' 
-          ? `${position}px` 
-          : behaviorMode === 'activity' 
-            ? `${positionX}px`
-            : '50%',
-        bottom: behaviorMode === 'activity'
-          ? `${Math.min(90, Math.max(10, positionY))}px`
-          : '10%',
-        marginLeft: behaviorMode === 'pacing' || behaviorMode === 'activity' ? 0 : '-120px',
-        transform: isOpponent ? 'scaleX(-1)' : undefined,
-      }}>
+      <div 
+        style={{
+          position: 'relative',
+          width: scaledWidth,
+          height: scaledHeight,
+          transform: `
+            translateX(${
+              behaviorMode === 'pacing' 
+                ? `${position}px` 
+                : behaviorMode === 'activity' 
+                  ? `${positionX}px`
+                  : '0'
+            })
+            ${isOpponent ? 'scaleX(-1)' : ''}
+          `,
+          transition: behaviorMode === 'pacing' 
+            ? 'transform 0.1s linear' 
+            : 'transform 0.3s ease',
+        }}
+      >
         <canvas
           ref={canvasRef}
           width={FRAME_WIDTH}
           height={FRAME_HEIGHT}
-          className="pixelated absolute"
+          className="pixelated"
           style={{
             width: '100%',
             height: '100%',
             imageRendering: 'pixelated',
+            position: 'relative',
             zIndex: 1,
           }}
         />
-        {effect && (
-          <EffectAnimation 
-            effect={effect} 
-            onComplete={handleEffectComplete} 
-          />
-        )}
       </div>
+      
+      {/* Effect animation container - positioned absolutely over the monster */}
+      {effect && (
+        <div 
+          style={{
+            position: 'absolute',
+            width: scaledWidth,
+            height: scaledHeight,
+            top: '50%',
+            left: '50%',
+            transform: `translate(-50%, -50%) 
+              translateX(${
+                behaviorMode === 'pacing' 
+                  ? `${position}px` 
+                  : behaviorMode === 'activity' 
+                    ? `${positionX}px`
+                    : '0'
+              })
+              ${isOpponent ? 'scaleX(-1)' : ''}`,
+            transition: behaviorMode === 'pacing' 
+              ? 'transform 0.1s linear' 
+              : 'transform 0.3s ease',
+            pointerEvents: 'none',
+            zIndex: 2
+          }}
+        >
+          <EffectAnimation 
+            key={effectKey}
+            effect={effect} 
+            onComplete={handleEffectComplete}
+            containerWidth={scaledWidth}
+            containerHeight={scaledHeight}
+          />
+        </div>
+      )}
     </div>
   );
 };
