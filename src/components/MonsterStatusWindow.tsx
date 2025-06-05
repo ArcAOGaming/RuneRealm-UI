@@ -200,9 +200,8 @@ const MonsterStatusWindow: React.FC<MonsterStatusWindowProps> = ({
         className={`monster-window relative overflow-hidden rounded-lg border-2 ${theme.border} bg-[#814E33]/10`}
         style={{
           width: '100%',
-          height: containerSize.height || '200px',
-          minHeight: '200px',
-          aspectRatio: '4/2',
+          minWidth: '5rem', // Minimum width of 5rem
+          aspectRatio: '4/2', // 4:2 aspect ratio (width:height)
           position: 'relative'
         }}
       >
