@@ -37,8 +37,7 @@ const MonsterStatusWindow: React.FC<MonsterStatusWindowProps> = ({
   const [position, setPosition] = useState(0);
   const [walkDirection, setWalkDirection] = useState<WalkDirection>('right');
   const [currentAnimation, setCurrentAnimation] = useState<AnimationType>('idle');
-  const [monsterSize, setMonsterSize] = useState(0);
-  const [walkDistance, setWalkDistance] = useState(0);
+  const [containerSize, setContainerSize] = useState({ width: 0, height: 0 });
   const idleTimerRef = useRef<number>();
   const animationRef = useRef<number>();
   const containerRef = useRef<HTMLDivElement>(null);
@@ -46,34 +45,32 @@ const MonsterStatusWindow: React.FC<MonsterStatusWindowProps> = ({
   // Constants for movement
   const WALK_SPEED = 1;
   
-  // Update walk distance when container size changes
-  useEffect(() => {
-    if (containerRef.current) {
-      // Calculate walk distance based on container width minus monster size
-      setWalkDistance((containerRef.current.offsetWidth - monsterSize) / 2);
-    }
-  }, [monsterSize]);
+  // Calculate derived values
+  const monsterSize = containerSize.width * 0.25; // 1 unit (1/4 of 4 units)
+  const walkDistance = (containerSize.width - monsterSize) / 2;
   
-  // Update monster size based on container dimensions
+  // Update container size and maintain 4:2 aspect ratio
   useEffect(() => {
+    if (!containerRef.current) return;
+    
     const updateSize = () => {
-      if (containerRef.current) {
-        // Set container to maintain 4:2 aspect ratio
-        const containerWidth = containerRef.current.offsetWidth;
-        const containerHeight = containerWidth * 0.5; // 4:2 aspect ratio (width:height)
-        containerRef.current.style.height = `${containerHeight}px`;
-        
-        // Set monster size to be 1/4 of container width
-        const monsterWidth = containerWidth * 0.25; // 1/4 of container width
-        setMonsterSize(monsterWidth);
-      }
+      if (!containerRef.current) return;
+      
+      const containerWidth = containerRef.current.offsetWidth;
+      const containerHeight = containerWidth * 0.5; // 4:2 aspect ratio
+      
+      setContainerSize({
+        width: containerWidth,
+        height: containerHeight
+      });
     };
     
+    // Initial update
     updateSize();
+    
+    // Set up resize observer
     const resizeObserver = new ResizeObserver(updateSize);
-    if (containerRef.current) {
-      resizeObserver.observe(containerRef.current);
-    }
+    resizeObserver.observe(containerRef.current);
     
     return () => {
       resizeObserver.disconnect();
@@ -149,23 +146,23 @@ const MonsterStatusWindow: React.FC<MonsterStatusWindowProps> = ({
 
   // Render effect buttons separately
   const renderEffectButtons = () => (
-    <div className="flex flex-wrap justify-center gap-2 mt-4">
-      {['Small Heal', 'Medium Heal', 'Large Heal', 'Full Heal', 'Revive'].map((effect) => (
+    <div className="flex flex-wrap justify-center gap-2 mt-2">
+      {[
+        { text: 'Small Heal', color: 'bg-green-500 hover:bg-green-600' },
+        { text: 'Medium Heal', color: 'bg-blue-500 hover:bg-blue-600' },
+        { text: 'Large Heal', color: 'bg-purple-500 hover:bg-purple-600' },
+        { text: 'Full Heal', color: 'bg-pink-500 hover:bg-pink-600' },
+        { text: 'Revive', color: 'bg-yellow-500 hover:bg-yellow-600' }
+      ].map(({ text, color }) => (
         <button 
-          key={effect}
-          onClick={() => onEffectTrigger(effect)}
-          className={`px-3 py-1.5 text-sm rounded transition-colors whitespace-nowrap ${
-            currentEffect 
-              ? 'bg-gray-400 cursor-not-allowed' 
-              : effect.includes('Heal') 
-                ? 'bg-blue-500 hover:bg-blue-600 text-white' 
-                : effect === 'Revive' 
-                  ? 'bg-yellow-500 hover:bg-yellow-600 text-white'
-                  : 'bg-purple-500 hover:bg-purple-600 text-white'
+          key={text}
+          onClick={() => onEffectTrigger(text)}
+          className={`px-3 py-1.5 text-sm rounded transition-colors whitespace-nowrap text-white ${
+            currentEffect ? 'bg-gray-400 cursor-not-allowed' : color
           }`}
           disabled={!!currentEffect}
         >
-          {effect}
+          {text}
         </button>
       ))}
     </div>
@@ -177,84 +174,79 @@ const MonsterStatusWindow: React.FC<MonsterStatusWindowProps> = ({
     : 0;
 
   return (
-    <div className="flex flex-col h-full">
+    <div className="monster-status-container flex flex-col h-full bg-[#814E33]/20 rounded-lg p-4">
+      <div className="monster-status-header px-2 py-1">
+        <h3 className={`text-xl font-bold ${theme.text} text-center`}>Current Status</h3>
+      </div>
+      
+      {/* Main Window with 4:2 aspect ratio */}
       <div 
         ref={containerRef}
-        className={`relative overflow-hidden rounded-lg border-2 ${theme.border} ${theme.container} flex-1 flex flex-col`}
-        style={{ minHeight: '250px' }}
+        className={`monster-window relative overflow-hidden rounded-lg border-2 ${theme.border} bg-[#814E33]/10`}
+        style={{
+          width: '100%',
+          height: containerSize.height || '200px',
+          minHeight: '200px',
+          aspectRatio: '4/2',
+          position: 'relative'
+        }}
       >
-        <div className="px-2 py-1">
-          <h3 className={`text-xl font-bold ${theme.text} text-center`}>Current Status</h3>
-        </div>
+        {/* Background */}
+        <div 
+          className="monster-window-bg absolute inset-0 w-full h-full"
+          style={{
+            backgroundImage: monster.status.type === 'Home' 
+              ? `url(${new URL('../assets/backgrounds/home.png', import.meta.url).href})` 
+              : monster.status.type === 'Battle'
+                ? `url(${new URL('../assets/backgrounds/1.png', import.meta.url).href})`
+                : `url(${new URL('../assets/backgrounds/activity.png', import.meta.url).href})`,
+            backgroundSize: 'cover',
+            backgroundPosition: 'center',
+            borderRadius: '0.5rem',
+            border: '2px solid black',
+            overflow: 'hidden',
+          }}
+        />
         
-        {/* Monster Status Scene */}
-        <div className="relative flex-1">
+        {/* Monster */}
+        {monsterSize > 0 && (
           <div 
-            className="relative w-full h-full"
+            className="monster-container absolute bottom-0 left-1/2 flex flex-col items-center"
             style={{
-              backgroundImage: monster.status.type === 'Home' 
-                ? `url(${new URL('../assets/backgrounds/home.png', import.meta.url).href})` 
-                : monster.status.type === 'Battle'
-                  ? `url(${new URL('../assets/backgrounds/1.png', import.meta.url).href})`
-                  : `url(${new URL('../assets/backgrounds/activity.png', import.meta.url).href})`,
-              backgroundSize: 'cover',
-              backgroundPosition: 'center',
-              borderRadius: '0.5rem',
-              border: '2px solid black',
-              overflow: 'hidden',
-              position: 'relative'
+              width: `${monsterSize}px`,
+              height: `${monsterSize}px`,
+              transform: `translateX(calc(-50% + ${position}px))`,
+              transition: 'transform 0.1s linear',
+              zIndex: 10
             }}
           >
-            {/* Status Bubble */}
-            <div className="absolute top-2 right-2 bg-white bg-opacity-80 rounded-full px-3 py-1 z-10 font-semibold text-sm">
-              {monster.status.type === 'Home' ? 'Resting at Home' : monster.status.type}
+            {/* Position indicator above the monster */}
+            <div className="absolute -top-6 bg-black bg-opacity-70 text-white text-xs px-2 py-0.5 rounded whitespace-nowrap">
+              Pos: {normalizedPosition.toFixed(1)} | {currentAnimation}
             </div>
-
-            {/* Animated Monster Sprite */}
-            {monsterSize > 0 && (
-              <div 
-                className="absolute bottom-0 left-1/2 transform -translate-x-1/2 flex flex-col items-center"
-                style={{
-                  width: '25%',
-                  height: 'auto',
-                  aspectRatio: '1',
-                  transform: `translateX(${position}px) translateX(-50%)`,
-                  transition: 'transform 0.5s ease-out',
-                  zIndex: 10,
-                  maxWidth: '100%',
-                  maxHeight: '100%',
-                  bottom: '0'
-                }}
-              >
-                {/* Position indicator above the monster */}
-                <div className="absolute -top-6 bg-black bg-opacity-70 text-white text-xs px-2 py-0.5 rounded whitespace-nowrap">
-                  Pos: {normalizedPosition.toFixed(1)} | {currentAnimation}
-                </div>
-                <MonsterSpriteView 
-                  sprite={monster.sprite}
-                  currentAnimation={currentAnimation}
-                  containerWidth={monsterSize}
-                  containerHeight={monsterSize}
-                  behaviorMode={isWalking ? 'pacing' : 'static'}
-                  activityType={monster.status.type}
-                  effect={currentEffect as any}
-                  onEffectComplete={() => {}}
-                />
-              </div>
-            )}
-        
-            {/* Status Effect Particles */}
-            {monster.status.type === 'Play' && (
-              <div className="absolute bottom-16 left-1/2 transform -translate-x-1/2">
-                <div className="flex gap-2">
-                  {[...Array(3)].map((_, i) => (
-                    <div key={i} className="w-2 h-2 bg-yellow-400 rounded-full animate-pulse"></div>
-                  ))}
-                </div>
-              </div>
-            )}
+            <MonsterSpriteView 
+              sprite={monster.sprite || ''}
+              currentAnimation={currentAnimation}
+              behaviorMode={isWalking ? 'pacing' : 'static'}
+              containerWidth={monsterSize}
+              containerHeight={monsterSize}
+              activityType={monster.status.type}
+              effect={currentEffect as any}
+              onEffectComplete={() => {}}
+            />
           </div>
-        </div>
+        )}
+        
+        {/* Status Effect Particles */}
+        {monster.status.type === 'Play' && (
+          <div className="absolute bottom-16 left-1/2 transform -translate-x-1/2">
+            <div className="flex gap-2">
+              {[...Array(3)].map((_, i) => (
+                <div key={i} className="w-2 h-2 bg-yellow-400 rounded-full animate-pulse"></div>
+              ))}
+            </div>
+          </div>
+        )}
       </div>
       
       {/* Effect Buttons */}
