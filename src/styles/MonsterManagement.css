@@ -27,9 +27,7 @@
 }
 
 .monster-management-wrapper {
-  /* max-width: 72rem; */
-  margin: 0 auto;
-  margin-bottom: 2rem;
+  margin-right: 2rem;
 }
 
 .monster-management-title {

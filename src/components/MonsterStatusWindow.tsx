@@ -35,6 +35,8 @@ const MonsterStatusWindow: React.FC<MonsterStatusWindowProps> = ({
   const activityTimeUp = isActivityComplete(monster);
   const [isWalking, setIsWalking] = useState(false);
   const [position, setPosition] = useState(0);
+  // Store normalized position (-10 to 10 scale) for consistent resizing
+  const [normalizedPos, setNormalizedPos] = useState(0);
   const [walkDirection, setWalkDirection] = useState<WalkDirection>('right');
   const [currentAnimation, setCurrentAnimation] = useState<AnimationType>('idle');
   const [containerSize, setContainerSize] = useState({ width: 0, height: 0 });
@@ -48,7 +50,10 @@ const MonsterStatusWindow: React.FC<MonsterStatusWindowProps> = ({
   
   // Calculate derived values
   const monsterSize = containerSize.width * 0.25; // 1 unit (1/4 of 4 units)
-  const walkDistance = (containerSize.width - monsterSize) / 2;
+  // Full walk distance from center to edge (for position display scaling)
+  const fullWalkDistance = (containerSize.width - monsterSize) / 2;
+  // Restricted walk distance (75% of full distance) to prevent clipping
+  const walkDistance = fullWalkDistance * 0.75;
   
   // Update container size and maintain 4:2 aspect ratio
   useEffect(() => {
@@ -78,6 +83,14 @@ const MonsterStatusWindow: React.FC<MonsterStatusWindowProps> = ({
     };
   }, []);
   
+  // Update pixel position when container size changes to maintain normalized position
+  useEffect(() => {
+    if (fullWalkDistance > 0) {
+      // Convert normalized position back to pixels based on new container size
+      setPosition(normalizedPos * fullWalkDistance / 10);
+    }
+  }, [containerSize, fullWalkDistance, normalizedPos]);
+  
   const triggerEffect = (effect: string) => {
     onEffectTrigger(effect);
   };
@@ -95,7 +108,7 @@ const MonsterStatusWindow: React.FC<MonsterStatusWindowProps> = ({
         const directionMultiplier = walkDirection === 'right' ? 1 : -1;
         let newPos = prevPos + (WALK_SPEED * directionMultiplier);
         
-        // Handle direction change at boundaries
+        // Handle direction change at restricted boundaries (75% of full distance)
         if (newPos >= walkDistance) {
           newPos = walkDistance - 0.1; // Prevent getting stuck at boundary
           setWalkDirection('left');
@@ -106,6 +119,11 @@ const MonsterStatusWindow: React.FC<MonsterStatusWindowProps> = ({
           setCurrentAnimation('walkRight');
         } else {
           setCurrentAnimation(walkDirection === 'right' ? 'walkRight' : 'walkLeft');
+        }
+        
+        // Update normalized position (-10 to 10 scale) for consistent resizing
+        if (fullWalkDistance > 0) {
+          setNormalizedPos((newPos / fullWalkDistance) * 10);
         }
 
         return newPos;
@@ -169,9 +187,9 @@ const MonsterStatusWindow: React.FC<MonsterStatusWindowProps> = ({
     </div>
   );
 
-  // Calculate position on -10 to 10 scale
-  const normalizedPosition = walkDistance > 0 
-    ? Math.round((position / walkDistance) * 10 * 10) / 10
+  // Calculate position on -10 to 10 scale for display purposes
+  const normalizedPosition = fullWalkDistance > 0 
+    ? Math.round((position / fullWalkDistance) * 10 * 10) / 10
     : 0;
 
   return (
@@ -226,6 +244,7 @@ const MonsterStatusWindow: React.FC<MonsterStatusWindowProps> = ({
               width: `${monsterSize}px`,
               height: `${monsterSize}px`,
               transform: `translateX(calc(-50% + ${position}px))`,
+              // Using pixel position that scales with container size
               bottom: '2.5%', /* Raised from bottom by 2.5% of container height */
               transition: 'transform 0.1s linear',
               zIndex: 10
