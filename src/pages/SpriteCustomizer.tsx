@@ -13,6 +13,7 @@ import Confetti from 'react-confetti';
 import Header from '../components/Header';
 import Footer from '../components/Footer';
 import { ArweaveWallet } from '../types/arweave';
+
 interface LayerState {
   style: string;
   color: string;
@@ -23,29 +24,34 @@ interface Layers {
 }
 
 interface SpriteCustomizerProps {
-  wallet?: ArweaveWallet;
   onEnter?: () => void;
   darkMode?: boolean;
 }
 
-// Helper function to get arweave wallet
-const getArweaveWallet = async (): Promise<ArweaveWallet | null> => {
-  if (window.arweaveWallet) {
-    return window.arweaveWallet;
-  }
-  return null;
-};
-
-const SpriteCustomizer: React.FC<SpriteCustomizerProps> = ({ wallet, onEnter, darkMode: initialDarkMode }) => {
+const SpriteCustomizer: React.FC<SpriteCustomizerProps> = ({ onEnter, darkMode: initialDarkMode }) => {
   const [layers, setLayers] = useState<Layers>({});
   const [uploadStatus, setUploadStatus] = useState<string>('');
   const [error, setError] = useState<string | null>(null);
   const [signer, setSigner] = useState<any>(null);
-  const [isUnlocked, setIsUnlocked] = useState(false);
   const [currentSkin, setCurrentSkin] = useState(null);
   const [isPurchaseModalOpen, setIsPurchaseModalOpen] = useState(false);
-  const { darkMode: walletDarkMode } = useWallet();
+  const { 
+    wallet: walletContext, 
+    walletStatus, 
+    darkMode: walletDarkMode, 
+    connectWallet,
+    isCheckingStatus 
+  } = useWallet();
   const [darkMode, setDarkMode] = useState(initialDarkMode ?? walletDarkMode ?? false);
+  
+  // Update local darkMode state when the prop changes
+  useEffect(() => {
+    if (initialDarkMode !== undefined) {
+      setDarkMode(initialDarkMode);
+    } else if (walletDarkMode !== undefined) {
+      setDarkMode(walletDarkMode);
+    }
+  }, [initialDarkMode, walletDarkMode]);
   const [loading, setLoading] = useState(true);
   const [availableStyles, setAvailableStyles] = useState(SPRITE_CATEGORIES);
   const [contractIcon, setContractIcon] = useState<string | undefined>();
@@ -55,7 +61,6 @@ const SpriteCustomizer: React.FC<SpriteCustomizerProps> = ({ wallet, onEnter, da
     width: window.innerWidth,
     height: window.innerHeight,
   });
-  const [isConnected, setIsConnected] = useState(false);
   const [showWarp, setShowWarp] = useState(false);
   const [showPreview, setShowPreview] = useState(false);
   const [showCustomizer, setShowCustomizer] = useState(false);
@@ -77,39 +82,26 @@ const SpriteCustomizer: React.FC<SpriteCustomizerProps> = ({ wallet, onEnter, da
   useEffect(() => {
     const init = async () => {
       try {
-        if (window.arweaveWallet) {
-          const address = await window.arweaveWallet.getActiveAddress();
-          if (address) {
-            setSigner(new ArconnectSigner(window.arweaveWallet));
-            setIsConnected(true);
-          }
-        }
-      } catch (error) {
-        console.error("Connection error:", error);
-      }
-    };
-
-    init();
-  }, []);
-
-  useEffect(() => {
-    const init = async () => {
-      try {
-        console.log('SpriteCustomizer: Checking existing wallet connection');
         setLoading(true);
-        const browserSigner = await getArweaveWallet();
-        if (browserSigner) {
+        
+        // Connect wallet if not already connected
+        if (!walletContext && walletStatus === null) {
+          await connectWallet();
+          return;
+        }
+
+        if (walletContext && walletStatus) {
           console.log('SpriteCustomizer: Wallet connected');
-          setSigner(browserSigner);
-          const status = await checkWalletStatus();
-          setIsUnlocked(status.isUnlocked);
-          setContractIcon(status.contractIcon);
-          setContractName(status.contractName);
-          if (status.currentSkin) {
-            console.log('SpriteCustomizer: Current skin found:', status.currentSkin);
-            setCurrentSkin(status.currentSkin);
-            // If we have a valid skin, enter immediately
-            if (status.currentSkin !== "none") {
+          setSigner(new ArconnectSigner(window.arweaveWallet));
+          
+          setContractIcon(walletStatus.contractIcon);
+          setContractName(walletStatus.contractName);
+          
+          if (walletStatus.currentSkin) {
+            console.log('SpriteCustomizer: Current skin found:', walletStatus.currentSkin);
+            setCurrentSkin(walletStatus.currentSkin);
+            
+            if (walletStatus.currentSkin !== "none") {
               setShowPreview(true);
               setShowCustomizer(true);
               if (onEnter) {
@@ -117,12 +109,9 @@ const SpriteCustomizer: React.FC<SpriteCustomizerProps> = ({ wallet, onEnter, da
               }
             }
           }
-          setIsConnected(true);
-        } else {
-          console.log('SpriteCustomizer: No wallet connected');
         }
       } catch (error) {
-        console.log('SpriteCustomizer: Connection error:', error);
+        console.error('SpriteCustomizer: Error initializing wallet:', error);
       } finally {
         setLoading(false);
       }
@@ -130,70 +119,7 @@ const SpriteCustomizer: React.FC<SpriteCustomizerProps> = ({ wallet, onEnter, da
 
     init();
     initializeLayers();
-  }, []);
-
-  useEffect(() => {
-    if (wallet && !isConnected) {
-      const initializeWithWallet = async () => {
-        try {
-          const addr = await wallet.getActiveAddress();
-          if (addr) {
-            setIsConnected(true);
-            const browserSigner = new ArconnectSigner(window.arweaveWallet);
-            setSigner(browserSigner);
-            const status = await checkWalletStatus();
-            setIsUnlocked(status.isUnlocked);
-            setContractIcon(status.contractIcon);
-            setContractName(status.contractName);
-            if (status.currentSkin) {
-              setCurrentSkin(status.currentSkin);
-              if (status.currentSkin !== "none") {
-                setShowPreview(true);
-                setShowCustomizer(true);
-                if (onEnter) {
-                  setShowWarp(true);
-                }
-              }
-            }
-          }
-        } catch (error) {
-          console.error('Error initializing with wallet:', error);
-        }
-      };
-
-      initializeWithWallet();
-    }
-  }, [wallet, isConnected]);
-
-  useEffect(() => {
-    const checkConnection = async () => {
-      if (window.arweaveWallet) {
-        try {
-          const addr = await window.arweaveWallet.getActiveAddress();
-          if (addr) {
-            setIsConnected(true);
-            const browserSigner = new ArconnectSigner(window.arweaveWallet);
-            setSigner(browserSigner);
-            const status = await checkWalletStatus();
-            setIsUnlocked(status.isUnlocked);
-            if (status.currentSkin) {
-              setCurrentSkin(status.currentSkin);
-              if (status.currentSkin !== "none") {
-                setShowPreview(true);
-                setShowCustomizer(true);
-                if (onEnter) {
-                  setShowWarp(true);
-                }
-              }
-            }
-          }
-        } catch (error) {
-          console.log('Not connected:', error);
-        }
-      }
-    };
-    checkConnection();
-  }, []);
+  }, [walletContext, walletStatus, connectWallet, onEnter]);
 
   const initializeLayers = () => {
     const initialLayers: Layers = {};
@@ -229,25 +155,19 @@ const SpriteCustomizer: React.FC<SpriteCustomizerProps> = ({ wallet, onEnter, da
     initializeLayers();
   };
 
-  const connectWallet = async () => {
+  const handleConnectWallet = async () => {
     try {
       if (!window.arweaveWallet) {
         throw new Error('Please install ArConnect extension');
       }
-      await window.arweaveWallet.connect(REQUIRED_PERMISSIONS);
-      const address = await window.arweaveWallet.getActiveAddress();
-      const browserSigner = new ArconnectSigner(window.arweaveWallet);
-      
-      setSigner(browserSigner);
-      setIsConnected(true);
-      
-      const status = await checkWalletStatus({ address });
-      setIsUnlocked(status.isUnlocked);
+      await connectWallet();
     } catch (error) {
       console.error('Failed to connect wallet:', error);
       setError('Failed to connect wallet. Please try again.');
     }
   };
+
+  const isLoading = isCheckingStatus || loading;
 
   const handleExport = () => {
     console.log('Exporting...');
@@ -271,7 +191,8 @@ const SpriteCustomizer: React.FC<SpriteCustomizerProps> = ({ wallet, onEnter, da
           const status = await checkWalletStatus();
           console.log('Rechecking status:', status);
           if (status.isUnlocked) {
-            setIsUnlocked(true);
+            // Use isUnlocked from wallet status
+            // setIsUnlocked(true);
             clearInterval(checkInterval);
           }
         }, 1000);
@@ -346,10 +267,10 @@ const SpriteCustomizer: React.FC<SpriteCustomizerProps> = ({ wallet, onEnter, da
     loadAssets();
   }, [availableStyles]);
 
-  const handleUnlockClick = () => {
-    if (!signer) {
-      connectWallet();
-    } else if (!isUnlocked) {
+  const handleUnlockClick = async () => {
+    if (!walletContext) {
+      await handleConnectWallet();
+    } else if (!walletStatus?.isUnlocked) {
       setIsPurchaseModalOpen(true);
     }
   };
@@ -372,11 +293,20 @@ const SpriteCustomizer: React.FC<SpriteCustomizerProps> = ({ wallet, onEnter, da
     }
   };
 
-  if (loading) return <div className={`min-h-screen flex items-center justify-center ${theme.bg} ${theme.text}`}>Loading assets...</div>;
+  if (isLoading) return <div className={`min-h-screen flex items-center justify-center ${theme.bg} ${theme.text}`}>Loading assets...</div>;
   if (error) return <div className={`min-h-screen flex items-center justify-center ${theme.bg} ${theme.text}`}>Error: {error}</div>;
 
   return (
-    <div className={`h-screen flex flex-col overflow-hidden ${theme.bg} ${theme.text}`}>
+    <div className={`min-h-screen flex flex-col ${theme.bg} ${theme.text}`}>
+      {showCelebration && (
+        <Confetti
+          width={windowSize.width}
+          height={windowSize.height}
+          recycle={false}
+          numberOfPieces={500}
+          onConfettiComplete={() => setShowCelebration(false)}
+        />
+      )}
       {/* Main container with gradient background */}
       <div className={`h-screen flex flex-col ${theme.bg}`}>
         <Header
@@ -458,10 +388,10 @@ const SpriteCustomizer: React.FC<SpriteCustomizerProps> = ({ wallet, onEnter, da
               darkMode={darkMode} 
               mode="arweave"
               signer={signer}
-              isUnlocked={isUnlocked}
+              isUnlocked={walletStatus?.isUnlocked}
               onUploadStatusChange={setUploadStatus}
               onError={setError}
-              onConnect={connectWallet}
+              onConnect={handleConnectWallet}
               onNeedUnlock={() => setIsPurchaseModalOpen(true)}
               onUploadComplete={handleExportComplete}
               className={`flex-1 py-2 px-4 rounded-xl text-sm font-medium transition-all duration-300 transform hover:scale-105 
