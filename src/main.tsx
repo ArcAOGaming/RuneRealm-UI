@@ -19,6 +19,7 @@ import { ActiveBattlePage } from './pages/ActiveBattlePage'
 import Inventory from './components/Inventory'
 import { MonsterProvider } from './contexts/MonsterContext'
 import DebugView from './pages/DebugView'
+import StartPage from './pages/StartPage'
 
 interface AppContentProps {
   wallet?: { address: string };
@@ -55,6 +56,7 @@ const AppContent = () => {
       {wallet?.address && walletStatus?.isUnlocked && <Inventory />}
       <Routes>
         <Route path="/" element={<PurchaseInfo />} />
+        <Route path="/start" element={<StartPage />} />
         <Route path="/customize" element={<SpriteCustomizer />} />
         <Route path="/factions" element={<FactionPage />} />
         <Route path="/factions/:factionId" element={<FactionDetailPage />} />
@@ -64,13 +66,6 @@ const AppContent = () => {
         <Route path="/battle/active" element={<ActiveBattlePage />} />
         <Route path="/monster-test" element={<MonsterTest />} />
         <Route path="/debug" element={<DebugView />} />
-        <Route path="/reality/*" element={
-          <iframe
-            src="/reality/"
-            style={{ width: '100%', height: '100vh', border: 'none' }}
-            title="Reality"
-          />
-        } />
       </Routes>
     </div>
   );

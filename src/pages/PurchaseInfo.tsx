@@ -7,8 +7,6 @@ import accessTicketImg from '../assets/access-ticket.png';
 import PurchaseModal from '../components/PurchaseModal';
 import Confetti from 'react-confetti';
 import Header from '../components/Header';
-import Inventory from '../components/Inventory';
-import BattleStatusComponent from '../components/BattleStatus';
 
 const PurchaseInfo: React.FC = () => {
   const { wallet, walletStatus, darkMode, connectWallet, setDarkMode } = useWallet();

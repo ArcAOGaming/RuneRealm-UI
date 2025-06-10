@@ -1,28 +1,18 @@
-import { useState, useEffect } from 'react'
-import PreviewCanvas from '../components/PreviewCanvas'
-import ExportButton from '../components/ExportButton'
-import LayerSelector from '../components/LayerSelector'
-import ExportAndUploadButton from '../services/upload'
-import WalkingPreview from '../components/WalkingPreview'
-import FourDirectionView from '../components/FourDirectionView'
-import WarpTransition from '../components/WarpTransition'
-import PurchaseModal from '../components/PurchaseModal'
-import { currentTheme } from '../constants/theme'
-import { SPRITE_CATEGORIES } from '../constants/Constants'
-import { ArconnectSigner } from '@ardrive/turbo-sdk/web'
-const logoPath = new URL('../assets/rune-realm-transparent.png', import.meta.url).href;
-import { checkWalletStatus, TokenOption, purchaseAccess } from '../utils/aoHelpers'
-import Confetti from 'react-confetti'
-import { AdminSkinChanger } from '../constants/Constants'
-import AdminBulkUnlock from '../components/AdminBulkUnlock'
-import AdminRemoveUser from '../components/AdminRemoveUser'
-import TestButton from '../components/TestButton'
-import CacheDebugger from '../components/CacheDebugger'
-import SimpleHeader from '../components/SimpleHeader'
-import Header from '../components/Header'
-import Footer from '../components/Footer'
-import { ArweaveWallet, REQUIRED_PERMISSIONS } from '../types/arweave';
-
+import { useState, useEffect } from 'react';
+import { useWallet } from '../hooks/useWallet';
+import LayerSelector from '../components/LayerSelector';
+import ExportAndUploadButton from '../services/upload';
+import WalkingPreview from '../components/WalkingPreview';
+import WarpTransition from '../components/WarpTransition';
+import PurchaseModal from '../components/PurchaseModal';
+import { currentTheme } from '../constants/theme';
+import { SPRITE_CATEGORIES } from '../constants/Constants';
+import { ArconnectSigner } from '@ardrive/turbo-sdk/web';
+import { checkWalletStatus, TokenOption, purchaseAccess } from '../utils/aoHelpers';
+import Confetti from 'react-confetti';
+import Header from '../components/Header';
+import Footer from '../components/Footer';
+import { ArweaveWallet } from '../types/arweave';
 interface LayerState {
   style: string;
   color: string;
@@ -54,7 +44,8 @@ const SpriteCustomizer: React.FC<SpriteCustomizerProps> = ({ wallet, onEnter, da
   const [isUnlocked, setIsUnlocked] = useState(false);
   const [currentSkin, setCurrentSkin] = useState(null);
   const [isPurchaseModalOpen, setIsPurchaseModalOpen] = useState(false);
-  const [darkMode, setDarkMode] = useState(initialDarkMode ?? false);
+  const { darkMode: walletDarkMode } = useWallet();
+  const [darkMode, setDarkMode] = useState(initialDarkMode ?? walletDarkMode ?? false);
   const [loading, setLoading] = useState(true);
   const [availableStyles, setAvailableStyles] = useState(SPRITE_CATEGORIES);
   const [contractIcon, setContractIcon] = useState<string | undefined>();
@@ -381,23 +372,18 @@ const SpriteCustomizer: React.FC<SpriteCustomizerProps> = ({ wallet, onEnter, da
     }
   };
 
-  if (loading) return <div>Loading assets...</div>;
-  if (error) return <div>Error: {error}</div>;
+  if (loading) return <div className={`min-h-screen flex items-center justify-center ${theme.bg} ${theme.text}`}>Loading assets...</div>;
+  if (error) return <div className={`min-h-screen flex items-center justify-center ${theme.bg} ${theme.text}`}>Error: {error}</div>;
 
   return (
-    <div className="h-screen flex flex-col overflow-hidden">
+    <div className={`h-screen flex flex-col overflow-hidden ${theme.bg} ${theme.text}`}>
       {/* Main container with gradient background */}
       <div className={`h-screen flex flex-col ${theme.bg}`}>
-        {/* Uncomment when deploying in Reality, comment out SimpleHeader */}
-         <Header
+        <Header
           theme={theme}
           darkMode={darkMode}
           showBackButton={!onEnter}
-        />
-        {/* Comment out when deploying in Reality */}
-        {/*<SimpleHeader 
-          theme={theme}
-          darkMode={darkMode}
+          onDarkModeToggle={() => setDarkMode(!darkMode)}
         />
         {/* Main content area */}
         <div className={`flex-1 w-full ${theme.container} ${theme.text} shadow-2xl ${theme.border} flex flex-col overflow-hidden`}>
@@ -406,8 +392,8 @@ const SpriteCustomizer: React.FC<SpriteCustomizerProps> = ({ wallet, onEnter, da
             {/* Left column - Controls */}
             <div className="w-full lg:w-1/3 p-2 overflow-y-auto">
               {/* Layer Selection */}
-              <div className={`p-2 rounded-xl ${theme.container} border ${theme.border}`}>
-                <h2 className="text-lg font-bold mb-2">Layer Selection</h2>
+              <div className={`p-4 rounded-xl ${theme.container} border ${theme.border} ${theme.cardBg} ${theme.text}`}>
+                <h2 className={`text-lg font-bold mb-4 ${theme.text}`}>Layer Selection</h2>
                 <LayerSelector
                   layers={layers}
                   availableStyles={availableStyles}
@@ -420,8 +406,8 @@ const SpriteCustomizer: React.FC<SpriteCustomizerProps> = ({ wallet, onEnter, da
             {/* Right column - Preview */}
             <div className="w-full lg:w-2/3 p-2 flex flex-col gap-4 overflow-y-auto">
               {/* Four Direction Preview */}
-              <div className={`flex-1 p-4 rounded-xl ${theme.container} border ${theme.border}`}>
-                <h2 className="text-lg font-bold mb-2">Character Preview</h2>
+              <div className={`p-4 rounded-xl ${theme.container} border ${theme.border} ${theme.cardBg} ${theme.text}`}>
+                <h2 className={`text-lg font-bold mb-4 ${theme.text}`}>Character Preview</h2>
                 {/* Temporarily hidden 4-way preview - DO NOT REMOVE */}
                 {/* <div className="h-[45%] flex items-center justify-center">
                   <FourDirectionView
@@ -440,7 +426,7 @@ const SpriteCustomizer: React.FC<SpriteCustomizerProps> = ({ wallet, onEnter, da
           </div>
 
           {/* Bottom Buttons */}
-          <div className={`flex gap-3 p-4 flex-shrink-0 ${theme.container} border-t ${theme.border}`}>
+          <div className={`flex gap-3 p-4 flex-shrink-0 ${theme.container} border-t ${theme.border} ${theme.bg}`}>
             {onEnter && (
               <button
                 onClick={handleSkipClick}
