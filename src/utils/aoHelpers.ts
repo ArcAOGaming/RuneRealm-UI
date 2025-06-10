@@ -1,4 +1,6 @@
-import { message as aoMessage, createDataItemSigner, dryrun, result } from "../config/aoConnection";
+import { message as aoMessage, dryrun, result } from "../config/aoConnection";
+import { createDataItemSigner } from "@permaweb/aoconnect";
+import { useWallet } from "../contexts/WalletContext";
 
 interface CachedData<T> {
   data: T;
@@ -227,117 +229,8 @@ export const message = async (params: any, refreshCallback?: () => void) => {
 };
 
 
-// Check wallet status and current skin
-export const checkWalletStatus = async (
-  walletInfo?: { address: string },
-  useCache: boolean = false
-): Promise<WalletStatus> => {
-    try {
-        const address = walletInfo?.address || await window.arweaveWallet.getActiveAddress();
-        const cacheKey = `checkWalletStatus-${address}`;
-        
-        if (useCache) {
-          const cached = getCachedData<WalletStatus>(cacheKey);
-          if (cached) {
-            console.log(`[checkWalletStatus] Using cached status for:`, address);
-            return cached.data;
-          }
-        }
-        
-        console.log("Checking wallet status for address:", address);
-        const [unlockResult, skinResult, factionResult, monsterResult] = await Promise.all([
-            // Check if user is unlocked
-            dryrun({
-                process: AdminSkinChanger,
-                tags: [
-                    { name: "Action", value: "CheckUnlocked" },
-                    { name: "Address", value: address }
-                ],
-                data: ""
-            }),
-            // Check skin
-            dryrun({
-                process: AdminSkinChanger,
-                tags: [
-                    { name: "Action", value: "CheckSkin" },
-                    { name: "Address", value: address }
-                ],
-                data: ""
-            }),
-            // Check faction
-            dryrun({
-                process: AdminSkinChanger,
-                tags: [
-                    { name: "Action", value: "CheckFaction" },
-                    { name: "Address", value: address }
-                ],
-                data: ""
-            }),
-            // Get monster status
-            dryrun({
-                process: AdminSkinChanger,
-                tags: [
-                    { name: "Action", value: "GetUserMonster" },
-                    { name: "Wallet", value: address }
-                ],
-                data: ""
-            })
-        ]) as [ResultType, ResultType, ResultType, ResultType];
-
-        if (!unlockResult.Messages || unlockResult.Messages.length === 0) {
-            throw new Error("No response from CheckUnlocked");
-        }
-
-        const response = JSON.parse(unlockResult.Messages[0].Data);
-        const isUnlocked = response.type === "ok" ? 
-            JSON.parse(response.data).result : 
-            response.result === true;
-
-        // Process skin
-        const skinTxId = skinResult.Messages && skinResult.Messages.length > 0 ?
-            (skinResult.Messages[0].Data === "None" ? null : skinResult.Messages[0].Data) :
-            null;
-
-        // Process faction
-        const faction = factionResult.Messages && factionResult.Messages.length > 0 ?
-            (factionResult.Messages[0].Data === "None" ? null : factionResult.Messages[0].Data) :
-            null;
-
-        // Process monster
-        let monster = null;
-        if (monsterResult.Messages && monsterResult.Messages.length > 0) {
-            const monsterResponse = JSON.parse(monsterResult.Messages[0].Data);
-            if (monsterResponse.status === "success") {
-                monster = monsterResponse.monster;
-            }
-        }
-
-        const status = {
-            isUnlocked,
-            currentSkin: skinTxId,
-            faction: faction,
-            monster: monster,
-            contractIcon: "hqg-Em9DdYHYmMysyVi8LuTGF8IF_F7ZacgjYiSpj0k",
-            contractName: "Sprite Customizer"
-        };
-        
-        // Cache the result
-        setCachedData(cacheKey, status);
-        return status;
-    } catch (error) {
-        console.error("Error checking wallet status:", error);
-        return {
-            isUnlocked: false,
-            currentSkin: null,
-            faction: null,
-            monster: null,
-            error: "Failed to check wallet status"
-        };
-    }
-};
-
 // Update user's skin
-export const updateUserSkin = async (wallet: any, spriteTxId: string, refreshCallback?: () => void) => {
+export const updateUserSkin = async (wallet: any, spriteTxId: string, walletStatus: { isUnlocked: boolean }, refreshCallback?: () => void) => {
     if (!wallet?.address) {
         throw new Error("No wallet connected");
     }
@@ -345,9 +238,8 @@ export const updateUserSkin = async (wallet: any, spriteTxId: string, refreshCal
     try {
         console.log("Updating skin for wallet:", wallet.address);
         
-        // First check if user is authorized
-        const status = await checkWalletStatus(wallet);
-        if (!status.isUnlocked) {
+        // Check if user is authorized
+        if (!walletStatus?.isUnlocked) {
             throw new Error("You do not have skin changing ability unlocked.");
         }
 
@@ -380,7 +272,7 @@ export const updateUserSkin = async (wallet: any, spriteTxId: string, refreshCal
     }
 };
 
-export const setFaction = async (wallet: any, faction: string, refreshCallback?: () => void) => {
+export const setFaction = async (wallet: any, faction: string, walletStatus: { isUnlocked: boolean }, refreshCallback?: () => void) => {
     if (!wallet?.address) {
         throw new Error("No wallet connected");
     }
@@ -388,12 +280,11 @@ export const setFaction = async (wallet: any, faction: string, refreshCallback?:
     try {
         console.log("Setting faction for wallet:", wallet.address);
         
-        // First check if user is authorized
-        const status = await checkWalletStatus(wallet);
-        if (!status.isUnlocked) {
+        // Check if user is authorized
+        if (!walletStatus?.isUnlocked) {
             throw new Error("You do not have Eternal Pass.");
         }
-        const signer = createDataItemSigner(window.arweaveWallet);
+        const signer = createDataItemSigner(wallet);
         const messageResult = await message({
             process: AdminSkinChanger,
             tags: [
@@ -509,10 +400,19 @@ export const getFactionOptions = async (useCache: boolean = false): Promise<Fact
             }
         }
         
+        // Get wallet from context
+        const { wallet } = useWallet();
+        
+        if (!wallet) {
+            console.error("[getFactionOptions] Wallet not connected");
+            throw new Error("Wallet not connected");
+        }
+        
         const dryRunResult = await dryrun({
             process: AdminSkinChanger,
             tags: [
-                { name: "Action", value: "GetFactions" }
+                { name: "Action", value: "GetFactions" },
+                { name: "Signer", value: wallet.address }
             ],
             data: ""
         }) as ResultType;
@@ -578,12 +478,13 @@ export const formatTokenAmount = (amount: string, denomination: number): string 
 export const purchaseAccess = async (selectedToken: TokenOption, refreshCallback?: () => void): Promise<boolean> => {
     try {
         console.log("Initiating purchase with token:", selectedToken);
-
-        if (!window.arweaveWallet) {
+        // Get wallet from context
+        const { wallet } = useWallet();
+        if (!wallet) {
             throw new Error("Arweave wallet not found");
         }
 
-        const signer = createDataItemSigner(window.arweaveWallet);
+        const signer = createDataItemSigner(wallet);
         console.log("Created signer for wallet");
 
         // Check for referrer cookie
@@ -661,7 +562,9 @@ interface BulkImportRequest {
 
 export const bulkImportAddresses = async (data: BulkImportRequest, refreshCallback?: () => void): Promise<BulkImportResult> => {
     try {
-        const signer = createDataItemSigner(window.arweaveWallet);
+                // Get wallet from context
+                const { wallet } = useWallet();
+        const signer = createDataItemSigner(wallet);
         console.log("Created signer for wallet");
 
         const messageResult = await message({
@@ -693,7 +596,7 @@ export const bulkImportAddresses = async (data: BulkImportRequest, refreshCallba
 
 // Remove user access
 // Adopt a monster
-export const adoptMonster = async (wallet: any, refreshCallback?: () => void) => {
+export const adoptMonster = async (wallet: any, walletStatus: { isUnlocked: boolean; faction: string | null }, refreshCallback?: () => void) => {
     if (!wallet?.address) {
         throw new Error("No wallet connected");
     }
@@ -701,16 +604,15 @@ export const adoptMonster = async (wallet: any, refreshCallback?: () => void) =>
     try {
         console.log("Adopting monster for wallet:", wallet.address);
         
-        // First check if user is authorized
-        const status = await checkWalletStatus(wallet);
-        if (!status.isUnlocked) {
+        // Check if user is authorized
+        if (!walletStatus?.isUnlocked) {
             throw new Error("You do not have Eternal Pass.");
         }
-        if (!status.faction) {
+        if (!walletStatus?.faction) {
             throw new Error("You must join a faction first.");
         }
 
-        const signer = createDataItemSigner(window.arweaveWallet);
+        const signer = createDataItemSigner(wallet);
         const messageResult = await message({
             process: AdminSkinChanger,
             tags: [
@@ -955,7 +857,9 @@ export interface MonsterStatsUpdate {
 export const setUserStats = async (targetWallet: string, stats: MonsterStatsUpdate, refreshCallback?: () => void): Promise<boolean> => {
   try {
     console.log('Setting user stats with data:', JSON.stringify(stats, null, 2));
-    const signer = createDataItemSigner(window.arweaveWallet);
+    // Get wallet from context
+    const { wallet } = useWallet();
+    const signer = createDataItemSigner(wallet);
     const messageResult = await message({
       process: AdminSkinChanger,
       tags: [
@@ -993,7 +897,7 @@ export const executeBattle = async (wallet: any, refreshCallback?: () => void) =
     try {
         console.log("Executing battle for wallet:", wallet.address);
         
-        const signer = createDataItemSigner(window.arweaveWallet);
+        const signer = createDataItemSigner(wallet);
         const messageResult = await message({
             process: TARGET_BATTLE_PID,
             tags: [
@@ -1027,7 +931,7 @@ export const executeActivity = async (wallet: any, activity:string, canReturn:bo
 
     try {
         console.log("Executing battle for wallet:", wallet.address);
-        const signer = createDataItemSigner(window.arweaveWallet);
+        const signer = createDataItemSigner(wallet);
         const messageResult =  await message({
             process: canReturn ? AdminSkinChanger : token,
             tags: canReturn ? [
@@ -1079,7 +983,9 @@ export const getUserInfo = async (walletAddress: string): Promise<UserInfo | nul
 
 export const removeUser = async (userId: string, refreshCallback?: () => void) => {
     try {
-        const signer = createDataItemSigner(window.arweaveWallet);
+        // Get wallet from context
+        const { wallet } = useWallet();
+        const signer = createDataItemSigner(wallet);
         const messageResult = await message({
             process: AdminSkinChanger,
             tags: [
@@ -1119,7 +1025,7 @@ export const defaultInteraction = async (wallet: any, refreshCallback?: () => vo
     }
 
     try {
-        const signer = createDataItemSigner(window.arweaveWallet);
+        const signer = createDataItemSigner(wallet);
         const messageResult = await message({
             process: Alter,
             tags: [
@@ -1197,7 +1103,9 @@ export const getUserOfferings = async (userId: string): Promise<OfferingData | n
 
 export const adjustAllMonsters = async (refreshCallback?: () => void): Promise<boolean> => {
     try {
-        const signer = createDataItemSigner(window.arweaveWallet);
+        // Get wallet from context
+        const { wallet } = useWallet();
+        const signer = createDataItemSigner(wallet);
         const messageResult = await message({
             process: AdminSkinChanger,
             tags: [
@@ -1226,11 +1134,13 @@ export const adjustAllMonsters = async (refreshCallback?: () => void): Promise<b
 
 // Generate a referral link for the current user
 export const generateReferralLink = async (): Promise<string> => {
-    if (!window.arweaveWallet) {
+    // Get wallet from context
+    const { wallet } = useWallet();
+    if (!wallet) {
         throw new Error("Arweave wallet not found");
     }
     
-    const address = await window.arweaveWallet.getActiveAddress();
+    const address = await wallet.getActiveAddress();
     const baseUrl = window.location.origin;
     return `${baseUrl}?ref=${address}`;
 };
@@ -1259,8 +1169,9 @@ export const copyReferralLink = async (): Promise<void> => {
 export const adminReturnFromBattle = async (targetWallet: string, refreshCallback?: () => void): Promise<boolean> => {
     try {
         console.log('[adminReturnFromBattle] Forcing return for wallet:', targetWallet);
-        
-        const signer = createDataItemSigner(window.arweaveWallet);
+        // Get wallet from context
+        const { wallet } = useWallet();
+        const signer = createDataItemSigner(wallet);
         const messageResult = await message({
             process: TARGET_BATTLE_PID,
             tags: [
@@ -1394,7 +1305,7 @@ export const startBattle = async (wallet: any, refreshCallback?: () => void) => 
     try {
         console.log("Starting battle for wallet:", wallet.address);
         
-        const signer = createDataItemSigner(window.arweaveWallet);
+        const signer = createDataItemSigner(wallet);
         const messageResult = await message({
             process: TARGET_BATTLE_PID,
             tags: [
@@ -1434,7 +1345,7 @@ export const enterBattle = async (
     }
 
     try {
-        const signer = createDataItemSigner(window.arweaveWallet);
+        const signer = createDataItemSigner(wallet);
         const tags = [{ name: "Action", value: "Battle" }];
 
         // Add challenge tag if specified
@@ -1477,7 +1388,7 @@ export const returnFromBattle = async (wallet: any, refreshCallback?: () => void
     }
 
     try {
-        const signer = createDataItemSigner(window.arweaveWallet);
+        const signer = createDataItemSigner(wallet);
         const messageResult = await message({
             process: TARGET_BATTLE_PID,
             tags: [
@@ -1510,7 +1421,7 @@ export const executeAttack = async (wallet: any, battleId: string, moveName: str
     }
 
     try {
-        const signer = createDataItemSigner(window.arweaveWallet);
+        const signer = createDataItemSigner(wallet);
         const messageResult = await message({
             process: TARGET_BATTLE_PID,
             tags: [
@@ -1546,7 +1457,7 @@ export const endBattle = async (wallet: any, battleId: string, refreshCallback?:
     }
 
     try {
-        const signer = createDataItemSigner(window.arweaveWallet);
+        const signer = createDataItemSigner(wallet);
         const messageResult = await message({
             process: TARGET_BATTLE_PID,
             tags: [
@@ -1678,7 +1589,7 @@ export const openLootBox = async (wallet: any, refreshCallback?: () => void): Pr
   
     try {
       console.log('[openLootBox] Opening loot box for user:', wallet.address);
-      const signer = createDataItemSigner(window.arweaveWallet);
+      const signer = createDataItemSigner(wallet);
   
       // Send your message
       const messageresult: any = await message({
@@ -1746,7 +1657,7 @@ export const openLootBoxWithRarity = async (wallet: any, rarity: number, refresh
 
   try {
     console.log(`[openLootBoxWithRarity] Opening loot box with rarity ${rarity} for user:`, wallet.address);
-    const signer = createDataItemSigner(window.arweaveWallet);
+    const signer = createDataItemSigner(wallet);
 
     // Send message with rarity tag
     const messageresult: any = await message({

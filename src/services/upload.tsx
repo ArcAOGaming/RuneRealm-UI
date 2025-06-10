@@ -2,7 +2,7 @@ import React, { useCallback, useState, useEffect, useMemo } from 'react';
 import { TurboFactory } from '@ardrive/turbo-sdk/web';
 import { message, createDataItemSigner } from '../config/aoConnection';
 import { AdminSkinChanger, DefaultAtlasTxID } from '../constants/Constants';
-import { checkWalletStatus } from '../utils/aoHelpers';
+import { useWallet } from '../contexts/WalletContext';
 import { SpriteColorizer } from '../utils/spriteColorizer';
 
 interface ExportAndUploadButtonProps {
@@ -40,40 +40,31 @@ const ExportAndUploadButton: React.FC<ExportAndUploadButtonProps> = ({
   onError
 }) => {
   const [uploading, setUploading] = useState(false);
+  const { wallet, walletStatus, connectWallet } = useWallet();
   const [isConnected, setIsConnected] = useState(false);
-  const [localIsUnlocked, setLocalIsUnlocked] = useState(false);
 
-  const checkStatus = async () => {
-    try {
-      if (!window.arweaveWallet) {
-        setIsConnected(false);
-        setLocalIsUnlocked(false);
-        return;
-      }
-
-      const permissions = await window.arweaveWallet.getPermissions();
-      const connected = permissions.includes('ACCESS_PUBLIC_KEY');
-      setIsConnected(connected);
-
-      if (connected) {
-        // Get wallet status
-        const status = await checkWalletStatus();
-        setLocalIsUnlocked(status.isUnlocked);
-      }
-    } catch (error) {
-      console.error('Error checking status:', error);
-      setIsConnected(false);
-      setLocalIsUnlocked(false);
-    }
-  };
-
-  // Check status when component mounts and when dependencies change
+  // Check wallet connection status when wallet or status changes
   useEffect(() => {
-    checkStatus();
-  }, [signer, propIsUnlocked]);
+    const checkConnection = async () => {
+      try {
+        if (!window.arweaveWallet) {
+          setIsConnected(false);
+          return;
+        }
 
-  // Use either prop value or local state, preferring prop if available
-  const isUnlocked = propIsUnlocked ?? localIsUnlocked;
+        const permissions = await window.arweaveWallet.getPermissions();
+        const connected = permissions.includes('ACCESS_PUBLIC_KEY') && !!wallet?.address;
+        setIsConnected(connected);
+      } catch (error) {
+        console.error('Error checking connection status:', error);
+        setIsConnected(false);
+      }
+    };
+
+    checkConnection();
+  }, [wallet, walletStatus]);
+
+  const isUnlocked = propIsUnlocked ?? walletStatus?.isUnlocked ?? false;
 
   const createColorizedTexture = useCallback((imageData: ImageData, color: string): ImageData => {
     return SpriteColorizer.colorizeTexture(imageData, color, {
@@ -88,16 +79,10 @@ const ExportAndUploadButton: React.FC<ExportAndUploadButtonProps> = ({
     }
 
     try {
-      await window.arweaveWallet.connect([
-        'ACCESS_ADDRESS',
-        'ACCESS_PUBLIC_KEY',
-        'SIGN_TRANSACTION',
-        'SIGNATURE',
-        'DISPATCH'
-      ]);
-      console.log('Permissions granted');
+      // Use the connectWallet function from the wallet context
+      await connectWallet();
+      console.log('Wallet connected');
       setIsConnected(true);
-      await checkStatus(); // Recheck connection after permissions granted
     } catch (error) {
       console.error('Failed to get permissions:', error);
       setIsConnected(false);

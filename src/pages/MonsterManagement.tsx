@@ -83,10 +83,15 @@ export const MonsterManagement: React.FC = (): JSX.Element => {
 
   const handleStatConfirm = async (stats: { attack: number; defense: number; speed: number; health: number }) => {
     try {
+      if (!wallet) {
+        await connectWallet();
+        return;
+      }
+      
       setIsLevelingUp(true);
       console.log('Leveling up monster with stats:', stats);
       
-      const signer = createDataItemSigner(window.arweaveWallet);
+      const signer = createDataItemSigner(wallet);
       await message({
         process: "j7NcraZUL6GZlgdPEoph12Q5rk_dydvQDecLNxYi8rI",
         tags: [

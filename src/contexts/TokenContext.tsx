@@ -2,6 +2,7 @@ import React, { createContext, useContext, useState, useEffect, useCallback, use
 import { TokenClient } from 'ao-process-clients';
 import { SUPPORTED_ASSET_IDS, ASSET_INFO, SupportedAssetId } from '../constants/Constants';
 import type { AssetBalance } from '../utils/interefaces';
+import { useWallet } from './WalletContext';
 
 // Define loading states for tokens
 export type TokenLoadingState = 'loading' | 'loaded' | 'error';
@@ -25,6 +26,20 @@ export const TokenProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   // Track in-flight balance requests to prevent duplicates
   const pendingRequestsRef = useRef<Record<string, Promise<any>>>({});
   
+  // Get wallet from context
+  const { wallet } = useWallet();
+  const walletRef = useRef(wallet);
+  
+  // Update ref when wallet changes
+  useEffect(() => {
+    walletRef.current = wallet;
+    
+    // When wallet changes, refresh all token balances
+    if (wallet) {
+      fetchAllTokenBalances();
+    }
+  }, [wallet]);
+
   // Initialize state with loading status for all tokens
   useEffect(() => {
     const initialBalances: Record<SupportedAssetId, AssetBalance> = {} as Record<SupportedAssetId, AssetBalance>;
@@ -35,18 +50,34 @@ export const TokenProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         initialBalances[assetId] = {
           info: assetInfo,
           balance: 0,
-          state: 'loading'
+          state: wallet ? 'loading' : 'error'
         };
       }
     });
     
     setTokenBalances(initialBalances);
-    // After initializing, fetch all token balances
-    fetchAllTokenBalances();
-  }, []);
+    
+    // After initializing, fetch all token balances if wallet is available
+    if (wallet) {
+      fetchAllTokenBalances();
+    }
+  }, [wallet]);
   
   // Function to fetch a single token balance
   const fetchTokenBalance = useCallback(async (assetId: SupportedAssetId) => {
+    const currentWallet = walletRef.current;
+    
+    // If no wallet is connected, set error state and return
+    if (!currentWallet) {
+      setTokenBalances(prev => ({
+        ...prev,
+        [assetId]: {
+          ...prev[assetId],
+          state: 'error'
+        }
+      }));
+      return { assetId, success: false, error: 'No wallet connected' };
+    }
     // Skip if there's already a request in progress for this token
     if (pendingRequestsRef.current[assetId]) {
       //console.log(`[TokenContext] Skipping duplicate request for ${ASSET_INFO[assetId]?.ticker || assetId} - already in progress`);
@@ -72,19 +103,19 @@ export const TokenProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     // Create a promise for this request
     const requestPromise = (async () => {
       try {
-        // Use window.arweaveWallet as requested
-        if (!window.arweaveWallet) {
-          throw new Error('Arweave wallet not available');
+        const currentWallet = walletRef.current;
+        if (!currentWallet) {
+          throw new Error('Wallet not connected');
         }
         
         // Get the wallet address
-        const walletAddress = await window.arweaveWallet.getActiveAddress();
+        const walletAddress = currentWallet.address || await currentWallet.getActiveAddress();
         
         // Create the wallet config object
         const walletConfig = {
           getActiveAddress: async () => walletAddress,
           address: walletAddress,
-          dispatch: window.arweaveWallet
+          dispatch: currentWallet
         };
         
         // Create the token client with the provided configuration

@@ -8,7 +8,7 @@ import PurchaseModal from '../components/PurchaseModal';
 import { currentTheme } from '../constants/theme';
 import { SPRITE_CATEGORIES } from '../constants/Constants';
 import { ArconnectSigner } from '@ardrive/turbo-sdk/web';
-import { checkWalletStatus, TokenOption, purchaseAccess } from '../utils/aoHelpers';
+import { TokenOption, purchaseAccess } from '../utils/aoHelpers';
 import Confetti from 'react-confetti';
 import Header from '../components/Header';
 import Footer from '../components/Footer';
@@ -35,23 +35,15 @@ const SpriteCustomizer: React.FC<SpriteCustomizerProps> = ({ onEnter, darkMode: 
   const [signer, setSigner] = useState<any>(null);
   const [currentSkin, setCurrentSkin] = useState(null);
   const [isPurchaseModalOpen, setIsPurchaseModalOpen] = useState(false);
-  const { 
-    wallet: walletContext, 
-    walletStatus, 
-    darkMode: walletDarkMode, 
-    connectWallet,
-    isCheckingStatus 
-  } = useWallet();
-  const [darkMode, setDarkMode] = useState(initialDarkMode ?? walletDarkMode ?? false);
+  const { wallet, walletStatus, connectWallet } = useWallet();
+  const [darkMode, setDarkMode] = useState(initialDarkMode ?? false);
   
   // Update local darkMode state when the prop changes
   useEffect(() => {
     if (initialDarkMode !== undefined) {
       setDarkMode(initialDarkMode);
-    } else if (walletDarkMode !== undefined) {
-      setDarkMode(walletDarkMode);
     }
-  }, [initialDarkMode, walletDarkMode]);
+  }, [initialDarkMode]);
   const [loading, setLoading] = useState(true);
   const [availableStyles, setAvailableStyles] = useState(SPRITE_CATEGORIES);
   const [contractIcon, setContractIcon] = useState<string | undefined>();
@@ -84,18 +76,17 @@ const SpriteCustomizer: React.FC<SpriteCustomizerProps> = ({ onEnter, darkMode: 
       try {
         setLoading(true);
         
-        // Connect wallet if not already connected
-        if (!walletContext && walletStatus === null) {
-          await connectWallet();
-          return;
-        }
-
-        if (walletContext && walletStatus) {
+        if (wallet && walletStatus) {
           console.log('SpriteCustomizer: Wallet connected');
           setSigner(new ArconnectSigner(window.arweaveWallet));
           
-          setContractIcon(walletStatus.contractIcon);
-          setContractName(walletStatus.contractName);
+          // Set contract info if available in walletStatus
+          if (walletStatus.contractIcon) {
+            setContractIcon(walletStatus.contractIcon);
+          }
+          if (walletStatus.contractName) {
+            setContractName(walletStatus.contractName);
+          }
           
           if (walletStatus.currentSkin) {
             console.log('SpriteCustomizer: Current skin found:', walletStatus.currentSkin);
@@ -117,9 +108,21 @@ const SpriteCustomizer: React.FC<SpriteCustomizerProps> = ({ onEnter, darkMode: 
       }
     };
 
+    const checkAccess = async () => {
+      try {
+        if (!wallet) {
+          return false;
+        }
+        return walletStatus?.isUnlocked || false;
+      } catch (error) {
+        console.error('Error checking access:', error);
+        return false;
+      }
+    };
+
     init();
     initializeLayers();
-  }, [walletContext, walletStatus, connectWallet, onEnter]);
+  }, [wallet, walletStatus, onEnter, wallet?.address]);
 
   const initializeLayers = () => {
     const initialLayers: Layers = {};
@@ -158,16 +161,16 @@ const SpriteCustomizer: React.FC<SpriteCustomizerProps> = ({ onEnter, darkMode: 
   const handleConnectWallet = async () => {
     try {
       if (!window.arweaveWallet) {
-        throw new Error('Please install ArConnect extension');
+        throw new Error('ArConnect extension not found');
       }
       await connectWallet();
     } catch (error) {
-      console.error('Failed to connect wallet:', error);
-      setError('Failed to connect wallet. Please try again.');
+      console.error('Error connecting wallet:', error);
+      throw error;
     }
   };
 
-  const isLoading = isCheckingStatus || loading;
+  const isLoading = !walletStatus;
 
   const handleExport = () => {
     console.log('Exporting...');
@@ -176,8 +179,9 @@ const SpriteCustomizer: React.FC<SpriteCustomizerProps> = ({ onEnter, darkMode: 
   const handlePurchase = async (selectedToken: TokenOption) => {
     console.log('SpriteCustomizer: Initiating purchase with token:', selectedToken);
     try {
-      if (!window.arweaveWallet) {
-        throw new Error('Please connect your Arweave wallet');
+      if (!wallet) {
+        await connectWallet();
+        return;
       }
       const success = await purchaseAccess(selectedToken);
       if (success) {
@@ -186,19 +190,8 @@ const SpriteCustomizer: React.FC<SpriteCustomizerProps> = ({ onEnter, darkMode: 
         // Close the modal quickly
         setTimeout(() => setIsPurchaseModalOpen(false), 2500);
         
-        // Start checking status immediately and continue for a few seconds
-        const checkInterval = setInterval(async () => {
-          const status = await checkWalletStatus();
-          console.log('Rechecking status:', status);
-          if (status.isUnlocked) {
-            // Use isUnlocked from wallet status
-            // setIsUnlocked(true);
-            clearInterval(checkInterval);
-          }
-        }, 1000);
-
-        // Clear interval after 10 seconds if it hasn't succeeded
-        setTimeout(() => clearInterval(checkInterval), 10000);
+        // No need to check status here as the WalletProvider will update the status
+        // The parent component can listen to walletStatus changes if needed
         
         // Keep confetti for a bit longer
         setTimeout(() => setShowCelebration(false), 5000);
@@ -268,7 +261,7 @@ const SpriteCustomizer: React.FC<SpriteCustomizerProps> = ({ onEnter, darkMode: 
   }, [availableStyles]);
 
   const handleUnlockClick = async () => {
-    if (!walletContext) {
+    if (!wallet?.address) {
       await handleConnectWallet();
     } else if (!walletStatus?.isUnlocked) {
       setIsPurchaseModalOpen(true);

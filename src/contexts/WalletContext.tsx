@@ -1,5 +1,40 @@
 import React, { createContext, useContext, useState, useEffect, useCallback, useRef } from 'react';
-import { checkWalletStatus, WalletStatus } from '../utils/aoHelpers';
+import { message as aoMessage, dryrun } from '../config/aoConnection';
+import { AdminSkinChanger } from '../constants/Constants';
+
+// Local caching functions
+const getCachedData = <T,>(key: string): { data: T; timestamp: number } | null => {
+  try {
+    const cached = localStorage.getItem(key);
+    if (!cached) return null;
+    return JSON.parse(cached);
+  } catch (error) {
+    console.error(`[Cache] Error getting data for key ${key}:`, error);
+    return null;
+  }
+};
+
+const setCachedData = <T,>(key: string, data: T): void => {
+  try {
+    const cacheData = {
+      data,
+      timestamp: Date.now()
+    };
+    localStorage.setItem(key, JSON.stringify(cacheData));
+  } catch (error) {
+    console.error(`[Cache] Error setting data for key ${key}:`, error);
+  }
+};
+
+export interface WalletStatus {
+  isUnlocked: boolean;
+  currentSkin: string | null;
+  faction: string | null;
+  monster: any | null;
+  contractIcon?: string;
+  contractName?: string;
+  error?: string;
+}
 
 
 interface WalletContextType {
@@ -54,6 +89,123 @@ export const WalletProvider: React.FC<{ children: React.ReactNode }> = ({ childr
 
 
 
+  interface DryRunResult {
+    Messages?: Array<{
+      Data: string;
+      [key: string]: any;
+    }>;
+    [key: string]: any;
+  }
+
+  const checkWalletStatus = async (
+    walletInfo?: { address: string },
+    useCache: boolean = false
+  ): Promise<WalletStatus> => {
+    try {
+      const address = walletInfo?.address || await window.arweaveWallet.getActiveAddress();
+      const cacheKey = `checkWalletStatus-${address}`;
+      
+      if (useCache) {
+        const cached = getCachedData<WalletStatus>(cacheKey);
+        if (cached) {
+          console.log(`[WalletContext] Using cached status for:`, address);
+          return cached.data;
+        }
+      }
+      
+      console.log("[WalletContext] Checking wallet status for address:", address);
+      
+      const [unlockResult, skinResult, factionResult, monsterResult] = await Promise.all<DryRunResult>([
+        // Check if user is unlocked
+        dryrun({
+          process: AdminSkinChanger,
+          tags: [
+            { name: "Action", value: "CheckUnlocked" },
+            { name: "Address", value: address }
+          ],
+          data: ""
+        }),
+        // Check skin
+        dryrun({
+          process: AdminSkinChanger,
+          tags: [
+            { name: "Action", value: "CheckSkin" },
+            { name: "Address", value: address }
+          ],
+          data: ""
+        }),
+        // Check faction
+        dryrun({
+          process: AdminSkinChanger,
+          tags: [
+            { name: "Action", value: "CheckFaction" },
+            { name: "Address", value: address }
+          ],
+          data: ""
+        }),
+        // Get monster status
+        dryrun({
+          process: AdminSkinChanger,
+          tags: [
+            { name: "Action", value: "GetUserMonster" },
+            { name: "Wallet", value: address }
+          ],
+          data: ""
+        })
+      ]);
+
+      if (!unlockResult.Messages || unlockResult.Messages.length === 0) {
+        throw new Error("No response from CheckUnlocked");
+      }
+
+      const response = JSON.parse(unlockResult.Messages[0].Data);
+      const isUnlocked = response.type === "ok" ? 
+        JSON.parse(response.data).result : 
+        response.result === true;
+
+      // Process skin
+      const skinTxId = skinResult.Messages && skinResult.Messages.length > 0 ?
+        (skinResult.Messages[0].Data === "None" ? null : skinResult.Messages[0].Data) :
+        null;
+
+      // Process faction
+      const faction = factionResult.Messages && factionResult.Messages.length > 0 ?
+        (factionResult.Messages[0].Data === "None" ? null : factionResult.Messages[0].Data) :
+        null;
+
+      // Process monster
+      let monster = null;
+      if (monsterResult.Messages && monsterResult.Messages.length > 0) {
+        const monsterResponse = JSON.parse(monsterResult.Messages[0].Data);
+        if (monsterResponse.status === "success") {
+          monster = monsterResponse.monster;
+        }
+      }
+
+      const status: WalletStatus = {
+        isUnlocked,
+        currentSkin: skinTxId,
+        faction: faction,
+        monster: monster,
+        contractIcon: "hqg-Em9DdYHYmMysyVi8LuTGF8IF_F7ZacgjYiSpj0k",
+        contractName: "Sprite Customizer"
+      };
+      
+      // Cache the result
+      setCachedData(cacheKey, status);
+      return status;
+    } catch (error) {
+      console.error("[WalletContext] Error checking wallet status:", error);
+      return {
+        isUnlocked: false,
+        currentSkin: null,
+        faction: null,
+        monster: null,
+        error: "Failed to check wallet status"
+      };
+    }
+  };
+
   const checkAndUpdateWalletStatus = async (force: boolean = false) => {
     try {
       // Prevent concurrent status checks to avoid duplicate admin skin changer queries
@@ -90,13 +242,8 @@ export const WalletProvider: React.FC<{ children: React.ReactNode }> = ({ childr
       setWallet(walletObj);
 
       // Use our caching system in checkWalletStatus, enabling cache after initial check
-      // This is crucial - we want to use cache for the second call in StrictMode
       const useCache = initialCheckCompletedRef.current;
       const status = await checkWalletStatus({ address: activeAddress }, useCache);
-      if (!status) {
-        console.error('[WalletContext] Failed to get wallet status');
-        return false;
-      }
       
       console.log('[WalletContext] Wallet status updated:', status);
       // Only update if we got valid data
