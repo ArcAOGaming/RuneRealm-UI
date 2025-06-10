@@ -142,7 +142,7 @@ function adjustAllMonsters()
         ao.send({
           Target = "3ZN5im7LNLjr8cMTXO2buhTPOfw6zz00CZqNyMWeJvs",
           Tags = {
-            Action = "BeginBattles",
+            Action = "BeginBattles-test",
             UserId = userId
           },
           Data = json.encode(monster)
@@ -291,3 +291,5 @@ function UpdateSkin(userId, spriteTxId)
     })
     print("Sent UpdateSkin to world")
 end
+
+return {}

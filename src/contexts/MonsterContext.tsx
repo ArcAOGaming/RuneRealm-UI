@@ -1,6 +1,6 @@
 import React, { createContext, useContext, useState, useEffect, useCallback, useRef } from 'react';
 import { MonsterStats } from '../utils/interefaces';
-import { getLootBoxes, getUserMonster, setUserStats } from '../utils/aoHelpers';
+import { getLootBoxes, getUserMonster } from '../utils/aoHelpers';
 import { useWallet } from '../hooks/useWallet';
 
 // Define the shape of our context

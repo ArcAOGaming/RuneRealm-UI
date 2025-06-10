@@ -2,7 +2,6 @@ import React, { createContext, useContext, useState, useEffect, useCallback, use
 import { checkWalletStatus, WalletStatus } from '../utils/aoHelpers';
 
 
-
 interface WalletContextType {
   wallet: any | null;
   walletStatus: WalletStatus | null;
