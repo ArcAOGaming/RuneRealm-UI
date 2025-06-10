@@ -64,6 +64,13 @@ const AppContent = () => {
         <Route path="/battle/active" element={<ActiveBattlePage />} />
         <Route path="/monster-test" element={<MonsterTest />} />
         <Route path="/debug" element={<DebugView />} />
+        <Route path="/reality/*" element={
+          <iframe
+            src="/reality/"
+            style={{ width: '100%', height: '100vh', border: 'none' }}
+            title="Reality"
+          />
+        } />
       </Routes>
     </div>
   );
