@@ -37,38 +37,88 @@ interface EffectAnimationProps {
   containerHeight: number;
 }
 
-const EffectAnimation: React.FC<EffectAnimationProps> = ({ 
+const useEffectAnimation = (effect: EffectType, onComplete: () => void) => {
+  const [currentFrame, setCurrentFrame] = useState(0);
+  const effectRef = useRef<HTMLImageElement | null>(null);
+  const animationRef = useRef<number | null>(null);
+  const lastUpdateTime = useRef<number>(0);
+  const FRAME_COUNT = 8;
+  const FRAME_SIZE = 64;
+  const FRAME_DURATION = 100; // ms per frame
+  const isMounted = useRef(true);
+  const hasCompleted = useRef(false);
+
+  useEffect(() => {
+    isMounted.current = true;
+    return () => {
+      isMounted.current = false;
+      if (animationRef.current) {
+        cancelAnimationFrame(animationRef.current);
+      }
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!effect || hasCompleted.current) return;
+
+    // Reset animation state
+    setCurrentFrame(0);
+    lastUpdateTime.current = performance.now();
+    hasCompleted.current = false;
+
+    // Load the image
+    const img = new Image();
+    img.src = new URL(`../assets/effects/${effect}.png`, import.meta.url).href;
+    effectRef.current = img;
+
+    const animate = (timestamp: number) => {
+      if (!isMounted.current) return;
+      
+      if (!lastUpdateTime.current) lastUpdateTime.current = timestamp;
+      
+      const delta = timestamp - lastUpdateTime.current;
+      
+      if (delta >= FRAME_DURATION) {
+        setCurrentFrame(prev => {
+          const nextFrame = prev + 1;
+          if (nextFrame >= FRAME_COUNT - 1) {
+            if (!hasCompleted.current) {
+              hasCompleted.current = true;
+              onComplete();
+            }
+            return FRAME_COUNT - 1; // Stay on last frame
+          }
+          return nextFrame;
+        });
+        lastUpdateTime.current = timestamp;
+      }
+      
+      if (currentFrame < FRAME_COUNT - 1) {
+        animationRef.current = requestAnimationFrame(animate);
+      }
+    };
+
+    animationRef.current = requestAnimationFrame(animate);
+
+    return () => {
+      if (animationRef.current) {
+        cancelAnimationFrame(animationRef.current);
+        animationRef.current = null;
+      }
+    };
+  }, [effect]);
+
+  return { currentFrame, effectRef, FRAME_COUNT, FRAME_SIZE };
+};
+
+const EffectAnimation: React.FC<EffectAnimationProps> = React.memo(({ 
   effect, 
   onComplete,
   containerWidth,
   containerHeight
 }) => {
-  const [currentFrame, setCurrentFrame] = useState(0);
-  const effectRef = useRef<HTMLImageElement | null>(null);
-  const FRAME_COUNT = 8;
-  const FRAME_SIZE = 64; // Base frame size
-  const ANIMATION_SPEED = 100; // ms per frame
-
-  useEffect(() => {
-    if (!effect) return;
-    
-    const img = new Image();
-    img.src = new URL(`../assets/effects/${effect}.png`, import.meta.url).href;
-    effectRef.current = img;
-
-    const timer = setInterval(() => {
-      setCurrentFrame(prev => {
-        if (prev >= FRAME_COUNT - 1) {
-          clearInterval(timer);
-          onComplete();
-          return 0;
-        }
-        return prev + 1;
-      });
-    }, ANIMATION_SPEED);
-
-    return () => clearInterval(timer);
-  }, [effect, onComplete]);
+  const { currentFrame, effectRef, FRAME_COUNT, FRAME_SIZE } = 
+    useEffectAnimation(effect, onComplete);
 
   if (!effect) return null;
 
@@ -107,7 +157,7 @@ const EffectAnimation: React.FC<EffectAnimationProps> = ({
       />
     </div>
   );
-};
+});
 
 const MonsterSpriteView: React.FC<MonsterSpriteViewProps> = ({ 
   sprite, 
@@ -123,18 +173,19 @@ const MonsterSpriteView: React.FC<MonsterSpriteViewProps> = ({
   onEffectComplete
 }) => {
   const [effect, setEffect] = useState<EffectType>(null);
-  const [effectKey, setEffectKey] = useState(0);
+  const effectCompletedRef = useRef(false);
 
   // Handle external effect changes
   useEffect(() => {
     if (externalEffect && externalEffect !== effect) {
+      effectCompletedRef.current = false;
       setEffect(externalEffect);
-      // Increment key to force remount of EffectAnimation
-      setEffectKey(prev => prev + 1);
     }
   }, [externalEffect]);
 
   const handleEffectComplete = useCallback(() => {
+    if (effectCompletedRef.current) return;
+    effectCompletedRef.current = true;
     setEffect(null);
     onEffectComplete?.();
   }, [onEffectComplete]);
@@ -586,32 +637,19 @@ const MonsterSpriteView: React.FC<MonsterSpriteViewProps> = ({
         <div 
           style={{
             position: 'absolute',
-            width: scaledWidth,
-            height: scaledHeight,
-            top: '50%',
-            left: '50%',
-            transform: `translate(-50%, -50%) 
-              translateX(${
-                behaviorMode === 'pacing' 
-                  ? `${position}px` 
-                  : behaviorMode === 'activity' 
-                    ? `${positionX}px`
-                    : '0'
-              })
-              ${isOpponent ? 'scaleX(-1)' : ''}`,
-            transition: behaviorMode === 'pacing' 
-              ? 'transform 0.1s linear' 
-              : 'transform 0.3s ease',
+            width: '100%',
+            height: '100%',
+            top: 0,
+            left: 0,
             pointerEvents: 'none',
-            zIndex: 2
+            zIndex: 10
           }}
         >
           <EffectAnimation 
-            key={effectKey}
             effect={effect} 
             onComplete={handleEffectComplete}
-            containerWidth={scaledWidth}
-            containerHeight={scaledHeight}
+            containerWidth={containerWidth}
+            containerHeight={containerHeight}
           />
         </div>
       )}
