@@ -1,6 +1,6 @@
 import React, { useEffect } from 'react'
 import ReactDOM from 'react-dom/client'
-import { BrowserRouter as Router, Routes, Route } from 'react-router-dom'
+import { BrowserRouter as Router, Routes, Route, useLocation } from 'react-router-dom'
 import SpriteCustomizer from './pages/SpriteCustomizer'
 import PurchaseInfo from './pages/PurchaseInfo'
 import {MonsterManagement} from './pages/MonsterManagement'
@@ -51,9 +51,12 @@ const AppContent = () => {
     return () => window.removeEventListener('storage', handleStorageChange);
   }, []);
 
+  const location = useLocation();
+  const showInventory = ['/start', '/', '/monsters', '/world'].includes(location.pathname);
+
   return (
     <div className="app-container">
-      {wallet?.address && walletStatus?.isUnlocked && <Inventory />}
+      {wallet?.address && walletStatus?.isUnlocked && showInventory && <Inventory />}
       <Routes>
         <Route path="/" element={<PurchaseInfo />} />
         <Route path="/start" element={<StartPage />} />

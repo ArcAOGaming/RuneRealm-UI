@@ -52,8 +52,8 @@ const MonsterStatusWindow: React.FC<MonsterStatusWindowProps> = ({
   const monsterSize = containerSize.width * 0.25; // 1 unit (1/4 of 4 units)
   // Full walk distance from center to edge (for position display scaling)
   const fullWalkDistance = (containerSize.width - monsterSize) / 2;
-  // Restricted walk distance (75% of full distance) to prevent clipping
-  const walkDistance = fullWalkDistance * 0.75;
+  // Restricted walk distance (100% of full distance) to prevent clipping (could be less for some reasons)
+  const walkDistance = fullWalkDistance * 1;
   
   // Update container size and maintain 4:2 aspect ratio
   useEffect(() => {
@@ -245,7 +245,8 @@ const MonsterStatusWindow: React.FC<MonsterStatusWindowProps> = ({
               height: `${monsterSize}px`,
               transform: `translateX(calc(-50% + ${position}px))`,
               // Using pixel position that scales with container size
-              bottom: '2.5%', /* Raised from bottom by 2.5% of container height */
+              // bottom: '2.5%', /* Raised from bottom by 2.5% of container height */
+              bottom:0, 
               transition: 'transform 0.1s linear',
               zIndex: 10
             }}
