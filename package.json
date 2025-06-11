@@ -3,13 +3,14 @@
   "private": true,
   "version": "0.0.1",
   "type": "module",
-  "scripts": {
-    "dev": "vite",
-    "build": "vite build",
-    "deploy": "npm run build && permaweb-deploy --deploy-folder ./dist --ant-process $DEPLOY_ANT_PROCESS --undername=premium",
-    "lint": "eslint src --ext ts,tsx --report-unused-disable-directives --max-warnings 0",
-    "preview": "vite preview"
-  },
+"scripts": {
+  "dev": "vite",
+  "build": "rm -rf dist && npm run build:main && npm run build:reality",
+  "build:main": "vite build",
+  "build:reality": "cd Reality && npm install && vite build --base=/reality/ --outDir=../dist/reality",
+  "deploy": "npm run build && permaweb-deploy --deploy-folder ./dist --ant-process $DEPLOY_ANT_PROCESS --undername=premium",
+  "preview": "vite preview"
+},
   "dependencies": {
     "@ardrive/turbo-sdk": "^1.21.0",
     "@permaweb/aoconnect": "^0.0.62",
