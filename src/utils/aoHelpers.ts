@@ -386,7 +386,10 @@ export const getPurchaseOptions = async (): Promise<TokenOption[]> => {
     }
 };
 
-export const getFactionOptions = async (useCache: boolean = false): Promise<FactionOptions[]> => {
+// Default read-only address to use when wallet is not connected
+const DEFAULT_READ_ONLY_ADDRESS = 'readonly-address-for-fetching-factions';
+
+export const getFactionOptions = async (wallet: any = null, useCache: boolean = false): Promise<FactionOptions[]> => {
     try {
         console.log("Getting faction options");
         
@@ -400,19 +403,15 @@ export const getFactionOptions = async (useCache: boolean = false): Promise<Fact
             }
         }
         
-        // Get wallet from context
-        const { wallet } = useWallet();
-        
-        if (!wallet) {
-            console.error("[getFactionOptions] Wallet not connected");
-            throw new Error("Wallet not connected");
-        }
+        // Use a default address if wallet is not connected
+        const signerAddress = wallet?.address || DEFAULT_READ_ONLY_ADDRESS;
+        console.log(`[getFactionOptions] Using address: ${signerAddress}`);
         
         const dryRunResult = await dryrun({
             process: AdminSkinChanger,
             tags: [
                 { name: "Action", value: "GetFactions" },
-                { name: "Signer", value: wallet.address }
+                { name: "Signer", value: signerAddress }
             ],
             data: ""
         }) as ResultType;

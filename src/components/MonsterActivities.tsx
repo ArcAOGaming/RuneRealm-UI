@@ -52,7 +52,7 @@ const MonsterActivities: React.FC<MonsterActivitiesProps> = ({
   className = ''
 }) => {
   const navigate = useNavigate();
-  const { triggerRefresh } = useWallet();
+  const { triggerRefresh, wallet } = useWallet();
   const { tokenBalances, refreshAllTokens } = useTokens();
   const { monster: contextMonster, formatTimeRemaining, calculateProgress, refreshMonsterAfterActivity } = useMonster();
   
@@ -192,7 +192,11 @@ const MonsterActivities: React.FC<MonsterActivitiesProps> = ({
       else if (actionType === 'BATTLE') setIsInBattle(true);
       else if (actionType === 'MISSION') setIsOnMission(true);
   
-      const signer = await createDataItemSigner(window.arweaveWallet);
+      if (!wallet) {
+        console.error('No wallet connected');
+        return;
+      }
+      const signer = await createDataItemSigner(wallet);
   
       await message({
         process: canReturn ? targetProcessId : config.cost.token,

@@ -1,4 +1,5 @@
 import { useCallback } from 'react';
+import { useWallet } from '../contexts/WalletContext';
 import { message, createDataItemSigner } from '../config/aoConnection';
 import { AdminSkinChanger, DefaultAtlasTxID } from '../constants/Constants';
 
@@ -52,6 +53,8 @@ const ExportButton: React.FC<ExportButtonProps> = ({
 
     return newImageData;
   }, []);
+
+  const { wallet } = useWallet();
 
   const handleExport = async () => {
     try {
@@ -140,18 +143,26 @@ const ExportButton: React.FC<ExportButtonProps> = ({
         console.log('Upload handler completed with ID:', id);
 
         // Send message to update sprite handler
-        if (window.arweaveWallet) {
+        if (wallet) {
           console.log('Sending sprite update message...');
-          await message({
-            process: AdminSkinChanger,
-            tags: [
-              { name: "Action", value: "UpdateSprite" },
-              { name: "SpriteTxId", value: id },
-              { name: "SpriteAtlasTxId", value: DefaultAtlasTxID }
-            ],
-            signer: createDataItemSigner(window.arweaveWallet),
-            data: ""
-          });
+          try {
+            const signer = createDataItemSigner(wallet);
+            await message({
+              process: AdminSkinChanger,
+              tags: [
+                { name: "Action", value: "UpdateSprite" },
+                { name: "SpriteTxId", value: id },
+                { name: "SpriteAtlasTxId", value: DefaultAtlasTxID }
+              ],
+              signer,
+              data: ""
+            });
+          } catch (error) {
+            console.error('Error sending sprite update message:', error);
+            throw error;
+          }
+        } else {
+          console.warn('No wallet connected, skipping sprite update message');
         }
       } else {
         console.log('Downloading locally...');

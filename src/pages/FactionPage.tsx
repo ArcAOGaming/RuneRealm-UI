@@ -101,7 +101,7 @@ export const FactionPage: React.FC = () => {
 
     try {
       const [factionData, totalStats, userStats] = await Promise.all([
-        getFactionOptions(),
+        getFactionOptions(wallet),
         getTotalOfferings(),
         getUserOfferings(wallet.address)
       ]);
@@ -126,9 +126,14 @@ export const FactionPage: React.FC = () => {
   }, [wallet?.address, refreshTrigger]);
 
   const handleJoinFaction = async (factionName: string) => {
+    if (!wallet) {
+      console.error('Wallet not connected');
+      return;
+    }
+    
     try {
       setIsLoading(true);
-      await setFaction(wallet, factionName, triggerRefresh);
+      await setFaction(wallet, factionName, walletStatus, triggerRefresh);
     } catch (error) {
       console.error('Error joining faction:', error);
     } finally {

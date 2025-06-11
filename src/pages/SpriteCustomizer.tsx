@@ -28,22 +28,14 @@ interface SpriteCustomizerProps {
   darkMode?: boolean;
 }
 
-const SpriteCustomizer: React.FC<SpriteCustomizerProps> = ({ onEnter, darkMode: initialDarkMode }) => {
+const SpriteCustomizer: React.FC<SpriteCustomizerProps> = ({ onEnter }) => {
   const [layers, setLayers] = useState<Layers>({});
   const [uploadStatus, setUploadStatus] = useState<string>('');
   const [error, setError] = useState<string | null>(null);
   const [signer, setSigner] = useState<any>(null);
   const [currentSkin, setCurrentSkin] = useState(null);
   const [isPurchaseModalOpen, setIsPurchaseModalOpen] = useState(false);
-  const { wallet, walletStatus, connectWallet } = useWallet();
-  const [darkMode, setDarkMode] = useState(initialDarkMode ?? false);
-  
-  // Update local darkMode state when the prop changes
-  useEffect(() => {
-    if (initialDarkMode !== undefined) {
-      setDarkMode(initialDarkMode);
-    }
-  }, [initialDarkMode]);
+  const { wallet, walletStatus, connectWallet, darkMode, setDarkMode } = useWallet();
   const [loading, setLoading] = useState(true);
   const [availableStyles, setAvailableStyles] = useState(SPRITE_CATEGORIES);
   const [contractIcon, setContractIcon] = useState<string | undefined>();
@@ -151,7 +143,9 @@ const SpriteCustomizer: React.FC<SpriteCustomizerProps> = ({ onEnter, darkMode: 
   };
 
   const handleDarkModeToggle = () => {
-    setDarkMode(!darkMode);
+    if (setDarkMode) {
+      setDarkMode(!darkMode);
+    }
   };
 
   const handleReset = () => {
@@ -306,7 +300,7 @@ const SpriteCustomizer: React.FC<SpriteCustomizerProps> = ({ onEnter, darkMode: 
           theme={theme}
           darkMode={darkMode}
           showBackButton={!onEnter}
-          onDarkModeToggle={() => setDarkMode(!darkMode)}
+          onDarkModeToggle={handleDarkModeToggle}
         />
         {/* Main content area */}
         <div className={`flex-1 w-full ${theme.container} ${theme.text} shadow-2xl ${theme.border} flex flex-col overflow-hidden`}>

@@ -2,13 +2,13 @@ import React, { useState } from 'react';
 import { message, createDataItemSigner } from '../config/aoConnection';
 import { AdminSkinChanger } from '../constants/Constants';
 import { TurboFactory } from '@ardrive/turbo-sdk/web';
+import { useWallet } from '../contexts/WalletContext';
 
 interface ExportAndUploadButtonProps {
   id: string;
   layers: any;
   darkMode: boolean;
   mode: string;
-  signer: any;
   isUnlocked: boolean;
   onUploadStatusChange: (status: string) => void;
   onError: (error: string) => void;
@@ -23,7 +23,6 @@ const ExportAndUploadButton: React.FC<ExportAndUploadButtonProps> = ({
   layers,
   darkMode,
   mode,
-  signer,
   isUnlocked,
   onUploadStatusChange,
   onError,
@@ -33,13 +32,15 @@ const ExportAndUploadButton: React.FC<ExportAndUploadButtonProps> = ({
   className
 }) => {
   const [isLoading, setIsLoading] = useState(false);
+  const { wallet } = useWallet();
+  const [walletSigner, setWalletSigner] = useState<any>(null);
 
   const handleExport = async () => {
     try {
       setIsLoading(true);
       onUploadStatusChange('Starting upload...');
 
-      if (!signer) {
+      if (!wallet) {
         onUploadStatusChange('Please connect your wallet');
         await onConnect();
         return;
@@ -51,13 +52,22 @@ const ExportAndUploadButton: React.FC<ExportAndUploadButtonProps> = ({
         return;
       }
 
+      if (!wallet) {
+        throw new Error('No wallet connected');
+      }
+      const newSigner = createDataItemSigner(wallet);
+      setWalletSigner(newSigner);
+
       // Convert layers to JSON string
       const layersJson = JSON.stringify(layers);
 
       // Upload to Arweave
       onUploadStatusChange('Uploading to Arweave...');
       
-      const turbo = TurboFactory.authenticated(signer);
+      // Create Turbo instance with the signer
+      const turbo = TurboFactory.authenticated({
+        signer: wallet
+      });
       const uploadResponse = await turbo.uploadFile(
         new Blob([layersJson], { type: 'application/json' }),
         { tags: [{ name: 'Content-Type', value: 'application/json' }] }
@@ -74,7 +84,7 @@ const ExportAndUploadButton: React.FC<ExportAndUploadButtonProps> = ({
           { name: "Action", value: "SetSkin" },
           { name: "SkinTxId", value: txId }
         ],
-        signer: createDataItemSigner(window.arweaveWallet),
+        signer: walletSigner,
       });
 
       console.log('Contract response:', result);
