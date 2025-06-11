@@ -23,6 +23,8 @@ interface MonsterStatusWindowProps {
   isActivityComplete: (monster: MonsterStats) => boolean;
 }
 
+const DEV_MODE = false; // Toggle this to enable/disable developer tools
+
 const MonsterStatusWindow: React.FC<MonsterStatusWindowProps> = ({
   monster,
   theme,
@@ -41,6 +43,25 @@ const MonsterStatusWindow: React.FC<MonsterStatusWindowProps> = ({
   const [currentAnimation, setCurrentAnimation] = useState<AnimationType>('idle');
   const [containerSize, setContainerSize] = useState({ width: 0, height: 0 });
   const [selectedBackground, setSelectedBackground] = useState<string>('home');
+  
+  // Set background based on monster status
+  useEffect(() => {
+    switch(monster.status.type.toLowerCase()) {
+      case 'home':
+        setSelectedBackground('home');
+        break;
+      case 'play':
+        setSelectedBackground('forest');
+        break;
+      case 'mission':
+        // Randomly choose between greenhouse and beach for missions
+        setSelectedBackground(Math.random() > 0.5 ? 'greenhouse' : 'beach');
+        break;
+      default:
+        setSelectedBackground('home');
+    }
+  }, [monster.status.type]);
+  
   const idleTimerRef = useRef<number>();
   const animationRef = useRef<number>();
   const containerRef = useRef<HTMLDivElement>(null);
@@ -199,16 +220,18 @@ const MonsterStatusWindow: React.FC<MonsterStatusWindowProps> = ({
           <span className={`font-bold ${theme.text}`}>Status:</span> <span className={theme.text}>{monster.status.type}</span>
         </div>
         <div className="text-right">
-          <select 
-            value={selectedBackground} 
-            onChange={(e) => setSelectedBackground(e.target.value)}
-            className="bg-gray-700 text-white text-sm rounded-md px-2 py-1 border border-gray-500"
-          >
-            <option value="home">Home</option>
-            <option value="beach">Beach</option>
-            <option value="forest">Forest</option>
-            <option value="greenhouse">Greenhouse</option>
-          </select>
+          {DEV_MODE && (
+            <select 
+              value={selectedBackground} 
+              onChange={(e) => setSelectedBackground(e.target.value)}
+              className="bg-gray-700 text-white text-sm rounded-md px-2 py-1 border border-gray-500"
+            >
+              <option value="home">Home</option>
+              <option value="beach">Beach</option>
+              <option value="forest">Forest</option>
+              <option value="greenhouse">Greenhouse</option>
+            </select>
+          )}
         </div>
       </div>
       
@@ -246,15 +269,17 @@ const MonsterStatusWindow: React.FC<MonsterStatusWindowProps> = ({
               transform: `translateX(calc(-50% + ${position}px))`,
               // Using pixel position that scales with container size
               // bottom: '2.5%', /* Raised from bottom by 2.5% of container height */
-              bottom:0, 
+              bottom: 0,
               transition: 'transform 0.1s linear',
               zIndex: 10
             }}
           >
-            {/* Position indicator above the monster */}
-            <div className="absolute -top-6 bg-black bg-opacity-70 text-white text-xs px-2 py-0.5 rounded whitespace-nowrap">
-              Pos: {normalizedPosition.toFixed(1)} | {currentAnimation}
-            </div>
+            {/* Position indicator above the monster - only shown in dev mode */}
+            {DEV_MODE && (
+              <div className="absolute -top-6 bg-black bg-opacity-70 text-white text-xs px-2 py-0.5 rounded whitespace-nowrap">
+                Pos: {normalizedPosition.toFixed(1)} | {currentAnimation}
+              </div>
+            )}
             <MonsterSpriteView 
               sprite={monster.sprite || ''}
               currentAnimation={currentAnimation}
@@ -268,8 +293,8 @@ const MonsterStatusWindow: React.FC<MonsterStatusWindowProps> = ({
           </div>
         )}
         
-        {/* Status Effect Particles */}
-        {monster.status.type === 'Play' && (
+        {/* Status Effect Particles - Only show when monster is playing and no other effect is active */}
+        {monster.status.type === 'Play' && !currentEffect && (
           <div className="absolute bottom-16 left-1/2 transform -translate-x-1/2">
             <div className="flex gap-2">
               {[...Array(3)].map((_, i) => (
@@ -280,10 +305,12 @@ const MonsterStatusWindow: React.FC<MonsterStatusWindowProps> = ({
         )}
       </div>
       
-      {/* Effect Buttons */}
-      <div className="mt-2 pt-2 border-t border-gray-300">
-        {renderEffectButtons()}
-      </div>
+      {/* Effect Buttons - Only show in dev mode */}
+      {DEV_MODE && (
+        <div className="mt-2 pt-2 border-t border-gray-300">
+          {renderEffectButtons()}
+        </div>
+      )}
     </div>
   );
 };
