@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 import { purchaseAccess, TokenOption, copyReferralLink } from '../utils/aoHelpers';
 import { useWallet } from '../hooks/useWallet';
 import { currentTheme } from '../constants/theme';
@@ -9,8 +9,9 @@ import Confetti from 'react-confetti';
 import Header from '../components/Header';
 
 const PurchaseInfo: React.FC = () => {
-  const { wallet, walletStatus, darkMode, connectWallet, setDarkMode } = useWallet();
+  const { wallet, walletStatus, darkMode, connectWallet, setDarkMode, isCheckingStatus } = useWallet();
   const theme = currentTheme(darkMode);
+  const navigate = useNavigate();
   const [showPurchaseModal, setShowPurchaseModal] = useState(false);
   const [showConfetti, setShowConfetti] = useState(false);
   const [showCopiedNotification, setShowCopiedNotification] = useState(false);
@@ -35,9 +36,14 @@ const PurchaseInfo: React.FC = () => {
   // Regular updates without forcing
   useEffect(() => {
     if (wallet?.address) {
-      connectWallet(); // Use cached status for updates
+      connectWallet().then(() => {
+        // After connecting, check if user is premium and navigate if needed
+        if (walletStatus?.isUnlocked) {
+          navigate('/play');
+        }
+      });
     }
-  }, [wallet?.address]);
+  }, [wallet?.address, walletStatus?.isUnlocked]);
 
   const handlePurchase = async (selectedToken: TokenOption) => {
     try {
@@ -156,105 +162,17 @@ const PurchaseInfo: React.FC = () => {
                     contractName="Eternal Pass"
                   />
                 )}
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mt-8">
-                  {/* Rune Realm and Sprite Creator Section */}
-                  <div className={`md:col-span-1 p-6 rounded-xl bg-[#814E33]/10 border border-[#F4860A]/30 flex flex-col`}>
-                    <h3 className={`text-xl font-bold mb-6 text-center ${theme.text}`}>Game & Customization</h3>
-                    <div className="flex flex-col gap-4 flex-grow">
-                      <Link
-                        to="https://runerealm_game.ar.io/"
-                        className={`w-full px-6 py-3 rounded-xl text-lg font-medium transition-all duration-300 transform hover:scale-105
-                          ${theme.buttonBg} ${theme.buttonHover} ${theme.text} 
-                          backdrop-blur-md shadow-lg hover:shadow-xl border ${theme.border} text-center`}
-                      >
-                        Rune Realm
-                      </Link>
-                      <Link
-                        to="/customize"
-                        className={`w-full px-6 py-3 rounded-xl text-lg font-medium transition-all duration-300 transform hover:scale-105
-                          ${theme.buttonBg} ${theme.buttonHover} ${theme.text} 
-                          backdrop-blur-md shadow-lg hover:shadow-xl border ${theme.border} text-center`}
-                      >
-                        Sprite Customization
-                      </Link>
-                    </div>
-                  </div>
-
-                  {/* Monster Section */}
-                  <div className={`md:col-span-1 p-6 rounded-xl bg-[#814E33]/10 border border-[#F4860A]/30 flex flex-col`}>
-                    <h3 className={`text-xl font-bold mb-6 text-center ${theme.text}`}>Monster Management</h3>
-                    <div className="flex flex-col gap-4 flex-grow">
-                      <Link
-                        to="/monsters"
-                        className={`w-full px-6 py-3 rounded-xl text-lg font-medium transition-all duration-300 transform hover:scale-105
-                          ${theme.buttonBg} ${theme.buttonHover} ${theme.text} 
-                          backdrop-blur-md shadow-lg hover:shadow-xl border ${theme.border} text-center`}
-                      >
-                        Monster Training
-                      </Link>
-                      <Link
-                        to="/battle"
-                        className={`w-full px-6 py-3 rounded-xl text-lg font-medium transition-all duration-300 transform hover:scale-105
-                          ${theme.buttonBg} ${theme.buttonHover} ${theme.text} 
-                          backdrop-blur-md shadow-lg hover:shadow-xl border ${theme.border} text-center`}
-                      >
-                        Battle
-                      </Link>
-                    </div>
-                  </div>
-
-                  {/* Factions Section */}
-                  <div className={`md:col-span-1 p-6 rounded-xl bg-[#814E33]/10 border border-[#F4860A]/30 flex flex-col`}>
-                    <h3 className={`text-xl font-bold mb-6 text-center ${theme.text}`}>Factions</h3>
-                    <div className="flex flex-col gap-4 flex-grow">
-                      <Link
-                        to="/factions"
-                        className={`w-full px-6 py-3 rounded-xl text-lg font-medium transition-all duration-300 transform hover:scale-105
-                          ${theme.buttonBg} ${theme.buttonHover} ${theme.text} 
-                          backdrop-blur-md shadow-lg hover:shadow-xl border ${theme.border} text-center`}
-                      >
-                        Factions
-                      </Link>
-                    </div>
-                  </div>
-                </div>
-                {/* Referral Link Button */}
-                <div className="flex justify-center mt-4">
-                  <button
-                    onClick={handleCopyReferralLink}
-                    className="relative px-8 py-3 text-lg font-medium rounded-xl transform hover:scale-105 transition-all duration-300"
-                    style={{
-                      backgroundColor: '#1a1a1a',
-                      color: '#FFD700',
-                      border: '2px solid #FFD700',
-                      boxShadow: '0 0 15px #FFD700, 0 0 25px #FFD700, inset 0 0 5px rgba(255, 215, 0, 0.3)',
-                      animation: 'pulseGold 2s infinite',
-                    }}
-                  >
-                    <div className="flex items-center gap-2">
-                      <span>🔗</span>
-                      <span className="tracking-wider">Copy Referral Link</span>
-                      {showCopiedNotification && (
-                        <span className="text-green-400 ml-2">✓</span>
-                      )}
-                    </div>
-                  </button>
-                </div>
-                {walletStatus?.isUnlocked && (
-                  <>
-                    {/* <div className="mt-8">
-                      <BattleStatusComponent 
-                        walletAddress={wallet.address} 
-                        darkMode={darkMode}
-                      />
-                    </div> */}
-                  </>
-                )}
               </>
             ) : (
-              <div className={`text-center ${theme.text} opacity-80`}>
-                Please connect your wallet to continue
-              </div>
+              <div className="flex flex-col items-center gap-2">
+              <p className={`text-xl font-medium ${theme.text}`}>Connect your wallet to get started</p>
+              <button
+                onClick={async () => await connectWallet(true)}
+                className={`px-6 py-3 ${theme.buttonBg} ${theme.buttonHover} ${theme.text} rounded-xl border ${theme.border} transition-all duration-300 hover:scale-105 text-lg font-medium`}
+              >
+                {isCheckingStatus ? 'Connecting...' : 'Connect Wallet'}
+              </button>
+            </div>
             )}
           </div>
 
