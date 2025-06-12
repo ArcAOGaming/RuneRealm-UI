@@ -10,10 +10,16 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - uses: actions/checkout@v3
+      - name: Checkout repository
+        uses: actions/checkout@v3
         with:
-          submodules: 'recursive'
+          submodules: false  # Disable automatic submodule checkout
           fetch-depth: 0
+          
+      - name: Initialize only required submodules
+        run: |
+          git submodule sync
+          git submodule update --init --force -- Reality  # Only initialize the Reality submodule
 
       - name: Install dependencies
         run: |
