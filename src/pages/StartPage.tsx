@@ -59,7 +59,7 @@ const StartPage: React.FC = () => {
           {/* Open World Section */}
           <div style={sectionCardStyle}>
             <h2 className="text-2xl font-semibold mb-4" style={{ color: theme.cardTitle }}>Open World</h2>
-            <Link to="/world" style={linkStyle}>
+            <Link to="/reality" style={linkStyle}>
               Enter the World →
             </Link>
           </div>

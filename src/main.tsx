@@ -82,7 +82,7 @@ const AppContent = () => {
         <Route path="/monster-test" element={<MonsterTest />} />
         <Route path="/debug" element={<DebugView />} />
         <Route
-          path="/world/*"
+          path="/reality/*"
           element={
             <iframe
               src="/reality/"
