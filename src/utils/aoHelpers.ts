@@ -601,10 +601,43 @@ export const adoptMonster = async (wallet: any, walletStatus: { isUnlocked: bool
     try {
         console.log("Adopting monster for wallet:", wallet.address);
         
-        // Check if user is authorized
+        // Check if user is authorized with Eternal Pass by making a direct dry run
         if (!walletStatus?.isUnlocked) {
-            throw new Error("You do not have Eternal Pass.");
+            try {
+                // Make a direct dry run to check the unlock status
+                const unlockCheck = await dryrun({
+                    process: AdminSkinChanger,
+                    tags: [
+                        { name: "Action", value: "CheckUnlocked" },
+                        { name: "Address", value: wallet.address }
+                    ],
+                    data: ""
+                }) as { Messages?: Array<{ Data: string }> };  // Type assertion for dryrun response
+
+                if (unlockCheck?.Messages?.length) {
+                    const response = JSON.parse(unlockCheck.Messages[0].Data) as 
+                        { type: string, data?: string, result?: boolean };
+                    
+                    const isUnlocked = response.type === "ok" ? 
+                        (response.data ? JSON.parse(response.data).result : false) : 
+                        (response.result === true);
+                    
+                    if (!isUnlocked) {
+                        throw new Error("You do not have Eternal Pass.");
+                    }
+                    // Update the local wallet status if we got new info
+                    if (walletStatus) {
+                        walletStatus.isUnlocked = true;
+                    }
+                } else {
+                    throw new Error("Failed to verify Eternal Pass status.");
+                }
+            } catch (error) {
+                console.error("Error checking Eternal Pass status:", error);
+                throw new Error("You do not have Eternal Pass or there was an error verifying your status.");
+            }
         }
+        
         if (!walletStatus?.faction) {
             throw new Error("You must join a faction first.");
         }

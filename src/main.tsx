@@ -60,7 +60,7 @@ const AppContent = () => {
   }, []);
 
   const location = useLocation();
-  const showInventory = ["/start", "/", "/monsters", "/world"].includes(
+  const showInventory = ["/start", "/", "/monsters", "/reality"].includes(
     location.pathname
   );
 
@@ -85,7 +85,17 @@ const AppContent = () => {
           path="/reality/*"
           element={
             <iframe
-              src="/reality/"
+              src="/reality/index.html"
+              style={{ width: "100%", height: "100vh", border: "none" }}
+              title="Reality"
+            />
+          }
+        />
+        <Route
+          path="/world/*"
+          element={
+            <iframe
+              src="/reality/index.html"
               style={{ width: "100%", height: "100vh", border: "none" }}
               title="Reality"
             />
