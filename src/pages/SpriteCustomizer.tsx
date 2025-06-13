@@ -177,7 +177,7 @@ const SpriteCustomizer: React.FC<SpriteCustomizerProps> = ({ onEnter }) => {
         await connectWallet();
         return;
       }
-      const success = await purchaseAccess(selectedToken);
+      const success = await purchaseAccess(wallet, selectedToken);
       if (success) {
         setShowCelebration(true);
         

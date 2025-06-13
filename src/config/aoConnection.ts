@@ -13,12 +13,8 @@ const AO_CONFIG = {
  */
 const computeUnits = [
   "https://ur-cu.randao.net",
-  //"https://cu2.randao.net",
-  //"https://cu3.randao.net",
-  //"https://cu4.randao.net",
-  //"https://cu5.randao.net",
-  //"https://cu6.randao.net:444",
-];
+  // "https://cu.ao-testnet.xyz",
+].filter(Boolean); // Filter out any undefined or empty strings
 
 /**
  * Logs messages with timestamps.
@@ -34,18 +30,24 @@ function logMessage(level, message, error = null) {
  */
 function withTimeout(promise, ms) {
   return new Promise((resolve, reject) => {
-    const timer = setTimeout(() => {
-      logMessage("warn", `⏳ Request timed out after ${ms}ms`);
-      reject(new Error("Request timed out"));
-    }, ms);
+    let timer: NodeJS.Timeout;
+    
+    // Set up the timeout
+    if (ms > 0) {
+      timer = setTimeout(() => {
+        logMessage("warn", `⏳ Request timed out after ${ms}ms`);
+        reject(new Error(`Request timed out after ${ms}ms`));
+      }, ms);
+    }
 
     promise
       .then((res) => {
-        clearTimeout(timer);
+        if (timer) clearTimeout(timer);
         resolve(res);
       })
       .catch((err) => {
-        clearTimeout(timer);
+        if (timer) clearTimeout(timer);
+        logMessage("error", `Request failed: ${err.message}`, err);
         reject(err);
       });
   });
@@ -55,22 +57,39 @@ function withTimeout(promise, ms) {
  * Attempts a request with randomized starting CU and fallback logic.
  * If a CU fails, it tries another after 5 seconds.
  */
-async function attemptWithFallback(fn, timeout = 15000) {
-  let availableCUs = [...computeUnits];
+async function attemptWithFallback(fn, timeout = 30000) { // Increased default timeout to 30s
+  if (computeUnits.length === 0) {
+    throw new Error("No Compute Units available");
+  }
+
+  let lastError: Error | null = null;
+  const availableCUs = [...computeUnits];
+  
+  // Try each CU once in random order
   while (availableCUs.length > 0) {
-    // Randomly select a CU
     const index = Math.floor(Math.random() * availableCUs.length);
     const cuUrl = availableCUs.splice(index, 1)[0];
     
     try {
-      logMessage("info", `🔄 Trying CU: ${cuUrl}`);
-      return await withTimeout(fn(cuUrl), timeout);
+      logMessage("info", `🔄 Attempting request on CU: ${cuUrl}`);
+      const result = await withTimeout(fn(cuUrl), timeout);
+      logMessage("info", `✅ Request successful on CU: ${cuUrl}`);
+      return result;
     } catch (error) {
-      logMessage("warn", `❌ CU Failed: ${cuUrl}`, error);
+      lastError = error;
+      logMessage("warn", `❌ Request failed on CU ${cuUrl}: ${error.message}`);
+      
+      // If we have more CUs to try, log and continue
+      if (availableCUs.length > 0) {
+        logMessage("info", `🔄 ${availableCUs.length} CUs remaining to try...`);
+      }
     }
   }
   
-  throw new Error("🚨 All Compute Units (CUs) failed after retries.");
+  // If we get here, all CUs failed
+  const errorMessage = `🚨 All ${computeUnits.length} Compute Units failed. Last error: ${lastError?.message || 'Unknown error'}`;
+  logMessage("error", errorMessage, lastError);
+  throw new Error(errorMessage);
 }
 
 /**

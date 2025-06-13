@@ -47,7 +47,11 @@ const PurchaseInfo: React.FC = () => {
 
   const handlePurchase = async (selectedToken: TokenOption) => {
     try {
-      await purchaseAccess(selectedToken);
+      if (!wallet) {
+        await connectWallet();
+        return;
+      }
+      await purchaseAccess(wallet, selectedToken);
       setShowConfetti(true);
       setShowPurchaseModal(false);
       setTimeout(() => {

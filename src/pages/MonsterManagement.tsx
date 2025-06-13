@@ -141,7 +141,11 @@ export const MonsterManagement: React.FC = (): JSX.Element => {
 
   const handlePurchase = async (selectedToken: TokenOption) => {
     try {
-      await purchaseAccess(selectedToken, () => {
+      if (!wallet) {
+        await connectWallet();
+        return;
+      }
+      await purchaseAccess(wallet, selectedToken, () => {
         // Refresh data after a short delay
         setTimeout(() => triggerRefresh(), 2000);
       });

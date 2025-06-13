@@ -474,11 +474,9 @@ export const formatTokenAmount = (amount: string, denomination: number): string 
 };
 
 // Purchase access
-export const purchaseAccess = async (selectedToken: TokenOption, refreshCallback?: () => void): Promise<boolean> => {
+export const purchaseAccess = async (wallet: any, selectedToken: TokenOption, refreshCallback?: () => void): Promise<boolean> => {
     try {
         console.log("Initiating purchase with token:", selectedToken);
-        // Get wallet from context
-        const { wallet } = useWallet();
         if (!wallet) {
             throw new Error("Arweave wallet not found");
         }

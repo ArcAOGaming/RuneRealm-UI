@@ -52,7 +52,10 @@ const PurchaseAccess: React.FC<PurchaseAccessProps> = ({ wallet, onPurchaseCompl
         try {
             setLoading(true);
             setError(null);
-            await purchaseAccess(selectedToken);
+            if (!wallet) {
+              throw new Error('Wallet not connected');
+            }
+            await purchaseAccess(wallet, selectedToken);
             onPurchaseComplete?.();
         } catch (error) {
             setError(error instanceof Error ? error.message : 'Purchase failed');

@@ -143,7 +143,11 @@ export const FactionPage: React.FC = () => {
 
   const handlePurchase = async (selectedToken: TokenOption) => {
     try {
-      await purchaseAccess(selectedToken, triggerRefresh);
+      if (!wallet) {
+        await connectWallet();
+        return;
+      }
+      await purchaseAccess(wallet, selectedToken, triggerRefresh);
       setShowConfetti(true);
       setIsPurchaseModalOpen(false);
       setTimeout(() => {
