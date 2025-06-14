@@ -45,24 +45,8 @@ const ExportAndUploadButton: React.FC<ExportAndUploadButtonProps> = ({
 
   // Check wallet connection status when wallet or status changes
   useEffect(() => {
-    const checkConnection = async () => {
-      try {
-        if (!window.arweaveWallet) {
-          setIsConnected(false);
-          return;
-        }
-
-        const permissions = await window.arweaveWallet.getPermissions();
-        const connected = permissions.includes('ACCESS_PUBLIC_KEY') && !!wallet?.address;
-        setIsConnected(connected);
-      } catch (error) {
-        console.error('Error checking connection status:', error);
-        setIsConnected(false);
-      }
-    };
-
-    checkConnection();
-  }, [wallet, walletStatus]);
+    setIsConnected(walletStatus?.isUnlocked ?? false);
+  }, [walletStatus]);
 
   const isUnlocked = propIsUnlocked ?? walletStatus?.isUnlocked ?? false;
 
@@ -73,29 +57,7 @@ const ExportAndUploadButton: React.FC<ExportAndUploadButtonProps> = ({
     });
   }, []);
 
-  const requestPermissions = async () => {
-    if (!window.arweaveWallet) {
-      throw new Error('ArConnect not found. Please install ArConnect extension.');
-    }
-
-    try {
-      // Use the connectWallet function from the wallet context
-      await connectWallet();
-      console.log('Wallet connected');
-      setIsConnected(true);
-    } catch (error) {
-      console.error('Failed to get permissions:', error);
-      setIsConnected(false);
-      throw error;
-    }
-  };
-
-  const REQUIRED_PERMISSIONS = [
-    'ACCESS_ADDRESS',
-    'ACCESS_PUBLIC_KEY',
-    'SIGN_TRANSACTION',
-    'DISPATCH'
-  ];
+  // Removed requestPermissions and REQUIRED_PERMISSIONS as they're now handled by WalletContext
 
   const handleExport = async () => {
     try {
@@ -272,15 +234,9 @@ const ExportAndUploadButton: React.FC<ExportAndUploadButtonProps> = ({
         onUploadStatusChange('Starting upload...');
       }
 
-      // Ensure we have all required ArConnect permissions
-      if (window.arweaveWallet) {
-        const permissions = await window.arweaveWallet.getPermissions();
-        const missingPermissions = REQUIRED_PERMISSIONS.filter(p => !permissions.includes(p));
-        
-        if (missingPermissions.length > 0) {
-          console.log('Requesting missing permissions:', missingPermissions);
-          await window.arweaveWallet.connect(REQUIRED_PERMISSIONS);
-        }
+      // Ensure wallet is connected using the wallet context
+      if (!isConnected) {
+        await connectWallet();
       }
 
       if (onUploadClick) {
