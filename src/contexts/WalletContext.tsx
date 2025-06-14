@@ -1,6 +1,6 @@
 import React, { createContext, useContext, useState, useEffect, useCallback, useRef } from 'react';
 import { message as aoMessage, dryrun } from '../config/aoConnection';
-import { AdminSkinChanger } from '../constants/Constants';
+import { AdminSkinChanger,PERMISSIONS } from '../constants/Constants';
 
 // Local caching functions
 const getCachedData = <T,>(key: string): { data: T; timestamp: number } | null => {
@@ -272,15 +272,7 @@ export const WalletProvider: React.FC<{ children: React.ReactNode }> = ({ childr
       if (!isConnected) {
         console.log('[WalletContext] Connecting wallet');
         // @ts-ignore
-        await window.arweaveWallet?.connect([
-          'ACCESS_ADDRESS',
-          'SIGN_TRANSACTION',
-          'DISPATCH',
-          'SIGNATURE',
-          'ACCESS_PUBLIC_KEY',
-          'ACCESS_ALL_ADDRESSES',
-          'ACCESS_ARWEAVE_CONFIG'
-        ]);
+        await window.arweaveWallet?.connect(PERMISSIONS);
         await checkAndUpdateWalletStatus();
       }
     } catch (error) {

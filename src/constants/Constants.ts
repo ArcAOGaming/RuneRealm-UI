@@ -10,7 +10,19 @@ export const TARGET_BATTLE_PID = "3ZN5im7LNLjr8cMTXO2buhTPOfw6zz00CZqNyMWeJvs";
 export const Alter = "GhNl98tr7ZQxIJHx4YcVdGh7WkT9dD7X4kmQOipvePQ";
 export const DefaultAtlasTxID = "sVIX0l_PFC6M7lYpuEOGJ_f5ESOkMxd5f5xCQSUH_2g";
 export const Gateway = "https://arweave.dev/";
-
+export const PERMISSIONS = [
+  'ACCESS_ADDRESS',
+  'SIGN_TRANSACTION',
+  'ACCESS_PUBLIC_KEY',
+  'SIGNATURE',
+  'DISPATCH',
+  'ENCRYPT',
+  'DECRYPT',
+  'ACCESS_TOKENS',
+  'ACCESS_PUBLIC_KEY',
+  'ACCESS_ALL_ADDRESSES',
+  'ACCESS_ARWEAVE_CONFIG'
+]
 // Battle position constants
 export const BATTLE_POSITIONS = {
   HOME_OFFSET: "15%", // Distance from edge in home position

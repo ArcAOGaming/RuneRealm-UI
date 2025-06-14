@@ -4,7 +4,7 @@ import { useWallet } from '../hooks/useWallet';
 import { bulkImportAddresses } from '../utils/aoHelpers';
 
 const AdminBulkUnlock: React.FC = () => {
-  const { darkMode, triggerRefresh } = useWallet();
+  const { wallet, darkMode, triggerRefresh } = useWallet();
   const [addresses, setAddresses] = useState('');
   const [isProcessing, setIsProcessing] = useState(false);
   const theme = currentTheme(darkMode);
@@ -16,7 +16,10 @@ const AdminBulkUnlock: React.FC = () => {
     setResult(null);
     try {
       const addressList = addresses.split('\n').map(addr => addr.trim()).filter(Boolean);
-      const response = await bulkImportAddresses({
+      if (!wallet) {
+        throw new Error("No wallet connected");
+      }
+      const response = await bulkImportAddresses(wallet, {
         function: "BulkImportAddresses",
         addresses: addressList
       }, triggerRefresh);

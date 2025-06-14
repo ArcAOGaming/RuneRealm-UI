@@ -557,10 +557,11 @@ interface BulkImportRequest {
     addresses: string[];
 }
 
-export const bulkImportAddresses = async (data: BulkImportRequest, refreshCallback?: () => void): Promise<BulkImportResult> => {
+export const bulkImportAddresses = async (wallet: any, data: BulkImportRequest, refreshCallback?: () => void): Promise<BulkImportResult> => {
     try {
-                // Get wallet from context
-                const { wallet } = useWallet();
+        if (!wallet) {
+            throw new Error("No wallet provided");
+        }
         const signer = createDataItemSigner(wallet);
         console.log("Created signer for wallet");
 
@@ -638,8 +639,38 @@ export const adoptMonster = async (wallet: any, walletStatus: { isUnlocked: bool
             }
         }
         
+        // Verify faction status if not available locally
         if (!walletStatus?.faction) {
-            throw new Error("You must join a faction first.");
+            try {
+                // Make a direct dry run to check the faction status
+                const factionCheck = await dryrun({
+                    process: AdminSkinChanger,
+                    tags: [
+                        { name: "Action", value: "CheckFaction" },
+                        { name: "Address", value: wallet.address }
+                    ],
+                    data: ""
+                }) as { Messages?: Array<{ Data: string }> };
+
+                if (factionCheck?.Messages?.length) {
+                    const faction = factionCheck.Messages[0].Data === "None" ? 
+                        null : factionCheck.Messages[0].Data;
+                    
+                    if (!faction) {
+                        throw new Error("You must join a faction first.");
+                    }
+                    
+                    // Update the local wallet status if we got new info
+                    if (walletStatus) {
+                        walletStatus.faction = faction;
+                    }
+                } else {
+                    throw new Error("Failed to verify faction status.");
+                }
+            } catch (error) {
+                console.error("Error checking faction status:", error);
+                throw new Error("You must join a faction first or there was an error verifying your faction status.");
+            }
         }
 
         const signer = createDataItemSigner(wallet);
