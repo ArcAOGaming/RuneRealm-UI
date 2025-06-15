@@ -11,6 +11,7 @@ export interface Theme {
   cardText: string;
   cardTitle: string;
   cardAccent: string;
+  primary: string;
   statusEnergy: string;
   statusHappiness: string;
   statusExperience: string;
@@ -30,6 +31,7 @@ export const currentTheme = (isDark: boolean): Theme => ({
   cardText: isDark ? '#FCF5D8' : '#0D0705',
   cardTitle: isDark ? '#FCF5D8' : '#0D0705',
   cardAccent: isDark ? '#F4860A' : '#814E33',
+  primary: isDark ? '#F4860A' : '#814E33', // Same as cardAccent for consistency
   // Keep consistent colors for status bars as they convey meaning
   statusEnergy: '#F59E0B', // amber
   statusHappiness: '#EC4899', // pink

@@ -9,8 +9,6 @@ import {
 import SpriteCustomizer from "./pages/SpriteCustomizer";
 import PurchaseInfo from "./pages/PurchaseInfo";
 import { MonsterManagement } from "./pages/MonsterManagement";
-import Admin from "./pages/Admin";
-import MonsterTest from "./pages/MonsterTest";
 import { WalletProvider } from "./contexts/WalletContext";
 import { TokenProvider } from "./contexts/TokenContext";
 import { useWallet } from "./hooks/useWallet";
@@ -18,13 +16,17 @@ import { WalletStatus } from "./utils/interefaces";
 import "./index.css";
 import { FactionPage } from "./pages/FactionPage";
 import { FactionDetailPage } from "./pages/FactionDetailPage";
-import { BattlePage } from "./pages/BattlePage";
 import { handleReferralLink } from "./utils/aoHelpers";
+import { BotBattlePage } from "./pages/battle/BotBattlePage";
+import { RankedBattlePage } from "./pages/battle/RankedBattlePage";
 import { ActiveBattlePage } from "./pages/ActiveBattlePage";
 import Inventory from "./components/Inventory";
 import { MonsterProvider } from "./contexts/MonsterContext";
-import DebugView from "./pages/DebugView";
+import DebugView from "./pages/admin/DebugView";
 import StartPage from "./pages/StartPage";
+import BattlePage from "./pages/battle/BattlePage";
+import Admin from "./pages/admin/Admin";
+// import BattlePage from "./pages/battle/index";
 
 interface AppContentProps {
   wallet?: { address: string };
@@ -78,8 +80,9 @@ const AppContent = () => {
         <Route path="/monsters" element={<MonsterManagement />} />
         <Route path="/admin" element={<Admin />} />
         <Route path="/battle" element={<BattlePage />} />
+        <Route path="/battle/bot" element={<BotBattlePage />} />
+        <Route path="/battle/ranked" element={<RankedBattlePage />} />
         <Route path="/battle/active" element={<ActiveBattlePage />} />
-        <Route path="/monster-test" element={<MonsterTest />} />
         <Route path="/debug" element={<DebugView />} />
         <Route
           path="/reality/*"
