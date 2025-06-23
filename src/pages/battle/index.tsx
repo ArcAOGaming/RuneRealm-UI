@@ -1,33 +1,28 @@
 import React from 'react';
 import { useWallet } from '../../hooks/useWallet';
-import { getBattleManagerInfo } from '../../utils/aoHelpers';
+import { useBattle } from '../../contexts/BattleContext';
 import { currentTheme } from '../../constants/theme';
 import Header from '../../components/Header';
 import Footer from '../../components/Footer';
 import { Link } from 'react-router-dom';
 
 export const BattlePage = (): JSX.Element => {
-  const { wallet, darkMode } = useWallet();
-  const [battleManagerInfo, setBattleManagerInfo] = React.useState({
-    wins: 0,
-    losses: 0,
-    battlesRemaining: 0,
-  });
+  const { darkMode } = useWallet();
+  const { battleManagerInfo, isLoading, refreshBattleInfo } = useBattle();
   const theme = currentTheme(darkMode);
 
+  // Refresh battle info on mount
   React.useEffect(() => {
-    const loadBattleInfo = async () => {
-      if (!wallet?.address) return;
+    const init = async () => {
       try {
-        const info = await getBattleManagerInfo(wallet.address);
-        setBattleManagerInfo(info);
+        await refreshBattleInfo();
       } catch (error) {
-        console.error('Error loading battle info:', error);
+        console.error('Failed to load battle info:', error);
       }
     };
-
-    loadBattleInfo();
-  }, [wallet?.address]);
+    
+    init();
+  }, [refreshBattleInfo]);
 
   return (
     <div className="min-h-screen flex flex-col">
@@ -55,7 +50,7 @@ export const BattlePage = (): JSX.Element => {
               <div className="grid md:grid-cols-2 gap-6 mb-8">
                 {/* Bot Battle Card */}
                 <Link 
-                  to="/battle-bot"
+                  to="/battle/bot"
                   className={`p-6 rounded-xl ${theme.container} border ${theme.border} hover:shadow-lg transition-all duration-300 flex flex-col h-full`}
                 >
                   <div className="flex-1">
@@ -76,7 +71,7 @@ export const BattlePage = (): JSX.Element => {
 
                 {/* Ranked Battle Card */}
                 <Link 
-                  to="/battle-ranked"
+                  to="/battle/ranked"
                   className={`p-6 rounded-xl ${theme.container} border ${theme.border} hover:shadow-lg transition-all duration-300 flex flex-col h-full`}
                 >
                   <div className="flex-1">

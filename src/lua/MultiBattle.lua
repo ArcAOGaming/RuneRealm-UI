@@ -6,7 +6,7 @@ json = require("json")
 -- require("battlehelpers")
   
   
-  -- Attack Logic
+  -- Attack Logicattacklogic
   -- Type effectiveness table
   local typeEffectiveness = {
       fire = { weak = "water", strong = "air" },

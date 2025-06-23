@@ -1,6 +1,6 @@
-import React, { useEffect, useState } from 'react';
+import React from 'react';
 import { useWallet } from '../../hooks/useWallet';
-import { getBattleManagerInfo } from '../../utils/aoHelpers';
+import { useBattle } from '../../contexts/BattleContext';
 import { currentTheme } from '../../constants/theme';
 import Header from '../../components/Header';
 import Footer from '../../components/Footer';
@@ -85,35 +85,30 @@ interface BattleStats {
 }
 
 const BattlePage: React.FC = () => {
-  const { wallet, darkMode } = useWallet();
-  const [battleStats, setBattleStats] = useState<BattleStats>({
-    wins: 0,
-    losses: 0,
-    battlesRemaining: 0,
-  });
-  const [isLoading, setIsLoading] = useState(true);
+  const { darkMode } = useWallet();
+  const { battleManagerInfo, isLoading, refreshBattleInfo } = useBattle();
   const theme = currentTheme(darkMode);
   const navigate = useNavigate();
 
-  useEffect(() => {
-    const loadBattleInfo = async () => {
-      if (!wallet?.address) {
-        setIsLoading(false);
-        return;
-      }
-      
+  // Refresh battle info on mount
+  React.useEffect(() => {
+    const init = async () => {
       try {
-        const info = await getBattleManagerInfo(wallet.address);
-        setBattleStats(info);
+        await refreshBattleInfo();
       } catch (error) {
-        console.error('Error loading battle info:', error);
-      } finally {
-        setIsLoading(false);
+        console.error('Failed to load battle info:', error);
       }
     };
+    
+    init();
+  }, [refreshBattleInfo]);
 
-    loadBattleInfo();
-  }, [wallet?.address]);
+  // Extract battle stats from the context
+  const battleStats = {
+    wins: battleManagerInfo?.wins || 0,
+    losses: battleManagerInfo?.losses || 0,
+    battlesRemaining: battleManagerInfo?.battlesRemaining || 0,
+  };
 
   const winRate = battleStats.wins + battleStats.losses > 0 
     ? (battleStats.wins / (battleStats.wins + battleStats.losses) * 100).toFixed(1)
@@ -127,15 +122,15 @@ const BattlePage: React.FC = () => {
     );
   }
 
-  if (!wallet?.address) {
+  if (!battleManagerInfo) {
     return (
       <div className="min-h-screen flex flex-col bg-gray-50 dark:bg-gray-900">
         <Header theme={theme} darkMode={darkMode} />
         <main className="flex-grow flex items-center justify-center px-4">
           <div className="bg-white dark:bg-gray-800 rounded-lg shadow-lg p-8 max-w-md w-full text-center">
-            <h2 className="text-2xl font-bold text-gray-900 dark:text-white mb-4">Wallet Not Connected</h2>
+            <h2 className="text-2xl font-bold text-gray-900 dark:text-white mb-4">No Battle Info Available</h2>
             <p className="text-gray-600 dark:text-gray-300 mb-6">
-              Please connect your wallet to access the battle hub.
+              Please try refreshing the page or checking your wallet connection.
             </p>
             <Button
               onClick={() => {}}
@@ -148,7 +143,7 @@ const BattlePage: React.FC = () => {
                 fontWeight: 600,
               }}
             >
-              Connect Wallet
+              Refresh Page
             </Button>
           </div>
         </main>
@@ -167,29 +162,33 @@ const BattlePage: React.FC = () => {
             <h1 className="text-3xl font-bold text-center mb-6 text-gray-900 dark:text-white">Battle Hub</h1>
             
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-8">
-              <StatCard 
-                title="Wins" 
-                value={battleStats.wins.toString()} 
+              <StatCard
+                title="Battles Remaining"
+                value={battleStats.battlesRemaining}
+                icon="⚔️"
+                color="text-blue-500"
+              />
+              <StatCard
+                title="Wins"
+                value={battleStats.wins}
                 icon="🏆"
                 color="text-green-500"
               />
-              <StatCard 
-                title="Losses" 
-                value={battleStats.losses.toString()} 
-                icon="💔"
+              <StatCard
+                title="Losses"
+                value={battleStats.losses}
+                icon="💀"
                 color="text-red-500"
               />
-              <StatCard 
-                title="Win Rate" 
-                value={`${winRate}%`} 
+              <StatCard
+                title="Win Rate"
+                value={
+                  battleStats.wins + battleStats.losses > 0
+                    ? `${Math.round((battleStats.wins / (battleStats.wins + battleStats.losses)) * 100)}%`
+                    : '0%'
+                }
                 icon="📊"
-                color="text-blue-500"
-              />
-              <StatCard 
-                title="Battles Remaining" 
-                value={battleStats.battlesRemaining.toString()} 
-                icon="⚔️"
-                color="text-yellow-500"
+                color="text-purple-500"
               />
             </div>
           </div>

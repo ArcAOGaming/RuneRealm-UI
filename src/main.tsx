@@ -11,6 +11,7 @@ import PurchaseInfo from "./pages/PurchaseInfo";
 import { MonsterManagement } from "./pages/MonsterManagement";
 import { WalletProvider } from "./contexts/WalletContext";
 import { TokenProvider } from "./contexts/TokenContext";
+import { BattleProvider } from "./contexts/BattleContext";
 import { useWallet } from "./hooks/useWallet";
 import { WalletStatus } from "./utils/interefaces";
 import "./index.css";
@@ -24,9 +25,9 @@ import Inventory from "./components/Inventory";
 import { MonsterProvider } from "./contexts/MonsterContext";
 import DebugView from "./pages/admin/DebugView";
 import StartPage from "./pages/StartPage";
-import BattlePage from "./pages/battle/BattlePage";
+//import BattlePage from "./pages/battle/BattlePage";
 import Admin from "./pages/admin/Admin";
-// import BattlePage from "./pages/battle/index";
+import BattlePage from "./pages/battle/index";
 
 interface AppContentProps {
   wallet?: { address: string };
@@ -114,7 +115,9 @@ const App = () => (
     <WalletProvider>
       <TokenProvider>
         <MonsterProvider>
-          <AppContent />
+          <BattleProvider>
+            <AppContent />
+          </BattleProvider>
         </MonsterProvider>
       </TokenProvider>
     </WalletProvider>

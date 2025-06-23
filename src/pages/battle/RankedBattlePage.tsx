@@ -1,6 +1,6 @@
-import React, { useState } from 'react';
+import { useState } from 'react';
 import { useWallet } from '../../hooks/useWallet';
-import { getBattleManagerInfo, enterBattle } from '../../utils/aoHelpers';
+import { useBattle } from '../../contexts/BattleContext';
 import { currentTheme } from '../../constants/theme';
 import Header from '../../components/Header';
 import Footer from '../../components/Footer';
@@ -8,59 +8,35 @@ import { useNavigate } from 'react-router-dom';
 import Loading from '../../components/Loading';
 
 export const RankedBattlePage = (): JSX.Element => {
-  const { wallet, darkMode } = useWallet();
-  const [battleManagerInfo, setBattleManagerInfo] = useState({
-    wins: 0,
-    losses: 0,
-    battlesRemaining: 0,
-    ranking: 0,
-    rating: 1000,
-  });
+  const { darkMode } = useWallet();
+  const {
+    battleManagerInfo,
+    isLoading: isBattleLoading,
+    startRankedBattle,
+  } = useBattle();
+  
   const [isLoading, setIsLoading] = useState(false);
   const [showChallengeOptions, setShowChallengeOptions] = useState(false);
   const [challengeAddress, setChallengeAddress] = useState('');
   const theme = currentTheme(darkMode);
   const navigate = useNavigate();
 
-  const loadBattleInfo = async () => {
-    if (!wallet?.address) return;
-    try {
-      const info = await getBattleManagerInfo(wallet.address);
-      setBattleManagerInfo(prev => ({
-        ...prev,
-        ...info,
-        // Mock ranking data - replace with actual from your API
-        ranking: 0,
-        rating: 1000,
-      }));
-    } catch (error) {
-      console.error('Error loading battle info:', error);
-    }
-  };
-
-  React.useEffect(() => {
-    loadBattleInfo();
-  }, [wallet?.address]);
-
   const handleStartRankedBattle = async (type: 'open' | 'targeted' = 'open') => {
-    if (!wallet?.address) return;
     try {
       setIsLoading(true);
-      let response;
+      let success;
       
       if (type === 'open') {
-        // Create open challenge
-        response = await enterBattle(wallet, { challenge: 'OPEN' });
+        success = await startRankedBattle('open');
       } else {
-        // Create targeted challenge
         if (!challengeAddress) {
           alert('Please enter a wallet address to challenge');
           return;
         }
-        response = await enterBattle(wallet, { challenge: challengeAddress });
+        success = await startRankedBattle('targeted', challengeAddress);
       }
 
-      if (response.status === 'success' && response.data) {
+      if (success) {
         navigate('/battle/active');
       }
     } catch (error) {
@@ -70,14 +46,13 @@ export const RankedBattlePage = (): JSX.Element => {
     }
   };
 
-  if (isLoading) {
+  if (isLoading || isBattleLoading) {
     return (
       <div className="min-h-screen flex items-center justify-center">
         <Loading darkMode={darkMode} />
       </div>
     );
   }
-
   return (
     <div className="min-h-screen flex flex-col">
       <div className={`min-h-screen flex flex-col ${theme.bg}`}>
@@ -122,11 +97,11 @@ export const RankedBattlePage = (): JSX.Element => {
                     </div>
                     <div>
                       <p className="text-sm text-blue-600 dark:text-blue-400">Rating</p>
-                      <p className="text-xl font-bold">{battleManagerInfo.rating}</p>
+                      <p className="text-xl font-bold">{battleManagerInfo.rating ?? 1000}</p>
                     </div>
                   </div>
                   <p className="text-sm text-blue-600 dark:text-blue-400">
-                    Battles Remaining: <span className="font-semibold">{battleManagerInfo.battlesRemaining}</span>
+                    Battles Remaining: <span className="font-semibold">{battleManagerInfo.battlesRemaining ?? 0}</span>
                   </p>
                 </div>
 

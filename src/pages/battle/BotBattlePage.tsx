@@ -1,43 +1,28 @@
-import React, { useState } from 'react';
-import { useWallet } from '../../hooks/useWallet';
-import { getBattleManagerInfo, enterBattle } from '../../utils/aoHelpers';
+import React from 'react';
+import { useBattle } from '../../contexts/BattleContext';
 import { currentTheme } from '../../constants/theme';
 import Header from '../../components/Header';
 import Footer from '../../components/Footer';
 import { useNavigate } from 'react-router-dom';
 import Loading from '../../components/Loading';
+import { useWallet } from '../../hooks/useWallet';
 
 export const BotBattlePage = (): JSX.Element => {
-  const { wallet, darkMode } = useWallet();
-  const [battleManagerInfo, setBattleManagerInfo] = useState({
-    wins: 0,
-    losses: 0,
-    battlesRemaining: 0,
-  });
-  const [isLoading, setIsLoading] = useState(false);
+  const { darkMode } = useWallet();
+  const {
+    battleManagerInfo,
+    isLoading: isBattleLoading,
+    startBotBattle,
+  } = useBattle();
+  const [isLoading, setIsLoading] = React.useState(false);
   const theme = currentTheme(darkMode);
   const navigate = useNavigate();
 
-  const loadBattleInfo = async () => {
-    if (!wallet?.address) return;
-    try {
-      const info = await getBattleManagerInfo(wallet.address);
-      setBattleManagerInfo(info);
-    } catch (error) {
-      console.error('Error loading battle info:', error);
-    }
-  };
-
-  React.useEffect(() => {
-    loadBattleInfo();
-  }, [wallet?.address]);
-
   const handleStartBotBattle = async () => {
-    if (!wallet?.address) return;
     try {
       setIsLoading(true);
-      const response = await enterBattle(wallet);
-      if (response.status === 'success' && response.data) {
+      const success = await startBotBattle();
+      if (success) {
         navigate('/battle/active');
       }
     } catch (error) {
@@ -47,7 +32,7 @@ export const BotBattlePage = (): JSX.Element => {
     }
   };
 
-  if (isLoading) {
+  if (isLoading || isBattleLoading) {
     return (
       <div className="min-h-screen flex items-center justify-center">
         <Loading darkMode={darkMode} />
@@ -91,7 +76,7 @@ export const BotBattlePage = (): JSX.Element => {
                 </div>
 
                 <div className="bg-blue-50 dark:bg-blue-900/30 p-4 rounded-lg border border-blue-200 dark:border-blue-800 mb-6">
-                  <h3 className="font-semibold text-blue-700 dark:text-blue-300 mb-2">Battle Remaining: {battleManagerInfo.battlesRemaining}</h3>
+                  <h3 className="font-semibold text-blue-700 dark:text-blue-300 mb-2">Battles Remaining: {battleManagerInfo?.battlesRemaining ?? 0}</h3>
                   <p className="text-sm text-blue-600 dark:text-blue-400">
                     You can start a new bot battle whenever you're ready.
                   </p>

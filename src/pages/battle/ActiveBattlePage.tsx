@@ -1,6 +1,6 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useEffect, useCallback } from 'react';
 import { useWallet } from '../../hooks/useWallet';
-import { getBattleManagerInfo, getActiveBattle, returnFromBattle, ActiveBattle } from '../../utils/aoHelpers';
+import { useBattle } from '../../contexts/BattleContext';
 import { currentTheme } from '../../constants/theme';
 import Header from '../../components/Header';
 import Footer from '../../components/Footer';
@@ -21,56 +21,49 @@ const isCompleteMonster = (participant: any): boolean => {
 };
 
 export const ActiveBattlePage = (): JSX.Element => {
-  const { wallet, darkMode } = useWallet();
-  const [activeBattle, setActiveBattle] = useState<ActiveBattle | null>(null);
-  const [isLoading, setIsLoading] = useState(true);
-  const [isUpdating, setIsUpdating] = useState(false);
+  const { darkMode } = useWallet();
+  const {
+    activeBattle,
+    isLoading,
+    isUpdating,
+    refreshActiveBattle,
+    returnFromBattle: handleReturnFromBattle
+  } = useBattle();
+  
   const theme = currentTheme(darkMode);
   const navigate = useNavigate();
 
-  const updateBattleData = useCallback(async () => {
-    if (!wallet?.address) return;
+  // Set up polling for battle updates
+  useEffect(() => {
+    const interval = setInterval(() => {
+      refreshActiveBattle();
+    }, 5000);
     
-    try {
-      console.log('[ActiveBattlePage] Checking for active battles...');
-      const battles = await getActiveBattle(wallet.address);
-      console.log('[ActiveBattlePage] Active battles:', battles);
-      
-      // Take the first battle from the array
-      const battle = Array.isArray(battles) && battles.length > 0 ? battles[0] : null;
-      setActiveBattle(battle);
-      
-      // If no active battle, redirect to battle hub
+    // Initial load
+    refreshActiveBattle().then(battle => {
       if (!battle) {
         console.log('[ActiveBattlePage] No active battle found, redirecting to battle hub');
         navigate('/battle');
       }
-    } catch (error) {
-      console.error('Error loading active battle:', error);
-    } finally {
-      setIsLoading(false);
-    }
-  }, [wallet?.address, navigate]);
-
-  useEffect(() => {
-    updateBattleData();
-    // Set up polling every 5 seconds
-    const interval = setInterval(updateBattleData, 5000);
+    });
+    
     return () => clearInterval(interval);
-  }, [updateBattleData]);
-
-  const handleReturnHome = async () => {
-    if (!wallet?.address) return;
-    try {
-      setIsUpdating(true);
-      await returnFromBattle(wallet);
+  }, [refreshActiveBattle, navigate]);
+  
+  const handleReturnHomeWrapper = async () => {
+    const success = await handleReturnFromBattle();
+    if (success) {
       navigate('/battle');
-    } catch (error) {
-      console.error('Error returning from battle:', error);
-    } finally {
-      setIsUpdating(false);
     }
   };
+
+  if (isLoading) {
+    return (
+      <div className="min-h-screen flex items-center justify-center">
+        <Loading darkMode={darkMode} />
+      </div>
+    );
+  }
 
   if (isLoading) {
     return (
@@ -88,14 +81,16 @@ export const ActiveBattlePage = (): JSX.Element => {
           <button
             onClick={() => navigate('/battle')}
             className="px-6 py-2 bg-blue-500 text-white rounded-lg hover:bg-blue-600 transition-colors"
+            disabled={isUpdating}
           >
-            Back to Battle Hub
+            {isUpdating ? 'Leaving Battle...' : 'Back to Battle Hub'}
           </button>
         </div>
       </div>
     );
   }
 
+  const { wallet } = useWallet();
   const isChallenger = activeBattle.challenger?.address === wallet?.address;
   const isAccepter = activeBattle.accepter?.address === wallet?.address;
   const isBotBattle = activeBattle.challengeType === 'BOT';
@@ -290,11 +285,12 @@ export const ActiveBattlePage = (): JSX.Element => {
                     Defend
                   </button>
                   <button
-                    onClick={handleReturnHome}
-                    className={`px-4 py-3 rounded-lg font-bold border ${theme.border} hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors`}
+                    onClick={handleReturnHomeWrapper}
                     disabled={isUpdating}
+                    className="px-4 py-2 bg-red-500 text-white rounded-lg hover:bg-red-600 transition-colors flex items-center"
                   >
-                    {isUpdating ? 'Leaving...' : 'Forfeit Battle'}
+                    {isUpdating ? 'Leaving...' : 'Leave Battle'}
+                    {isUpdating && <span className="ml-2">⌛</span>}
                   </button>
                 </div>
               </div>

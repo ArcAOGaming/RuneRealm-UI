@@ -1,4 +1,5 @@
 -- PremiumPass
+-- aos j7NcraZUL6GZlgdPEoph12Q5rk_dydvQDecLNxYi8rI --cu-url https://ur-cu.randao.net --mu-url https://ur-mu.randao.net --wallet wallet.json
 -- ProcessId: j7NcraZUL6GZlgdPEoph12Q5rk_dydvQDecLNxYi8rI
 local json = require("json")
 -- require("globals")
@@ -62,6 +63,7 @@ Handlers.add("ReturnFrom-MISSION", Handlers.utils.hasMatchingTag("Action", "Retu
     }
     monster.exp = monster.exp + 1 -- Grant 1 exp for completing mission
     monster.totalTimesMission = (monster.totalTimesMission or 0) + 1
+    addLootBoxes(userId,1,2)
     print("Total missions completed:", monster.totalTimesMission)
 
     ao.send({
@@ -1050,7 +1052,7 @@ Handlers.add("ReturnFrom-BATTLE", Handlers.utils.hasMatchingTag("Action", "Retur
 
     print("Returning from battle")
     local userId = msg.Tags.UserId
-    -- addLootBoxes(userId,1,1)
+    addLootBoxes(userId,1,1)
     -- addLootBoxes(userId,1,2)
     -- addLootBoxes(userId,1,3)
     local monster = UserMonsters[userId]
