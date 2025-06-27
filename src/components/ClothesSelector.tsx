@@ -14,26 +14,22 @@ const ClothesSelector: React.FC<ClothesSelectorProps> = ({
   darkMode,
 }) => {
   return (
-    <div className="flex items-center space-x-2">
-      <label className="text-xs font-medium capitalize min-w-[60px] truncate">
-        {layerType.toLowerCase()}:
+    <div className="flex items-center space-x-3">
+      <label className={`text-sm font-semibold capitalize min-w-[70px] truncate ${darkMode ? 'text-white' : 'text-gray-700'}`}>
+        {layerType}:
       </label>
       <select
         value={currentStyle}
         onChange={(e) => onStyleChange(e.target.value)}
-        className={`flex-1 py-1 px-2 text-sm border rounded transition-all duration-300 ${
-          darkMode 
-            ? 'bg-[#814E33]/20 border-[#F4860A]/30 text-[#FCF5D8] focus:border-[#F4860A]/50' 
-            : 'bg-[#FCF5D8]/40 border-[#814E33]/20 text-[#814E33] focus:border-[#814E33]/50'
-        } outline-none hover:border-opacity-50`}
+        className={`flex-1 py-2 px-3 text-sm rounded-lg transition-all duration-300 
+          ${darkMode ? 'bg-[#3B2412]/80 border-[#F4860A]/40 text-white focus:border-[#F4860A]/70 focus:ring-[#F4860A]/30' : 'bg-white/60 border-orange-200/40 text-gray-800 focus:border-orange-400/60 focus:ring-orange-200/30'}
+          outline-none hover:border-opacity-50 hover:bg-white/70 shadow-sm hover:shadow-md`}
       >
         {availableStyles.map((style) => (
           <option 
             key={style} 
             value={style}
-            className={darkMode 
-              ? 'bg-[#814E33] text-[#FCF5D8]' 
-              : 'bg-[#FCF5D8] text-[#814E33]'}
+            className={darkMode ? 'bg-[#3B2412] text-white' : 'bg-white text-gray-800'}
           >
             {style}
           </option>
