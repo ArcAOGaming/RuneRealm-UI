@@ -15,6 +15,7 @@ import Footer from '../components/Footer';
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
 import { faShuffle, faRotateLeft, faUpload, faDoorOpen } from '@fortawesome/free-solid-svg-icons';
 import { useNavigate } from 'react-router-dom';
+import FourDirectionView from '../components/FourDirectionView';
 
 interface LayerState {
   style: string;
@@ -85,6 +86,7 @@ const SpriteCustomizer: React.FC<SpriteCustomizerProps> = ({ onEnter }) => {
   const [showPreview, setShowPreview] = useState(false);
   const [showCustomizer, setShowCustomizer] = useState(false);
   const [showUploadSuccess, setShowUploadSuccess] = useState(false);
+  const [previewMode, setPreviewMode] = useState<'walking' | 'four-direction'>('walking');
 
   const theme = currentTheme(darkMode);
 
@@ -337,13 +339,13 @@ const SpriteCustomizer: React.FC<SpriteCustomizerProps> = ({ onEnter }) => {
         <div className={`flex-1 w-full ${darkMode ? 'bg-gradient-to-br from-[#3B2412] via-[#5A3A1B] to-[#2A1912] border-[#F4860A]/40' : 'bg-gradient-to-br from-amber-50/80 via-orange-50/60 to-amber-100/40 border-orange-200/30'} 
           backdrop-blur-xl border shadow-2xl flex flex-col overflow-hidden`}>
           {/* Content area */}
-          <div className="flex-1 flex flex-col lg:flex-row gap-6 p-6 h-full overflow-hidden">
+          <div className="flex-1 flex flex-col xl:flex-row gap-4 p-4 h-full overflow-hidden">
             {/* Left column - Controls */}
-            <div className="w-full lg:w-1/3 p-2 overflow-y-auto">
+            <div className="w-full xl:w-1/4 p-2 overflow-y-auto">
               {/* Layer Selection */}
-              <div className={`p-6 rounded-2xl ${darkMode ? 'bg-gradient-to-br from-[#5A3A1B]/80 to-[#3B2412]/60 border-[#F4860A]/40 shadow-[0_4px_24px_#3B2412cc]' : 'bg-gradient-to-br from-white/40 to-white/20 border-orange-200/40 shadow-xl'} 
+              <div className={`p-4 rounded-2xl ${darkMode ? 'bg-gradient-to-br from-[#5A3A1B]/80 to-[#3B2412]/60 border-[#F4860A]/40 shadow-[0_4px_24px_#3B2412cc]' : 'bg-gradient-to-br from-white/40 to-white/20 border-orange-200/40 shadow-xl'} 
                 backdrop-blur-xl border`}>
-                <h2 className={`text-xl font-bold mb-6 ${darkMode ? 'text-white' : 'text-gray-800'}`}>Character Customization</h2>
+                <h2 className={`text-lg font-bold mb-4 ${darkMode ? 'text-white' : 'text-gray-800'}`}>Character Customization</h2>
                 <LayerSelector
                   layers={layers}
                   availableStyles={availableStyles}
@@ -355,60 +357,92 @@ const SpriteCustomizer: React.FC<SpriteCustomizerProps> = ({ onEnter }) => {
             </div>
 
             {/* Right column - Preview */}
-            <div className="w-full lg:w-2/3 p-2 flex flex-col gap-6">
-              {/* Four Direction Preview */}
-              <div className={`p-6 rounded-2xl ${darkMode ? 'bg-gradient-to-br from-[#5A3A1B]/80 to-[#3B2412]/60 border-[#F4860A]/40 shadow-[0_4px_24px_#3B2412cc]' : 'bg-gradient-to-br from-white/60 to-white/30 border-orange-200/40 shadow-xl'} 
-                backdrop-blur-xl border flex flex-col items-start justify-center overflow-hidden min-h-[380px]`}>
-                <h2 className={`text-xl font-bold ${darkMode ? 'text-white' : 'text-gray-800'} text-left mb-4`}>Character Preview</h2>
-                {/* Temporarily hidden 4-way preview - DO NOT REMOVE */}
-                {/* <div className="h-[45%] flex items-center justify-center">
-                  <FourDirectionView
-                    layers={layers}
-                    darkMode={darkMode}
-                  />
-                </div> */}
-                <div className="flex items-center justify-center w-full h-full max-w-[600px] max-h-[400px] mx-auto bg-white/40 rounded-xl overflow-hidden">
-                  <WalkingPreview
-                    layers={layers}
-                    darkMode={darkMode}
-                  />
+            <div className="w-full xl:w-3/4 p-2 flex flex-col">
+              {/* Character Preview - Much Larger */}
+              <div className={`flex-1 p-2 rounded-2xl ${darkMode ? 'bg-gradient-to-br from-[#5A3A1B]/80 to-[#3B2412]/60 border-[#F4860A]/40 shadow-[0_4px_24px_#3B2412cc]' : 'bg-gradient-to-br from-white/60 to-white/30 border-orange-200/40 shadow-xl'} 
+                backdrop-blur-xl border flex flex-col min-h-[500px]`}>
+                <div className="flex items-center justify-between mb-2 px-2">
+                  <h2 className={`text-xl font-bold ${darkMode ? 'text-white' : 'text-gray-800'}`}>Character Preview</h2>
+                  
+                  {/* Preview Mode Toggle */}
+                  <div className={`flex rounded-lg overflow-hidden ${darkMode ? 'bg-gray-800' : 'bg-gray-200'}`}>
+                    <button
+                      onClick={() => setPreviewMode('walking')}
+                      className={`px-3 py-1 text-sm font-medium transition-colors ${
+                        previewMode === 'walking'
+                          ? darkMode ? 'bg-orange-600 text-white' : 'bg-orange-500 text-white'
+                          : darkMode ? 'text-gray-300 hover:bg-gray-700' : 'text-gray-600 hover:bg-gray-300'
+                      }`}
+                    >
+                      Walking
+                    </button>
+                    <button
+                      onClick={() => setPreviewMode('four-direction')}
+                      className={`px-3 py-1 text-sm font-medium transition-colors ${
+                        previewMode === 'four-direction'
+                          ? darkMode ? 'bg-orange-600 text-white' : 'bg-orange-500 text-white'
+                          : darkMode ? 'text-gray-300 hover:bg-gray-700' : 'text-gray-600 hover:bg-gray-300'
+                      }`}
+                    >
+                      4-Direction
+                    </button>
+                  </div>
+                </div>
+                
+                {/* Preview Content */}
+                <div className="flex-1 w-full h-full bg-white/40 rounded-xl overflow-hidden">
+                  {previewMode === 'walking' ? (
+                    <WalkingPreview
+                      layers={layers}
+                      darkMode={darkMode}
+                    />
+                  ) : (
+                    <div className="w-full h-full flex items-center justify-center p-4">
+                      <div className="w-full max-w-4xl" style={{ aspectRatio: '960/280' }}>
+                        <FourDirectionView
+                          layers={layers}
+                          darkMode={darkMode}
+                        />
+                      </div>
+                    </div>
+                  )}
                 </div>
               </div>
             </div>
           </div>
 
           {/* Bottom Buttons */}
-          <div className={`flex gap-4 p-6 flex-shrink-0 ${darkMode ? 'bg-gradient-to-r from-[#5A3A1B]/80 to-[#3B2412]/60 border-t border-[#F4860A]/40' : 'bg-gradient-to-r from-white/30 to-white/20 border-t border-orange-200/30'} 
+          <div className={`flex gap-3 p-4 flex-shrink-0 ${darkMode ? 'bg-gradient-to-r from-[#5A3A1B]/80 to-[#3B2412]/60 border-t border-[#F4860A]/40' : 'bg-gradient-to-r from-white/30 to-white/20 border-t border-orange-200/30'} 
             backdrop-blur-xl`}>
             {onEnter && (
               <button
                 onClick={handleSkipClick}
-                className={`flex-1 py-3 px-6 rounded-xl text-sm font-medium transition-all duration-300 
+                className={`flex-1 py-2 px-4 rounded-xl text-sm font-medium transition-all duration-300 
                   transform hover:scale-105 
                   ${darkMode ? 'bg-gradient-to-r from-gray-700 via-gray-800 to-gray-900 text-white border-gray-600' : 'bg-gradient-to-r from-amber-400/80 to-orange-500/80 text-white border-orange-200/40'}
                   backdrop-blur-md shadow-lg hover:shadow-xl border flex items-center justify-center gap-2 font-bold`}
               >
-                <FontAwesomeIcon icon={faDoorOpen} className="w-5 h-5" />
+                <FontAwesomeIcon icon={faDoorOpen} className="w-4 h-4" />
                 No Thanks, Just Log Me In
               </button>
             )}
             <button
               onClick={handleRandomize}
-              className={`flex-1 py-3 px-6 rounded-xl text-sm font-medium transition-all duration-300 
+              className={`flex-1 py-2 px-4 rounded-xl text-sm font-medium transition-all duration-300 
                 font-bold shadow-md flex items-center justify-center gap-2 hover:brightness-110 hover:shadow-lg
                 ${darkMode ? 'bg-gradient-to-r from-purple-900 via-pink-900 to-pink-800 text-white' : 'bg-gradient-to-r from-purple-500 via-pink-500 to-pink-400 text-white'}`}
             >
-              <FontAwesomeIcon icon={faShuffle} className="w-5 h-5" />
-              Random Layers
+              <FontAwesomeIcon icon={faShuffle} className="w-4 h-4" />
+              Random
             </button>
             <button
               onClick={handleReset}
-              className={`flex-1 py-3 px-6 rounded-xl text-sm font-medium transition-all duration-300 
+              className={`flex-1 py-2 px-4 rounded-xl text-sm font-medium transition-all duration-300 
                 font-bold flex items-center justify-center gap-2 shadow-sm hover:shadow-md
                 ${darkMode ? 'border-2 border-orange-600 text-orange-300 bg-gray-900 hover:bg-orange-950' : 'border-2 border-orange-400 text-orange-600 bg-white hover:bg-orange-50'}`}
             >
-              <FontAwesomeIcon icon={faRotateLeft} className="w-5 h-5" />
-              Reset All Layers
+              <FontAwesomeIcon icon={faRotateLeft} className="w-4 h-4" />
+              Reset
             </button>
             <ExportAndUploadButton
               layers={layers} 
@@ -421,10 +455,10 @@ const SpriteCustomizer: React.FC<SpriteCustomizerProps> = ({ onEnter }) => {
               onConnect={handleConnectWallet}
               onNeedUnlock={() => setIsPurchaseModalOpen(true)}
               onUploadComplete={handleExportComplete}
-              className={`flex-1 py-3 px-6 rounded-xl text-sm font-medium transition-all duration-300 
+              className={`flex-1 py-2 px-4 rounded-xl text-sm font-medium transition-all duration-300 
                 font-bold flex items-center justify-center gap-2 shadow-sm hover:shadow-md
                 ${darkMode ? 'border-2 border-blue-600 text-blue-300 bg-gray-900 hover:bg-blue-950' : 'border-2 border-blue-400 text-blue-600 bg-white hover:bg-blue-50'}`}
-              icon={<FontAwesomeIcon icon={faUpload} className="w-5 h-5" />}
+              icon={<FontAwesomeIcon icon={faUpload} className="w-4 h-4" />}
             />
           </div>
 
