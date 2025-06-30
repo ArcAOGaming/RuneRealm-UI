@@ -1227,11 +1227,10 @@ export const copyReferralLink = async (): Promise<void> => {
 };
 
 // Admin force return from battle
-export const adminReturnFromBattle = async (targetWallet: string, refreshCallback?: () => void): Promise<boolean> => {
+export const adminReturnFromBattle = async (wallet: any, targetWallet: string, refreshCallback?: () => void): Promise<boolean> => {
     try {
         console.log('[adminReturnFromBattle] Forcing return for wallet:', targetWallet);
-        // Get wallet from context
-        const { wallet } = useWallet();
+        // Use the wallet that was passed in as parameter
         const signer = createDataItemSigner(wallet);
         const messageResult = await message({
             process: TARGET_BATTLE_PID,

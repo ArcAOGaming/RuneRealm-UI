@@ -8,7 +8,7 @@ import AdminBulkUnlock from '../../components/AdminBulkUnlock';
 import AdminRemoveUser from '../../components/AdminRemoveUser';
 
 const Admin: React.FC = () => {
-  const { darkMode, setDarkMode, triggerRefresh } = useWallet();
+  const { darkMode, setDarkMode, triggerRefresh, wallet } = useWallet();
   const [walletAddress, setWalletAddress] = useState('');
   const [userInfo, setUserInfo] = useState<UserInfo | null>(null);
   const [isLoading, setIsLoading] = useState(false);
@@ -169,9 +169,9 @@ const Admin: React.FC = () => {
                   />
                   <button
                     onClick={async () => {
-                      if (!walletAddress) return;
+                      if (!walletAddress || !wallet) return;
                       try {
-                        const success = await adminReturnFromBattle(walletAddress, triggerRefresh);
+                        const success = await adminReturnFromBattle(wallet, walletAddress, triggerRefresh);
                         if (success) {
                           alert('Successfully returned user from battle');
                         } else {
