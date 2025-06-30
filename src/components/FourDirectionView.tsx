@@ -49,6 +49,10 @@ class FourDirectionScene extends Phaser.Scene {
     };
   }
 
+  setDarkMode(darkMode: boolean) {
+    this.darkMode = darkMode;
+  }
+
   preload() {
     console.log('Starting to load assets...');
     
@@ -220,7 +224,7 @@ class FourDirectionScene extends Phaser.Scene {
         };
         
         // Create a new texture with color replacement
-        const colorizedKey = await this.colorizeTexture(this.textures.get(spriteKey), layerName, layer.color);
+        const colorizedKey = await this.colorizeTexture(this.textures.get(spriteKey), layerName, layer.style, layer.color);
         
         // Create sprites and animations for each direction
         for (const dir of directions) {
@@ -253,8 +257,8 @@ class FourDirectionScene extends Phaser.Scene {
     initializeLayers();
   }
 
-  async colorizeTexture(texture: Phaser.Textures.Texture, layerName: string, color: string): Promise<string> {
-    const key = `${layerName}_${color}`;
+  async colorizeTexture(texture: Phaser.Textures.Texture, layerName: string, style: string, color: string): Promise<string> {
+    const key = `${layerName}_${style}_${color}`;
     
     // Check if we already have this colorized texture
     if (this.textureCache[key]) {
@@ -274,7 +278,7 @@ class FourDirectionScene extends Phaser.Scene {
     // Use the shared colorizer
     const colorizedData = SpriteColorizer.colorizeTexture(imageData, color, {
       preserveAlpha: true,
-      cacheKey: `preview_${layerName}_${color}`
+      cacheKey: `preview_${layerName}_${style}_${color}`
     });
 
     // Create a new canvas for the colorized texture
@@ -304,38 +308,127 @@ class FourDirectionScene extends Phaser.Scene {
   }
 
   async updateColors(newLayers: FourDirectionViewProps['layers']) {
+    this.layers = newLayers;
+    const directions: Direction[] = ['forward', 'left', 'right', 'back'];
+    
+    // Process each layer from newLayers like WalkingPreview does
     for (const [layerName, layer] of Object.entries(newLayers)) {
-      if (this.sprites[layerName]) {
-        const spriteKey = `${layerName}.${layer.style}`;
-        const baseTexture = this.textures.get(spriteKey);
-        if (!baseTexture) return;
-
-        const colorizedKey = await this.colorizeTexture(baseTexture, layerName, layer.color);
+      try {
+        const baseKey = `${layerName}.${layer.style}`;
         
-        // Update all direction sprites
-        for (const [direction, sprite] of Object.entries(this.sprites[layerName])) {
-          const currentAnim = sprite.anims.currentAnim;
-          sprite.setTexture(colorizedKey);
+        // Skip if style is 'None' - remove sprite if it exists
+        if (layer.style === 'None') {
+          if (this.sprites[layerName]) {
+            directions.forEach(dir => {
+              if (this.sprites[layerName][dir]) {
+                this.sprites[layerName][dir].destroy();
+              }
+            });
+            delete this.sprites[layerName];
+          }
+          continue;
+        }
+        
+        // Load base spritesheet if not exists
+        if (!this.textures.exists(baseKey)) {
+          try {
+            await new Promise<void>((resolve, reject) => {
+              const url = new URL(`../assets/${layerName}/${layer.style}.png`, import.meta.url).href;
+              
+              this.load.once('loaderror', () => {
+                console.error(`Failed to load asset: ${url}`);
+                reject(new Error(`Failed to load ${layerName}/${layer.style}.png`));
+              });
+              
+              this.load.spritesheet(baseKey, url, {
+                frameWidth: 48,
+                frameHeight: 60
+              });
+              
+              this.load.once('complete', resolve);
+              this.load.start();
+            });
+          } catch (error) {
+            console.error(`Error loading ${layerName}/${layer.style}.png:`, error);
+            continue;
+          }
+        }
+
+        // Create colored version
+        const baseTexture = this.textures.get(baseKey);
+        if (!baseTexture) continue;
+
+        const colorizedKey = await this.colorizeTexture(baseTexture, layerName, layer.style, layer.color);
+        
+        // Get positions (same as in create method)
+        const gameWidth = this.sys.game.config.width as number;
+        const gameHeight = this.sys.game.config.height as number;
+        const spacing = gameWidth / 4;
+        const centerY = gameHeight / 2;
+        
+        const positions = {
+          forward: { x: spacing * 0.5, y: centerY },
+          left: { x: spacing * 1.5, y: centerY },
+          right: { x: spacing * 2.5, y: centerY },
+          back: { x: spacing * 3.5, y: centerY }
+        };
+
+        // Create or update sprites for this layer
+        if (!this.sprites[layerName]) {
+          // Create new sprites
+          this.sprites[layerName] = {
+            forward: null as any,
+            left: null as any,
+            right: null as any,
+            back: null as any
+          };
+
+          directions.forEach(dir => {
+            this.sprites[layerName][dir] = this.add.sprite(
+              positions[dir].x,
+              positions[dir].y,
+              colorizedKey
+            );
+            this.sprites[layerName][dir].setOrigin(0.5, 0.5);
+            this.sprites[layerName][dir].setScale(Math.min(3, gameWidth / 320));
+          });
+        } else {
+          // Update existing sprites with new texture
+          directions.forEach(dir => {
+            if (this.sprites[layerName][dir]) {
+              this.sprites[layerName][dir].setTexture(colorizedKey);
+            }
+          });
+        }
+
+        // Create animations for all directions
+        directions.forEach(dir => {
+          const animKey = `${colorizedKey}-${this.animationPrefix[dir]}`;
           
-          // Recreate animation with new texture
-          const animKey = `${spriteKey}-${this.animationPrefix[direction as Direction]}`;
+          // Remove existing animation if it exists
           if (this.anims.exists(animKey)) {
             this.anims.remove(animKey);
           }
-          
+
+          // Create new animation
           this.anims.create({
             key: animKey,
-          frames: this.anims.generateFrameNumbers(colorizedKey, {
-            frames: this.frameSequences[direction as Direction]
-          }),
-          frameRate: this.frameRates[direction as Direction],
+            frames: this.anims.generateFrameNumbers(colorizedKey, {
+              frames: this.frameSequences[dir]
+            }),
+            frameRate: this.frameRates[dir],
             repeat: -1
           });
 
-          if (currentAnim) {
-            sprite.play(animKey);
+          // Play animation on the sprite
+          if (this.sprites[layerName][dir]) {
+            this.sprites[layerName][dir].play(animKey);
           }
-        }
+        });
+
+      } catch (error) {
+        console.error(`Error processing layer ${layerName}:`, error);
+        continue;
       }
     }
   }
@@ -359,6 +452,7 @@ const FourDirectionView: React.FC<FourDirectionViewProps> = ({ layers, darkMode 
   const gameRef = useRef<Phaser.Game | null>(null);
   const sceneRef = useRef<FourDirectionScene | null>(null);
   const containerRef = useRef<HTMLDivElement>(null);
+  const pendingLayersRef = useRef(layers);
   const [isLoading, setIsLoading] = useState(true);
 
   useEffect(() => {
@@ -379,7 +473,7 @@ const FourDirectionView: React.FC<FourDirectionViewProps> = ({ layers, darkMode 
         parent: 'four-direction-container',
         scene: class extends FourDirectionScene {
           constructor() {
-            super(layers, darkMode);
+            super(pendingLayersRef.current, darkMode);
             this.setIsLoading = setIsLoading;
           }
         },
@@ -389,18 +483,42 @@ const FourDirectionView: React.FC<FourDirectionViewProps> = ({ layers, darkMode 
       };
 
       gameRef.current = new Phaser.Game(config);
-      sceneRef.current = gameRef.current.scene.getScene('FourDirectionScene') as FourDirectionScene;
-    } else if (sceneRef.current) {
-      sceneRef.current.updateColors(layers);
+      
+      // Get scene reference once it's ready
+      gameRef.current.events.once('ready', () => {
+        const scene = gameRef.current?.scene.getScene('FourDirectionScene');
+        if (scene instanceof FourDirectionScene) {
+          sceneRef.current = scene;
+          // Apply any pending layers once the scene is ready
+          if (sceneRef.current && pendingLayersRef.current) {
+            sceneRef.current.updateColors(pendingLayersRef.current);
+          }
+        }
+      });
     }
 
     return () => {
       if (gameRef.current) {
         gameRef.current.destroy(true);
         gameRef.current = null;
+        sceneRef.current = null;
       }
     };
-  }, [layers, darkMode]);
+  }, []);
+
+  // Handle layers changes
+  useEffect(() => {
+    pendingLayersRef.current = layers;
+    if (sceneRef.current) {
+      sceneRef.current.updateColors(layers);
+    }
+  }, [layers]);
+
+  useEffect(() => {
+    if (sceneRef.current) {
+      sceneRef.current.setDarkMode(darkMode);
+    }
+  }, [darkMode]);
 
   return (
     <div ref={containerRef} className="relative w-full h-full flex items-center justify-center rounded-lg overflow-hidden">
