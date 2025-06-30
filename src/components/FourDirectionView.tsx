@@ -81,11 +81,18 @@ class FourDirectionScene extends Phaser.Scene {
   create() {
     const directions: Direction[] = ['forward', 'left', 'right', 'back'];
     const frameRates = { forward: 8, left: 8, right: 8, back: 8 };
+    
+    // Dynamic positioning based on actual canvas size
+    const gameWidth = this.sys.game.config.width as number;
+    const gameHeight = this.sys.game.config.height as number;
+    const spacing = gameWidth / 4; // Divide width into 4 equal parts
+    const centerY = gameHeight / 2;
+    
     const positions = {
-      forward: { x: 160, y: 120 },
-      left: { x: 360, y: 120 },
-      right: { x: 560, y: 120 },
-      back: { x: 760, y: 120 }
+      forward: { x: spacing * 0.5, y: centerY },
+      left: { x: spacing * 1.5, y: centerY },
+      right: { x: spacing * 2.5, y: centerY },
+      back: { x: spacing * 3.5, y: centerY }
     };
     
     // Define frame sequences for ping-pong style animation
@@ -96,10 +103,10 @@ class FourDirectionScene extends Phaser.Scene {
       back: [9, 10, 11, 10]
     };
 
-    // Add glassmorphism frames
+    // Add glassmorphism frames - responsive size
     const frameStyle = {
-      width: 175,
-      height: 200,
+      width: Math.min(175, spacing * 0.8), // Responsive frame width
+      height: Math.min(200, gameHeight * 0.8), // Responsive frame height
       fillStyle: 0x814E33,
       fillAlpha: 0.2,
       strokeStyle: 0xF4860A,
@@ -147,7 +154,7 @@ class FourDirectionScene extends Phaser.Scene {
     // Add direction labels with adjusted positions
     const labelStyle = {
       color: this.darkMode ? '#FCF5D8' : '#2A1912',
-      fontSize: '24px',
+      fontSize: Math.min(24, gameWidth / 40) + 'px', // Responsive font size
       fontWeight: 'bold',
       fontFamily: 'Arial'
     };
@@ -183,7 +190,7 @@ class FourDirectionScene extends Phaser.Scene {
       // Create base sprite for this direction
       this.sprites['BASE'][dir] = this.add.sprite(positions[dir].x, positions[dir].y, 'BASE');
       this.sprites['BASE'][dir].setOrigin(0.5, 0.5);
-      this.sprites['BASE'][dir].setScale(3); // Make sprites larger
+      this.sprites['BASE'][dir].setScale(Math.min(3, gameWidth / 320)); // Responsive sprite scale
 
       // Create animation for base
       this.anims.create({
@@ -203,25 +210,28 @@ class FourDirectionScene extends Phaser.Scene {
     const initializeLayers = async () => {
       for (const [layerName, layer] of Object.entries(this.layers)) {
         const spriteKey = `${layerName}.${layer.style}`;
+        
+        // Initialize sprites object for this layer
         this.sprites[layerName] = {
-          forward: this.add.sprite(positions.forward.x, positions.forward.y, spriteKey),
-          left: this.add.sprite(positions.left.x, positions.left.y, spriteKey),
-          right: this.add.sprite(positions.right.x, positions.right.y, spriteKey),
-          back: this.add.sprite(positions.back.x, positions.back.y, spriteKey)
+          forward: null as any,
+          left: null as any, 
+          right: null as any,
+          back: null as any
         };
         
         // Create a new texture with color replacement
         const colorizedKey = await this.colorizeTexture(this.textures.get(spriteKey), layerName, layer.color);
+        
         // Create sprites and animations for each direction
         for (const dir of directions) {
-          // Create sprite for this direction
+          // Create sprite for this direction with colorized texture only
           this.sprites[layerName][dir] = this.add.sprite(
             positions[dir].x,
             positions[dir].y,
             colorizedKey
           );
           this.sprites[layerName][dir].setOrigin(0.5, 0.5);
-          this.sprites[layerName][dir].setScale(3); // Make sprites larger
+          this.sprites[layerName][dir].setScale(Math.min(3, this.sys.game.config.width as number / 320)); // Responsive sprite scale
 
           // Create animation
           this.anims.create({
@@ -348,17 +358,23 @@ class FourDirectionScene extends Phaser.Scene {
 const FourDirectionView: React.FC<FourDirectionViewProps> = ({ layers, darkMode = false }) => {
   const gameRef = useRef<Phaser.Game | null>(null);
   const sceneRef = useRef<FourDirectionScene | null>(null);
+  const containerRef = useRef<HTMLDivElement>(null);
   const [isLoading, setIsLoading] = useState(true);
 
   useEffect(() => {
-    if (!gameRef.current) {
+    if (!gameRef.current && containerRef.current) {
+      // Get container dimensions for responsive sizing
+      const containerRect = containerRef.current.getBoundingClientRect();
+      const gameWidth = Math.min(960, containerRect.width * 0.95); // Max 960 or container width
+      const gameHeight = Math.min(280, containerRect.height * 0.8); // Max 280 or container height
+      
       const config: Phaser.Types.Core.GameConfig = {
         type: Phaser.AUTO,
         scale: {
           mode: Phaser.Scale.FIT,
           autoCenter: Phaser.Scale.CENTER_BOTH,
-          width: 960,
-          height: 280,  // Increased height to accommodate larger frames
+          width: gameWidth,
+          height: gameHeight,
         },
         parent: 'four-direction-container',
         scene: class extends FourDirectionScene {
@@ -387,7 +403,7 @@ const FourDirectionView: React.FC<FourDirectionViewProps> = ({ layers, darkMode 
   }, [layers, darkMode]);
 
   return (
-    <div className="relative w-full h-full flex items-center justify-center rounded-lg overflow-hidden">
+    <div ref={containerRef} className="relative w-full h-full flex items-center justify-center rounded-lg overflow-hidden">
       <div id="four-direction-container" className="w-full h-full flex items-center justify-center" />
       {isLoading && (
         <div className="absolute inset-0 flex items-center justify-center bg-gray-800/75">

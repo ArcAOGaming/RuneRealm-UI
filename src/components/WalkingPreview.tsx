@@ -49,18 +49,25 @@ class WalkingScene extends Phaser.Scene {
   }
 
   create() {
+    // Get dynamic game dimensions
+    const gameWidth = this.sys.game.config.width as number;
+    const gameHeight = this.sys.game.config.height as number;
+    const centerX = gameWidth / 2;
+    const centerY = gameHeight / 2;
+
     // Add map background
-    const map = this.add.image(240, 160, 'map');
+    const map = this.add.image(centerX, centerY, 'map');
     map.setOrigin(0.5);
     
-    // Calculate scales based on canvas size
-    this.mapScale = Math.min(480 / map.width, 320 / map.height);
-    this.spriteScale = this.mapScale * 0.6; // Scale character relative to map (25% smaller)
+    // Calculate scales to make map fill the entire canvas area
+    const baseMapScale = Math.min(gameWidth / map.width, gameHeight / map.height);
+    this.mapScale = baseMapScale * 1.1; // Fill 110% to eliminate all empty space
+    this.spriteScale = this.mapScale * 0.8; // Smaller character for better proportion
     
     map.setScale(this.mapScale);
 
     // Create character container in the center
-    this.character = this.add.container(240, 160);
+    this.character = this.add.container(centerX, centerY);
 
     // Create base sprite
     const baseSprite = this.add.sprite(0, 0, 'BASE');
@@ -96,31 +103,36 @@ class WalkingScene extends Phaser.Scene {
     let newDirection = this.currentDirection;
     let wasMoving = Object.values(this.sprites).some(sprite => sprite.anims.isPlaying);
 
+    // Dynamic movement speed based on scale
+    const dynamicSpeed = this.speed * this.mapScale;
+
     if (this.cursors.left.isDown || this.touchControls.left) {
-      this.character.x -= this.speed;
+      this.character.x -= dynamicSpeed;
       newDirection = 'left';
       isMoving = true;
     }
     else if (this.cursors.right.isDown || this.touchControls.right) {
-      this.character.x += this.speed;
+      this.character.x += dynamicSpeed;
       newDirection = 'right';
       isMoving = true;
     }
     else if (this.cursors.up.isDown || this.touchControls.up) {
-      this.character.y -= this.speed;
+      this.character.y -= dynamicSpeed;
       newDirection = 'up';
       isMoving = true;
     }
     else if (this.cursors.down.isDown || this.touchControls.down) {
-      this.character.y += this.speed;
+      this.character.y += dynamicSpeed;
       newDirection = 'down';
       isMoving = true;
     }
 
-    // Calculate bounds based on map scale
-    const margin = 24 * this.mapScale;
-    const maxX = 480 - margin;
-    const maxY = 320 - (margin * 1.5); // Reduce bottom boundary to keep character on map
+    // Calculate bounds based on dynamic game size and map scale
+    const gameWidth = this.sys.game.config.width as number;
+    const gameHeight = this.sys.game.config.height as number;
+    const margin = 30 * this.mapScale; // Smaller margin since map is larger
+    const maxX = gameWidth - margin;
+    const maxY = gameHeight - margin;
 
     // Keep character within bounds
     this.character.x = Phaser.Math.Clamp(this.character.x, margin, maxX);
@@ -328,16 +340,26 @@ const WalkingPreview: React.FC<WalkingPreviewProps> = ({ layers }) => {
   const gameRef = useRef<Phaser.Game | null>(null);
   const sceneRef = useRef<WalkingScene | null>(null);
   const pendingLayersRef = useRef(layers);
+  const containerRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
-    // Create game instance
+    // Get container dimensions for responsive sizing
+    const container = containerRef.current;
+    if (!container) return;
+
+    const containerRect = container.getBoundingClientRect();
+    // Make canvas fill the entire available space
+    const gameWidth = Math.max(800, containerRect.width);
+    const gameHeight = Math.max(600, containerRect.height);
+
+    // Create game instance with responsive sizing
     const config: Phaser.Types.Core.GameConfig = {
       type: Phaser.AUTO,
       scale: {
-        mode: Phaser.Scale.FIT,
+        mode: Phaser.Scale.RESIZE,
         autoCenter: Phaser.Scale.CENTER_BOTH,
-        width: 480,
-        height: 320,
+        width: gameWidth,
+        height: gameHeight,
         parent: 'walking-preview-container',
       },
       transparent: true,
@@ -399,26 +421,26 @@ const WalkingPreview: React.FC<WalkingPreviewProps> = ({ layers }) => {
   };
 
   return (
-    <div className="relative w-full h-full flex items-center justify-center">
+    <div className="relative w-full h-full flex items-center justify-center" ref={containerRef}>
       <div 
         id="walking-preview-container" 
-        className="relative w-full h-full flex items-center justify-center bg-black/5 rounded-xl overflow-hidden"
+        className="relative w-full h-full bg-black/5 rounded-xl overflow-hidden"
         style={{ 
-          aspectRatio: '3/2',
           width: '100%',
-          maxHeight: '100%',
+          height: '100%',
+          minHeight: '500px',
           imageRendering: 'pixelated'
         }}
       >
-        {/* Touch controls */}
-        <div className="absolute bottom-6 right-6 grid grid-cols-3 gap-1.5 w-24">
+        {/* Touch controls - Larger and more prominent */}
+        <div className="absolute bottom-8 right-8 grid grid-cols-3 gap-2 w-32 z-10">
           {/* Up button */}
           <div className="col-start-2">
             <button
               onMouseDown={() => handleTouchStart('up')}
               onMouseUp={() => handleTouchEnd('up')}
-              className="p-2 rounded-lg bg-gray-200 hover:bg-gray-300 active:bg-gray-400 transition-colors">
-              ▲
+              className="w-10 h-10 rounded-lg bg-white/80 hover:bg-white/90 active:bg-white transition-all shadow-lg flex items-center justify-center text-lg font-bold text-gray-800">
+              <span style={{ transform: 'translateY(-1px)' }}>▲</span>
             </button>
           </div>
 
@@ -427,8 +449,8 @@ const WalkingPreview: React.FC<WalkingPreviewProps> = ({ layers }) => {
             <button
               onMouseDown={() => handleTouchStart('left')}
               onMouseUp={() => handleTouchEnd('left')}
-              className="p-2 rounded-lg bg-gray-200 hover:bg-gray-300 active:bg-gray-400 transition-colors">
-              ◄
+              className="w-10 h-10 rounded-lg bg-white/80 hover:bg-white/90 active:bg-white transition-all shadow-lg flex items-center justify-center text-lg font-bold text-gray-800">
+              <span style={{ transform: 'translateX(-1px)' }}>◀</span>
             </button>
           </div>
 
@@ -437,8 +459,8 @@ const WalkingPreview: React.FC<WalkingPreviewProps> = ({ layers }) => {
             <button
               onMouseDown={() => handleTouchStart('down')}
               onMouseUp={() => handleTouchEnd('down')}
-              className="p-2 rounded-lg bg-gray-200 hover:bg-gray-300 active:bg-gray-400 transition-colors">
-              ▼
+              className="w-10 h-10 rounded-lg bg-white/80 hover:bg-white/90 active:bg-white transition-all shadow-lg flex items-center justify-center text-lg font-bold text-gray-800">
+              <span style={{ transform: 'translateY(1px)' }}>▼</span>
             </button>
           </div>
 
@@ -447,10 +469,15 @@ const WalkingPreview: React.FC<WalkingPreviewProps> = ({ layers }) => {
             <button
               onMouseDown={() => handleTouchStart('right')}
               onMouseUp={() => handleTouchEnd('right')}
-              className="p-2 rounded-lg bg-gray-200 hover:bg-gray-300 active:bg-gray-400 transition-colors">
-              ►
+              className="w-10 h-10 rounded-lg bg-white/80 hover:bg-white/90 active:bg-white transition-all shadow-lg flex items-center justify-center text-lg font-bold text-gray-800">
+              <span style={{ transform: 'translateX(1px)' }}>▶</span>
             </button>
           </div>
+        </div>
+
+        {/* Instruction text */}
+        <div className="absolute top-4 left-4 bg-black/70 text-white px-3 py-2 rounded-lg text-sm font-medium backdrop-blur-sm">
+          Use arrow keys or buttons to move your character
         </div>
       </div>
     </div>

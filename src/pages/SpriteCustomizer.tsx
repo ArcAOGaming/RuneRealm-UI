@@ -12,7 +12,10 @@ import { TokenOption, purchaseAccess } from '../utils/aoHelpers';
 import Confetti from 'react-confetti';
 import Header from '../components/Header';
 import Footer from '../components/Footer';
-import { ArweaveWallet } from '../types/arweave';
+import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
+import { faShuffle, faRotateLeft, faUpload, faDoorOpen } from '@fortawesome/free-solid-svg-icons';
+import { useNavigate } from 'react-router-dom';
+import FourDirectionView from '../components/FourDirectionView';
 
 interface LayerState {
   style: string;
@@ -27,6 +30,40 @@ interface SpriteCustomizerProps {
   onEnter?: () => void;
   darkMode?: boolean;
 }
+
+const UploadSuccessModal = ({ open, onClose, darkMode }: { open: boolean; onClose: () => void; darkMode: boolean }) => {
+  const navigate = useNavigate();
+  if (!open) return null;
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm">
+      <div className={`w-full max-w-xs sm:max-w-sm p-6 rounded-2xl shadow-2xl flex flex-col items-center gap-4
+        ${darkMode ? 'bg-gradient-to-br from-[#3B2412] via-[#5A3A1B] to-[#2A1912] border border-[#F4860A]/40 text-white' : 'bg-white border border-orange-200/40 text-gray-800'}`}
+      >
+        <div className="flex items-center justify-center w-14 h-14 rounded-full bg-green-500/20 mb-2">
+          <svg className="w-8 h-8 text-green-500" fill="none" stroke="currentColor" strokeWidth={2.5} viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" /></svg>
+        </div>
+        <div className="text-lg font-semibold text-center">Sprite uploaded successfully!</div>
+        <div className="flex flex-col gap-2 w-full mt-2">
+          <button
+            onClick={() => navigate('/reality')}
+            className={`w-full py-2 rounded-xl font-bold transition-all duration-200
+              ${darkMode ? 'bg-gradient-to-r from-amber-400 to-orange-500 text-white hover:brightness-110' : 'bg-gradient-to-r from-amber-400 to-orange-500 text-white hover:brightness-110'}`}
+          >
+            Play Now
+          </button>
+          <button
+            onClick={onClose}
+            className={`w-full py-2 rounded-xl font-bold border mt-1 transition-all duration-200
+              ${darkMode ? 'border-[#F4860A]/40 text-white hover:bg-[#5A3A1B]/40' : 'border-orange-200/40 text-orange-700 hover:bg-orange-50'}`}
+          >
+            Edit Again
+          </button>
+        </div>
+        <button onClick={onClose} className="absolute top-2 right-2 text-xl opacity-60 hover:opacity-100">×</button>
+      </div>
+    </div>
+  );
+};
 
 const SpriteCustomizer: React.FC<SpriteCustomizerProps> = ({ onEnter }) => {
   const [layers, setLayers] = useState<Layers>({});
@@ -48,6 +85,8 @@ const SpriteCustomizer: React.FC<SpriteCustomizerProps> = ({ onEnter }) => {
   const [showWarp, setShowWarp] = useState(false);
   const [showPreview, setShowPreview] = useState(false);
   const [showCustomizer, setShowCustomizer] = useState(false);
+  const [showUploadSuccess, setShowUploadSuccess] = useState(false);
+  const [previewMode, setPreviewMode] = useState<'walking' | 'four-direction'>('walking');
 
   const theme = currentTheme(darkMode);
 
@@ -67,31 +106,20 @@ const SpriteCustomizer: React.FC<SpriteCustomizerProps> = ({ onEnter }) => {
     const init = async () => {
       try {
         setLoading(true);
-        
         if (wallet && walletStatus) {
-          console.log('SpriteCustomizer: Wallet connected');
           setSigner(new ArconnectSigner(window.arweaveWallet));
-          
-          // Set contract info if available in walletStatus
-          if (walletStatus.contractIcon) {
-            setContractIcon(walletStatus.contractIcon);
-          }
-          if (walletStatus.contractName) {
-            setContractName(walletStatus.contractName);
-          }
-          
+          if (walletStatus.contractIcon) setContractIcon(walletStatus.contractIcon);
+          if (walletStatus.contractName) setContractName(walletStatus.contractName);
           if (walletStatus.currentSkin) {
-            console.log('SpriteCustomizer: Current skin found:', walletStatus.currentSkin);
             setCurrentSkin(walletStatus.currentSkin);
-            
             if (walletStatus.currentSkin !== "none") {
               setShowPreview(true);
               setShowCustomizer(true);
-              if (onEnter) {
-                setShowWarp(true);
-              }
+              if (onEnter) setShowWarp(true);
             }
           }
+          setLoading(false);
+          return;
         }
       } catch (error) {
         console.error('SpriteCustomizer: Error initializing wallet:', error);
@@ -275,6 +303,7 @@ const SpriteCustomizer: React.FC<SpriteCustomizerProps> = ({ onEnter }) => {
   };
 
   const handleExportComplete = () => {
+    setShowUploadSuccess(true);
     if (onEnter) {
       setShowWarp(true);
     }
@@ -284,91 +313,136 @@ const SpriteCustomizer: React.FC<SpriteCustomizerProps> = ({ onEnter }) => {
   if (error) return <div className={`min-h-screen flex items-center justify-center ${theme.bg} ${theme.text}`}>Error: {error}</div>;
 
   return (
-    <div className={`min-h-screen flex flex-col ${theme.bg} ${theme.text}`}>
+    <div className={`min-h-screen flex flex-col ${darkMode ? 'bg-gradient-to-br from-[#3B2412] via-[#5A3A1B] to-[#2A1912]' : theme.bg} ${theme.text}`}>
       {showCelebration && (
-        <Confetti
-          width={windowSize.width}
-          height={windowSize.height}
-          recycle={false}
-          numberOfPieces={500}
-          onConfettiComplete={() => setShowCelebration(false)}
-        />
+        <div className="fixed inset-0 z-50 pointer-events-none">
+          <Confetti
+            width={windowSize.width}
+            height={windowSize.height}
+            recycle={false}
+            numberOfPieces={500}
+            gravity={0.3}
+            colors={['#F4860A', '#814E33', '#FCF5D8', '#FFD700', '#FFA500']}
+          />
+        </div>
       )}
       {/* Main container with gradient background */}
-      <div className={`h-screen flex flex-col ${theme.bg}`}>
+      <div className={`h-screen flex flex-col ${darkMode ? 'bg-gradient-to-br from-[#3B2412] via-[#5A3A1B] to-[#2A1912]' : theme.bg}`}>
         <Header
           theme={theme}
           darkMode={darkMode}
           showBackButton={!onEnter}
           onDarkModeToggle={handleDarkModeToggle}
         />
+        <UploadSuccessModal open={showUploadSuccess} onClose={() => setShowUploadSuccess(false)} darkMode={darkMode} />
         {/* Main content area */}
-        <div className={`flex-1 w-full ${theme.container} ${theme.text} shadow-2xl ${theme.border} flex flex-col overflow-hidden`}>
+        <div className={`flex-1 w-full ${darkMode ? 'bg-gradient-to-br from-[#3B2412] via-[#5A3A1B] to-[#2A1912] border-[#F4860A]/40' : 'bg-gradient-to-br from-amber-50/80 via-orange-50/60 to-amber-100/40 border-orange-200/30'} 
+          backdrop-blur-xl border shadow-2xl flex flex-col overflow-hidden`}>
           {/* Content area */}
-          <div className="flex-1 flex flex-col lg:flex-row gap-4 p-4 h-full overflow-hidden">
+          <div className="flex-1 flex flex-col xl:flex-row gap-4 p-4 h-full overflow-hidden">
             {/* Left column - Controls */}
-            <div className="w-full lg:w-1/3 p-2 overflow-y-auto">
+            <div className="w-full xl:w-1/4 p-2 overflow-y-auto">
               {/* Layer Selection */}
-              <div className={`p-4 rounded-xl ${theme.container} border ${theme.border} ${theme.cardBg} ${theme.text}`}>
-                <h2 className={`text-lg font-bold mb-4 ${theme.text}`}>Layer Selection</h2>
+              <div className={`p-4 rounded-2xl ${darkMode ? 'bg-gradient-to-br from-[#5A3A1B]/80 to-[#3B2412]/60 border-[#F4860A]/40 shadow-[0_4px_24px_#3B2412cc]' : 'bg-gradient-to-br from-white/40 to-white/20 border-orange-200/40 shadow-xl'} 
+                backdrop-blur-xl border`}>
+                <h2 className={`text-lg font-bold mb-4 ${darkMode ? 'text-white' : 'text-gray-800'}`}>Character Customization</h2>
                 <LayerSelector
                   layers={layers}
                   availableStyles={availableStyles}
                   onStyleChange={handleStyleChange}
                   onColorChange={handleColorChange}
+                  darkMode={darkMode}
                 />
               </div>
             </div>
 
             {/* Right column - Preview */}
-            <div className="w-full lg:w-2/3 p-2 flex flex-col gap-4 overflow-y-auto">
-              {/* Four Direction Preview */}
-              <div className={`p-4 rounded-xl ${theme.container} border ${theme.border} ${theme.cardBg} ${theme.text}`}>
-                <h2 className={`text-lg font-bold mb-4 ${theme.text}`}>Character Preview</h2>
-                {/* Temporarily hidden 4-way preview - DO NOT REMOVE */}
-                {/* <div className="h-[45%] flex items-center justify-center">
-                  <FourDirectionView
-                    layers={layers}
-                    darkMode={darkMode}
-                  />
-                </div> */}
-                <div className="h-[65%] flex items-center justify-center">
-                  <WalkingPreview
-                    layers={layers}
-                    darkMode={darkMode}
-                  />
+            <div className="w-full xl:w-3/4 p-2 flex flex-col">
+              {/* Character Preview - Much Larger */}
+              <div className={`flex-1 p-2 rounded-2xl ${darkMode ? 'bg-gradient-to-br from-[#5A3A1B]/80 to-[#3B2412]/60 border-[#F4860A]/40 shadow-[0_4px_24px_#3B2412cc]' : 'bg-gradient-to-br from-white/60 to-white/30 border-orange-200/40 shadow-xl'} 
+                backdrop-blur-xl border flex flex-col min-h-[500px]`}>
+                <div className="flex items-center justify-between mb-2 px-2">
+                  <h2 className={`text-xl font-bold ${darkMode ? 'text-white' : 'text-gray-800'}`}>Character Preview</h2>
+                  
+                  {/* Preview Mode Toggle */}
+                  <div className={`flex rounded-lg overflow-hidden ${darkMode ? 'bg-gray-800' : 'bg-gray-200'}`}>
+                    <button
+                      onClick={() => setPreviewMode('walking')}
+                      className={`px-3 py-1 text-sm font-medium transition-colors ${
+                        previewMode === 'walking'
+                          ? darkMode ? 'bg-orange-600 text-white' : 'bg-orange-500 text-white'
+                          : darkMode ? 'text-gray-300 hover:bg-gray-700' : 'text-gray-600 hover:bg-gray-300'
+                      }`}
+                    >
+                      Walking
+                    </button>
+                    <button
+                      onClick={() => setPreviewMode('four-direction')}
+                      className={`px-3 py-1 text-sm font-medium transition-colors ${
+                        previewMode === 'four-direction'
+                          ? darkMode ? 'bg-orange-600 text-white' : 'bg-orange-500 text-white'
+                          : darkMode ? 'text-gray-300 hover:bg-gray-700' : 'text-gray-600 hover:bg-gray-300'
+                      }`}
+                    >
+                      4-Direction
+                    </button>
+                  </div>
+                </div>
+                
+                {/* Preview Content */}
+                <div className="flex-1 w-full h-full bg-white/40 rounded-xl overflow-hidden">
+                  {previewMode === 'walking' ? (
+                    <WalkingPreview
+                      layers={layers}
+                      darkMode={darkMode}
+                    />
+                  ) : (
+                    <div className="w-full h-full flex items-center justify-center p-4">
+                      <div className="w-full max-w-4xl" style={{ aspectRatio: '960/280' }}>
+                        <FourDirectionView
+                          layers={layers}
+                          darkMode={darkMode}
+                        />
+                      </div>
+                    </div>
+                  )}
                 </div>
               </div>
             </div>
           </div>
 
           {/* Bottom Buttons */}
-          <div className={`flex gap-3 p-4 flex-shrink-0 ${theme.container} border-t ${theme.border} ${theme.bg}`}>
+          <div className={`flex gap-3 p-4 flex-shrink-0 ${darkMode ? 'bg-gradient-to-r from-[#5A3A1B]/80 to-[#3B2412]/60 border-t border-[#F4860A]/40' : 'bg-gradient-to-r from-white/30 to-white/20 border-t border-orange-200/30'} 
+            backdrop-blur-xl`}>
             {onEnter && (
               <button
                 onClick={handleSkipClick}
-                className={`flex-1 py-2 px-4 rounded-xl text-sm font-medium transition-all duration-300 transform hover:scale-105 
-                  ${theme.buttonBg} ${theme.buttonHover} ${theme.text} 
-                  backdrop-blur-md shadow-lg hover:shadow-xl border ${theme.border}`}
+                className={`flex-1 py-2 px-4 rounded-xl text-sm font-medium transition-all duration-300 
+                  transform hover:scale-105 
+                  ${darkMode ? 'bg-gradient-to-r from-gray-700 via-gray-800 to-gray-900 text-white border-gray-600' : 'bg-gradient-to-r from-amber-400/80 to-orange-500/80 text-white border-orange-200/40'}
+                  backdrop-blur-md shadow-lg hover:shadow-xl border flex items-center justify-center gap-2 font-bold`}
               >
+                <FontAwesomeIcon icon={faDoorOpen} className="w-4 h-4" />
                 No Thanks, Just Log Me In
               </button>
             )}
             <button
-              onClick={handleReset}
-              className={`flex-1 py-2 px-4 rounded-xl text-sm font-medium transition-all duration-300 transform hover:scale-105 
-                ${theme.buttonBg} ${theme.buttonHover} ${theme.text} 
-                backdrop-blur-md shadow-lg hover:shadow-xl border ${theme.border}`}
+              onClick={handleRandomize}
+              className={`flex-1 py-2 px-4 rounded-xl text-sm font-medium transition-all duration-300 
+                font-bold shadow-md flex items-center justify-center gap-2 hover:brightness-110 hover:shadow-lg
+                ${darkMode ? 'bg-gradient-to-r from-purple-900 via-pink-900 to-pink-800 text-white' : 'bg-gradient-to-r from-purple-500 via-pink-500 to-pink-400 text-white'}`}
             >
-              Reset All Layers
+              <FontAwesomeIcon icon={faShuffle} className="w-4 h-4" />
+              Random
             </button>
             <button
-              onClick={handleRandomize}
-              className={`flex-1 py-2 px-4 rounded-xl text-sm font-medium transition-all duration-300 transform hover:scale-105 
-                ${theme.buttonBg} ${theme.buttonHover} ${theme.text} 
-                backdrop-blur-md shadow-lg hover:shadow-xl border ${theme.border}`}
+              onClick={handleReset}
+              className={`flex-1 py-2 px-4 rounded-xl text-sm font-medium transition-all duration-300 
+                font-bold flex items-center justify-center gap-2 shadow-sm hover:shadow-md
+                ${darkMode ? 'border-2 border-orange-600 text-orange-300 bg-gray-900 hover:bg-orange-950' : 'border-2 border-orange-400 text-orange-600 bg-white hover:bg-orange-50'}`}
             >
-              Random Layers
+              <FontAwesomeIcon icon={faRotateLeft} className="w-4 h-4" />
+              Reset
             </button>
             <ExportAndUploadButton
               layers={layers} 
@@ -381,9 +455,10 @@ const SpriteCustomizer: React.FC<SpriteCustomizerProps> = ({ onEnter }) => {
               onConnect={handleConnectWallet}
               onNeedUnlock={() => setIsPurchaseModalOpen(true)}
               onUploadComplete={handleExportComplete}
-              className={`flex-1 py-2 px-4 rounded-xl text-sm font-medium transition-all duration-300 transform hover:scale-105 
-                ${theme.buttonBg} ${theme.buttonHover} ${theme.text} 
-                backdrop-blur-md shadow-lg hover:shadow-xl border ${theme.border}`}
+              className={`flex-1 py-2 px-4 rounded-xl text-sm font-medium transition-all duration-300 
+                font-bold flex items-center justify-center gap-2 shadow-sm hover:shadow-md
+                ${darkMode ? 'border-2 border-blue-600 text-blue-300 bg-gray-900 hover:bg-blue-950' : 'border-2 border-blue-400 text-blue-600 bg-white hover:bg-blue-50'}`}
+              icon={<FontAwesomeIcon icon={faUpload} className="w-4 h-4" />}
             />
           </div>
 
@@ -395,30 +470,15 @@ const SpriteCustomizer: React.FC<SpriteCustomizerProps> = ({ onEnter }) => {
             <AdminRemoveUser />
           </div> */}
         </div>
-
-        {showCelebration && (
-          <div className="fixed inset-0 z-50 pointer-events-none">
-            <Confetti
-              width={windowSize.width}
-              height={windowSize.height}
-              recycle={false}
-              numberOfPieces={500}
-              gravity={0.3}
-              colors={['#F4860A', '#814E33', '#FCF5D8', '#FFD700', '#FFA500']}
-            />
-          </div>
-        )}
-
-        <PurchaseModal
-          isOpen={isPurchaseModalOpen}
-          onClose={() => setIsPurchaseModalOpen(false)}
-          onPurchase={handlePurchase}
-          contractIcon={contractIcon}
-          contractName={contractName}
-        />
-
-        <WarpTransition show={onEnter ? showWarp : false} onComplete={handleWarpComplete} />
       </div>
+      <PurchaseModal
+        isOpen={isPurchaseModalOpen}
+        onClose={() => setIsPurchaseModalOpen(false)}
+        onPurchase={handlePurchase}
+        contractIcon={contractIcon}
+        contractName={contractName}
+      />
+      <WarpTransition show={onEnter ? showWarp : false} onComplete={handleWarpComplete} />
     </div>
   );
 };

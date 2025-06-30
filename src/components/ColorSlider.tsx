@@ -1,3 +1,5 @@
+import React, { useState, useRef, useCallback } from 'react';
+
 const RAINBOW_COLORS = [
   // Reds
   '#FF0000', // Pure Red
@@ -88,6 +90,9 @@ interface ColorSliderProps {
 }
 
 const ColorSlider: React.FC<ColorSliderProps> = ({ layerName, color, onColorChange, darkMode }) => {
+  const [isDragging, setIsDragging] = useState(false);
+  const sliderRef = useRef<HTMLDivElement>(null);
+
   // Find the closest color index
   const findClosestColorIndex = (targetColor: string): number => {
     const getRGB = (hex: string) => ({
@@ -119,15 +124,59 @@ const ColorSlider: React.FC<ColorSliderProps> = ({ layerName, color, onColorChan
 
   const currentIndex = findClosestColorIndex(color);
 
-  const handleSliderClick = (e: React.MouseEvent<HTMLDivElement>) => {
-    const rect = e.currentTarget.getBoundingClientRect();
-    const x = e.clientX - rect.left;
+  const getColorFromPosition = useCallback((clientX: number) => {
+    if (!sliderRef.current) return color;
+    
+    const rect = sliderRef.current.getBoundingClientRect();
+    const x = Math.max(0, Math.min(clientX - rect.left, rect.width));
     const percentage = x / rect.width;
     const index = Math.min(
       Math.max(Math.floor(percentage * RAINBOW_COLORS.length), 0),
       RAINBOW_COLORS.length - 1
     );
-    onColorChange(RAINBOW_COLORS[index]);
+    return RAINBOW_COLORS[index];
+  }, [color]);
+
+  const handleMouseDown = (e: React.MouseEvent<HTMLDivElement>) => {
+    setIsDragging(true);
+    const newColor = getColorFromPosition(e.clientX);
+    onColorChange(newColor);
+  };
+
+  const handleMouseMove = useCallback((e: MouseEvent) => {
+    if (isDragging) {
+      const newColor = getColorFromPosition(e.clientX);
+      onColorChange(newColor);
+    }
+  }, [isDragging, getColorFromPosition, onColorChange]);
+
+  const handleMouseUp = useCallback(() => {
+    setIsDragging(false);
+  }, []);
+
+  const handleTouchStart = (e: React.TouchEvent<HTMLDivElement>) => {
+    setIsDragging(true);
+    const touch = e.touches[0];
+    const newColor = getColorFromPosition(touch.clientX);
+    onColorChange(newColor);
+  };
+
+  const handleTouchMove = useCallback((e: TouchEvent) => {
+    if (isDragging) {
+      e.preventDefault(); // Prevent scrolling
+      const touch = e.touches[0];
+      const newColor = getColorFromPosition(touch.clientX);
+      onColorChange(newColor);
+    }
+  }, [isDragging, getColorFromPosition, onColorChange]);
+
+  const handleTouchEnd = useCallback(() => {
+    setIsDragging(false);
+  }, []);
+
+  const handleSliderClick = (e: React.MouseEvent<HTMLDivElement>) => {
+    const newColor = getColorFromPosition(e.clientX);
+    onColorChange(newColor);
   };
 
   const handleArrowClick = (direction: 'left' | 'right') => {
@@ -140,18 +189,35 @@ const ColorSlider: React.FC<ColorSliderProps> = ({ layerName, color, onColorChan
     onColorChange(RAINBOW_COLORS[newIndex]);
   };
 
+  // Add global mouse and touch event listeners
+  React.useEffect(() => {
+    if (isDragging) {
+      document.addEventListener('mousemove', handleMouseMove);
+      document.addEventListener('mouseup', handleMouseUp);
+      document.addEventListener('touchmove', handleTouchMove, { passive: false });
+      document.addEventListener('touchend', handleTouchEnd);
+      
+      return () => {
+        document.removeEventListener('mousemove', handleMouseMove);
+        document.removeEventListener('mouseup', handleMouseUp);
+        document.removeEventListener('touchmove', handleTouchMove);
+        document.removeEventListener('touchend', handleTouchEnd);
+      };
+    }
+  }, [isDragging, handleMouseMove, handleMouseUp, handleTouchMove, handleTouchEnd]);
+
   return (
-    <div className="flex items-center space-x-2">
+    <div className="flex items-center space-x-3">
       {/* Left Arrow */}
       <button
         onClick={() => handleArrowClick('left')}
-        className={`w-9 h-9 flex items-center justify-center rounded-lg 
-          ${darkMode ? 'bg-gray-800 hover:bg-gray-700' : 'bg-gray-200 hover:bg-gray-300'} 
-          transition-colors duration-200`}
-        style={{ marginTop: '1px' }}
+        className={`w-8 h-8 flex items-center justify-center rounded-lg 
+          ${darkMode ? 'bg-[#3B2412]/80 border-[#F4860A]/40 text-white' : 'bg-white/60 border-orange-200/40 text-gray-700'} 
+          hover:bg-white/80 hover:border-orange-300/50 transition-all duration-200
+          shadow-sm hover:shadow-md`}
       >
-        <svg className="w-6 h-6" fill="none" stroke="black" viewBox="0 0 24 24">
-          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M15 19l-7-7 7-7" />
+        <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M15 19l-7-7 7-7" />
         </svg>
       </button>
 
@@ -159,27 +225,40 @@ const ColorSlider: React.FC<ColorSliderProps> = ({ layerName, color, onColorChan
         <style>
           {`
             .color-track {
-              height: 16px;
-              border-radius: 8px;
+              height: 20px;
+              border-radius: 10px;
               background: linear-gradient(to right, ${RAINBOW_COLORS.join(', ')});
               cursor: pointer;
               position: relative;
+              box-shadow: inset 0 2px 4px rgba(0,0,0,0.1);
+              border: 1px solid rgba(255,255,255,0.3);
+              user-select: none;
+            }
+            .color-track:hover {
+              box-shadow: inset 0 2px 4px rgba(0,0,0,0.15);
             }
           `}
         </style>
-        <div className="color-track w-full mt-4 mb-4" onClick={handleSliderClick}>
+        <div 
+          ref={sliderRef}
+          className="color-track w-full" 
+          onClick={handleSliderClick}
+          onMouseDown={handleMouseDown}
+          onTouchStart={handleTouchStart}
+          style={{ cursor: isDragging ? 'grabbing' : 'grab' }}
+        >
           <div 
             className="absolute top-1/2 -translate-y-1/2 pointer-events-none"
             style={{
               left: `${(currentIndex / (RAINBOW_COLORS.length - 1)) * 100}%`,
-              width: '24px',
-              height: '24px',
-              background: '#000000',
-              border: '2px solid #ffffff',
+              width: '28px',
+              height: '28px',
+              background: '#ffffff',
+              border: '3px solid #f97316',
               borderRadius: '50%',
-              boxShadow: '0 2px 4px rgba(0,0,0,0.2)',
+              boxShadow: '0 4px 8px rgba(0,0,0,0.2), 0 0 0 2px rgba(255,255,255,0.8)',
               transform: 'translate(-50%, -50%)',
-              transition: 'left 0.2s ease-out'
+              transition: isDragging ? 'none' : 'left 0.1s ease-out'
             }}
           />
         </div>
@@ -188,21 +267,23 @@ const ColorSlider: React.FC<ColorSliderProps> = ({ layerName, color, onColorChan
       {/* Right Arrow */}
       <button
         onClick={() => handleArrowClick('right')}
-        className={`w-9 h-9 flex items-center justify-center rounded-lg 
-          ${darkMode ? 'bg-gray-800 hover:bg-gray-700' : 'bg-gray-200 hover:bg-gray-300'} 
-          transition-colors duration-200`}
-        style={{ marginTop: '1px' }}
+        className={`w-8 h-8 flex items-center justify-center rounded-lg 
+          ${darkMode ? 'bg-[#3B2412]/80 border-[#F4860A]/40 text-white' : 'bg-white/60 border-orange-200/40 text-gray-700'} 
+          hover:bg-white/80 hover:border-orange-300/50 transition-all duration-200
+          shadow-sm hover:shadow-md`}
       >
-        <svg className="w-6 h-6" fill="none" stroke="black" viewBox="0 0 24 24">
-          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M9 5l7 7-7 7" />
+        <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M9 5l7 7-7 7" />
         </svg>
       </button>
 
       <div 
-        className={`w-6 h-6 rounded-full border-2 flex-shrink-0 ${
-          darkMode ? 'border-gray-600' : 'border-gray-300'
-        }`}
-        style={{ backgroundColor: color }}
+        className="w-8 h-8 rounded-full border-3 flex-shrink-0 shadow-lg"
+        style={{ 
+          backgroundColor: color,
+          border: '2px solid #f97316',
+          boxShadow: '0 2px 8px rgba(0,0,0,0.15), inset 0 1px 2px rgba(255,255,255,0.3)'
+        }}
       />
     </div>
   );
