@@ -1,5 +1,7 @@
 -- Battle Manager
 -- 3ZN5im7LNLjr8cMTXO2buhTPOfw6zz00CZqNyMWeJvs
+-- aos 3ZN5im7LNLjr8cMTXO2buhTPOfw6zz00CZqNyMWeJvs --cu-url https://ur-cu.randao.net --mu-url https://ur-mu.randao.net --wallet wallet.json
+
 json = require("json")
 -- require("globals")
 -- require("attacklogic")

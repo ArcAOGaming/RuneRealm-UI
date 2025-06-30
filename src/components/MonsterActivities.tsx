@@ -59,35 +59,8 @@ const MonsterActivities: React.FC<MonsterActivitiesProps> = ({
   // Use monster from props if provided, otherwise from context
   const monster = monsterProp || contextMonster;
   
-  // Default activities configuration if not provided through props TODO remove this and not need a default 
-  const defaultActivities: Activities = {
-    feed: {
-      cost: { token: "AwaDlHVUxx32D0415OPFIzI6jjF2S9OhR7SYnHtV52M", amount: 1 },
-      energyGain: 10,
-      duration: 0
-    },
-    play: {
-      cost: { token: "AwaDlHVUxx32D0415OPFIzI6jjF2S9OhR7SYnHtV52M", amount: 2 },
-      energyCost: 5,
-      happinessGain: 15,
-      duration: 300000 // 5 minutes
-    },
-    battle: {
-      cost: { token: "qL8e7aAj33j-x-33YPz2azk0YVA6cmB0C8o_wR2m20U", amount: 1 },
-      energyCost: 10,
-      happinessCost: 5,
-      duration: 600000 // 10 minutes
-    },
-    mission: {
-      cost: { token: "qL8e7aAj33j-x-33YPz2azk0YVA6cmB0C8o_wR2m20U", amount: 2 },
-      energyCost: 15,
-      happinessCost: 10,
-      duration: 3600000 // 1 hour
-    }
-  };
-  
-  // Use activities from props if provided, otherwise from default configuration
-  const activities = activitiesProp || defaultActivities;
+  // Use activities directly from props - must be provided
+  const activities = activitiesProp!;
   
   const [isFeeding, setIsFeeding] = useState(false);
   const [isPlaying, setIsPlaying] = useState(false);

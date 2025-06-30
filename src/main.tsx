@@ -20,14 +20,14 @@ import { FactionDetailPage } from "./pages/FactionDetailPage";
 import { handleReferralLink } from "./utils/aoHelpers";
 import { BotBattlePage } from "./pages/battle/BotBattlePage";
 import { RankedBattlePage } from "./pages/battle/RankedBattlePage";
-import { ActiveBattlePage } from "./pages/ActiveBattlePage";
 import Inventory from "./components/Inventory";
 import { MonsterProvider } from "./contexts/MonsterContext";
 import DebugView from "./pages/admin/DebugView";
 import StartPage from "./pages/StartPage";
-//import BattlePage from "./pages/battle/BattlePage";
+import ActiveBattlePage from "./pages/battle/ActiveBattlePage";
 import Admin from "./pages/admin/Admin";
 import BattlePage from "./pages/battle/index";
+//import BattlePage from "./pages/battle/BattlePage";
 
 interface AppContentProps {
   wallet?: { address: string };
