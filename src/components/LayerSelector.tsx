@@ -63,6 +63,18 @@ const LayerSelector: React.FC<LayerSelectorProps> = ({
           const layer = layers[categoryName];
           const categoryStyles = availableStyles.find(cat => cat.name === categoryName)?.options || [];
           
+          // Safety check: if layer is undefined, return null or skip this category
+          if (!layer) {
+            console.warn(`Layer for ${categoryName} is undefined`);
+            return null;
+          }
+          
+          // Additional safety check for layer properties
+          if (!layer.style || !layer.color) {
+            console.warn(`Layer for ${categoryName} has missing properties:`, layer);
+            return null;
+          }
+          
           return (
             <div 
               key={categoryName} 
