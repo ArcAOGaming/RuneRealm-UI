@@ -4,6 +4,8 @@ import { message, createDataItemSigner } from '../config/aoConnection';
 import { AdminSkinChanger, DefaultAtlasTxID } from '../constants/Constants';
 import { useWallet } from '../contexts/WalletContext';
 import { SpriteColorizer } from '../utils/spriteColorizer';
+import { faLockOpen } from '@fortawesome/free-solid-svg-icons';
+import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
 
 interface ExportAndUploadButtonProps {
   layers: {
@@ -23,7 +25,10 @@ interface ExportAndUploadButtonProps {
   onUploadComplete?: () => void;
   onUploadStatusChange?: (status: string) => void;
   onError?: (error: string) => void;
+  icon?: React.ReactNode;
 }
+
+const unlockIcon = <FontAwesomeIcon icon={faLockOpen} className="w-5 h-5 mr-2 text-amber-400" />;
 
 const ExportAndUploadButton: React.FC<ExportAndUploadButtonProps> = ({
   layers,
@@ -37,7 +42,8 @@ const ExportAndUploadButton: React.FC<ExportAndUploadButtonProps> = ({
   onConnect,
   onUploadComplete,
   onUploadStatusChange,
-  onError
+  onError,
+  icon
 }) => {
   const [uploading, setUploading] = useState(false);
   const { wallet, walletStatus, connectWallet } = useWallet();
@@ -164,15 +170,14 @@ const ExportAndUploadButton: React.FC<ExportAndUploadButtonProps> = ({
         const turboClient = TurboFactory.authenticated({ signer });
         
         console.log('Starting Arweave upload...');
+        // Convert blob to buffer before upload
+        const buffer = Buffer.from(await blob.arrayBuffer());
         const { id } = await turboClient.uploadFile({
-          fileStreamFactory: () => blob.stream(),
+          fileStreamFactory: () => buffer,
           fileSizeFactory: () => blob.size,
           dataItemOpts: {
             tags: [
-              {
-                name: "Content-Type",
-                value: "image/png",
-              },
+              { name: "Content-Type", value: "image/png" },
             ],
           },
         });
@@ -264,6 +269,14 @@ const ExportAndUploadButton: React.FC<ExportAndUploadButtonProps> = ({
     return 'Upload Sprite';
   }, [uploading, signer, isUnlocked]);
 
+  // Spinner SVG
+  const spinner = (
+    <svg className={`animate-spin w-5 h-5 mr-2 ${darkMode ? 'text-amber-400' : 'text-blue-600'}`} fill="none" viewBox="0 0 24 24">
+      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v4a4 4 0 00-4 4H4z"></path>
+    </svg>
+  );
+
   const getButtonTitle = () => {
     if (!signer) return 'Click to connect your wallet';
     if (!isUnlocked) return 'Click to unlock sprite customization';
@@ -281,6 +294,7 @@ const ExportAndUploadButton: React.FC<ExportAndUploadButtonProps> = ({
           : 'bg-[#814E33]/20 hover:bg-[#814E33]/30 text-[#814E33]'
       } backdrop-blur-md shadow-lg hover:shadow-xl border ${darkMode ? 'border-[#F4860A]/30' : 'border-[#814E33]/20'}`}
     >
+      {uploading ? spinner : !isUnlocked ? unlockIcon : icon && <span className="mr-2 flex items-center">{icon}</span>}
       {buttonText}
     </button>
   );
