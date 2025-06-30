@@ -239,6 +239,7 @@ const SpriteCustomizer: React.FC<SpriteCustomizerProps> = ({ onEnter }) => {
       // Get non-empty options (exclude 'None' if it exists)
       const validOptions = category.options.filter(option => option !== 'None');
       
+      // Always initialize this category in the layers object
       if (validOptions.length > 0) {
         // 70% chance to add a layer
         if (Math.random() < 0.7) {
@@ -253,6 +254,12 @@ const SpriteCustomizer: React.FC<SpriteCustomizerProps> = ({ onEnter }) => {
             color: '#ffffff'
           };
         }
+      } else {
+        // If no valid options, always set to 'None'
+        newLayers[category.name] = {
+          style: 'None',
+          color: '#ffffff'
+        };
       }
     });
     
@@ -270,10 +277,19 @@ const SpriteCustomizer: React.FC<SpriteCustomizerProps> = ({ onEnter }) => {
         setLoading(true);
         // Wait for a small delay to ensure Phaser is ready
         await new Promise(resolve => setTimeout(resolve, 100));
-        setLayers(getRandomLayers(availableStyles));
+        
+        // Ensure availableStyles is ready and not empty
+        if (availableStyles && availableStyles.length > 0) {
+          setLayers(getRandomLayers(availableStyles));
+        } else {
+          // Fallback to initializeLayers if availableStyles is not ready
+          initializeLayers();
+        }
       } catch (error) {
         console.error('Error loading initial layers:', error);
         setError('Failed to load initial layers');
+        // Fallback to initializeLayers on error
+        initializeLayers();
       } finally {
         setLoading(false);
       }
@@ -309,7 +325,7 @@ const SpriteCustomizer: React.FC<SpriteCustomizerProps> = ({ onEnter }) => {
     }
   };
 
-  if (isLoading) return <div className={`min-h-screen flex items-center justify-center ${theme.bg} ${theme.text}`}>Loading assets...</div>;
+  if (isLoading || !layers || Object.keys(layers).length === 0) return <div className={`min-h-screen flex items-center justify-center ${theme.bg} ${theme.text}`}>Loading assets...</div>;
   if (error) return <div className={`min-h-screen flex items-center justify-center ${theme.bg} ${theme.text}`}>Error: {error}</div>;
 
   return (
