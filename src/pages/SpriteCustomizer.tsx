@@ -270,15 +270,7 @@ const SpriteCustomizer: React.FC<SpriteCustomizerProps> = ({ onEnter }) => {
     setLayers(getRandomLayers(availableStyles));
   };
 
-  // Handle preview mode change with character reset
-  const handlePreviewModeChange = (newMode: 'walking' | 'four-direction') => {
-    setPreviewMode(newMode);
-    
-    // Reset character when switching to four-direction view
-    if (newMode === 'four-direction') {
-      initializeLayers();
-    }
-  };
+
 
   useEffect(() => {
     // Initialize with random layers instead of empty ones
@@ -393,7 +385,7 @@ const SpriteCustomizer: React.FC<SpriteCustomizerProps> = ({ onEnter }) => {
                   {/* Preview Mode Toggle */}
                   <div className={`flex rounded-lg overflow-hidden ${darkMode ? 'bg-gray-800' : 'bg-gray-200'}`}>
                     <button
-                      onClick={() => handlePreviewModeChange('walking')}
+                      onClick={() => setPreviewMode('walking')}
                       className={`px-3 py-1 text-sm font-medium transition-colors ${
                         previewMode === 'walking'
                           ? darkMode ? 'bg-orange-600 text-white' : 'bg-orange-500 text-white'
@@ -403,7 +395,7 @@ const SpriteCustomizer: React.FC<SpriteCustomizerProps> = ({ onEnter }) => {
                       Walking
                     </button>
                     <button
-                      onClick={() => handlePreviewModeChange('four-direction')}
+                      onClick={() => setPreviewMode('four-direction')}
                       className={`px-3 py-1 text-sm font-medium transition-colors ${
                         previewMode === 'four-direction'
                           ? darkMode ? 'bg-orange-600 text-white' : 'bg-orange-500 text-white'
