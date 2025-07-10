@@ -87,6 +87,7 @@ const SpriteCustomizer: React.FC<SpriteCustomizerProps> = ({ onEnter }) => {
   const [showCustomizer, setShowCustomizer] = useState(false);
   const [showUploadSuccess, setShowUploadSuccess] = useState(false);
   const [previewMode, setPreviewMode] = useState<'walking' | 'four-direction'>('walking');
+  const [hasUserCustomized, setHasUserCustomized] = useState(false);
 
   const theme = currentTheme(darkMode);
 
@@ -157,6 +158,7 @@ const SpriteCustomizer: React.FC<SpriteCustomizerProps> = ({ onEnter }) => {
   };
 
   const handleStyleChange = (layerName: string, style: string) => {
+    setHasUserCustomized(true);
     setLayers(prev => ({
       ...prev,
       [layerName]: { ...prev[layerName], style }
@@ -164,6 +166,7 @@ const SpriteCustomizer: React.FC<SpriteCustomizerProps> = ({ onEnter }) => {
   };
 
   const handleColorChange = (layerName: string, color: string) => {
+    setHasUserCustomized(true);
     setLayers(prev => ({
       ...prev,
       [layerName]: { ...prev[layerName], color }
@@ -177,6 +180,7 @@ const SpriteCustomizer: React.FC<SpriteCustomizerProps> = ({ onEnter }) => {
   };
 
   const handleReset = () => {
+    setHasUserCustomized(false);
     initializeLayers();
   };
 
@@ -267,12 +271,16 @@ const SpriteCustomizer: React.FC<SpriteCustomizerProps> = ({ onEnter }) => {
   };
 
   const handleRandomize = () => {
+    setHasUserCustomized(true);
     setLayers(getRandomLayers(availableStyles));
   };
 
 
 
   useEffect(() => {
+    // Only initialize layers on first load, not when user has already customized
+    if (hasUserCustomized) return;
+    
     // Initialize with random layers instead of empty ones
     const loadAssets = async () => {
       try {
@@ -298,7 +306,7 @@ const SpriteCustomizer: React.FC<SpriteCustomizerProps> = ({ onEnter }) => {
     };
     
     loadAssets();
-  }, [availableStyles]);
+  }, [availableStyles, hasUserCustomized]);
 
   const handleUnlockClick = async () => {
     if (!wallet?.address) {
@@ -408,7 +416,7 @@ const SpriteCustomizer: React.FC<SpriteCustomizerProps> = ({ onEnter }) => {
                 </div>
                 
                 {/* Preview Content */}
-                <div className="flex-1 w-full h-full bg-white/40 rounded-xl overflow-hidden">
+                <div className="flex-1 w-full h-full rounded-xl overflow-hidden">
                   {previewMode === 'walking' ? (
                     <WalkingPreview
                       layers={layers}

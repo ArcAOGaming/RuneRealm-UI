@@ -424,7 +424,7 @@ const WalkingPreview: React.FC<WalkingPreviewProps> = ({ layers }) => {
     <div className="relative w-full h-full flex items-center justify-center" ref={containerRef}>
       <div 
         id="walking-preview-container" 
-        className="relative w-full h-full bg-black/5 rounded-xl overflow-hidden"
+        className="relative w-full h-full overflow-hidden"
         style={{ 
           width: '100%',
           height: '100%',
