@@ -27,6 +27,7 @@ import StartPage from "./pages/StartPage";
 import ActiveBattlePage from "./pages/battle/ActiveBattlePage";
 import Admin from "./pages/admin/Admin";
 import BattlePage from "./pages/battle/index";
+import { Analytics } from "./components/Analytics";
 //import BattlePage from "./pages/battle/BattlePage";
 
 interface AppContentProps {
@@ -73,38 +74,40 @@ const AppContent = () => {
         <Inventory />
       )}
       <Routes>
-        <Route path="/" element={<PurchaseInfo />} />
-        <Route path="/play" element={<StartPage />} />
-        <Route path="/customize" element={<SpriteCustomizer />} />
-        <Route path="/factions" element={<FactionPage />} />
-        <Route path="/factions/:factionId" element={<FactionDetailPage />} />
-        <Route path="/monsters" element={<MonsterManagement />} />
-        <Route path="/admin" element={<Admin />} />
-        <Route path="/battle" element={<BattlePage />} />
-        <Route path="/battle/bot" element={<BotBattlePage />} />
-        <Route path="/battle/ranked" element={<RankedBattlePage />} />
-        <Route path="/battle/active" element={<ActiveBattlePage />} />
-        <Route path="/debug" element={<DebugView />} />
-        <Route
-          path="/reality/*"
-          element={
-            <iframe
-              src="/reality/index.html"
-              style={{ width: "100%", height: "100vh", border: "none" }}
-              title="Reality"
-            />
-          }
-        />
-        <Route
-          path="/world/*"
-          element={
-            <iframe
-              src="/reality/index.html"
-              style={{ width: "100%", height: "100vh", border: "none" }}
-              title="Reality"
-            />
-          }
-        />
+        <Analytics>
+          <Route path="/" element={<PurchaseInfo />} />
+          <Route path="/play" element={<StartPage />} />
+          <Route path="/customize" element={<SpriteCustomizer />} />
+          <Route path="/factions" element={<FactionPage />} />
+          <Route path="/factions/:factionId" element={<FactionDetailPage />} />
+          <Route path="/monsters" element={<MonsterManagement />} />
+          <Route path="/admin" element={<Admin />} />
+          <Route path="/battle" element={<BattlePage />} />
+          <Route path="/battle/bot" element={<BotBattlePage />} />
+          <Route path="/battle/ranked" element={<RankedBattlePage />} />
+          <Route path="/battle/active" element={<ActiveBattlePage />} />
+          <Route path="/debug" element={<DebugView />} />
+          <Route
+            path="/reality/*"
+            element={
+              <iframe
+                src="/reality/index.html"
+                style={{ width: "100%", height: "100vh", border: "none" }}
+                title="Reality"
+              />
+            }
+          />
+          <Route
+            path="/world/*"
+            element={
+              <iframe
+                src="/reality/index.html"
+                style={{ width: "100%", height: "100vh", border: "none" }}
+                title="Reality"
+              />
+            }
+          />
+        </Analytics>
       </Routes>
     </div>
   );
