@@ -29,6 +29,32 @@ class FourDirectionScene extends Phaser.Scene {
   };
   private darkMode: boolean;
   setIsLoading: (isLoading: boolean) => void;
+  private isUpdating: boolean = false; // Prevent concurrent updates
+  
+  // Animation synchronization
+  private currentFrame: { [key in Direction]: number } = {
+    forward: 0,
+    left: 0, 
+    right: 0,
+    back: 0
+  };
+  private animationTimer: { [key in Direction]: Phaser.Time.TimerEvent | null } = {
+    forward: null,
+    left: null,
+    right: null, 
+    back: null
+  };
+  
+  // Define proper layer order for sprite rendering (from back to front)
+  private layerDepth: { [key: string]: number } = {
+    'BASE': 0,      // Base character (back)
+    'Pants': 1,     // Pants over base
+    'Shirt': 2,     // Shirt over pants  
+    'Shoes': 3,     // Shoes over legs
+    'Hair': 4,      // Hair over head
+    'Gloves': 5,    // Gloves over hands
+    'Hat': 6        // Hat over hair (front)
+  };
 
   constructor(layers: FourDirectionViewProps['layers'], darkMode: boolean) {
     super({ key: 'FourDirectionScene' });
@@ -54,8 +80,6 @@ class FourDirectionScene extends Phaser.Scene {
   }
 
   preload() {
-    console.log('Starting to load assets...');
-    
     const spritesheetConfig = {
       frameWidth: 48,
       frameHeight: 60
@@ -67,13 +91,11 @@ class FourDirectionScene extends Phaser.Scene {
     // Load all layer variations synchronously
     Object.entries(this.layers).forEach(([layerName, layer]) => {
       const assetPath = new URL(`../assets/${layerName}/${layer.style}.png`, import.meta.url).href;
-      console.log(`Loading asset: ${assetPath}`);
       this.load.spritesheet(`${layerName}.${layer.style}`, assetPath, spritesheetConfig);
     });
 
     // Add loading event listeners
     this.load.on('complete', () => {
-      console.log('All assets loaded successfully');
       this.setIsLoading(false);
     });
 
@@ -195,6 +217,9 @@ class FourDirectionScene extends Phaser.Scene {
       this.sprites['BASE'][dir] = this.add.sprite(positions[dir].x, positions[dir].y, 'BASE');
       this.sprites['BASE'][dir].setOrigin(0.5, 0.5);
       this.sprites['BASE'][dir].setScale(Math.min(3, gameWidth / 320)); // Responsive sprite scale
+      
+      // Set BASE to be at the back (depth 0)
+      this.sprites['BASE'][dir].setDepth(this.layerDepth['BASE']);
 
       // Create animation for base
       this.anims.create({
@@ -206,9 +231,12 @@ class FourDirectionScene extends Phaser.Scene {
         repeat: -1
       });
 
-      // Start the animation immediately
-      this.sprites['BASE'][dir].play(`BASE-${this.animationPrefix[dir]}`);
+      // Don't start BASE animation yet - will be controlled by sync system
+      this.sprites['BASE'][dir].setFrame(this.frameSequences[dir][0]);
     });
+
+    // Start synchronized animations for all directions
+    this.startSynchronizedAnimations();
 
     // Create layer sprites and animations
     const initializeLayers = async () => {
@@ -236,19 +264,15 @@ class FourDirectionScene extends Phaser.Scene {
           );
           this.sprites[layerName][dir].setOrigin(0.5, 0.5);
           this.sprites[layerName][dir].setScale(Math.min(3, this.sys.game.config.width as number / 320)); // Responsive sprite scale
+          
+          // Set proper depth for layering (higher number = in front)
+          const depth = this.layerDepth[layerName] ?? 999; // Default high depth for unknown layers
+          this.sprites[layerName][dir].setDepth(depth);
 
-          // Create animation
-          this.anims.create({
-            key: `${spriteKey}-${this.animationPrefix[dir]}`,
-            frames: this.anims.generateFrameNumbers(colorizedKey, {
-              frames: this.frameSequences[dir]
-            }),
-            frameRate: this.frameRates[dir],
-            repeat: -1
-          });
-
-          // Start the animation immediately
-          this.sprites[layerName][dir].play(`${spriteKey}-${this.animationPrefix[dir]}`);
+          // Don't create separate animations - use synchronized system
+          // Set initial frame to match current synchronized frame
+          const currentFrameIndex = this.frameSequences[dir][this.currentFrame[dir]];
+          this.sprites[layerName][dir].setFrame(currentFrameIndex);
         }
       }
     };
@@ -307,12 +331,71 @@ class FourDirectionScene extends Phaser.Scene {
     return key;
   }
 
-  async updateColors(newLayers: FourDirectionViewProps['layers']) {
-    this.layers = newLayers;
+  // Synchronized animation system - all sprites move together
+  startSynchronizedAnimations() {
     const directions: Direction[] = ['forward', 'left', 'right', 'back'];
     
-    // Process each layer from newLayers like WalkingPreview does
-    for (const [layerName, layer] of Object.entries(newLayers)) {
+    directions.forEach(dir => {
+      // Stop any existing timer
+      if (this.animationTimer[dir]) {
+        this.animationTimer[dir]?.destroy();
+      }
+      
+      // Create new synchronized timer for this direction
+      this.animationTimer[dir] = this.time.addEvent({
+        delay: 1000 / this.frameRates[dir], // Convert frameRate to delay in ms
+        callback: () => {
+          // Advance frame
+          this.currentFrame[dir] = (this.currentFrame[dir] + 1) % this.frameSequences[dir].length;
+          const frameIndex = this.frameSequences[dir][this.currentFrame[dir]];
+          
+          // Update all sprites for this direction to the same frame
+          Object.keys(this.sprites).forEach(layerName => {
+            if (this.sprites[layerName] && this.sprites[layerName][dir]) {
+              try {
+                this.sprites[layerName][dir].setFrame(frameIndex);
+              } catch (error) {
+                // Skip if frame doesn't exist for this sprite
+              }
+            }
+          });
+        },
+        callbackScope: this,
+        loop: true
+      });
+    });
+  }
+
+  // Stop all synchronized animations
+  stopSynchronizedAnimations() {
+    Object.values(this.animationTimer).forEach(timer => {
+      if (timer) {
+        timer.destroy();
+      }
+    });
+    
+    this.animationTimer = {
+      forward: null,
+      left: null,
+      right: null,
+      back: null
+    };
+  }
+
+  async updateColors(newLayers: FourDirectionViewProps['layers']) {
+    // Prevent concurrent updates that can cause race conditions
+    if (this.isUpdating) {
+      return;
+    }
+    
+    this.isUpdating = true;
+    
+    try {
+      this.layers = newLayers;
+      const directions: Direction[] = ['forward', 'left', 'right', 'back'];
+      
+      // Process each layer from newLayers like WalkingPreview does
+      for (const [layerName, layer] of Object.entries(newLayers)) {
       try {
         const baseKey = `${layerName}.${layer.style}`;
         
@@ -391,49 +474,51 @@ class FourDirectionScene extends Phaser.Scene {
             );
             this.sprites[layerName][dir].setOrigin(0.5, 0.5);
             this.sprites[layerName][dir].setScale(Math.min(3, gameWidth / 320));
+            
+            // Set proper depth for layering
+            const depth = this.layerDepth[layerName] ?? 999;
+            this.sprites[layerName][dir].setDepth(depth);
+            
+            // Immediately sync with current animation frame
+            const currentFrameIndex = this.frameSequences[dir][this.currentFrame[dir]];
+            this.sprites[layerName][dir].setFrame(currentFrameIndex);
           });
         } else {
           // Update existing sprites with new texture
           directions.forEach(dir => {
             if (this.sprites[layerName][dir]) {
               this.sprites[layerName][dir].setTexture(colorizedKey);
+              
+              // Ensure depth is still correct after texture update
+              const depth = this.layerDepth[layerName] ?? 999;
+              this.sprites[layerName][dir].setDepth(depth);
             }
           });
         }
 
-        // Create animations for all directions
+        // Sync new sprites with current animation frame instead of starting separate animations
         directions.forEach(dir => {
-          const animKey = `${colorizedKey}-${this.animationPrefix[dir]}`;
-          
-          // Remove existing animation if it exists
-          if (this.anims.exists(animKey)) {
-            this.anims.remove(animKey);
-          }
-
-          // Create new animation
-          this.anims.create({
-            key: animKey,
-            frames: this.anims.generateFrameNumbers(colorizedKey, {
-              frames: this.frameSequences[dir]
-            }),
-            frameRate: this.frameRates[dir],
-            repeat: -1
-          });
-
-          // Play animation on the sprite
           if (this.sprites[layerName][dir]) {
-            this.sprites[layerName][dir].play(animKey);
+            // Set frame to match current synchronized frame
+            const currentFrameIndex = this.frameSequences[dir][this.currentFrame[dir]];
+            this.sprites[layerName][dir].setFrame(currentFrameIndex);
           }
         });
 
-      } catch (error) {
-        console.error(`Error processing layer ${layerName}:`, error);
-        continue;
+        } catch (error) {
+          console.error(`Error processing layer ${layerName}:`, error);
+          continue;
+        }
       }
+    } finally {
+      this.isUpdating = false;
     }
   }
 
   shutdown() {
+    // Stop synchronized animations
+    this.stopSynchronizedAnimations();
+    
     Object.values(this.sprites).forEach(directionSprites => {
       Object.values(directionSprites).forEach(sprite => {
         sprite.destroy();
@@ -489,10 +574,7 @@ const FourDirectionView: React.FC<FourDirectionViewProps> = ({ layers, darkMode 
         const scene = gameRef.current?.scene.getScene('FourDirectionScene');
         if (scene instanceof FourDirectionScene) {
           sceneRef.current = scene;
-          // Apply any pending layers once the scene is ready
-          if (sceneRef.current && pendingLayersRef.current) {
-            sceneRef.current.updateColors(pendingLayersRef.current);
-          }
+          // No need to apply layers here since constructor already handles initial state
         }
       });
     }

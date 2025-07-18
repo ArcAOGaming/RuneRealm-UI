@@ -254,7 +254,7 @@ const ColorSlider: React.FC<ColorSliderProps> = ({ layerName, color, onColorChan
               width: '28px',
               height: '28px',
               background: '#ffffff',
-              border: '3px solid #f97316',
+              border: '3px solid #000000',
               borderRadius: '50%',
               boxShadow: '0 4px 8px rgba(0,0,0,0.2), 0 0 0 2px rgba(255,255,255,0.8)',
               transform: 'translate(-50%, -50%)',
@@ -281,7 +281,7 @@ const ColorSlider: React.FC<ColorSliderProps> = ({ layerName, color, onColorChan
         className="w-8 h-8 rounded-full border-3 flex-shrink-0 shadow-lg"
         style={{ 
           backgroundColor: color,
-          border: '2px solid #f97316',
+          border: '2px solid #000000',
           boxShadow: '0 2px 8px rgba(0,0,0,0.15), inset 0 1px 2px rgba(255,255,255,0.3)'
         }}
       />
