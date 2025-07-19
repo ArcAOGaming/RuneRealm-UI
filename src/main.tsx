@@ -73,8 +73,9 @@ const AppContent = () => {
       {wallet?.address && walletStatus?.isUnlocked && showInventory && (
         <Inventory />
       )}
-      <Routes>
-        <Analytics>
+      <Analytics>
+        <Routes>
+
           <Route path="/" element={<PurchaseInfo />} />
           <Route path="/play" element={<StartPage />} />
           <Route path="/customize" element={<SpriteCustomizer />} />
@@ -107,8 +108,8 @@ const AppContent = () => {
               />
             }
           />
-        </Analytics>
-      </Routes>
+        </Routes>
+      </Analytics>
     </div>
   );
 };
