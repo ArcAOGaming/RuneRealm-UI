@@ -915,11 +915,10 @@ export interface MonsterStatsUpdate {
   };
 }
 
-export const setUserStats = async (targetWallet: string, stats: MonsterStatsUpdate, refreshCallback?: () => void): Promise<boolean> => {
+export const setUserStats = async (wallet: any, targetWallet: string, stats: MonsterStatsUpdate, refreshCallback?: () => void): Promise<boolean> => {
   try {
     console.log('Setting user stats with data:', JSON.stringify(stats, null, 2));
-    // Get wallet from context
-    const { wallet } = useWallet();
+    // Use wallet passed as parameter
     const signer = createDataItemSigner(wallet);
     const messageResult = await message({
       process: AdminSkinChanger,

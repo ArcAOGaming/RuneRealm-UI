@@ -21,6 +21,7 @@ interface MonsterStatusWindowProps {
   formatTimeRemaining: (until: number) => string;
   calculateProgress: (since: number, until: number) => number;
   isActivityComplete: (monster: MonsterStats) => boolean;
+  onShowCard?: () => void;
 }
 
 const DEV_MODE = false; // Toggle this to enable/disable developer tools
@@ -33,6 +34,7 @@ const MonsterStatusWindow: React.FC<MonsterStatusWindowProps> = ({
   formatTimeRemaining,
   calculateProgress,
   isActivityComplete,
+  onShowCard,
 }) => {
   const activityTimeUp = isActivityComplete(monster);
   const [isWalking, setIsWalking] = useState(false);
@@ -304,6 +306,20 @@ const MonsterStatusWindow: React.FC<MonsterStatusWindowProps> = ({
           </div>
         )}
       </div>
+      
+      {/* Show Card Button */}
+      {onShowCard && (
+        <div className="mt-4">
+          <button
+            onClick={onShowCard}
+            className={`w-full py-2 px-4 rounded-lg font-semibold transition-colors ${
+              theme.buttonBg
+            } ${theme.buttonHover} ${theme.text}`}
+          >
+            Show Card
+          </button>
+        </div>
+      )}
       
       {/* Effect Buttons - Only show in dev mode */}
       {DEV_MODE && (
