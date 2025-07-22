@@ -200,7 +200,7 @@ export const FactionPage: React.FC = () => {
         contractName="Eternal Pass"
       />
 
-      <main className={`flex-1 w-full px-0 py-4 md:py-6 overflow-y-auto ${theme.text}`}>
+      <main className={`flex-1 w-full px-4 py-6 md:py-6 overflow-y-auto ${theme.text}`}>
         {/* Title Section */}
         <div className="w-full mb-6 md:mb-10 text-center">
           <h1 className={`text-4xl md:text-6xl font-extrabold tracking-wide mb-2 ${theme.text} animate-fade-in`}>
@@ -388,8 +388,8 @@ export const FactionPage: React.FC = () => {
       <style>{`
         /* Layout & Container */
         .your-faction-section, .pick-faction-section, .opposing-factions-section {
-          width: 100vw;
-          max-width: 100vw;
+          width: 100%;
+          max-width: 100%;
           padding: 0 2vw;
           margin-bottom: 2.5rem;
         }
