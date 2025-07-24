@@ -11,7 +11,6 @@ import StatAllocationModal from '../components/StatAllocationModal';
 import Header from '../components/Header';
 import Footer from '../components/Footer';
 import Confetti from 'react-confetti';
-import { MonsterCardDisplay } from '../components/MonsterCardDisplay';
 import LootBoxUtil from '../components/LootBoxUtil';
 import MonsterActivities from '../components/MonsterActivities';
 import { useMonster } from '../contexts/MonsterContext';
@@ -205,11 +204,11 @@ export const MonsterManagement: React.FC = (): JSX.Element => {
     
     return (
       <>
-        <div className={`monster-card ${theme.container} border ${theme.border} backdrop-blur-md p-6`}>
-          {/* Top section containing status window and secondary panel */}
-          <div className="flex flex-row space-x-4 mb-6">
+        <div className={`monster-card ${theme.container} border ${theme.border} backdrop-blur-md p-6 flex flex-col h-full max-h-full min-h-[600px]`}>
+          {/* Top section containing status window and secondary panel - Flexible height */}
+          <div className="flex flex-row space-x-4 flex-1 min-h-0">
             {/* Main Content Area - Status Window (65%) */}
-            <div className="monster-status-section flex-grow">
+            <div className="monster-status-section flex-grow flex flex-col">
               <MonsterStatusWindow 
                 monster={monster}
                 theme={theme}
@@ -223,27 +222,29 @@ export const MonsterManagement: React.FC = (): JSX.Element => {
             </div>
 
             {/* Secondary Panel - Monster Stats, Treasure and Level Up (35%) */}
-            <div className="monster-secondary-section w-[35%]">
-              {/* Monster Stats Display */}
-              <MonsterStatsDisplay
-                monster={monster}
-                theme={theme}
-                isLevelingUp={isLevelingUp}
-                onLevelUp={handleLevelUp}
-              />
+            <div className="monster-secondary-section w-[35%] flex flex-col">
+              {/* Monster Stats Display - Flexible height */}
+              <div className="flex-1 min-h-0">
+                <MonsterStatsDisplay
+                  monster={monster}
+                  theme={theme}
+                  isLevelingUp={isLevelingUp}
+                  onLevelUp={handleLevelUp}
+                />
+              </div>
               
-              {/* Loot Box Section - Made taller with less padding to avoid scrollbars */}
-              <div className={`loot-box-section ${theme.container} rounded-lg p-2 mb-4 min-h-[300px]`}>
+              {/* Loot Box Section - Fixed height but responsive */}
+              <div className={`loot-box-section ${theme.container} rounded-lg p-2 mb-3 h-[200px] flex-shrink-0`}>
                 <LootBoxUtil 
-                  className="w-full" 
+                  className="w-full h-full"
                   externalLootBoxes={lootBoxes} 
                   loadDataIndependently={false} 
                 />
               </div>
               
-              {/* Level Up Button */}
+              {/* Level Up Button - Fixed height */}
               {monster.status.type === 'Home' && monster.exp >= getFibonacciExp(monster.level) && (
-                <div className={`level-up-section ${theme.container} rounded-lg p-4`}>
+                <div className={`level-up-section ${theme.container} rounded-lg p-4 flex-shrink-0`}>
                   <div className="flex justify-between items-center">
                     <div>
                       <h3 className={`text-xl font-bold ${theme.text}`}>Level Up Available</h3>
@@ -262,13 +263,17 @@ export const MonsterManagement: React.FC = (): JSX.Element => {
             </div>
           </div>
 
-          {/* Activities Section - Full Width */}
-          <div className="monster-activities-section w-full mt-6">
-            <MonsterActivities 
-              monster={monster}
-              activities={activities}
-              theme={theme}
-            />
+          {/* Activities Section - Always visible at bottom, centered and evenly spaced */}
+          <div className="monster-activities-section w-full mt-6 flex-shrink-0">
+            <div className="flex justify-center">
+              <div className="w-full max-w-6xl">
+                <MonsterActivities 
+                  monster={monster}
+                  activities={activities}
+                  theme={theme}
+                />
+              </div>
+            </div>
           </div>
         </div>
         
