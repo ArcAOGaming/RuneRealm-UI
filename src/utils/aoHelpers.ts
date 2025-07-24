@@ -1,7 +1,22 @@
 import { message as aoMessage, dryrun, result } from "../config/aoConnection";
 import { createDataItemSigner } from "@permaweb/aoconnect";
+import { TokenClient } from 'ao-js-sdk';
 import { useWallet } from "../contexts/WalletContext";
-
+import { 
+    AdminSkinChanger, 
+    DefaultAtlasTxID, 
+    Alter, 
+    SUPPORTED_ASSET_IDS, 
+    WAITTIMEOUIT, 
+    ASSET_INFO, 
+    AssetInfo, 
+    TARGET_BATTLE_PID,
+    MAX_RETRIES,
+    RETRY_DELAY,
+    type SupportedAssetId
+  } from "../constants/Constants";
+  import { ProfileInfo, ProfilesService } from 'ao-js-sdk';
+  import { AssetBalance, BattleManagerInfo, BattleResponse, BattleTurn, FactionOptions, MonsterStats, ResultType, TokenOption, UserInfo, WalletStatus } from "./interefaces";  
 interface CachedData<T> {
   data: T;
   timestamp: number;
@@ -58,21 +73,34 @@ const setCachedData = <T>(key: string, data: T): void => {
     console.error(`[Cache] Error storing data for key ${key}:`, error);
   }
 };
-import { 
-  AdminSkinChanger, 
-  DefaultAtlasTxID, 
-  Alter, 
-  SUPPORTED_ASSET_IDS, 
-  WAITTIMEOUIT, 
-  ASSET_INFO, 
-  AssetInfo, 
-  TARGET_BATTLE_PID,
-  MAX_RETRIES,
-  RETRY_DELAY,
-  type SupportedAssetId
-} from "../constants/Constants";
-import { ProfileInfo, ProfilesService } from 'ao-process-clients';
-import { AssetBalance, BattleManagerInfo, BattleResponse, BattleTurn, FactionOptions, MonsterStats, ResultType, TokenOption, UserInfo, WalletStatus } from "./interefaces";
+
+// Token client factory function
+export const createTokenClient = (assetId: string, wallet: any) => {
+  if (!wallet) {
+    throw new Error('Wallet is required to create token client');
+  }
+
+  // Create the wallet config object
+  const walletConfig = {
+    getActiveAddress: async () => {
+      const walletAddress = wallet.address || await wallet.getActiveAddress();
+      return walletAddress;
+    },
+    address: wallet.address || null,
+    dispatch: wallet
+  };
+
+  // Create and return the token client
+  return TokenClient.defaultBuilder()
+    .withProcessId(assetId)
+    .withWallet(walletConfig)
+    .withAOConfig({
+      CU_URL: 'https://ur-cu.randao.net',
+      MODE: 'legacy'
+    })
+    .build();
+};
+
 export type { 
   AssetInfo 
 } from '../constants/Constants';

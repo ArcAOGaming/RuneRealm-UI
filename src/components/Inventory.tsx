@@ -4,6 +4,7 @@ import { useTokens } from '../contexts/TokenContext';
 import { formatTokenAmount } from '../utils/aoHelpers';
 import { currentTheme } from '../constants/theme';
 import { Gateway, ASSET_INFO, SupportedAssetId } from '../constants/Constants';
+import TokenAnimation from './TokenAnimation';
 
 // Maximum number of decimal places to display for token amounts
 const MAX_DECIMALS = 3;
@@ -134,7 +135,9 @@ const Inventory = () => {
             logo: info.logo || "",
             name: info.name,
             ticker: info.ticker,
-            denomination: info.denomination || 0
+            denomination: info.denomination || 0,
+            section: info.section,
+            ...(info.spriteMap && { spriteMap: info.spriteMap })
           },
           balance: 0,
           // Always set state to loading for assets not in tokenBalances
@@ -150,7 +153,8 @@ const Inventory = () => {
         logo: "",
         name: ticker,
         ticker: ticker,
-        denomination: 0
+        denomination: 0,
+        section: "Unknown"
       },
       balance: 0,
       state: 'loading'
@@ -219,11 +223,19 @@ const Inventory = () => {
                             className="relative group" 
                             title={`Refresh ${asset.info.ticker} balance`}
                           >
-                            <img 
-                              src={`${Gateway}${asset.info.logo}`}
-                              alt={asset.info.name}
-                              className="w-6 h-6 object-cover rounded-full"
-                            />
+                            {('spriteMap' in asset.info && asset.info.spriteMap) ? (
+                              <TokenAnimation 
+                                spriteMapTxid={asset.info.spriteMap}
+                                alt={asset.info.name}
+                                className="w-6 h-6 rounded-full"
+                              />
+                            ) : (
+                              <img 
+                                src={`${Gateway}${asset.info.logo}`}
+                                alt={asset.info.name}
+                                className="w-6 h-6 object-cover rounded-full"
+                              />
+                            )}
                             {asset.state === 'loading' ? (
                               <span className="absolute inset-0 flex items-center justify-center bg-black bg-opacity-50 rounded-full text-white text-xs">
                                 <div className="animate-spin rounded-full h-3 w-3 border-b-2 border-[#F4860A]"></div>
