@@ -1742,6 +1742,32 @@ export const openLootBoxWithRarity = async (wallet: any, rarity: number, refresh
       if (lastMessage?.Data) {
         try {
           const parsedData = JSON.parse(lastMessage.Data);
+          
+          // Validate each loot item to ensure it has a valid token property
+          if (Array.isArray(parsedData.result)) {
+            // Log the raw result for debugging
+            console.log('[openLootBoxWithRarity] Raw result:', JSON.stringify(parsedData.result));
+            
+            // Check for and log any items without a token
+            const problematicItems = parsedData.result.filter(item => !item.token);
+            if (problematicItems.length > 0) {
+              console.warn('[openLootBoxWithRarity] Found loot items without token:', problematicItems);
+            }
+            
+            // Ensure each item has a token (use a placeholder if missing)
+            const validatedResult = parsedData.result.map(item => {
+              if (!item.token) {
+                console.warn(`[openLootBoxWithRarity] Item missing token property: ${JSON.stringify(item)}`);
+                return { ...item, token: 'unknown-token' };
+              }
+              return item;
+            });
+            
+            return {
+              result: validatedResult
+            };
+          }
+          
           return {
             result: parsedData.result
           };
