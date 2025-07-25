@@ -182,12 +182,16 @@ export const FactionPage: React.FC = () => {
     return offeringPoints + feedPoints + playPoints + missionPoints;
   };
 
-  const currentFaction = sortedFactions.find((f) => f.name === walletStatus?.faction);
+  const currentFaction = sortedFactions.find(
+    (f) => f.name === walletStatus?.faction
+  );
 
   return (
     <div className={`flex flex-col min-h-screen ${theme.bg}`}>
       {/* Header */}
-      <div className="z-50 md:sticky md:top-0"><Header theme={theme} darkMode={darkMode} /></div>
+      <div className="z-50 md:sticky md:top-0">
+        <Header theme={theme} darkMode={darkMode} />
+      </div>
 
       {showConfetti && (
         <Confetti
@@ -209,8 +213,8 @@ export const FactionPage: React.FC = () => {
             </h2>
             <div className={`space-y-3 ${theme.cardText}`}>
               <p className="text-lg font-semibold text-red-500">
-                Important: Faction selection is final - Team players only, no team
-                quitting!
+                Important: Faction selection is final - Team players only, no
+                team quitting!
               </p>
               <div className="space-y-2">
                 <p>
@@ -273,11 +277,13 @@ export const FactionPage: React.FC = () => {
                 <h2 className={`text-2xl font-bold mb-2 ${theme.cardTitle}`}>
                   Your Faction
                 </h2>
-                
+
                 {/* Faction Hero Section */}
-                <div className={`flex-1 rounded-xl overflow-hidden ${theme.cardBg} border ${theme.border} shadow-lg`}>
+                <div
+                  className={`flex-1 rounded-xl overflow-hidden ${theme.cardBg} border ${theme.border} shadow-lg`}
+                >
                   <div className="flex flex-col md:flex-row h-full">
-                    {/* Gambar Mascot Besar */}
+                    {/* Image */}
                     <div className="w-full md:w-1/2 relative min-h-[300px] md:h-auto">
                       {currentFaction.mascot && (
                         <img
@@ -288,10 +294,12 @@ export const FactionPage: React.FC = () => {
                       )}
                     </div>
 
-                    {/* Konten Teks */}
+                    {/* Teks */}
                     <div className="w-full md:w-1/2 p-6 flex flex-col justify-center z-10">
                       <div className="mb-6">
-                        <p className={`text-3xl font-bold ${theme.cardTitle} mb-3`}>
+                        <p
+                          className={`text-3xl font-bold ${theme.cardTitle} mb-3`}
+                        >
                           {currentFaction.name}
                         </p>
                         {currentFaction.perks && (
@@ -300,28 +308,51 @@ export const FactionPage: React.FC = () => {
                           </p>
                         )}
                       </div>
-                      
+
                       {/* Mini Stats */}
                       <div className="grid grid-cols-2 gap-4">
                         <div className={`p-3 rounded-lg ${theme.container}`}>
-                          <p className={`text-sm ${theme.cardText} opacity-80 mb-1`}>Members</p>
-                          <p className={`text-xl font-bold ${theme.cardTitle}`}>{Number(currentFaction.memberCount || 0)}</p>
+                          <p
+                            className={`text-sm ${theme.cardText} opacity-80 mb-1`}
+                          >
+                            Members
+                          </p>
+                          <p className={`text-xl font-bold ${theme.cardTitle}`}>
+                            {Number(currentFaction.memberCount || 0)}
+                          </p>
                         </div>
                         <div className={`p-3 rounded-lg ${theme.container}`}>
-                          <p className={`text-sm ${theme.cardText} opacity-80 mb-1`}>Avg Level</p>
+                          <p
+                            className={`text-sm ${theme.cardText} opacity-80 mb-1`}
+                          >
+                            Avg Level
+                          </p>
                           <p className={`text-xl font-bold ${theme.cardTitle}`}>
                             {currentFaction.averageLevel?.toFixed(1)}
                           </p>
                         </div>
                         <div className={`p-3 rounded-lg ${theme.container}`}>
-                          <p className={`text-sm ${theme.cardText} opacity-80 mb-1`}>Points</p>
+                          <p
+                            className={`text-sm ${theme.cardText} opacity-80 mb-1`}
+                          >
+                            Points
+                          </p>
                           <p className={`text-xl font-bold ${theme.cardTitle}`}>
                             {calculateFactionPoints(currentFaction)}
                           </p>
                         </div>
                         <div className={`p-3 rounded-lg ${theme.container}`}>
-                          <p className={`text-sm ${theme.cardText} opacity-80 mb-1`}>Rank</p>
-                          <p className={`text-xl font-bold ${theme.cardTitle}`}>#{sortedFactions.findIndex(f => f.name === currentFaction.name) + 1}</p>
+                          <p
+                            className={`text-sm ${theme.cardText} opacity-80 mb-1`}
+                          >
+                            Rank
+                          </p>
+                          <p className={`text-xl font-bold ${theme.cardTitle}`}>
+                            #
+                            {sortedFactions.findIndex(
+                              (f) => f.name === currentFaction.name
+                            ) + 1}
+                          </p>
                         </div>
                       </div>
                     </div>
@@ -330,69 +361,110 @@ export const FactionPage: React.FC = () => {
 
                 {/* User Stats Section */}
                 <div className="mt-6">
-                  <h3 className={`text-xl font-bold mb-4 ${theme.cardTitle}`}>Your Contribution</h3>
-                  <div className={`grid grid-cols-2 gap-4 p-5 rounded-xl ${theme.container} border ${theme.border}`}>
+                  <h3 className={`text-xl font-bold mb-4 ${theme.cardTitle}`}>
+                    Your Contribution
+                  </h3>
+                  <div
+                    className={`grid grid-cols-2 gap-4 p-5 rounded-xl ${theme.container} border ${theme.border}`}
+                  >
                     <div className="space-y-4">
                       <div className={`${theme.cardText}`}>
                         <div className="flex justify-between">
                           <span>Offerings</span>
-                          <span className="font-semibold">{userOfferings?.IndividualOfferings || 0}</span>
+                          <span className="font-semibold">
+                            {userOfferings?.IndividualOfferings || 0}
+                          </span>
                         </div>
                         <div className="w-full h-2 bg-gray-700 rounded-full mt-1">
-                          <div 
-                            className="h-full bg-yellow-500 rounded-full" 
-                            style={{ width: `${Math.min((userOfferings?.IndividualOfferings || 0) * 5, 100)}%` }}
+                          <div
+                            className="h-full bg-yellow-500 rounded-full"
+                            style={{
+                              width: `${Math.min(
+                                (userOfferings?.IndividualOfferings || 0) * 5,
+                                100
+                              )}%`,
+                            }}
                           ></div>
                         </div>
                       </div>
-                      
+
                       <div className={`${theme.cardText}`}>
                         <div className="flex justify-between">
                           <span>Times Fed</span>
-                          <span className="font-semibold">{walletStatus?.monster?.totalTimesFed || 0}</span>
+                          <span className="font-semibold">
+                            {walletStatus?.monster?.totalTimesFed || 0}
+                          </span>
                         </div>
                         <div className="w-full h-2 bg-gray-700 rounded-full mt-1">
-                          <div 
-                            className="h-full bg-green-500 rounded-full" 
-                            style={{ width: `${Math.min((walletStatus?.monster?.totalTimesFed || 0) * 10, 100)}%` }}
+                          <div
+                            className="h-full bg-green-500 rounded-full"
+                            style={{
+                              width: `${Math.min(
+                                (walletStatus?.monster?.totalTimesFed || 0) *
+                                  10,
+                                100
+                              )}%`,
+                            }}
                           ></div>
                         </div>
                       </div>
                     </div>
-                    
+
                     <div className="space-y-4">
                       <div className={`${theme.cardText}`}>
                         <div className="flex justify-between">
                           <span>Times Played</span>
-                          <span className="font-semibold">{walletStatus?.monster?.totalTimesPlay || 0}</span>
+                          <span className="font-semibold">
+                            {walletStatus?.monster?.totalTimesPlay || 0}
+                          </span>
                         </div>
                         <div className="w-full h-2 bg-gray-700 rounded-full mt-1">
-                          <div 
-                            className="h-full bg-blue-500 rounded-full" 
-                            style={{ width: `${Math.min((walletStatus?.monster?.totalTimesPlay || 0) * 10, 100)}%` }}
+                          <div
+                            className="h-full bg-blue-500 rounded-full"
+                            style={{
+                              width: `${Math.min(
+                                (walletStatus?.monster?.totalTimesPlay || 0) *
+                                  10,
+                                100
+                              )}%`,
+                            }}
                           ></div>
                         </div>
                       </div>
-                      
+
                       <div className={`${theme.cardText}`}>
                         <div className="flex justify-between">
                           <span>Missions</span>
-                          <span className="font-semibold">{walletStatus?.monster?.totalTimesMission || 0}</span>
+                          <span className="font-semibold">
+                            {walletStatus?.monster?.totalTimesMission || 0}
+                          </span>
                         </div>
                         <div className="w-full h-2 bg-gray-700 rounded-full mt-1">
-                          <div 
-                            className="h-full bg-purple-500 rounded-full" 
-                            style={{ width: `${Math.min((walletStatus?.monster?.totalTimesMission || 0) * 10, 100)}%` }}
+                          <div
+                            className="h-full bg-purple-500 rounded-full"
+                            style={{
+                              width: `${Math.min(
+                                (walletStatus?.monster?.totalTimesMission ||
+                                  0) * 10,
+                                100
+                              )}%`,
+                            }}
                           ></div>
                         </div>
                       </div>
                     </div>
-                    
+
                     {/* Total Points */}
                     <div className="col-span-2 mt-4 pt-4 border-t border-gray-700">
                       <div className="flex justify-between items-center">
-                        <span className={`text-lg font-bold ${theme.cardTitle}`}>Total Points</span>
-                        <span className={`text-2xl font-bold ${theme.primary}`}>{calculateUserPoints()}</span>
+                        <span
+                          className={`text-lg font-bold ${theme.cardTitle}`}
+                        >
+                          Total Points
+                        </span>
+                        <span className={`text-2xl font-bold ${theme.primary}`}>
+                          {calculateUserPoints()}
+                        </span>
                       </div>
                     </div>
                   </div>
@@ -409,138 +481,159 @@ export const FactionPage: React.FC = () => {
                     {sortedFactions.length - 1} opponents
                   </span>
                 </div>
-                
+
                 <div className="flex-1 overflow-auto pr-2 custom-scrollbar">
                   {sortedFactions
-                    .filter(f => f.name !== walletStatus?.faction)
+                    .filter((f) => f.name !== walletStatus?.faction)
                     .map((faction) => (
-                    <div
-                      key={faction.name}
-                      onClick={() =>
-                        navigate(
-                          `/factions/${
-                            FACTION_TO_PATH[
-                              faction.name as keyof typeof FACTION_TO_PATH
-                            ]
-                          }`
-                        )
-                      }
-                      className={`p-4 rounded-xl ${theme.container} border ${theme.border} backdrop-blur-md hover:scale-[1.01] hover:shadow-lg cursor-pointer transition-all duration-200 mb-4`}
-                    >
-                      <div className="flex items-start">
-                        {/* Gambar Mascot Besar */}
-                        {faction.mascot && (
-                          <div className="w-1/3 min-w-[120px] mr-4">
-                            <img
-                              src={`${Gateway}${faction.mascot}`}
-                              alt={`${faction.name} Mascot`}
-                              className="w-full h-auto object-contain"
-                            />
-                          </div>
-                        )}
-                        
-                        <div className="flex-1">
-                          <div className="flex justify-between items-start mb-3">
-                            <h4 className={`text-xl font-bold ${theme.cardTitle}`}>
-                              {faction.name}
-                            </h4>
-                            <span className={`text-sm font-semibold ${theme.primary}`}>
-                              #{sortedFactions.findIndex(f => f.name === faction.name) + 1}
-                            </span>
-                          </div>
-                          
-                          {/* Stats Grid */}
-                          <div className="grid grid-cols-2 gap-3">
-                            <div className={`${theme.cardText}`}>
-                              <div className="flex justify-between">
-                                <span className="opacity-80">Members:</span>
-                                <span className="font-semibold">
-                                  {faction.memberCount}
-                                </span>
-                              </div>
-                            </div>
-                            
-                            <div className={`${theme.cardText}`}>
-                              <div className="flex justify-between">
-                                <span className="opacity-80">Avg Level:</span>
-                                <span className="font-semibold">
-                                  {faction.averageLevel?.toFixed(1)}
-                                </span>
-                              </div>
-                            </div>
-                            
-                            <div className={`${theme.cardText}`}>
-                              <div className="flex justify-between">
-                                <span className="opacity-80">Points:</span>
-                                <span className="font-semibold">
-                                  {calculateFactionPoints(faction)}
-                                </span>
-                              </div>
-                            </div>
-                            
-                            <div className={`${theme.cardText}`}>
-                              <div className="flex justify-between">
-                                <span className="opacity-80">Offerings:</span>
-                                <span className="font-semibold">
-                                  {offeringStats?.[faction.name as keyof OfferingStats] || 0}
-                                </span>
-                              </div>
-                            </div>
-                            
-                            <div className={`${theme.cardText}`}>
-                              <div className="flex justify-between">
-                                <span className="opacity-80">Fed:</span>
-                                <span className="font-semibold">
-                                  {faction.totalTimesFed || 0}
-                                </span>
-                              </div>
-                            </div>
-                            
-                            <div className={`${theme.cardText}`}>
-                              <div className="flex justify-between">
-                                <span className="opacity-80">Played:</span>
-                                <span className="font-semibold">
-                                  {faction.totalTimesPlay || 0}
-                                </span>
-                              </div>
-                            </div>
-                            
-                            <div className={`${theme.cardText}`}>
-                              <div className="flex justify-between">
-                                <span className="opacity-80">Missions:</span>
-                                <span className="font-semibold">
-                                  {faction.totalTimesMission || 0}
-                                </span>
-                              </div>
-                            </div>
-                            
-                            <div className={`${theme.cardText}`}>
-                              <div className="flex justify-between">
-                                <span className="opacity-80">Activity:</span>
-                                <span className="font-semibold">{
-                                  (() => {
-                                    const members = Number(faction.memberCount || 0);
-                                    const activity = Number((faction as any).totalActivity || 0);
-                                    return members > 0 ? Math.round(activity / members) : 0;
-                                  })()
-                                }</span>
-                              </div>
-                            </div>
-                          </div>
-                          
-                          {/* Perks */}
-                          {faction.perks && faction.perks.length > 0 && (
-                            <div className="mt-3 pt-3 border-t border-gray-700">
-                              <p className={`text-sm font-semibold ${theme.cardText} mb-1`}>Faction Perks:</p>
-                              <p className={`text-sm ${theme.cardText} opacity-90`}>
-                                {faction.perks[0]}
-                              </p>
+                      <div
+                        key={faction.name}
+                        onClick={() =>
+                          navigate(
+                            `/factions/${
+                              FACTION_TO_PATH[
+                                faction.name as keyof typeof FACTION_TO_PATH
+                              ]
+                            }`
+                          )
+                        }
+                        className={`p-4 rounded-xl ${theme.container} border ${theme.border} backdrop-blur-md hover:scale-[1.01] hover:shadow-lg cursor-pointer transition-all duration-200 mb-4`}
+                      >
+                        <div className="flex items-start">
+                          {/* Image */}
+                          {faction.mascot && (
+                            <div className="w-1/3 min-w-[120px] mr-4">
+                              <img
+                                src={`${Gateway}${faction.mascot}`}
+                                alt={`${faction.name} Mascot`}
+                                className="w-full h-auto object-contain"
+                              />
                             </div>
                           )}
+
+                          <div className="flex-1">
+                            <div className="flex justify-between items-start mb-3">
+                              <h4
+                                className={`text-xl font-bold ${theme.cardTitle}`}
+                              >
+                                {faction.name}
+                              </h4>
+                              <span
+                                className={`text-sm font-semibold ${theme.primary}`}
+                              >
+                                #
+                                {sortedFactions.findIndex(
+                                  (f) => f.name === faction.name
+                                ) + 1}
+                              </span>
+                            </div>
+
+                            {/* Stats Grid */}
+                            <div className="grid grid-cols-2 gap-3">
+                              <div className={`${theme.cardText}`}>
+                                <div className="flex justify-between">
+                                  <span className="opacity-80">Members:</span>
+                                  <span className="font-semibold">
+                                    {faction.memberCount}
+                                  </span>
+                                </div>
+                              </div>
+
+                              <div className={`${theme.cardText}`}>
+                                <div className="flex justify-between">
+                                  <span className="opacity-80">Avg Level:</span>
+                                  <span className="font-semibold">
+                                    {faction.averageLevel?.toFixed(1)}
+                                  </span>
+                                </div>
+                              </div>
+
+                              <div className={`${theme.cardText}`}>
+                                <div className="flex justify-between">
+                                  <span className="opacity-80">Points:</span>
+                                  <span className="font-semibold">
+                                    {calculateFactionPoints(faction)}
+                                  </span>
+                                </div>
+                              </div>
+
+                              <div className={`${theme.cardText}`}>
+                                <div className="flex justify-between">
+                                  <span className="opacity-80">Offerings:</span>
+                                  <span className="font-semibold">
+                                    {offeringStats?.[
+                                      faction.name as keyof OfferingStats
+                                    ] || 0}
+                                  </span>
+                                </div>
+                              </div>
+
+                              <div className={`${theme.cardText}`}>
+                                <div className="flex justify-between">
+                                  <span className="opacity-80">Fed:</span>
+                                  <span className="font-semibold">
+                                    {faction.totalTimesFed || 0}
+                                  </span>
+                                </div>
+                              </div>
+
+                              <div className={`${theme.cardText}`}>
+                                <div className="flex justify-between">
+                                  <span className="opacity-80">Played:</span>
+                                  <span className="font-semibold">
+                                    {faction.totalTimesPlay || 0}
+                                  </span>
+                                </div>
+                              </div>
+
+                              <div className={`${theme.cardText}`}>
+                                <div className="flex justify-between">
+                                  <span className="opacity-80">Missions:</span>
+                                  <span className="font-semibold">
+                                    {faction.totalTimesMission || 0}
+                                  </span>
+                                </div>
+                              </div>
+
+                              <div className={`${theme.cardText}`}>
+                                <div className="flex justify-between">
+                                  <span className="opacity-80">Activity:</span>
+                                  <span className="font-semibold">
+                                    {(() => {
+                                      const members = Number(
+                                        faction.memberCount || 0
+                                      );
+                                      const activity = Number(
+                                        (faction as any).totalActivity || 0
+                                      );
+                                      return members > 0
+                                        ? Math.round(activity / members)
+                                        : 0;
+                                    })()}
+                                  </span>
+                                </div>
+                              </div>
+                            </div>
+
+                            {/* Perks */}
+                            {faction.perks && faction.perks.length > 0 && (
+                              <div className="mt-3 pt-3 border-t border-gray-700">
+                                <p
+                                  className={`text-sm font-semibold ${theme.cardText} mb-1`}
+                                >
+                                  Faction Perks:
+                                </p>
+                                <p
+                                  className={`text-sm ${theme.cardText} opacity-90`}
+                                >
+                                  {faction.perks[0]}
+                                </p>
+                              </div>
+                            )}
+                          </div>
                         </div>
                       </div>
-                    </div>
-                  ))}
+                    ))}
                 </div>
               </div>
             </div>
@@ -561,7 +654,7 @@ export const FactionPage: React.FC = () => {
                 <h2 className={`text-2xl font-bold mb-4 ${theme.cardTitle}`}>
                   Choose Your Faction
                 </h2>
-                
+
                 <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 auto-rows-fr gap-6 w-full flex-1 min-h-0">
                   {sortedFactions.map((faction) => (
                     <div
@@ -577,7 +670,7 @@ export const FactionPage: React.FC = () => {
                       }
                       className={`flex flex-col h-full rounded-xl ${theme.container} border ${theme.border} backdrop-blur-md hover:scale-[1.02] hover:shadow-lg transition-all duration-300 cursor-pointer overflow-hidden`}
                     >
-                      {/* Gambar Mascot Besar */}
+                      {/* Image */}
                       <div className="relative h-64 bg-black/10 overflow-hidden">
                         {faction.mascot && (
                           <img
@@ -590,11 +683,18 @@ export const FactionPage: React.FC = () => {
 
                       <div className="flex flex-col p-4 flex-1">
                         <div className="flex justify-between items-center mb-3">
-                          <h3 className={`text-xl font-bold ${theme.cardTitle}`}>
+                          <h3
+                            className={`text-xl font-bold ${theme.cardTitle}`}
+                          >
                             {faction.name}
                           </h3>
-                          <span className={`text-sm font-semibold ${theme.primary}`}>
-                            #{sortedFactions.findIndex(f => f.name === faction.name) + 1}
+                          <span
+                            className={`text-sm font-semibold ${theme.primary}`}
+                          >
+                            #
+                            {sortedFactions.findIndex(
+                              (f) => f.name === faction.name
+                            ) + 1}
                           </span>
                         </div>
 
@@ -605,7 +705,9 @@ export const FactionPage: React.FC = () => {
                                 key={index}
                                 className={`flex items-start ${theme.cardText}`}
                               >
-                                <span className={`mr-2 ${theme.primary}`}>•</span>
+                                <span className={`mr-2 ${theme.primary}`}>
+                                  •
+                                </span>
                                 <span>{perk}</span>
                               </li>
                             ))}
@@ -613,7 +715,9 @@ export const FactionPage: React.FC = () => {
                         )}
 
                         {/* Stats Grid */}
-                        <div className={`grid grid-cols-2 gap-3 p-3 rounded-lg ${theme.cardBg} text-sm mt-auto`}>
+                        <div
+                          className={`grid grid-cols-2 gap-3 p-3 rounded-lg ${theme.cardBg} text-sm mt-auto`}
+                        >
                           <div className={`${theme.cardText}`}>
                             <div className="flex justify-between">
                               <span className="opacity-80">Members:</span>
@@ -622,7 +726,7 @@ export const FactionPage: React.FC = () => {
                               </span>
                             </div>
                           </div>
-                          
+
                           <div className={`${theme.cardText}`}>
                             <div className="flex justify-between">
                               <span className="opacity-80">Level:</span>
@@ -631,7 +735,7 @@ export const FactionPage: React.FC = () => {
                               </span>
                             </div>
                           </div>
-                          
+
                           <div className={`${theme.cardText}`}>
                             <div className="flex justify-between">
                               <span className="opacity-80">Points:</span>
@@ -640,7 +744,7 @@ export const FactionPage: React.FC = () => {
                               </span>
                             </div>
                           </div>
-                          
+
                           <div className={`${theme.cardText}`}>
                             <div className="flex justify-between">
                               <span className="opacity-80">Offerings:</span>
@@ -675,9 +779,7 @@ export const FactionPage: React.FC = () => {
                                 className={`w-full px-3 py-2 rounded-lg font-bold ${
                                   theme.buttonBg
                                 } hover:opacity-90 ${theme.text} ${
-                                  isLoading
-                                    ? "opacity-60 cursor-wait"
-                                    : ""
+                                  isLoading ? "opacity-60 cursor-wait" : ""
                                 } transition-opacity`}
                               >
                                 {isLoading ? "Joining..." : "Join Faction"}
@@ -694,17 +796,19 @@ export const FactionPage: React.FC = () => {
           )
         )}
       </main>
-      
+
       {/* Footer */}
-      <div className="z-50 md:sticky md:bottom-0"><Footer darkMode={darkMode} /></div>
-      
+      <div className="z-50 md:sticky md:bottom-0">
+        <Footer darkMode={darkMode} />
+      </div>
+
       <style>{`
         .custom-scrollbar::-webkit-scrollbar {
           width: 6px;
         }
         
         .custom-scrollbar::-webkit-scrollbar-track {
-          background: ${darkMode ? '#2A1912' : '#F4E4C1'};
+          background: ${darkMode ? "#2A1912" : "#F4E4C1"};
           border-radius: 10px;
         }
         
