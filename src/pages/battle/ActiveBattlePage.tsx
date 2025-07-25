@@ -13,17 +13,14 @@ import type {
   BattleResult
 } from "../../utils/interefaces";
 import { currentTheme } from "../../constants/theme";
-import Header from "../../components/Header";
-import Footer from "../../components/Footer";
 import Loading from "../../components/Loading";
 import { useNavigate } from "react-router-dom";
 import BattleScene from "../../components/BattleScene";
-import BattleOverlays from "../../components/BattleOverlays";
 import BattleStats from "../../components/BattleStats";
 
 // Import new modular components
 import WinnerAnnouncement from "../../components/battle/WinnerAnnouncement";
-import BattleMoves from "../../components/battle/BattleMoves";
+import BattleInterface from "../../components/battle/BattleInterface";
 import UpdateIndicator from "../../components/battle/UpdateIndicator";
 import { getMoveColor } from "../../utils/battleUtils";
 
@@ -463,40 +460,21 @@ const processTurnsSequentially = async () => {
     }
   };
 
+  const handleToggleBattleLog = () => {
+    setShowBattleLog(!showBattleLog);
+  };
+
   return (
-    <div className="min-h-screen flex flex-col">
-      <div className={`min-h-screen flex flex-col ${theme.bg}`}>
-        <Header
+    <div className={`min-h-screen flex flex-col ${theme.bg} overflow-hidden`}>
+      {/* Winner Announcement Overlay */}
+      {showWinnerAnnouncement && (
+        <WinnerAnnouncement
+          winner={showWinnerAnnouncement.winner}
           theme={theme}
-          darkMode={darkMode}
-          onDarkModeToggle={() => setDarkMode(!darkMode)}
         />
+      )}
 
-        {/* Battle Overlays */}
-        {walletStatus?.isUnlocked && activeBattle && (
-          <BattleOverlays
-            turns={activeBattle.turns}
-            showBattleLog={showBattleLog}
-            onToggleBattleLog={() => setShowBattleLog(!showBattleLog)}
-            theme={theme}
-            playerName={"Player 1's  " + activeBattle.challenger.name}
-            opponentName={"Player 2's  " + activeBattle.accepter.name}
-          />
-        )}
-
-        {/* Winner Announcement Overlay */}
-        {showWinnerAnnouncement && (
-          <WinnerAnnouncement
-            winner={showWinnerAnnouncement.winner}
-            theme={theme}
-          />
-        )}
-
-        <div className={`container mx-auto px-4 flex-1 ${theme.text}`}>
-          <div
-            className="w-full mx-auto flex flex-col items-center"
-            style={{ maxWidth: "95vw", height: "calc(100vh - 180px)" }}
-          >
+      <div className={`w-full h-screen flex flex-col ${theme.text} p-1`}>
             {!wallet?.address ? (
               <div
                 className={`p-6 rounded-xl ${theme.container} border ${theme.border} backdrop-blur-md text-center`}
@@ -524,9 +502,7 @@ const processTurnsSequentially = async () => {
                 </p>
               </div>
             ) : (
-              <div
-                className={`rounded-xl ${theme.container} border ${theme.border} backdrop-blur-md`}
-              >
+              <div className="flex flex-col h-full">
                 {isUpdating && <UpdateIndicator />}
                 {activeBattle.status === "ended" && (
                   <button
@@ -536,51 +512,57 @@ const processTurnsSequentially = async () => {
                     Exit Battle
                   </button>
                 )}
-                <div
-                  className={`rounded-lg ${theme.container} bg-opacity-20 transition-all duration-300 overflow-hidden`}
-                >
-                  {/* Battle Scene */}
-                  <div
-                    className="relative mx-auto"
-                    style={{
-                      height: "min(65vh, calc(100vh - 280px))",
-                      width: "min(calc((100vh - 280px) * 1.7777), calc(95vw))",
-                      maxHeight: "800px",
-                    }}
-                  >
-                    <BattleScene
-                      challenger={activeBattle.challenger}
-                      accepter={activeBattle.accepter}
-                      playerAnimation={playerAnimation}
-                      opponentAnimation={opponentAnimation}
-                      onPlayerAnimationComplete={() => {}}
-                      onOpponentAnimationComplete={() => {}}
-                      attackAnimation={attackAnimation}
-                      shieldRestoring={shieldRestoring}
-                      showEndOfRound={showEndOfRound}
-                      onAttackComplete={() => setAttackAnimation(null)}
-                      onShieldComplete={() => setShieldRestoring(false)}
-                      onRoundComplete={() => setShowEndOfRound(false)}
-                    />
-                    <BattleStats battle={activeBattle} theme={theme} />
+                
+                {/* Battle Scene - Maximized with minimal gaps */}
+                <div className="flex-1 flex flex-col max-h-[75vh] mt-0">
+                  <div className="flex-1 flex items-center justify-center p-0">
+                    <div
+                      className={`relative rounded-xl ${theme.container} border ${theme.border} backdrop-blur-md overflow-hidden`}
+                      style={{
+                        height: "min(calc(100vh - 220px), 70vh)", 
+                        width: "min(calc((100vh - 220px) * 1.7777), calc(100vw - 8px))",
+                        maxWidth: "100vw",
+                        minHeight: "320px",
+                      }}
+                    >
+                      <BattleScene
+                        challenger={activeBattle.challenger}
+                        accepter={activeBattle.accepter}
+                        playerAnimation={playerAnimation}
+                        opponentAnimation={opponentAnimation}
+                        onPlayerAnimationComplete={() => {}}
+                        onOpponentAnimationComplete={() => {}}
+                        attackAnimation={attackAnimation}
+                        shieldRestoring={shieldRestoring}
+                        showEndOfRound={showEndOfRound}
+                        onAttackComplete={() => setAttackAnimation(null)}
+                        onShieldComplete={() => setShieldRestoring(false)}
+                        onRoundComplete={() => setShowEndOfRound(false)}
+                      />
+                      <BattleStats battle={activeBattle} theme={theme} />
+                    </div>
                   </div>
                 </div>
 
-                {/* Battle Moves Section */}
-                <BattleMoves
-                  challengerMoves={activeBattle.challenger.moves}
-                  accepterMoves={activeBattle.accepter.moves}
-                  onAttack={handleAttack}
-                  isDisabled={isUpdating || movesDisabled}
-                  battleStatus={activeBattle.status}
-                  theme={theme}
-                  getMoveColor={getMoveColor}
-                />
+                {/* Bottom Section: Battle Interface with minimal spacing */}
+                <div className="min-h-48 flex-shrink-0 mt-0.5 px-2">
+                  <BattleInterface
+                    challengerMoves={activeBattle.challenger.moves}
+                    accepterMoves={activeBattle.accepter.moves}
+                    onAttack={handleAttack}
+                    isDisabled={isUpdating || movesDisabled}
+                    battleStatus={activeBattle.status}
+                    theme={theme}
+                    getMoveColor={getMoveColor}
+                    battleTurns={activeBattle.turns || []}
+                    showBattleLog={showBattleLog}
+                    onToggleBattleLog={handleToggleBattleLog}
+                    challengerName={activeBattle.challenger.name}
+                    accepterName={activeBattle.accepter.name}
+                  />
+                </div>
               </div>
             )}
-          </div>
-        </div>
-        <Footer darkMode={darkMode} />
       </div>
     </div>
   );

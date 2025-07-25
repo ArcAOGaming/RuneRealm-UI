@@ -10,6 +10,7 @@ interface PlayerMovesProps {
   battleStatus: string;
   theme: any;
   getMoveColor: (moveName: string, move: any) => string;
+  hideTitle?: boolean;
 }
 
 /**
@@ -41,13 +42,14 @@ const PlayerMoves: React.FC<PlayerMovesProps> = ({
   battleStatus,
   theme,
   getMoveColor,
+  hideTitle = false,
 }) => {
   // Check if all moves are exhausted to show struggle button
   const allMovesExhausted = Object.values(moves).every((move: any) => move.count === 0);
 
   return (
     <div className={`p-4 rounded-lg ${theme.container} bg-opacity-20`}>
-      <h4 className="text-md font-semibold mb-3">{playerName}</h4>
+      {!hideTitle && <h4 className="text-md font-semibold mb-3">{playerName}</h4>}
       <div className="relative">
         {/* Regular moves grid */}
         <div className="grid grid-cols-2 gap-2 relative">
