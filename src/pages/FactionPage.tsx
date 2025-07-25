@@ -1,21 +1,29 @@
-import React, { useEffect, useState } from 'react';
-import { useWallet } from '../hooks/useWallet';
-import { useNavigate } from 'react-router-dom';
-import { getFactionOptions, FactionOptions, setFaction, purchaseAccess, TokenOption, getTotalOfferings, OfferingStats, getUserOfferings } from '../utils/aoHelpers';
-import { currentTheme } from '../constants/theme';
-import { Gateway, ACTIVITY_POINTS } from '../constants/Constants';
-import PurchaseModal from '../components/PurchaseModal';
-import CheckInButton from '../components/CheckInButton';
-import Header from '../components/Header';
-import Confetti from 'react-confetti';
-import LoadingAnimation from '../components/LoadingAnimation';
-import Footer from '../components/Footer';
+import React, { useEffect, useState, useMemo } from "react";
+import { useWallet } from "../hooks/useWallet";
+import { useNavigate } from "react-router-dom";
+import {
+  getFactionOptions,
+  FactionOptions,
+  setFaction,
+  purchaseAccess,
+  TokenOption,
+  getTotalOfferings,
+  OfferingStats,
+  getUserOfferings,
+} from "../utils/aoHelpers";
+import { currentTheme } from "../constants/theme";
+import { Gateway, ACTIVITY_POINTS } from "../constants/Constants";
+import PurchaseModal from "../components/PurchaseModal";
+import Header from "../components/Header";
+import Confetti from "react-confetti";
+import LoadingAnimation from "../components/LoadingAnimation";
+import Footer from "../components/Footer";
 
 const FACTION_TO_PATH = {
-  'Sky Nomads': 'air',
-  'Aqua Guardians': 'water',
-  'Inferno Blades': 'fire',
-  'Stone Titans': 'rock'
+  "Sky Nomads": "air",
+  "Aqua Guardians": "water",
+  "Inferno Blades": "fire",
+  "Stone Titans": "rock",
 };
 
 interface OfferingData {
@@ -26,68 +34,37 @@ interface OfferingData {
 
 // Type guard function to check if a value is an OfferingData object
 const isOfferingData = (value: unknown): value is OfferingData => {
-  return typeof value === 'object' && 
-         value !== null && 
-         'LastOffering' in value &&
-         'IndividualOfferings' in value &&
-         'Streak' in value;
+  return (
+    typeof value === "object" &&
+    value !== null &&
+    "LastOffering" in value &&
+    "IndividualOfferings" in value &&
+    "Streak" in value
+  );
 };
 
 export const FactionPage: React.FC = () => {
   const navigate = useNavigate();
-  const { wallet, walletStatus, darkMode, connectWallet, setDarkMode, refreshTrigger, triggerRefresh } = useWallet();
+  const {
+    wallet,
+    walletStatus,
+    darkMode,
+    connectWallet,
+    setDarkMode,
+    refreshTrigger,
+    triggerRefresh,
+  } = useWallet();
   const [factions, setFactions] = useState<FactionOptions[]>([]);
   const [isPurchaseModalOpen, setIsPurchaseModalOpen] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [isInitialLoad, setIsInitialLoad] = useState(true);
   const [showConfetti, setShowConfetti] = useState(false);
-  const [offeringStats, setOfferingStats] = useState<OfferingStats | null>(null);
+  const [offeringStats, setOfferingStats] = useState<OfferingStats | null>(
+    null
+  );
   const [userOfferings, setUserOfferings] = useState<OfferingData | null>(null);
-  const [nextOfferingTime, setNextOfferingTime] = useState<string>('');
   const theme = currentTheme(darkMode);
-
-  useEffect(() => {
-    const updateNextOfferingTime = () => {
-      if (!userOfferings?.LastOffering) {
-        const now = new Date();
-        const midnight = new Date();
-        midnight.setUTCHours(24, 0, 0, 0);
-        
-        if (midnight.getTime() <= now.getTime()) {
-          midnight.setUTCDate(midnight.getUTCDate() + 1);
-        }
-
-        const hours = Math.floor((midnight.getTime() - now.getTime()) / (1000 * 60 * 60));
-        const minutes = Math.floor(((midnight.getTime() - now.getTime()) % (1000 * 60 * 60)) / (1000 * 60));
-        const seconds = Math.floor(((midnight.getTime() - now.getTime()) % (1000 * 60)) / 1000);
-
-        setNextOfferingTime(`${hours}h ${minutes}m ${seconds}s`);
-      } else {
-        const lastOffering = new Date(userOfferings.LastOffering * 1000);
-        const nextOffering = new Date(lastOffering);
-        nextOffering.setUTCDate(nextOffering.getUTCDate() + 1);
-        nextOffering.setUTCHours(0, 0, 0, 0);
-
-        const now = new Date();
-        const diff = nextOffering.getTime() - now.getTime();
-
-        if (diff <= 0) {
-          setNextOfferingTime('');
-          return;
-        }
-
-        const hours = Math.floor(diff / (1000 * 60 * 60));
-        const minutes = Math.floor((diff % (1000 * 60 * 60)) / (1000 * 60));
-        const seconds = Math.floor((diff % (1000 * 60)) / 1000);
-
-        setNextOfferingTime(`${hours}h ${minutes}m ${seconds}s`);
-      }
-    };
-
-    updateNextOfferingTime();
-    const interval = setInterval(updateNextOfferingTime, 1000);
-    return () => clearInterval(interval);
-  }, [userOfferings?.LastOffering]);
+  const [isInfoModalOpen, setIsInfoModalOpen] = useState(false);
 
   // Function to load data
   const loadAllData = async () => {
@@ -100,10 +77,11 @@ export const FactionPage: React.FC = () => {
     }
 
     try {
+      setIsLoading(true);
       const [factionData, totalStats, userStats] = await Promise.all([
         getFactionOptions(wallet),
         getTotalOfferings(),
-        getUserOfferings(wallet.address)
+        getUserOfferings(wallet.address),
       ]);
 
       if (factionData) setFactions(factionData);
@@ -114,9 +92,10 @@ export const FactionPage: React.FC = () => {
         setUserOfferings(null);
       }
     } catch (error) {
-      console.error('Error loading faction data:', error);
+      console.error("Error loading faction data:", error);
     } finally {
       setIsInitialLoad(false);
+      setIsLoading(false);
     }
   };
 
@@ -125,17 +104,24 @@ export const FactionPage: React.FC = () => {
     loadAllData();
   }, [wallet?.address, refreshTrigger]);
 
+  // Handle faction info modal
+  useEffect(() => {
+    if (!walletStatus?.faction && walletStatus?.isUnlocked) {
+      setIsInfoModalOpen(true);
+    }
+  }, [walletStatus]);
+
   const handleJoinFaction = async (factionName: string) => {
     if (!wallet) {
-      console.error('Wallet not connected');
+      console.error("Wallet not connected");
       return;
     }
-    
+
     try {
       setIsLoading(true);
       await setFaction(wallet, factionName, walletStatus, triggerRefresh);
     } catch (error) {
-      console.error('Error joining faction:', error);
+      console.error("Error joining faction:", error);
     } finally {
       setIsLoading(false);
     }
@@ -154,286 +140,683 @@ export const FactionPage: React.FC = () => {
         setShowConfetti(false);
       }, 5000);
     } catch (error) {
-      console.error('Purchase failed:', error);
+      console.error("Purchase failed:", error);
       throw error;
     }
   };
 
   // Calculate total points for a faction
   const calculateFactionPoints = (faction: FactionOptions) => {
-    const offeringPoints = Number(offeringStats?.[faction.name as keyof OfferingStats] || 0) * ACTIVITY_POINTS.OFFERING;
-    const feedPoints = Number(faction.totalTimesFed || 0) * ACTIVITY_POINTS.FEED;
-    const playPoints = Number(faction.totalTimesPlay || 0) * ACTIVITY_POINTS.PLAY;
-    const missionPoints = Number(faction.totalTimesMission || 0) * ACTIVITY_POINTS.MISSION;
+    const offeringPoints =
+      Number(offeringStats?.[faction.name as keyof OfferingStats] || 0) *
+      ACTIVITY_POINTS.OFFERING;
+    const feedPoints =
+      Number(faction.totalTimesFed || 0) * ACTIVITY_POINTS.FEED;
+    const playPoints =
+      Number(faction.totalTimesPlay || 0) * ACTIVITY_POINTS.PLAY;
+    const missionPoints =
+      Number(faction.totalTimesMission || 0) * ACTIVITY_POINTS.MISSION;
     return offeringPoints + feedPoints + playPoints + missionPoints;
   };
+
+  // Memoize the sorted factions list to ensure ranks are correct and improve performance
+  const sortedFactions = useMemo(() => {
+    if (!factions.length || !offeringStats) return [];
+    return [...factions].sort(
+      (a, b) => calculateFactionPoints(b) - calculateFactionPoints(a)
+    );
+  }, [factions, offeringStats]);
 
   // Calculate user's total points
   const calculateUserPoints = () => {
-    const offeringPoints = Number(userOfferings?.IndividualOfferings || 0) * ACTIVITY_POINTS.OFFERING;
-    const feedPoints = Number(walletStatus?.monster?.totalTimesFed || 0) * ACTIVITY_POINTS.FEED;
-    const playPoints = Number(walletStatus?.monster?.totalTimesPlay || 0) * ACTIVITY_POINTS.PLAY;
-    const missionPoints = Number(walletStatus?.monster?.totalTimesMission || 0) * ACTIVITY_POINTS.MISSION;
+    const offeringPoints =
+      Number(userOfferings?.IndividualOfferings || 0) *
+      ACTIVITY_POINTS.OFFERING;
+    const feedPoints =
+      Number(walletStatus?.monster?.totalTimesFed || 0) * ACTIVITY_POINTS.FEED;
+    const playPoints =
+      Number(walletStatus?.monster?.totalTimesPlay || 0) * ACTIVITY_POINTS.PLAY;
+    const missionPoints =
+      Number(walletStatus?.monster?.totalTimesMission || 0) *
+      ACTIVITY_POINTS.MISSION;
     return offeringPoints + feedPoints + playPoints + missionPoints;
   };
 
-  const currentFaction = factions.find(f => f.name === walletStatus?.faction);
+  const currentFaction = sortedFactions.find(
+    (f) => f.name === walletStatus?.faction
+  );
 
   return (
-    <div className="min-h-screen flex flex-col overflow-hidden">
-      <div className={`min-h-screen flex flex-col ${theme.bg}`}>
-        <Header
-          theme={theme}
-          darkMode={darkMode}
+    <div className={`flex flex-col min-h-screen ${theme.bg}`}>
+      {/* Header */}
+      <div className="z-50 md:sticky md:top-0">
+        <Header theme={theme} darkMode={darkMode} />
+      </div>
+
+      {showConfetti && (
+        <Confetti
+          width={window.innerWidth}
+          height={window.innerHeight}
+          recycle={false}
+          numberOfPieces={500}
+          gravity={0.3}
         />
-        
-        {showConfetti && (
-          <Confetti
-            width={window.innerWidth}
-            height={window.innerHeight}
-            recycle={false}
-            numberOfPieces={500}
-            gravity={0.3}
-          />
+      )}
+
+      {isInfoModalOpen && (
+        <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4">
+          <div
+            className={`max-w-2xl w-full p-6 rounded-xl ${theme.container} border ${theme.border} shadow-lg`}
+          >
+            <h2 className={`text-2xl font-bold mb-4 ${theme.cardTitle}`}>
+              Picking Your Faction
+            </h2>
+            <div className={`space-y-3 ${theme.cardText}`}>
+              <p className="text-lg font-semibold text-red-500">
+                Important: Faction selection is final - Team players only, no
+                team quitting!
+              </p>
+              <div className="space-y-2">
+                <p>
+                  <span className="font-semibold">Rewards Distribution:</span>{" "}
+                  Faction rewards are split among all faction members - being in
+                  the biggest faction may not be the best strategy.
+                </p>
+                <p>
+                  <span className="font-semibold">Activity Matters:</span> The
+                  most active members will receive additional rewards, while
+                  non-active members will receive no rewards.
+                </p>
+                <p>
+                  <span className="font-semibold">Reward Sources:</span> Rewards
+                  come from multiple sources:
+                </p>
+                <ul className="list-disc pl-6 space-y-1">
+                  <li>Partnerships</li>
+                  <li>Premium pass sales revenue</li>
+                  <li>In-game revenue</li>
+                  <li>Funds raised</li>
+                  <li>Profits from staking</li>
+                </ul>
+              </div>
+              <div className="text-right">
+                <button
+                  onClick={() => setIsInfoModalOpen(false)}
+                  className="mt-4 inline-block px-4 py-2 rounded-lg bg-red-600 hover:bg-red-700 text-white font-semibold transition-colors"
+                >
+                  Close
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      <PurchaseModal
+        isOpen={isPurchaseModalOpen}
+        onClose={() => setIsPurchaseModalOpen(false)}
+        onPurchase={handlePurchase}
+        contractName="Eternal Pass"
+      />
+
+      {/* MAIN CONTENT */}
+      <main className="flex-1 flex flex-col w-full px-2 md:px-6 py-4 min-h-0">
+        {isLoading && (
+          <div className="fixed inset-0 z-40 bg-black/50 backdrop-blur-sm flex items-center justify-center">
+            <LoadingAnimation />
+          </div>
         )}
 
-        <PurchaseModal
-          isOpen={isPurchaseModalOpen}
-          onClose={() => setIsPurchaseModalOpen(false)}
-          onPurchase={handlePurchase}
-          contractName="Eternal Pass"
-        />
+        {walletStatus?.faction && currentFaction && (
+          <div
+            className={`flex-1 flex flex-col w-full rounded-xl ${theme.container} border ${theme.border} backdrop-blur-md p-4 min-h-0 transition-all duration-300`}
+          >
+            <div className="flex flex-1 flex-col lg:flex-row gap-6 min-h-0">
+              {/* LEFT - USER FACTION INFO */}
+              <div className="flex-1 flex flex-col min-h-0">
+                <h2 className={`text-2xl font-bold mb-2 ${theme.cardTitle}`}>
+                  Your Faction
+                </h2>
 
-        <div className={`container mx-auto px-6 py-8 flex-1 overflow-y-auto ${theme.text}`}>
-          {/* Header Section */}
-          <div className="max-w-6xl mx-auto mb-8">
-            <h1 className={`text-3xl font-bold mb-4 ${theme.text}`}>Factions</h1>
-            {!walletStatus?.faction && walletStatus?.isUnlocked && (
-              <div className={`p-6 rounded-xl ${theme.container} border ${theme.border} mb-8 backdrop-blur-md`}>
-                <h2 className={`text-2xl font-bold mb-4 ${theme.text}`}>Picking Your Faction</h2>
-                <div className={`space-y-3 ${theme.text}`}>
-                  <p className="text-lg font-semibold text-red-500">
-                    Important: Faction selection is final - Team players only, no team quitting!
-                  </p>
-                  <div className="space-y-2">
-                    <p>
-                      <span className="font-semibold">Rewards Distribution:</span> Faction rewards are split among all faction members - being in the biggest faction may not be the best strategy.
-                    </p>
-                    <p>
-                      <span className="font-semibold">Activity Matters:</span> The most active members will receive additional rewards, while non-active members will receive no rewards.
-                    </p>
-                    <p>
-                      <span className="font-semibold">Reward Sources:</span> Rewards come from multiple sources:
-                    </p>
-                    <ul className="list-disc pl-6 space-y-1">
-                      <li>Partnerships</li>
-                      <li>Premium pass sales revenue</li>
-                      <li>In-game revenue</li>
-                      <li>Funds raised</li>
-                      <li>Profits from staking</li>
-                    </ul>
-                  </div>
-                </div>
-              </div>
-            )}
-            {walletStatus?.faction && currentFaction && (
-              <div className={`p-6 rounded-xl ${theme.container} border ${theme.border} mb-8 backdrop-blur-md`}>
-                <div className="flex flex-col md:flex-row gap-6">
-                  <div className="flex items-start gap-4">
-                    {currentFaction.mascot && (
-                      <img 
-                        src={`${Gateway}${currentFaction.mascot}`}
-                        alt={`${currentFaction.name} Mascot`}
-                        className="w-24 h-24 object-cover rounded-lg"
-                      />
-                    )}
-                    <div>
-                      <h2 className={`text-2xl font-bold mb-2 ${theme.text}`}>Your Faction</h2>
-                      <p className={`text-xl ${theme.text} mb-2`}>{currentFaction.name}</p>
-                      {currentFaction.perks && (
-                        <div className="mb-4">
-                          <p className={`text-sm ${theme.text} opacity-75`}>{currentFaction.perks[0]}</p>
-                        </div>
+                {/* Faction Hero Section */}
+                <div
+                  className={`flex-1 rounded-xl overflow-hidden ${theme.cardBg} border ${theme.border} shadow-lg`}
+                >
+                  <div className="flex flex-col md:flex-row h-full">
+                    {/* Image */}
+                    <div className="w-full md:w-1/2 relative min-h-[300px] md:h-auto">
+                      {currentFaction.mascot && (
+                        <img
+                          src={`${Gateway}${currentFaction.mascot}`}
+                          alt={`${currentFaction.name} Mascot`}
+                          className="absolute inset-0 w-full h-full object-contain p-6 transition-transform hover:scale-105"
+                        />
                       )}
                     </div>
-                  </div>
-                  
-                  <div className="flex-1 border-t md:border-l md:border-t-0 pt-4 md:pt-0 md:pl-6">
-                    <div className="mb-4">
-                      <h3 className={`text-lg font-semibold mb-2 ${theme.text}`}>Daily Offerings</h3>
-                      <p className={`text-sm ${theme.text} opacity-80 mb-2`}>
-                        Offer praise to the altar of your team once daily. Build streaks to earn RUNE rewards - consistency is key!
-                      </p>
+
+                    {/* Teks */}
+                    <div className="w-full md:w-1/2 p-6 flex flex-col justify-center z-10">
+                      <div className="mb-6">
+                        <p
+                          className={`text-3xl font-bold ${theme.cardTitle} mb-3`}
+                        >
+                          {currentFaction.name}
+                        </p>
+                        {currentFaction.perks && (
+                          <p className={`text-lg ${theme.cardText} opacity-90`}>
+                            {currentFaction.perks[0]}
+                          </p>
+                        )}
+                      </div>
+
+                      {/* Mini Stats */}
                       <div className="grid grid-cols-2 gap-4">
-                        <div className={`grid grid-cols-2 gap-4 p-3 rounded-lg ${theme.container} bg-opacity-50 mb-4`}>
-                          <div>
-                            <div className={`text-sm ${theme.text}`}>
-                              <span className="opacity-70">Your Offerings:</span>
-                              <span className="float-right font-semibold">{userOfferings?.IndividualOfferings || 0}</span>
-                            </div>
-                            <div className={`text-sm ${theme.text}`}>
-                              <span className="opacity-70">Times Fed:</span>
-                              <span className="float-right font-semibold">{walletStatus?.monster?.totalTimesFed || 0}</span>
-                            </div>
-                            <div className={`text-sm ${theme.text}`}>
-                              <span className="opacity-70">Times Played:</span>
-                              <span className="float-right font-semibold">{walletStatus?.monster?.totalTimesPlay || 0}</span>
-                            </div>
-                            <div className={`text-sm ${theme.text}`}>
-                              <span className="opacity-70">Missions:</span>
-                              <span className="float-right font-semibold">{walletStatus?.monster?.totalTimesMission || 0}</span>
-                            </div>
-                            <div className={`text-sm ${theme.text} font-bold pt-2 border-t border-gray-600`}>
-                              <span>Total Points:</span>
-                              <span className="float-right">{calculateUserPoints()}</span>
-                            </div>
-                          </div>
-                          <div>
-                            <div className={`text-sm ${theme.text} mb-2`}>
-                              <span className="opacity-70">Avg Level:</span>
-                              <span className="float-right font-semibold">{currentFaction.averageLevel ? Math.round(currentFaction.averageLevel * 10) / 10 : 0}</span>
-                            </div>
-                            <div className={`text-sm ${theme.text} opacity-80`}>
-                              <div>Offering: {ACTIVITY_POINTS.OFFERING}pts</div>
-                              <div>Feed: {ACTIVITY_POINTS.FEED}pt</div>
-                              <div>Play: {ACTIVITY_POINTS.PLAY}pts</div>
-                              <div>Mission: {ACTIVITY_POINTS.MISSION}pts</div>
-                            </div>
-                          </div>
+                        <div className={`p-3 rounded-lg ${theme.container}`}>
+                          <p
+                            className={`text-sm ${theme.cardText} opacity-80 mb-1`}
+                          >
+                            Members
+                          </p>
+                          <p className={`text-xl font-bold ${theme.cardTitle}`}>
+                            {Number(currentFaction.memberCount || 0)}
+                          </p>
+                        </div>
+                        <div className={`p-3 rounded-lg ${theme.container}`}>
+                          <p
+                            className={`text-sm ${theme.cardText} opacity-80 mb-1`}
+                          >
+                            Avg Level
+                          </p>
+                          <p className={`text-xl font-bold ${theme.cardTitle}`}>
+                            {currentFaction.averageLevel?.toFixed(1)}
+                          </p>
+                        </div>
+                        <div className={`p-3 rounded-lg ${theme.container}`}>
+                          <p
+                            className={`text-sm ${theme.cardText} opacity-80 mb-1`}
+                          >
+                            Points
+                          </p>
+                          <p className={`text-xl font-bold ${theme.cardTitle}`}>
+                            {calculateFactionPoints(currentFaction)}
+                          </p>
+                        </div>
+                        <div className={`p-3 rounded-lg ${theme.container}`}>
+                          <p
+                            className={`text-sm ${theme.cardText} opacity-80 mb-1`}
+                          >
+                            Rank
+                          </p>
+                          <p className={`text-xl font-bold ${theme.cardTitle}`}>
+                            #
+                            {sortedFactions.findIndex(
+                              (f) => f.name === currentFaction.name
+                            ) + 1}
+                          </p>
                         </div>
                       </div>
-                      <div className="flex items-center gap-4">
-                        <CheckInButton onOfferingComplete={loadAllData} />
-                        {nextOfferingTime && (
-                          <div className={`text-sm ${theme.text} opacity-80`}>
-                            Next offering in: {nextOfferingTime}
-                          </div>
-                        )}
+                    </div>
+                  </div>
+                </div>
+
+                {/* User Stats Section */}
+                <div className="mt-6">
+                  <h3 className={`text-xl font-bold mb-4 ${theme.cardTitle}`}>
+                    Your Contribution
+                  </h3>
+                  <div
+                    className={`grid grid-cols-2 gap-4 p-5 rounded-xl ${theme.container} border ${theme.border}`}
+                  >
+                    <div className="space-y-4">
+                      <div className={`${theme.cardText}`}>
+                        <div className="flex justify-between">
+                          <span>Offerings</span>
+                          <span className="font-semibold">
+                            {userOfferings?.IndividualOfferings || 0}
+                          </span>
+                        </div>
+                        <div className="w-full h-2 bg-gray-700 rounded-full mt-1">
+                          <div
+                            className="h-full bg-yellow-500 rounded-full"
+                            style={{
+                              width: `${Math.min(
+                                (userOfferings?.IndividualOfferings || 0) * 5,
+                                100
+                              )}%`,
+                            }}
+                          ></div>
+                        </div>
+                      </div>
+
+                      <div className={`${theme.cardText}`}>
+                        <div className="flex justify-between">
+                          <span>Times Fed</span>
+                          <span className="font-semibold">
+                            {walletStatus?.monster?.totalTimesFed || 0}
+                          </span>
+                        </div>
+                        <div className="w-full h-2 bg-gray-700 rounded-full mt-1">
+                          <div
+                            className="h-full bg-green-500 rounded-full"
+                            style={{
+                              width: `${Math.min(
+                                (walletStatus?.monster?.totalTimesFed || 0) *
+                                  10,
+                                100
+                              )}%`,
+                            }}
+                          ></div>
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className="space-y-4">
+                      <div className={`${theme.cardText}`}>
+                        <div className="flex justify-between">
+                          <span>Times Played</span>
+                          <span className="font-semibold">
+                            {walletStatus?.monster?.totalTimesPlay || 0}
+                          </span>
+                        </div>
+                        <div className="w-full h-2 bg-gray-700 rounded-full mt-1">
+                          <div
+                            className="h-full bg-blue-500 rounded-full"
+                            style={{
+                              width: `${Math.min(
+                                (walletStatus?.monster?.totalTimesPlay || 0) *
+                                  10,
+                                100
+                              )}%`,
+                            }}
+                          ></div>
+                        </div>
+                      </div>
+
+                      <div className={`${theme.cardText}`}>
+                        <div className="flex justify-between">
+                          <span>Missions</span>
+                          <span className="font-semibold">
+                            {walletStatus?.monster?.totalTimesMission || 0}
+                          </span>
+                        </div>
+                        <div className="w-full h-2 bg-gray-700 rounded-full mt-1">
+                          <div
+                            className="h-full bg-purple-500 rounded-full"
+                            style={{
+                              width: `${Math.min(
+                                (walletStatus?.monster?.totalTimesMission ||
+                                  0) * 10,
+                                100
+                              )}%`,
+                            }}
+                          ></div>
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Total Points */}
+                    <div className="col-span-2 mt-4 pt-4 border-t border-gray-700">
+                      <div className="flex justify-between items-center">
+                        <span
+                          className={`text-lg font-bold ${theme.cardTitle}`}
+                        >
+                          Total Points
+                        </span>
+                        <span className={`text-2xl font-bold ${theme.primary}`}>
+                          {calculateUserPoints()}
+                        </span>
                       </div>
                     </div>
                   </div>
                 </div>
               </div>
-            )}
-          </div>
 
-          {/* Loading State or Content */}
-          {isInitialLoad && !factions.length ? (
-            <div className="flex justify-center items-center min-h-[400px]">
-              <LoadingAnimation />
+              {/* RIGHT - FACTION LIST */}
+              <div className="flex-1 flex flex-col min-h-0">
+                <div className="flex justify-between items-center mb-4">
+                  <h2 className={`text-2xl font-bold ${theme.cardTitle}`}>
+                    Faction Rankings
+                  </h2>
+                  <span className={`text-sm ${theme.cardText} opacity-80`}>
+                    {sortedFactions.length - 1} opponents
+                  </span>
+                </div>
+
+                <div className="flex-1 overflow-auto pr-2 custom-scrollbar">
+                  {sortedFactions
+                    .filter((f) => f.name !== walletStatus?.faction)
+                    .map((faction) => (
+                      <div
+                        key={faction.name}
+                        onClick={() =>
+                          navigate(
+                            `/factions/${
+                              FACTION_TO_PATH[
+                                faction.name as keyof typeof FACTION_TO_PATH
+                              ]
+                            }`
+                          )
+                        }
+                        className={`p-4 rounded-xl ${theme.container} border ${theme.border} backdrop-blur-md hover:scale-[1.01] hover:shadow-lg cursor-pointer transition-all duration-200 mb-4`}
+                      >
+                        <div className="flex items-start">
+                          {/* Image */}
+                          {faction.mascot && (
+                            <div className="w-1/3 min-w-[120px] mr-4">
+                              <img
+                                src={`${Gateway}${faction.mascot}`}
+                                alt={`${faction.name} Mascot`}
+                                className="w-full h-auto object-contain"
+                              />
+                            </div>
+                          )}
+
+                          <div className="flex-1">
+                            <div className="flex justify-between items-start mb-3">
+                              <h4
+                                className={`text-xl font-bold ${theme.cardTitle}`}
+                              >
+                                {faction.name}
+                              </h4>
+                              <span
+                                className={`text-sm font-semibold ${theme.primary}`}
+                              >
+                                #
+                                {sortedFactions.findIndex(
+                                  (f) => f.name === faction.name
+                                ) + 1}
+                              </span>
+                            </div>
+
+                            {/* Stats Grid */}
+                            <div className="grid grid-cols-2 gap-3">
+                              <div className={`${theme.cardText}`}>
+                                <div className="flex justify-between">
+                                  <span className="opacity-80">Members:</span>
+                                  <span className="font-semibold">
+                                    {faction.memberCount}
+                                  </span>
+                                </div>
+                              </div>
+
+                              <div className={`${theme.cardText}`}>
+                                <div className="flex justify-between">
+                                  <span className="opacity-80">Avg Level:</span>
+                                  <span className="font-semibold">
+                                    {faction.averageLevel?.toFixed(1)}
+                                  </span>
+                                </div>
+                              </div>
+
+                              <div className={`${theme.cardText}`}>
+                                <div className="flex justify-between">
+                                  <span className="opacity-80">Points:</span>
+                                  <span className="font-semibold">
+                                    {calculateFactionPoints(faction)}
+                                  </span>
+                                </div>
+                              </div>
+
+                              <div className={`${theme.cardText}`}>
+                                <div className="flex justify-between">
+                                  <span className="opacity-80">Offerings:</span>
+                                  <span className="font-semibold">
+                                    {offeringStats?.[
+                                      faction.name as keyof OfferingStats
+                                    ] || 0}
+                                  </span>
+                                </div>
+                              </div>
+
+                              <div className={`${theme.cardText}`}>
+                                <div className="flex justify-between">
+                                  <span className="opacity-80">Fed:</span>
+                                  <span className="font-semibold">
+                                    {faction.totalTimesFed || 0}
+                                  </span>
+                                </div>
+                              </div>
+
+                              <div className={`${theme.cardText}`}>
+                                <div className="flex justify-between">
+                                  <span className="opacity-80">Played:</span>
+                                  <span className="font-semibold">
+                                    {faction.totalTimesPlay || 0}
+                                  </span>
+                                </div>
+                              </div>
+
+                              <div className={`${theme.cardText}`}>
+                                <div className="flex justify-between">
+                                  <span className="opacity-80">Missions:</span>
+                                  <span className="font-semibold">
+                                    {faction.totalTimesMission || 0}
+                                  </span>
+                                </div>
+                              </div>
+
+                              <div className={`${theme.cardText}`}>
+                                <div className="flex justify-between">
+                                  <span className="opacity-80">Activity:</span>
+                                  <span className="font-semibold">
+                                    {(() => {
+                                      const members = Number(
+                                        faction.memberCount || 0
+                                      );
+                                      const activity = Number(
+                                        (faction as any).totalActivity || 0
+                                      );
+                                      return members > 0
+                                        ? Math.round(activity / members)
+                                        : 0;
+                                    })()}
+                                  </span>
+                                </div>
+                              </div>
+                            </div>
+
+                            {/* Perks */}
+                            {faction.perks && faction.perks.length > 0 && (
+                              <div className="mt-3 pt-3 border-t border-gray-700">
+                                <p
+                                  className={`text-sm font-semibold ${theme.cardText} mb-1`}
+                                >
+                                  Faction Perks:
+                                </p>
+                                <p
+                                  className={`text-sm ${theme.cardText} opacity-90`}
+                                >
+                                  {faction.perks[0]}
+                                </p>
+                              </div>
+                            )}
+                          </div>
+                        </div>
+                      </div>
+                    ))}
+                </div>
+              </div>
             </div>
-          ) : factions.length > 0 && (
-            <div 
-              className={`grid gap-3 max-w-5xl mx-auto ${
-                factions.length <= 3 
-                  ? 'grid-cols-1 md:grid-cols-3' 
-                  : factions.length === 4 
-                  ? 'grid-cols-1 md:grid-cols-2' 
-                  : 'grid-cols-1'
-              }`}
-            >
-              {factions.map((faction) => (
-                <div
-                  key={faction.name}
-                  onClick={() => navigate(`/factions/${FACTION_TO_PATH[faction.name as keyof typeof FACTION_TO_PATH]}`)}
-                  className={`flex flex-col h-full p-2.5 rounded-xl ${theme.container} border ${theme.border} backdrop-blur-md transform transition-all duration-300 hover:scale-[1.02] hover:shadow-xl min-h-[480px] cursor-pointer`}
-                >
-                  <div className="relative rounded-lg overflow-hidden bg-black/5">
-                    {faction.mascot && (
-                      <img
-                        src={`${Gateway}${faction.mascot}`}
-                        alt={`${faction.name} Mascot`}
-                        className="w-full h-[360px] object-contain hover:scale-105 transition-transform duration-500"
-                      />
-                    )}
-                  </div>
-                  <div className="flex-grow mt-2.5 px-1.5">
-                    <h3 className={`text-xl font-bold ${theme.text} mb-3`}>{faction.name}</h3>
-                    <div className="grid grid-cols-2 gap-4">
-                      <div>
+          </div>
+        )}
+
+        {isInitialLoad && !sortedFactions.length ? (
+          <div className="flex justify-center items-center min-h-[400px]">
+            <LoadingAnimation />
+          </div>
+        ) : (
+          !walletStatus?.faction &&
+          sortedFactions.length > 0 && (
+            <div className="flex-1 flex flex-col w-full min-h-0">
+              <div
+                className={`flex-1 flex flex-col w-full rounded-xl ${theme.container} border ${theme.border} backdrop-blur-md p-4 overflow-auto min-h-0`}
+              >
+                <h2 className={`text-2xl font-bold mb-4 ${theme.cardTitle}`}>
+                  Choose Your Faction
+                </h2>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 auto-rows-fr gap-6 w-full flex-1 min-h-0">
+                  {sortedFactions.map((faction) => (
+                    <div
+                      key={faction.name}
+                      onClick={() =>
+                        navigate(
+                          `/factions/${
+                            FACTION_TO_PATH[
+                              faction.name as keyof typeof FACTION_TO_PATH
+                            ]
+                          }`
+                        )
+                      }
+                      className={`flex flex-col h-full rounded-xl ${theme.container} border ${theme.border} backdrop-blur-md hover:scale-[1.02] hover:shadow-lg transition-all duration-300 cursor-pointer overflow-hidden`}
+                    >
+                      {/* Image */}
+                      <div className="relative h-64 bg-black/10 overflow-hidden">
+                        {faction.mascot && (
+                          <img
+                            src={`${Gateway}${faction.mascot}`}
+                            alt={`${faction.name} Mascot`}
+                            className="absolute inset-0 w-full h-full object-contain p-6 transition-transform duration-300 hover:scale-110"
+                          />
+                        )}
+                      </div>
+
+                      <div className="flex flex-col p-4 flex-1">
+                        <div className="flex justify-between items-center mb-3">
+                          <h3
+                            className={`text-xl font-bold ${theme.cardTitle}`}
+                          >
+                            {faction.name}
+                          </h3>
+                          <span
+                            className={`text-sm font-semibold ${theme.primary}`}
+                          >
+                            #
+                            {sortedFactions.findIndex(
+                              (f) => f.name === faction.name
+                            ) + 1}
+                          </span>
+                        </div>
+
                         {faction.perks && (
-                          <ul className="space-y-1.5">
+                          <ul className="text-sm opacity-90 mb-4 space-y-1.5">
                             {faction.perks.map((perk, index) => (
-                              <li key={index} className={`text-sm ${theme.text} opacity-80 flex items-start leading-tight`}>
-                                <span className="mr-1.5 text-blue-400 flex-shrink-0">•</span>
+                              <li
+                                key={index}
+                                className={`flex items-start ${theme.cardText}`}
+                              >
+                                <span className={`mr-2 ${theme.primary}`}>
+                                  •
+                                </span>
                                 <span>{perk}</span>
                               </li>
                             ))}
                           </ul>
                         )}
-                      </div>
-                          <div className={`grid grid-cols-2 gap-4 p-4 rounded-lg ${theme.container} bg-opacity-50`}>
-                          <div className="space-y-4">
-                            <div className={`text-sm ${theme.text} mb-2`}>
-                              <span className="opacity-70">Members:</span>
-                              <span className="float-right font-semibold">{faction.memberCount}</span>
-                            </div>
-                            <div className={`text-sm ${theme.text} mb-2`}>
-                              <span className="opacity-70">Monsters:</span>
-                              <span className="float-right font-semibold">{faction.monsterCount}</span>
-                            </div>
-                            <div className={`text-sm ${theme.text} mb-2`}>
-                              <span className="opacity-70">Avg Level:</span>
-                              <span className="float-right font-semibold">{faction.averageLevel ? Math.round(faction.averageLevel * 10) / 10 : 0}</span>
-                            </div>
-                            <div className={`text-sm ${theme.text} mb-2`}>
-                              <span className="opacity-70">Offerings:</span>
-                              <span className="float-right font-semibold">
-                                {offeringStats?.[faction.name as keyof OfferingStats] || 0}
+
+                        {/* Stats Grid */}
+                        <div
+                          className={`grid grid-cols-2 gap-3 p-3 rounded-lg ${theme.cardBg} text-sm mt-auto`}
+                        >
+                          <div className={`${theme.cardText}`}>
+                            <div className="flex justify-between">
+                              <span className="opacity-80">Members:</span>
+                              <span className="font-semibold">
+                                {Number(faction.memberCount || 0)}
                               </span>
                             </div>
                           </div>
-                          <div className="space-y-4">
-                            <div className={`text-sm ${theme.text} mb-2`}>
-                              <span className="opacity-70">Times Fed:</span>
-                              <span className="float-right font-semibold">{faction.totalTimesFed || 0}</span>
-                            </div>
-                            <div className={`text-sm ${theme.text} mb-2`}>
-                              <span className="opacity-70">Times Played:</span>
-                              <span className="float-right font-semibold">{faction.totalTimesPlay || 0}</span>
-                            </div>
-                            <div className={`text-sm ${theme.text} mb-2`}>
-                              <span className="opacity-70">Missions:</span>
-                              <span className="float-right font-semibold">{faction.totalTimesMission || 0}</span>
-                            </div>
-                            <div className={`text-sm ${theme.text} font-bold mt-4`}>
-                              <span>Points:</span>
-                              <span className="float-right">{calculateFactionPoints(faction)}</span>
+
+                          <div className={`${theme.cardText}`}>
+                            <div className="flex justify-between">
+                              <span className="opacity-80">Level:</span>
+                              <span className="font-semibold">
+                                {faction.averageLevel?.toFixed(1)}
+                              </span>
                             </div>
                           </div>
+
+                          <div className={`${theme.cardText}`}>
+                            <div className="flex justify-between">
+                              <span className="opacity-80">Points:</span>
+                              <span className="font-semibold">
+                                {calculateFactionPoints(faction)}
+                              </span>
+                            </div>
+                          </div>
+
+                          <div className={`${theme.cardText}`}>
+                            <div className="flex justify-between">
+                              <span className="opacity-80">Offerings:</span>
+                              <span className="font-semibold">
+                                {offeringStats?.[
+                                  faction.name as keyof OfferingStats
+                                ] || 0}
+                              </span>
+                            </div>
+                          </div>
+                        </div>
+
+                        <div className="mt-4">
+                          {!walletStatus?.isUnlocked ? (
+                            <button
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                setIsPurchaseModalOpen(true);
+                              }}
+                              className={`w-full px-3 py-2 rounded-lg font-bold ${theme.buttonBg} hover:opacity-90 ${theme.text} transition-opacity`}
+                            >
+                              Unlock Access
+                            </button>
+                          ) : (
+                            !walletStatus?.faction && (
+                              <button
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  handleJoinFaction(faction.name);
+                                }}
+                                disabled={isLoading}
+                                className={`w-full px-3 py-2 rounded-lg font-bold ${
+                                  theme.buttonBg
+                                } hover:opacity-90 ${theme.text} ${
+                                  isLoading ? "opacity-60 cursor-wait" : ""
+                                } transition-opacity`}
+                              >
+                                {isLoading ? "Joining..." : "Join Faction"}
+                              </button>
+                            )
+                          )}
+                        </div>
                       </div>
                     </div>
-                  </div>
-                  <div className="mt-2.5 px-1.5">
-                    {!walletStatus?.isUnlocked ? (
-                      <button
-                        onClick={() => setIsPurchaseModalOpen(true)}
-                        className={`w-full px-3 py-1.5 rounded-lg font-bold transition-all duration-300 ${theme.buttonBg} ${theme.buttonHover} ${theme.text}`}
-                      >
-                        Unlock Access
-                      </button>
-                    ) : !walletStatus?.faction && (
-                      <button
-                        onClick={() => handleJoinFaction(faction.name)}
-                        disabled={isLoading}
-                        className={`w-full px-3 py-1.5 rounded-lg font-bold transition-all duration-300 ${theme.buttonBg} ${theme.buttonHover} hover:scale-105 ${theme.text}`}
-                      >
-                        {isLoading ? 'Joining...' : 'Join Faction'}
-                      </button>
-                    )}
-                    {walletStatus?.faction === faction.name && (
-                      <div className={`text-center py-1.5 font-bold ${theme.text} opacity-75`}>
-                        Current Faction
-                      </div>
-                    )}
-                  </div>
+                  ))}
                 </div>
-              ))}
+              </div>
             </div>
-          )}
-        </div>
+          )
+        )}
+      </main>
+
+      {/* Footer */}
+      <div className="z-50 md:sticky md:bottom-0">
         <Footer darkMode={darkMode} />
       </div>
+
+      <style>{`
+        .custom-scrollbar::-webkit-scrollbar {
+          width: 6px;
+        }
+        
+        .custom-scrollbar::-webkit-scrollbar-track {
+          background: ${darkMode ? "#2A1912" : "#F4E4C1"};
+          border-radius: 10px;
+        }
+        
+        .custom-scrollbar::-webkit-scrollbar-thumb {
+          background: ${theme.primary};
+          border-radius: 10px;
+        }
+      `}</style>
     </div>
   );
 };
