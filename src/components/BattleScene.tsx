@@ -1,5 +1,5 @@
-import React, { useState, useEffect } from 'react';
-import MonsterSpriteView from './MonsterSpriteView';
+import React, { useState, useEffect, useCallback } from 'react';
+import MonsterSpriteView, { EffectType } from './MonsterSpriteView';
 import { MonsterStats } from '../utils/aoHelpers';
 import BattleStatus from './BattleStatus';
 import { BATTLE_POSITIONS } from '../constants/Constants';
@@ -17,6 +17,12 @@ interface BattleSceneProps {
   } | null;
   shieldRestoring: boolean;
   showEndOfRound: boolean;
+  // New props for effects
+  playerEffect?: EffectType;
+  opponentEffect?: EffectType;
+  onPlayerEffectComplete?: () => void;
+  onOpponentEffectComplete?: () => void;
+  // Original callbacks
   onAttackComplete: () => void;
   onShieldComplete: () => void;
   onRoundComplete: () => void;
@@ -32,12 +38,29 @@ const BattleScene: React.FC<BattleSceneProps> = ({
   attackAnimation,
   shieldRestoring,
   showEndOfRound,
+  playerEffect,
+  opponentEffect,
+  onPlayerEffectComplete,
+  onOpponentEffectComplete,
   onAttackComplete,
   onShieldComplete,
   onRoundComplete
 }) => {
   const [playerPosition, setPlayerPosition] = useState<'home' | 'attack'>('home');
   const [opponentPosition, setOpponentPosition] = useState<'home' | 'attack'>('home');
+  
+  // Handler callbacks for effect animations
+  const handlePlayerEffectComplete = useCallback(() => {
+    if (onPlayerEffectComplete) {
+      onPlayerEffectComplete();
+    }
+  }, [onPlayerEffectComplete]);
+  
+  const handleOpponentEffectComplete = useCallback(() => {
+    if (onOpponentEffectComplete) {
+      onOpponentEffectComplete();
+    }
+  }, [onOpponentEffectComplete]);
 
   // Update positions based on animations
   useEffect(() => {
@@ -110,6 +133,8 @@ const BattleScene: React.FC<BattleSceneProps> = ({
             onAnimationComplete={onPlayerAnimationComplete}
             containerWidth={200}
             containerHeight={200}
+            effect={playerEffect}
+            onEffectComplete={handlePlayerEffectComplete}
           />
         </div>
       </div>
@@ -158,6 +183,8 @@ const BattleScene: React.FC<BattleSceneProps> = ({
             isOpponent
             containerWidth={200}
             containerHeight={200}
+            effect={opponentEffect}
+            onEffectComplete={handleOpponentEffectComplete}
           />
         </div>
       </div>

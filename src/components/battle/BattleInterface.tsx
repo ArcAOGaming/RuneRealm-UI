@@ -44,30 +44,32 @@ const BattleInterface: React.FC<BattleInterfaceProps> = ({
   accepterName,
 }) => {
   return (
-    <div className="w-full h-full flex flex-col justify-end">
+    <div className="w-full flex flex-col justify-end">
       {/* Three-column layout: Challenger Moves | Battle Log | Accepter Moves */}
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-3 h-full">
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-3 h-72">
         <h2 className="sr-only">Battle Interface</h2>
         
-        {/* Left Column: Challenger Moves */}
-        <div className={`${theme.container} border ${theme.border} backdrop-blur-md rounded-lg p-3 h-full overflow-y-auto`}>
-          <h3 className={`text-base font-bold ${theme.text} mb-2`}>
+        {/* Left Column: Challenger Moves - Redesigned for condensed buttons */}
+        <div className={`${theme.container} border ${theme.border} backdrop-blur-md rounded-lg px-3 py-2.5 h-72 overflow-hidden flex flex-col`}>
+          <h3 className={`text-sm font-bold ${theme.text} mb-1 px-1`}>
             {challengerName}'s Moves
           </h3>
-          <PlayerMoves
-            playerName={challengerName}
-            moves={challengerMoves}
-            onAttack={onAttack}
-            isDisabled={isDisabled}
-            battleStatus={battleStatus}
-            theme={theme}
-            getMoveColor={getMoveColor}
-            hideTitle={true}
-          />
+          <div className="flex-1 overflow-y-auto pr-0.5 pb-0.5">
+            <PlayerMoves
+              playerName={challengerName}
+              moves={challengerMoves}
+              onAttack={onAttack}
+              isDisabled={isDisabled}
+              battleStatus={battleStatus}
+              theme={theme}
+              getMoveColor={getMoveColor}
+              hideTitle={true}
+            />
+          </div>
         </div>
 
         {/* Center Column: Enhanced Battle Log */}
-        <div className={`${theme.container} border ${theme.border} backdrop-blur-md rounded-lg p-3 h-80 overflow-y-hidden`}>
+        <div className={`${theme.container} border ${theme.border} backdrop-blur-md rounded-lg p-2 h-56 overflow-y-hidden`}>
           <div className="flex items-center justify-between mb-3">
             <h3 className={`text-base font-bold ${theme.text}`}>Battle Log</h3>
             <button
@@ -98,21 +100,23 @@ const BattleInterface: React.FC<BattleInterfaceProps> = ({
           )}
         </div>
 
-        {/* Right Column: Accepter Moves */}
-        <div className={`${theme.container} border ${theme.border} backdrop-blur-md rounded-lg p-3 h-full overflow-y-auto`}>
-          <h3 className={`text-base font-bold ${theme.text} mb-2`}>
+        {/* Right Column: Accepter Moves - Redesigned for condensed buttons */}
+        <div className={`${theme.container} border ${theme.border} backdrop-blur-md rounded-lg px-3 py-2.5 h-72 overflow-hidden flex flex-col`}>
+          <h3 className={`text-sm font-bold ${theme.text} mb-1 px-1`}>
             {accepterName}'s Moves
           </h3>
-          <PlayerMoves
-            playerName={accepterName}
-            moves={accepterMoves}
-            onAttack={() => {}} // Accepter moves are display-only
-            isDisabled={true}
-            battleStatus={battleStatus}
-            theme={theme}
-            getMoveColor={getMoveColor}
-            hideTitle={true}
-          />
+          <div className="flex-1 overflow-y-auto pr-0.5 pb-0.5">
+            <PlayerMoves
+              playerName={accepterName}
+              moves={accepterMoves}
+              onAttack={() => {}} // Accepter moves are display-only
+              isDisabled={true}
+              battleStatus={battleStatus}
+              theme={theme}
+              getMoveColor={getMoveColor}
+              hideTitle={true}
+            />
+          </div>
         </div>
       </div>
     </div>
