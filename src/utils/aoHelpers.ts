@@ -1,7 +1,22 @@
 import { message as aoMessage, dryrun, result } from "../config/aoConnection";
 import { createDataItemSigner } from "@permaweb/aoconnect";
+import { TokenClient } from 'ao-js-sdk';
 import { useWallet } from "../contexts/WalletContext";
-
+import { 
+    AdminSkinChanger, 
+    DefaultAtlasTxID, 
+    Alter, 
+    SUPPORTED_ASSET_IDS, 
+    WAITTIMEOUIT, 
+    ASSET_INFO, 
+    AssetInfo, 
+    TARGET_BATTLE_PID,
+    MAX_RETRIES,
+    RETRY_DELAY,
+    type SupportedAssetId
+  } from "../constants/Constants";
+  import { ProfileInfo, ProfilesService } from 'ao-js-sdk';
+  import { AssetBalance, BattleManagerInfo, BattleResponse, BattleTurn, FactionOptions, MonsterStats, ResultType, TokenOption, UserInfo, WalletStatus } from "./interefaces";  
 interface CachedData<T> {
   data: T;
   timestamp: number;
@@ -58,21 +73,34 @@ const setCachedData = <T>(key: string, data: T): void => {
     console.error(`[Cache] Error storing data for key ${key}:`, error);
   }
 };
-import { 
-  AdminSkinChanger, 
-  DefaultAtlasTxID, 
-  Alter, 
-  SUPPORTED_ASSET_IDS, 
-  WAITTIMEOUIT, 
-  ASSET_INFO, 
-  AssetInfo, 
-  TARGET_BATTLE_PID,
-  MAX_RETRIES,
-  RETRY_DELAY,
-  type SupportedAssetId
-} from "../constants/Constants";
-import { ProfileInfo, ProfilesService } from 'ao-process-clients';
-import { AssetBalance, BattleManagerInfo, BattleResponse, BattleTurn, FactionOptions, MonsterStats, ResultType, TokenOption, UserInfo, WalletStatus } from "./interefaces";
+
+// Token client factory function
+export const createTokenClient = (assetId: string, wallet: any) => {
+  if (!wallet) {
+    throw new Error('Wallet is required to create token client');
+  }
+
+  // Create the wallet config object
+  const walletConfig = {
+    getActiveAddress: async () => {
+      const walletAddress = wallet.address || await wallet.getActiveAddress();
+      return walletAddress;
+    },
+    address: wallet.address || null,
+    dispatch: wallet
+  };
+
+  // Create and return the token client
+  return TokenClient.defaultBuilder()
+    .withProcessId(assetId)
+    .withWallet(walletConfig)
+    .withAOConfig({
+      CU_URL: 'https://ur-cu.randao.net',
+      MODE: 'legacy'
+    })
+    .build();
+};
+
 export type { 
   AssetInfo 
 } from '../constants/Constants';
@@ -915,11 +943,10 @@ export interface MonsterStatsUpdate {
   };
 }
 
-export const setUserStats = async (targetWallet: string, stats: MonsterStatsUpdate, refreshCallback?: () => void): Promise<boolean> => {
+export const setUserStats = async (wallet: any, targetWallet: string, stats: MonsterStatsUpdate, refreshCallback?: () => void): Promise<boolean> => {
   try {
     console.log('Setting user stats with data:', JSON.stringify(stats, null, 2));
-    // Get wallet from context
-    const { wallet } = useWallet();
+    // Use wallet passed as parameter
     const signer = createDataItemSigner(wallet);
     const messageResult = await message({
       process: AdminSkinChanger,
@@ -1743,6 +1770,32 @@ export const openLootBoxWithRarity = async (wallet: any, rarity: number, refresh
       if (lastMessage?.Data) {
         try {
           const parsedData = JSON.parse(lastMessage.Data);
+          
+          // Validate each loot item to ensure it has a valid token property
+          if (Array.isArray(parsedData.result)) {
+            // Log the raw result for debugging
+            console.log('[openLootBoxWithRarity] Raw result:', JSON.stringify(parsedData.result));
+            
+            // Check for and log any items without a token
+            const problematicItems = parsedData.result.filter(item => !item.token);
+            if (problematicItems.length > 0) {
+              console.warn('[openLootBoxWithRarity] Found loot items without token:', problematicItems);
+            }
+            
+            // Ensure each item has a token (use a placeholder if missing)
+            const validatedResult = parsedData.result.map(item => {
+              if (!item.token) {
+                console.warn(`[openLootBoxWithRarity] Item missing token property: ${JSON.stringify(item)}`);
+                return { ...item, token: 'unknown-token' };
+              }
+              return item;
+            });
+            
+            return {
+              result: validatedResult
+            };
+          }
+          
           return {
             result: parsedData.result
           };

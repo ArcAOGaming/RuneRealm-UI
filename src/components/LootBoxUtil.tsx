@@ -1,9 +1,10 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useRef } from 'react';
 import { useWallet } from '../hooks/useWallet';
 import { useTokens } from '../contexts/TokenContext';
+import { SUPPORTED_ASSET_IDS } from '../constants/Constants';
 import { getLootBoxes, openLootBoxWithRarity, LootBoxResponse } from '../utils/aoHelpers';
 import { currentTheme } from '../constants/theme';
-import { SupportedAssetId } from '../constants/Constants';
+import { SupportedAssetId, ASSET_INFO } from '../constants/Constants';
 import Confetti from 'react-confetti';
 import '../styles/LootBoxUtil.css';
 
@@ -21,13 +22,13 @@ interface LootBox {
   displayName: string;
 }
 
-const LootBoxUtil: React.FC<LootBoxProps> = ({ 
+const LootBoxUtil = ({ 
   className = '', 
   externalLootBoxes, 
   loadDataIndependently = true 
-}) => {
+}: LootBoxProps): JSX.Element => {
   const { wallet, darkMode, triggerRefresh, refreshTrigger } = useWallet();
-  const { tokenBalances } = useTokens();
+  const { tokenBalances, retryToken } = useTokens();
   const [lootBoxes, setLootBoxes] = useState<LootBox[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [isOpening, setIsOpening] = useState(false);
@@ -38,10 +39,19 @@ const LootBoxUtil: React.FC<LootBoxProps> = ({
   const [isExploding, setIsExploding] = useState(false);
   const [selectedRarity, setSelectedRarity] = useState<number | null>(null);
   const [isFadingOut, setIsFadingOut] = useState(false);
+  const [isCollecting, setIsCollecting] = useState(false);
+  const [showCloseButton, setShowCloseButton] = useState(false);
+  const [collectingItems, setCollectingItems] = useState<{content: React.ReactNode, x: number, y: number}[]>([]);
+  const [timerProgress, setTimerProgress] = useState<number>(100);
+  const timerRef = useRef<NodeJS.Timeout | null>(null);
   
   const theme = currentTheme(darkMode);
   
-  // Map loot box rarity level to display name
+  /**
+   * Maps a numerical rarity level to its human-readable display name
+   * @param rarity - Numerical value representing the rarity level (1-5)
+   * @returns String representation of the rarity
+   */
   const getRarityName = (rarity: number): string => {
     switch(rarity) {
       case 1: return 'Common';
@@ -53,7 +63,9 @@ const LootBoxUtil: React.FC<LootBoxProps> = ({
     }
   };
   
-  // Process lootbox data from response
+  /**
+   * Processes raw lootbox data from API response into structured LootBox objects
+   */
   const processLootBoxData = (responseResult: any): LootBox[] => {
     const boxes: LootBox[] = [];
     
@@ -155,7 +167,11 @@ const LootBoxUtil: React.FC<LootBoxProps> = ({
     setAssets(assetMap);
   }, [wallet?.address, tokenBalances]);
   
-  // Get color class based on rarity
+  /**
+   * Returns CSS classes for styling loot box based on its rarity
+   * @param rarity - Numerical rarity level
+   * @returns Tailwind CSS classes for background, text, and border colors
+   */
   const getRarityColorClass = (rarity: number): string => {
     switch (rarity) {
       case 1: // Common
@@ -173,7 +189,11 @@ const LootBoxUtil: React.FC<LootBoxProps> = ({
     }
   };
   
-  // Get glow effects based on rarity
+  /**
+   * Returns CSS classes for glow/shadow effects based on rarity
+   * @param rarity - Numerical rarity level
+   * @returns Tailwind CSS classes for shadow and animation effects
+   */
   const getRarityGlowClass = (rarity: number): string => {
     switch (rarity) {
       case 1: // Common
@@ -193,13 +213,138 @@ const LootBoxUtil: React.FC<LootBoxProps> = ({
   
 
 
-  // Handle opening a loot box
+  /**
+   * Starts countdown timer for auto-closing rewards display
+   * Creates a 5-second countdown with visual progress bar
+   */
+  const startTimer = () => {
+    // Clear any existing timer
+    if (timerRef.current) {
+      clearInterval(timerRef.current);
+    }
+    
+    // Reset timer to 100%
+    setTimerProgress(100);
+    
+    // Decrease by 2% every 100ms (5 seconds total = 50 steps * 100ms)
+    timerRef.current = setInterval(() => {
+      setTimerProgress(prev => {
+        const newProgress = Math.max(0, prev - 2);
+        
+        // When timer reaches zero, close the rewards
+        if (newProgress === 0) {
+          handleCloseWinnings();
+          if (timerRef.current) {
+            clearInterval(timerRef.current);
+            timerRef.current = null;
+          }
+        }
+        
+        return newProgress;
+      });
+    }, 100);
+  };
+  
+  // Clean up timer on unmount
+  useEffect(() => {
+    return () => {
+      if (timerRef.current) {
+        clearInterval(timerRef.current);
+      }
+    };
+  }, []);
+  
+  // Handle closing the winnings display with animation
+  const handleCloseWinnings = () => {
+    // Don't allow closing multiple times
+    if (isCollecting) return;
+    
+    // Clear timer if exists
+    if (timerRef.current) {
+      clearInterval(timerRef.current);
+      timerRef.current = null;
+    }
+    
+    // Get all reward items from the current result
+    if (openResult?.result && Array.isArray(openResult.result)) {
+      // Find all berry elements in the DOM
+      const berryElements = document.querySelectorAll('.berry-emoji');
+      const collectionItems: {content: React.ReactNode, x: number, y: number}[] = [];
+      
+      // Extract position and content for each reward
+      berryElements.forEach((element, index) => {
+        const rect = element.getBoundingClientRect();
+        
+        // Calculate center position of the element
+        const x = rect.left + rect.width / 2;
+        const y = rect.top + rect.height / 2;
+        
+        // Get the token ID from the reward result
+        const tokenId = openResult.result[index]?.token;
+        let content: React.ReactNode;
+        
+        // If we have token ID and it exists in ASSET_INFO, use its logo
+        if (tokenId && ASSET_INFO[tokenId] && ASSET_INFO[tokenId].logo) {
+          content = (
+            <img 
+              src={`https://arweave.net/${ASSET_INFO[tokenId].logo}`}
+              alt={ASSET_INFO[tokenId].name || 'Reward'}
+              className="inline-block h-6 w-6 object-contain"
+            />
+          );
+        } else {
+          // Fallback to emoji if no logo available
+          const emoji = element.textContent || '🌟';
+          content = emoji;
+        }
+        
+        // Add this item to the collection
+        collectionItems.push({ content, x, y });
+      });
+      
+      // Update state with collection items
+      setCollectingItems(collectionItems);
+    }
+    
+    // Start collection animation
+    setIsCollecting(true);
+    setShowCloseButton(false);
+    
+    // Hide confetti
+    setShowConfetti(false);
+    
+    // After collection animation completes (1 second), reset the UI and refresh
+    setTimeout(() => {
+      console.log('[LootBoxUtil] Resetting UI and refreshing data');
+      setSelectedRarity(null);
+      setIsExploding(false);
+      setIsFadingOut(false);
+      setIsCollecting(false);
+      setIsOpening(false); // Fix: Ensure isOpening is reset
+      setOpenResult(null);
+      setCollectingItems([]); // Clear collecting items
+      setTimerProgress(100); // Reset timer progress
+      
+      // Trigger a refresh to update the loot boxes
+      if (triggerRefresh) {
+        triggerRefresh();
+      }
+    }, 1000);
+  };
+
+  /**
+   * Handles the loot box opening process, including animations and API calls
+   * @param rarity - Rarity level of the loot box to open
+   */
   const handleOpenLootBox = async (rarity: number) => {
+    // Check if we can open a box - added extra check for lootBoxes
     if (!wallet?.address || isOpening || lootBoxes.filter(box => box.rarity === rarity).length === 0) return;
     
+    // Reset states to ensure clean start
     setIsOpening(true);
     setOpenResult(null);
     setSelectedRarity(rarity);
+    setTimerProgress(100); // Reset timer to full
     
     try {
       // Start shaking animation with increasing intensity
@@ -208,13 +353,46 @@ const LootBoxUtil: React.FC<LootBoxProps> = ({
       // Get the results from server, passing the rarity parameter
       console.log('[LootBoxUtil] Sending request to open loot box with rarity:', rarity);
       
-      // IMPORTANT: Don't pass triggerRefresh here as we want to control when refresh happens
+      // Custom refresh callback to only refresh the tokens we received
+      const refreshReceivedTokens = (result: LootBoxResponse) => {
+        // Only refresh tokens that were received from the loot box
+        if (result?.result && Array.isArray(result.result)) {
+          const receivedTokens: SupportedAssetId[] = [];
+          
+          // Extract token IDs from the result
+          result.result.forEach((item: any) => {
+            if (item && typeof item === 'object' && item.token) {
+              // Check if this token is a supported asset ID
+              const tokenId = item.token as SupportedAssetId;
+              if (SUPPORTED_ASSET_IDS.includes(tokenId)) {
+                receivedTokens.push(tokenId);
+              }
+            }
+          });
+          
+          // If we have tokens to refresh, do it individually instead of refreshing all
+          if (receivedTokens.length > 0) {
+            console.log('[LootBoxUtil] Refreshing only received tokens:', receivedTokens);
+            receivedTokens.forEach(tokenId => {
+              retryToken(tokenId);
+            });
+          } else {
+            console.log('[LootBoxUtil] No valid tokens to refresh');
+          }
+        } else {
+          console.warn('[LootBoxUtil] Invalid result format for token refresh');
+        }
+      };
+      
+      // Pass rarity but do NOT pass global triggerRefresh as we want to use our custom refresh logic
       const result = await openLootBoxWithRarity(wallet, rarity);
       
       console.log('[LootBoxUtil] Received loot box result:', result);
       
       if (result && result.result) {
         console.log('[LootBoxUtil] Loot received:', JSON.stringify(result.result));
+        // Apply our custom token refresh for only the received tokens
+        refreshReceivedTokens(result);
       } else {
         console.warn('[LootBoxUtil] No loot data in result');
       }
@@ -245,33 +423,27 @@ const LootBoxUtil: React.FC<LootBoxProps> = ({
           return updatedBoxes;
         });
         
-        // Keep showing the result for 10 seconds
-        // Don't trigger any refreshes during this time
-        console.log('[LootBoxUtil] Displaying loot for 10 seconds before resetting UI');
+        // Show close button after a short delay to allow user to see what they won first
         setTimeout(() => {
-          // Start fade-out animation
-          setIsFadingOut(true);
+          setShowCloseButton(true);
           
-          // Hide confetti
-          setShowConfetti(false);
-          
-          // After the fade animation completes (1 second), reset the entire UI
-          setTimeout(() => {
-            console.log('[LootBoxUtil] Resetting UI without refreshing data');
-            setSelectedRarity(null);
-            setIsExploding(false);
-            setIsFadingOut(false);
-            setOpenResult(null); // Now clear the result after fade-out
-            // No refresh trigger - we don't want to refresh at the end
-          }, 1000);
-        }, 10000); // Show result for full 10 seconds
+          // Start the timer when showing results
+          startTimer();
+        }, 500);
+        
+        // No need for the automatic 5-second timeout anymore as we're using the timer bar
+        // The return cleanup is also not needed as we handle cleanup in the useEffect
       } else {
         // If no result, reset everything after 2 seconds
         setTimeout(() => {
           setShowConfetti(false);
           setSelectedRarity(null);
           setIsExploding(false);
-          // Don't refresh here - it may clear the boxes
+          setIsOpening(false);
+          // Trigger global refresh here since we got no valid result
+          if (triggerRefresh) {
+            triggerRefresh();
+          }
         }, 2000);
       }
     } catch (error) {
@@ -280,50 +452,60 @@ const LootBoxUtil: React.FC<LootBoxProps> = ({
       setIsExploding(false);
       setSelectedRarity(null);
       setShowConfetti(false);
-    } finally {
       setIsOpening(false);
+      // Trigger global refresh on error to ensure UI is in sync
+      if (triggerRefresh) {
+        triggerRefresh();
+      }
     }
   };
   
-  // Helper to get the token name or ID if name not available
-  const getTokenName = (tokenId: string): string => {
-    if (assets[tokenId]) {
-      return assets[tokenId].name || assets[tokenId].ticker || tokenId.substring(0, 8);
+  // We've removed getTokenName and getBerryColor functions
+  // They have been replaced with simpler implementations
+  
+  // Get Berry Emoji or Logo
+  const getBerryEmoji = (tokenId: string): React.ReactNode => {
+    // Check if we have this asset in ASSET_INFO constants
+    if (ASSET_INFO[tokenId]) {
+      const asset = ASSET_INFO[tokenId];
+      const name = asset.name;
+      
+      // If we have a logo, return an image element
+      if (asset.logo) {
+        return (
+          <img 
+            src={`https://arweave.net/${asset.logo}`}
+            alt={name}
+            className="inline-block h-6 w-6 object-contain"
+            onError={(e) => {
+              // If image fails to load, fall back to question mark
+              const target = e.target as HTMLImageElement;
+              target.style.display = 'none';
+              
+              // Use question mark for fallback
+              const fallbackEmoji = '❓';
+              
+              // Update the parent element with the fallback emoji
+              if (target.parentElement) {
+                target.parentElement.innerText = fallbackEmoji;
+              }
+            }}
+          />
+        );
+      }
+      
+      // If no logo, use question mark
+      return '❓';
     }
     
-    // Berry name mappings if not found in assets
-    const berryNames: {[key: string]: string} = {
-      "30cPTQXrHN76YZ3bLfNAePIEYDb5Xo1XnbQ-xmLMOM0": "Fire Berry",
-      "twFZ4HTvL_0XAIOMPizxs_S3YH5J5yGvJ8zKiMReWF0": "Water Berry",
-      "2NoNsZNyHMWOzTqeQUJW9Xvcga3iTonocFIsgkWIiPM": "Rock Berry",
-      "XJjSdWaorbQ2q0YkaQSmylmuADWH1fh2PvgfdLmXlzA": "Air Berry",
-    };
+    // Handle undefined token case safely
+    if (!tokenId) {
+      console.warn("LootBoxUtil: Undefined token encountered in getBerryEmoji");
+      return "❓";
+    }
     
-    return berryNames[tokenId] || tokenId.substring(0, 8) + "...";
-  };
-  
-  // Helper function to get berry color based on token ID
-  const getBerryColor = (tokenId: string): string => {
-    const berryColors: {[key: string]: string} = {
-      "30cPTQXrHN76YZ3bLfNAePIEYDb5Xo1XnbQ-xmLMOM0": "bg-red-700 text-red-100 border-red-500",
-      "twFZ4HTvL_0XAIOMPizxs_S3YH5J5yGvJ8zKiMReWF0": "bg-blue-700 text-blue-100 border-blue-500",
-      "2NoNsZNyHMWOzTqeQUJW9Xvcga3iTonocFIsgkWIiPM": "bg-stone-700 text-stone-100 border-stone-500",
-      "XJjSdWaorbQ2q0YkaQSmylmuADWH1fh2PvgfdLmXlzA": "bg-sky-700 text-sky-100 border-sky-500",
-    };
-    
-    return berryColors[tokenId] || "bg-gray-700 text-gray-100 border-gray-500";
-  };
-  
-  // Get Berry Emoji
-  const getBerryEmoji = (tokenId: string): string => {
-    const berryEmojis: {[key: string]: string} = {
-      "30cPTQXrHN76YZ3bLfNAePIEYDb5Xo1XnbQ-xmLMOM0": "🔥",
-      "twFZ4HTvL_0XAIOMPizxs_S3YH5J5yGvJ8zKiMReWF0": "💧",
-      "2NoNsZNyHMWOzTqeQUJW9Xvcga3iTonocFIsgkWIiPM": "🪨",
-      "XJjSdWaorbQ2q0YkaQSmylmuADWH1fh2PvgfdLmXlzA": "💨",
-    };
-    
-    return berryEmojis[tokenId] || "🌟";
+    // Default fallback
+    return "❓";
   };
   
   // Group lootboxes by rarity
@@ -345,12 +527,11 @@ const LootBoxUtil: React.FC<LootBoxProps> = ({
     const isSelected = selectedRarity === rarity && isOpening;
     
     return (
-      <div key={rarity} className="mb-3">
-        <h3 className={`text-sm font-bold ${theme.text} mb-1`}>{rarityName}</h3>
+      <div key={rarity} className="mb-2">
         <div className="flex gap-2">
           {count > 0 ? (
             <div 
-              className={`loot-box-item relative p-4 rounded-lg border-2 ${colorClass} ${glowClass} flex flex-col items-center justify-center transition-transform hover:scale-105 cursor-pointer w-24 h-24 ${isSelected ? 'scale-110' : ''}`}
+              className={`loot-box-item relative p-3 rounded-lg border-2 ${colorClass} ${glowClass} flex flex-col items-center justify-center transition-transform hover:scale-105 cursor-pointer w-20 h-20 ${isSelected ? 'scale-110' : ''}`}
               title={`Open ${rarityName} Loot Box`}
               onClick={() => !isOpening && handleOpenLootBox(rarity)}
             >
@@ -364,7 +545,7 @@ const LootBoxUtil: React.FC<LootBoxProps> = ({
             </div>
           ) : (
             <div 
-              className={`loot-box-item-empty relative p-4 rounded-lg border-2 border-gray-700 bg-gray-800 bg-opacity-50 flex flex-col items-center justify-center w-24 h-24`}
+              className={`loot-box-item-empty relative p-3 rounded-lg border-2 border-gray-700 bg-gray-800 bg-opacity-50 flex flex-col items-center justify-center w-20 h-20`}
             >
               <div className="loot-box-icon text-3xl mb-1 opacity-30">📦</div>
               <span className="font-medium text-xs text-center opacity-30">{rarityName}</span>
@@ -376,92 +557,127 @@ const LootBoxUtil: React.FC<LootBoxProps> = ({
   };
   
   return (
-    <div className={`loot-box-container relative ${theme.container} border ${theme.border} backdrop-blur-md p-4 ${className}`}>
-      {showConfetti && (
-        <div className="confetti-wrapper">
-          <Confetti 
-            recycle={false} 
-            numberOfPieces={500}
-            gravity={0.3}
-            initialVelocityY={30}
-            initialVelocityX={{min: -15, max: 15}}
-            width={window.innerWidth}
-            height={window.innerHeight}
-            tweenDuration={100}
-            colors={['#FFD700', '#FFA500', '#FF4500', '#ff0000', '#00ff00', '#0000ff', '#800080']}
-          />
+    <>
+      {/* Floating collecting items that animate to wallet */}
+      {collectingItems.map((item, index) => (
+        <div 
+          key={`collecting-${index}`}
+          className="collecting-item"
+          style={{ 
+            fontSize: '2rem',
+            left: `${item.x}px`,
+            top: `${item.y}px`,
+            transform: 'none', // Override the default transform in CSS
+            zIndex: 99999 // Reinforce highest z-index
+          }}
+        >
+          {item.content}
         </div>
-      )}
+      ))}
       
-      <h3 className={`text-lg font-bold ${theme.text} mb-3`}>Treasure Vault</h3>
-      
-      {isLoading ? (
-        <p className={`${theme.text}`}>Loading treasures...</p>
-      ) : lootBoxes.length === 0 ? (
-        <p className={`${theme.text} text-sm`}>Your vault is empty. Complete activities to earn treasure!</p>
-      ) : (
-        <div className="space-y-2">
-          <div className="loot-box-sections">
-            <div className="flex flex-wrap gap-3 justify-center">
-              {rarityLevels.map(renderRaritySection)}
-            </div>
+      <div className={`loot-box-container relative ${theme.container} border ${theme.border} backdrop-blur-md p-3 ${className} overflow-hidden w-full max-w-full`}>
+        {showConfetti && (
+          <div className="confetti-wrapper">
+            <Confetti 
+              recycle={false} 
+              numberOfPieces={500}
+              gravity={0.3}
+              initialVelocityY={30}
+              initialVelocityX={{min: -15, max: 15}}
+              width={window.innerWidth}
+              height={window.innerHeight}
+              tweenDuration={100}
+              colors={['#FFD700', '#FFA500', '#FF4500', '#ff0000', '#00ff00', '#0000ff', '#800080']}
+            />
           </div>
-          
-          {/* Rewards section - now at the bottom */}
-          {openResult && openResult.result && (
-            <div className={`result-container mt-6 p-3 rounded-lg ${theme.container} border ${theme.border} transition-all duration-1000 ${isFadingOut ? 'opacity-0' : 'opacity-100'}`}>
-              <div className="flex items-center justify-between mb-2">
-                <h3 className={`text-sm font-bold ${theme.text}`}>Rewards:</h3>
-                <button 
-                  onClick={() => {
-                    setIsFadingOut(true);
-                    setTimeout(() => {
-                      setIsFadingOut(false);
-                      setOpenResult(null);
-                      setIsExploding(false);
-                      // No refresh trigger here either
-                    }, 1000);
-                  }} 
-                  className="text-xs bg-gray-700 hover:bg-gray-600 text-gray-100 px-2 py-1 rounded-md"
-                  aria-label="Dismiss rewards"
-                >
-                  ✕ Dismiss
-                </button>
-              </div>
-              <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-2">
-                {Array.isArray(openResult.result) && openResult.result.length > 0 ? (
-                  openResult.result.map((item, index) => (
-                    <div 
-                      key={index} 
-                      className={`berry-item p-2 rounded-lg border ${getBerryColor(item.token)} flex items-center justify-between text-sm`}
-                    >
-                      <div className="flex items-center">
-                        <span className="text-xl mr-2">
+        )}
+        {isLoading ? (
+          <p className={`${theme.text}`}>Loading treasures...</p>
+        ) : lootBoxes.length === 0 ? (
+          <p className={`${theme.text} text-sm`}>Your vault is empty. Complete activities to earn treasure!</p>
+        ) : (
+          <div className="space-y-2">
+            {/* Show either the rewards OR the loot box selection, never both */}
+            {openResult && openResult.result ? (
+              <div 
+                className={`result-container p-2 rounded-lg ${theme.container} border ${theme.border} transition-all duration-1000 
+                ${isFadingOut ? 'opacity-0' : 'opacity-100'} 
+                ${isCollecting ? 'collecting-animation' : ''}`}
+                style={{ maxHeight: '90%', overflow: 'auto', width: '100%' }}
+              >
+                {/* Timer bar */}
+                <div className="timer-bar-container">
+                  <div 
+                    className="timer-bar" 
+                    style={{ width: `${timerProgress}%` }}
+                  />
+                </div>
+                {/* Close button (X) in the top-right corner */}
+                {showCloseButton && (
+                  <button 
+                    onClick={handleCloseWinnings} 
+                    className="close-button"
+                    aria-label="Close rewards"
+                  >
+                    ✕
+                  </button>
+                )}
+                <div className="flex items-center mb-1">
+                  <h3 className={`text-xs font-bold ${theme.text}`}>Rewards:</h3>
+                </div>
+                <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-5 gap-1">
+                  {Array.isArray(openResult.result) && openResult.result.length > 0 ? (
+                    openResult.result.map((item, index) => (
+                      <div 
+                        key={index} 
+                        className={`berry-item p-2 rounded-lg border bg-gray-700 text-gray-100 border-gray-500 flex items-center justify-center text-sm`}
+                      >
+                        <span className="text-xl mr-1 berry-emoji">
                           {getBerryEmoji(item.token)}
                         </span>
-                        <span className="font-medium">{getTokenName(item.token)}</span>
+                        <span className="font-bold">x{item.quantity}</span>
                       </div>
-                      <span className="font-bold">x{item.quantity}</span>
+                    ))
+                  ) : (
+                    <div className="col-span-full text-center py-2">
+                      <p className={`${theme.text}`}>No rewards received. Try again!</p>
                     </div>
-                  ))
-                ) : (
-                  <div className="col-span-full text-center py-2">
-                    <p className={`${theme.text}`}>No rewards received. Try again!</p>
-                  </div>
-                )}
+                  )}
+                </div>
+                <p className={`${theme.text} mt-2 text-xs text-center`}>
+                  {Array.isArray(openResult.result) && openResult.result.length > 0 ? 'Added to inventory!' : 'Better luck next time!'}
+                </p>
               </div>
-              <p className={`${theme.text} mt-2 text-xs text-center`}>
-                {Array.isArray(openResult.result) && openResult.result.length > 0 ? 'Added to inventory!' : 'Better luck next time!'}
-              </p>
-            </div>
-          )}
-          
-          <div className="text-xs text-center text-gray-400 mt-2">
-            Click on a loot box to open it
+            ) : isOpening && selectedRarity !== null ? (
+              /* When opening, only show the selected treasure */
+              <div className="flex justify-center p-4">
+                {/* Only show the single selected box during animation */}
+                <div 
+                  className={`loot-box-item relative p-3 rounded-lg border-2 ${getRarityColorClass(selectedRarity)} ${getRarityGlowClass(selectedRarity)} flex flex-col items-center justify-center w-28 h-28 scale-110`}
+                >
+                  <div className={`loot-box-icon text-4xl mb-2 ${isShaking ? 'shake-animation' : ''} ${isExploding ? 'explode-animation' : ''}`}>
+                    📦
+                  </div>
+                  <span className="font-medium text-sm text-center">{getRarityName(selectedRarity)}</span>
+                </div>
+              </div>
+            ) : (
+              /* Default view: show all available treasures */
+              <>
+                <div className="loot-box-sections">
+                  <div className="flex flex-wrap gap-2 justify-center">
+                    {rarityLevels.map(renderRaritySection)}
+                  </div>
+                </div>
+                <div className="text-xs text-center text-gray-400 mt-2">
+                  Click on a loot box to open it
+                </div>
+              </>
+            )}
           </div>
-        </div>
-      )}
-    </div>
+        )}
+      </div>
+    </>
   );
 };
 

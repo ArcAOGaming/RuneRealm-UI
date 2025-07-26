@@ -1,8 +1,8 @@
 import React, { createContext, useContext, useState, useEffect, useCallback, useRef } from 'react';
-import { TokenClient } from 'ao-process-clients';
 import { SUPPORTED_ASSET_IDS, ASSET_INFO, SupportedAssetId } from '../constants/Constants';
 import type { AssetBalance } from '../utils/interefaces';
 import { useWallet } from './WalletContext';
+import { createTokenClient } from '../utils/aoHelpers';
 
 // Define loading states for tokens
 export type TokenLoadingState = 'loading' | 'loaded' | 'error';
@@ -108,25 +108,8 @@ export const TokenProvider: React.FC<{ children: React.ReactNode }> = ({ childre
           throw new Error('Wallet not connected');
         }
         
-        // Get the wallet address
-        const walletAddress = currentWallet.address || await currentWallet.getActiveAddress();
-        
-        // Create the wallet config object
-        const walletConfig = {
-          getActiveAddress: async () => walletAddress,
-          address: walletAddress,
-          dispatch: currentWallet
-        };
-        
-        // Create the token client with the provided configuration
-        const tokenClient = TokenClient.defaultBuilder()
-          .withProcessId(assetId)
-          .withWallet(walletConfig)
-          .withAOConfig({
-            CU_URL: 'https://ur-cu.randao.net',
-            MODE: 'legacy'
-          })
-          .build();
+        // Create the token client using the helper function
+        const tokenClient = createTokenClient(assetId, currentWallet);
         
         //console.log(`[TokenContext] Fetching balance for ${ASSET_INFO[assetId]?.ticker || assetId}...`);
         
