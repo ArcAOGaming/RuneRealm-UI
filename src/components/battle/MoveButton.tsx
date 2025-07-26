@@ -10,14 +10,14 @@ interface MoveButtonProps {
 }
 
 /**
- * MoveButton Component
+ * MoveButton Component (Redesigned)
  * 
  * Renders an individual move button with:
- * - Move name and usage count
+ * - Three-part layout: Name (top-left), Turns left (top-right), Stats (bottom)
+ * - All stats shown with proper styling: greyed when 0, red tint for negative, green for positive
+ * - Condensed rectangular design with minimal padding
  * - Color coding based on move type
- * - Move stats display (damage, attack, defense, speed, health)
  * - Disabled state when move count is 0 or battle is ended
- * - Hover effects and animations
  * 
  * @param moveName - Name of the move
  * @param move - Move object containing stats and count
@@ -35,20 +35,64 @@ const MoveButton: React.FC<MoveButtonProps> = ({
   getMoveColor,
 }) => {
   const isButtonDisabled = isDisabled || battleStatus === "ended" || move.count === 0;
+  
+  // Ensure all stats exist with default value of 0
+  const stats = {
+    damage: move.damage || 0,
+    attack: move.attack || 0,
+    defense: move.defense || 0,
+    speed: move.speed || 0,
+    health: move.health || 0
+  };
+  
+  // Helper function to get stat styling
+  const getStatStyle = (value: number) => {
+    if (value === 0) return "opacity-50"; // Grey out
+    if (value < 0) return "text-red-200"; // Slight red tint
+    return "text-green-200"; // Slight green tint
+  };
 
   return (
     <button
       onClick={() => onAttack(moveName)}
       disabled={isButtonDisabled}
-      className={`w-full p-2 rounded-lg font-medium text-left transition-all duration-300 min-h-[80px]
+      className={`w-full px-3 py-2 rounded text-sm font-medium text-left transition-all duration-200 h-auto 
         ${getMoveColor(moveName, move)} hover:brightness-110
         ${isButtonDisabled ? "opacity-50 cursor-not-allowed" : ""}
-        text-white relative overflow-hidden group flex flex-col justify-between`}
+        text-white relative overflow-hidden group flex flex-col`}
     >
-      {/* Move name and count header */}
-      <div className="flex justify-between items-center relative">
-        <span className="capitalize">{moveName}</span>
-        <span className="text-sm opacity-75">{move.count}</span>
+      {/* Header: Name and Turn Count */}
+      <div className="flex justify-between items-center w-full mb-2">
+        <span className="capitalize font-bold truncate mr-2 text-lg">{moveName}</span>
+        <span className="text-base bg-black/40 px-2.5 py-0.5 rounded-full font-medium min-w-[2rem] text-center">{move.count}</span>
+      </div>
+
+      {/* Stats Section - Segmented with clear divisions */}
+      <div className="grid grid-cols-5 gap-1 bg-black/10 p-1 rounded-sm">
+        <div className={`flex items-center justify-center ${getStatStyle(stats.damage)} py-0.5 px-1 rounded bg-black/20`}>
+          <span className="text-lg mr-0.5">⚔️</span>
+          <span className="font-bold text-base">{stats.damage > 0 ? "+" : ""}{stats.damage}</span>
+        </div>
+        
+        <div className={`flex items-center justify-center ${getStatStyle(stats.attack)} py-0.5 px-1 rounded bg-black/20`}>
+          <span className="text-lg mr-0.5">💪</span>
+          <span className="font-bold text-base">{stats.attack > 0 ? "+" : ""}{stats.attack}</span>
+        </div>
+        
+        <div className={`flex items-center justify-center ${getStatStyle(stats.defense)} py-0.5 px-1 rounded bg-black/20`}>
+          <span className="text-lg mr-0.5">🛡️</span>
+          <span className="font-bold text-base">{stats.defense > 0 ? "+" : ""}{stats.defense}</span>
+        </div>
+        
+        <div className={`flex items-center justify-center ${getStatStyle(stats.speed)} py-0.5 px-1 rounded bg-black/20`}>
+          <span className="text-lg mr-0.5">⚡</span>
+          <span className="font-bold text-base">{stats.speed > 0 ? "+" : ""}{stats.speed}</span>
+        </div>
+        
+        <div className={`flex items-center justify-center ${getStatStyle(stats.health)} py-0.5 px-1 rounded bg-black/20`}>
+          <span className="text-lg mr-0.5">❤️</span>
+          <span className="font-bold text-base">{stats.health > 0 ? "+" : ""}{stats.health}</span>
+        </div>
       </div>
 
       {/* Disabled overlay when move count is 0 */}
@@ -59,57 +103,6 @@ const MoveButton: React.FC<MoveButtonProps> = ({
           </div>
         </div>
       )}
-
-      {/* Move stats grid */}
-      <div className="text-sm mt-1">
-        <div className="grid grid-cols-3 grid-rows-2 gap-1 max-w-[200px] min-h-[32px]">
-          {move.damage !== 0 && (
-            <span>
-              ⚔️ {move.damage > 0 ? "+" : ""}{move.damage}
-            </span>
-          )}
-          {move.attack !== 0 && (
-            <span>
-              💪 {move.attack > 0 ? "+" : ""}{move.attack}
-            </span>
-          )}
-          {move.defense !== 0 && (
-            <span>
-              🛡️ {move.defense > 0 ? "+" : ""}{move.defense}
-            </span>
-          )}
-          {move.speed !== 0 && (
-            <span>
-              ⚡ {move.speed > 0 ? "+" : ""}{move.speed}
-            </span>
-          )}
-          {move.health !== 0 && (
-            <span>
-              ❤️ {move.health > 0 ? "+" : ""}{move.health}
-            </span>
-          )}
-          {/* Fill remaining grid spaces to maintain layout */}
-          {[
-            ...Array(
-              6 -
-                [
-                  move.damage,
-                  move.attack,
-                  move.defense,
-                  move.speed,
-                  move.health,
-                ].filter((v) => v !== 0).length
-            ),
-          ].map((_, i) => (
-            <span key={i} className="invisible">
-              placeholder
-            </span>
-          ))}
-        </div>
-      </div>
-
-      {/* Hover effect overlay */}
-      <div className="absolute inset-0 bg-white opacity-0 group-hover:opacity-10 transition-opacity duration-300"></div>
     </button>
   );
 };

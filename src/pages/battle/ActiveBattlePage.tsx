@@ -16,6 +16,8 @@ import { currentTheme } from "../../constants/theme";
 import Loading from "../../components/Loading";
 import { useNavigate } from "react-router-dom";
 import BattleScene from "../../components/BattleScene";
+
+import { EffectType } from "../../components/MonsterSpriteView";
 import BattleStats from "../../components/BattleStats";
 
 // Import new modular components
@@ -107,6 +109,9 @@ export const ActiveBattlePage: React.FC = (): JSX.Element => {
     | "attack2"
     | undefined
   >();
+  // Effect animation states for heal/boost effects
+  const [playerEffect, setPlayerEffect] = useState<EffectType>(null);
+  const [opponentEffect, setOpponentEffect] = useState<EffectType>(null);
   const [initialLoading, setInitialLoading] = useState(true);
   const [isUpdating, setIsUpdating] = useState(false);
   const [showBattleLog, setShowBattleLog] = useState(true);
@@ -313,6 +318,7 @@ export const ActiveBattlePage: React.FC = (): JSX.Element => {
           // Decide if it's an attacking move or heal/boost
           const isAttackMove = turn.healthDamage > 0 || turn.shieldDamage > 0;
           if (isAttackMove) {
+            // Normal attack sequence with walking and attacking animation
             if (turn.attacker === "challenger") {
               setPlayerAnimation("walkRight");
               await new Promise((res) => setTimeout(res, 1000));
@@ -333,25 +339,73 @@ export const ActiveBattlePage: React.FC = (): JSX.Element => {
               await new Promise((res) => setTimeout(res, 1000));
             }
           } else {
-            // Heal/Boost sequence
+            // Heal/Boost sequence - ONLY use effect animations, NO walking animations
             if (turn.attacker === "challenger") {
-              setPlayerAnimation("walkUp");
-              await new Promise((res) => setTimeout(res, 1000));
-
-              setPlayerAnimation("walkLeft");
-              await new Promise((res) => setTimeout(res, 1000));
-
-              setPlayerAnimation("walkDown");
-              await new Promise((res) => setTimeout(res, 1000));
+              // Make sure no animations are active
+              setPlayerAnimation(undefined);
+              setOpponentAnimation(undefined);
+              
+              // Determine effect type based on what stats changed
+              let effectType: EffectType = null;
+              
+              // Check for healing
+              if (turn.attackerState.healthPoints > activeBattle.challenger.healthPoints) {
+                effectType = "Medium Heal";
+              }
+              // Check for stat boosts
+              else if (turn.attackerState.attack > activeBattle.challenger.attack ||
+                     turn.attackerState.defense > activeBattle.challenger.defense ||
+                     turn.attackerState.speed > activeBattle.challenger.speed) {
+                // Use Small Heal for Attack Boost since we don't have Attack Boost images
+                effectType = "Small Heal";
+                console.log('[EFFECT DEBUG] Using Small Heal for Attack Boost');
+              }
+              // Check for shield increase
+              else if (turn.attackerState.shield > activeBattle.challenger.shield) {
+                // Use Large Heal for Shield Boost since we don't have Shield Boost images
+                effectType = "Large Heal";
+                console.log('[EFFECT DEBUG] Using Large Heal for Shield Boost');
+              }
+              
+              // Set the effect animation
+              console.log('[EFFECT DEBUG] Setting player effect:', effectType);
+              setPlayerEffect(effectType);
+              
+              // Wait for effect animation to complete (8 frames * 100ms = ~800ms)
+              await new Promise((res) => setTimeout(res, 800));
             } else {
-              setOpponentAnimation("walkUp");
-              await new Promise((res) => setTimeout(res, 1000));
-
-              setOpponentAnimation("walkLeft");
-              await new Promise((res) => setTimeout(res, 1000));
-
-              setOpponentAnimation("walkDown");
-              await new Promise((res) => setTimeout(res, 1000));
+              // Similar logic for opponent
+              // Make sure no animations are active
+              setPlayerAnimation(undefined);
+              setOpponentAnimation(undefined);
+              
+              let effectType: EffectType = null;
+              
+              // Check for healing
+              if (turn.attackerState.healthPoints > activeBattle.accepter.healthPoints) {
+                effectType = "Medium Heal";
+              }
+              // Check for stat boosts
+              else if (turn.attackerState.attack > activeBattle.accepter.attack ||
+                     turn.attackerState.defense > activeBattle.accepter.defense ||
+                     turn.attackerState.speed > activeBattle.accepter.speed) {
+                // Use Small Heal for Attack Boost since we don't have Attack Boost images
+                effectType = "Small Heal";
+                console.log('[EFFECT DEBUG] Using Small Heal for Attack Boost');
+              }
+              // Check for shield increase
+              else if (turn.attackerState.shield > activeBattle.accepter.shield) {
+                // Use Large Heal for Shield Boost since we don't have Shield Boost images
+                effectType = "Large Heal";
+                console.log('[EFFECT DEBUG] Using Large Heal for Shield Boost');
+              }
+              
+              // Set the effect animation
+              console.log('[EFFECT DEBUG] Setting opponent effect:', effectType);
+              setOpponentEffect(effectType);
+              
+              // Wait for effect animation to complete (8 frames * 100ms = ~800ms)
+              await new Promise((res) => setTimeout(res, 800));
             }
           }
 
@@ -359,6 +413,8 @@ export const ActiveBattlePage: React.FC = (): JSX.Element => {
           setAttackAnimation(null);
           setPlayerAnimation(undefined);
           setOpponentAnimation(undefined);
+          setPlayerEffect(null);
+          setOpponentEffect(null);
         };
 
 // Process exactly the last 2 turns (or just the last turn if only one), considering battle ending edge case
@@ -464,6 +520,15 @@ const processTurnsSequentially = async () => {
     setShowBattleLog(!showBattleLog);
   };
 
+  // Effect completion handlers
+  const handlePlayerEffectComplete = useCallback(() => {
+    setPlayerEffect(null);
+  }, []);
+
+  const handleOpponentEffectComplete = useCallback(() => {
+    setOpponentEffect(null);
+  }, []);
+
   return (
     <div className={`min-h-screen flex flex-col ${theme.bg} overflow-hidden`}>
       {/* Winner Announcement Overlay */}
@@ -513,16 +578,16 @@ const processTurnsSequentially = async () => {
                   </button>
                 )}
                 
-                {/* Battle Scene - Maximized with minimal gaps */}
-                <div className="flex-1 flex flex-col max-h-[75vh] mt-0">
+                {/* Battle Scene - Maximized with expanded space */}
+                <div className="flex-1 flex flex-col max-h-[80vh] mt-0">
                   <div className="flex-1 flex items-center justify-center p-0">
                     <div
                       className={`relative rounded-xl ${theme.container} border ${theme.border} backdrop-blur-md overflow-hidden`}
                       style={{
-                        height: "min(calc(100vh - 220px), 70vh)", 
-                        width: "min(calc((100vh - 220px) * 1.7777), calc(100vw - 8px))",
+                        height: "min(calc(100vh - 200px), 74vh)", 
+                        width: "min(calc((100vh - 200px) * 1.7777), calc(100vw - 8px))",
                         maxWidth: "100vw",
-                        minHeight: "320px",
+                        minHeight: "340px",
                       }}
                     >
                       <BattleScene
@@ -538,6 +603,10 @@ const processTurnsSequentially = async () => {
                         onAttackComplete={() => setAttackAnimation(null)}
                         onShieldComplete={() => setShieldRestoring(false)}
                         onRoundComplete={() => setShowEndOfRound(false)}
+                        playerEffect={playerEffect}
+                        opponentEffect={opponentEffect}
+                        onPlayerEffectComplete={handlePlayerEffectComplete}
+                        onOpponentEffectComplete={handleOpponentEffectComplete}
                       />
                       <BattleStats battle={activeBattle} theme={theme} />
                     </div>

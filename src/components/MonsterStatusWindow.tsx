@@ -24,7 +24,7 @@ interface MonsterStatusWindowProps {
   onShowCard?: () => void;
 }
 
-const DEV_MODE = false; // Toggle this to enable/disable developer tools
+const DEV_MODE = true; // Toggle this to enable/disable developer tools
 
 const MonsterStatusWindow: React.FC<MonsterStatusWindowProps> = ({
   monster,
