@@ -11,6 +11,9 @@ BaseSpriteScale = 1.75
 BaseSpriteHitbox = {width=38,height=48,offsetX=1,offsetY=22}
 
 AR_TOKEN="xU9zFkq3X2ZQ6olwNVvr1vUWIjc3kXTWr7xKQD6dh10"
+USDA_TOKEN="FBt9A5GA_KXMMSxA2DJ0xZbAq8sLLU2ak-YJe9zDvg8"
+AO_TOKEN="0syT13r0s0tgPmIed95bJnuSqaD29HQNN8D3ElLSrsc"
+GAME_TOKEN="s6jcB3ctSbiDNwR-paJgy5iOAhahXahLul8exSLHbGE"
 TRUNK_TOKEN="wOrb8b_V8QixWyXZub48Ki5B6OIDyf_p1ngoonsaRpQ"
 NAB_TOKEN="OsK9Vgjxo0ypX_HLz2iJJuh4hp3I80yA9KArsJjIloU"
 FIRE_BERRY="30cPTQXrHN76YZ3bLfNAePIEYDb5Xo1XnbQ-xmLMOM0"
@@ -25,6 +28,27 @@ TOPOZ_TOKEN="R5UGOfFboMv-zlaSSDgRqxRILmGgPPe5BlnPf5F4i3A"
 
 -- Available tokens for purchase
 PurchaseTokens = {
+    {
+    token = AO_TOKEN,
+    amount = "1000000000000",
+    name = "AO" ,
+    icon="UkS-mdoiG8hcAClhKK8ch4ZhEzla0mCPDOix9hpdSFE",
+    denomination = 12 
+  },
+      {
+    token = GAME_TOKEN,
+    amount = "1000000000000000000000000",
+    name = "GAME" ,
+    icon="-c4VdpgmfuS4YadtLuxVZzTd2DQ3ipodA6cz8pwjn20",
+    denomination = 18 
+  },
+  --   {
+  --   token = USDA_TOKEN,
+  --   amount = "1000000000000",
+  --   name = "AO" ,
+  --   icon="seXozJrsP0OgI0gvAnr8zmfxiHHb5iSlI9wMI8SdamE",
+  --   denomination = 12 
+  -- },
   {
     token = TRUNK_TOKEN,  -- TRUNK token
     amount = "4000",
@@ -39,13 +63,6 @@ PurchaseTokens = {
     icon="L99jaxRKQKJt9CqoJtPaieGPEhJD3wNhR4iGqc8amXs",
     denomination = 12 
   },
-  {
-    token = NAB_TOKEN,
-    amount = "75000000000",
-    name = "NAB" ,
-    icon="LQ4crOHN9qO6JsLNs253AaTch6MgAMbM8PKqBxs4hgI",
-    denomination = 8 
-  }
 }
 
 --All avalable factions

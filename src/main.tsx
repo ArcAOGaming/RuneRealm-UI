@@ -15,8 +15,6 @@ import { BattleProvider } from "./contexts/BattleContext";
 import { useWallet } from "./hooks/useWallet";
 import { WalletStatus } from "./utils/interefaces";
 import "./index.css";
-import { FactionPage } from "./pages/FactionPage";
-import { FactionDetailPage } from "./pages/FactionDetailPage";
 import { handleReferralLink } from "./utils/aoHelpers";
 import { BotBattlePage } from "./pages/battle/BotBattlePage";
 import { RankedBattlePage } from "./pages/battle/RankedBattlePage";
@@ -26,9 +24,10 @@ import DebugView from "./pages/admin/DebugView";
 import StartPage from "./pages/StartPage";
 import ActiveBattlePage from "./pages/battle/ActiveBattlePage";
 import Admin from "./pages/admin/Admin";
-import BattlePage from "./pages/battle/index";
+import BattlePage from "./pages/battle/BattleMain";
 import { Analytics } from "./components/Analytics";
-//import BattlePage from "./pages/battle/BattlePage";
+import { FactionPage } from "./pages/FactionPage";
+import { FactionDetailPage } from "./pages/FactionDetailPage";
 
 interface AppContentProps {
   wallet?: { address: string };

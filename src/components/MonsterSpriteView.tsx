@@ -1,53 +1,87 @@
 import React, { useEffect, useRef, useState, useCallback } from 'react';
 
-type EffectType = 'Full Heal' | 'Large Heal' | 'Medium Heal' | 'Small Heal' | 'Revive' | null;
+// ================ Type Definitions ================
 
-// Extended animation types to support new behaviors
+/**
+ * Effect types that can be displayed over the monster
+ */
+export type EffectType = 'Full Heal' | 'Large Heal' | 'Medium Heal' | 'Small Heal' | 'Revive' | 'Attack Boost' | 'Shield Boost' | null;
+
+/**
+ * Animation types for monster sprite
+ */
 type AnimationType = 'walkRight' | 'walkLeft' | 'walkUp' | 'walkDown' | 'attack1' | 'attack2' | 
                     'idle' | 'sleep' | 'eat' | 'train' | 'play' | 'happy';
+
+/**
+ * Static poses when not animating
+ */
 type PoseType = 'right' | 'left';
 
-// Animation behavior modes
+/**
+ * Animation behavior modes that control how the sprite moves
+ */
 type BehaviorMode = 'static' | 'pacing' | 'activity';
 
+/**
+ * Props for the MonsterSpriteView component
+ */
 interface MonsterSpriteViewProps {
-  sprite: string; // Arweave transaction ID for the sprite sheet
-  currentAnimation?: AnimationType;
-  pose?: PoseType; // Static pose when not animating
-  onAnimationComplete?: () => void;
-  isOpponent?: boolean; // Used to determine facing direction
-  behaviorMode?: BehaviorMode; // Controls how the sprite behaves
-  activityType?: string; // Type of activity the monster is doing
-  containerWidth?: number; // Width of container for pacing calculations
-  containerHeight?: number; // Height of container for animation positioning
-  effect?: EffectType; // Current effect to display
-  onEffectComplete?: () => void; // Callback when effect animation completes
+  sprite: string;                          // Filename for the sprite sheet
+  currentAnimation?: AnimationType;        // Explicit animation to play
+  pose?: PoseType;                         // Static pose when not animating
+  onAnimationComplete?: () => void;        // Callback when animation completes
+  isOpponent?: boolean;                    // Used to determine facing direction
+  behaviorMode?: BehaviorMode;             // Controls how the sprite behaves
+  activityType?: string;                   // Type of activity the monster is doing
+  containerWidth?: number;                 // Width of container for pacing calculations
+  containerHeight?: number;                // Height of container for animation positioning
+  effect?: EffectType;                     // Current effect to display
+  onEffectComplete?: () => void;           // Callback when effect animation completes
 }
 
-const FRAME_WIDTH = 64;
-const FRAME_HEIGHT = 64;
-const FRAMES_PER_ANIMATION = 4;
-const ANIMATION_ROWS = 6;
-const ANIMATION_SPEED = 1000 / 4; // 1 second total divided by 4 frames = 250ms per frame
+// ================ Constants ================
 
+// Sprite sheet constants
+const FRAME_WIDTH = 64;                    // Width of each sprite frame in pixels
+const FRAME_HEIGHT = 64;                   // Height of each sprite frame in pixels
+const FRAMES_PER_ANIMATION = 4;            // Number of frames per animation cycle
+const ANIMATION_ROWS = 6;                  // Number of animation rows in the sprite sheet
+const ANIMATION_SPEED = 250;               // Duration per frame in milliseconds (1000 / 4 = 250ms)
+
+// ================ Effect Animation Logic ================
+
+/**
+ * Props for the EffectAnimation component
+ */
 interface EffectAnimationProps {
-  effect: EffectType;
-  onComplete: () => void;
-  containerWidth: number;
-  containerHeight: number;
+  effect: EffectType;                // Type of effect to display
+  onComplete: () => void;           // Callback when animation completes
+  containerWidth: number;           // Container width for scaling
+  containerHeight: number;          // Container height for scaling
 }
 
+/**
+ * Constants for effect animations
+ */
+const EFFECT_CONSTANTS = {
+  FRAME_COUNT: 8,                   // Number of frames in effect animations
+  FRAME_SIZE: 64,                   // Size of each effect frame in pixels
+  FRAME_DURATION: 100               // Duration per effect frame in milliseconds
+};
+
+/**
+ * Hook to manage effect animation state and logic
+ */
 const useEffectAnimation = (effect: EffectType, onComplete: () => void) => {
   const [currentFrame, setCurrentFrame] = useState(0);
   const effectRef = useRef<HTMLImageElement | null>(null);
   const animationRef = useRef<number | null>(null);
   const lastUpdateTime = useRef<number>(0);
-  const FRAME_COUNT = 8;
-  const FRAME_SIZE = 64;
-  const FRAME_DURATION = 100; // ms per frame
   const isMounted = useRef(true);
   const hasCompleted = useRef(false);
-
+  
+  // Cleanup on unmount
   useEffect(() => {
     isMounted.current = true;
     return () => {
@@ -58,19 +92,27 @@ const useEffectAnimation = (effect: EffectType, onComplete: () => void) => {
     };
   }, []);
 
+  // Handle effect animation
   useEffect(() => {
-    if (!effect || hasCompleted.current) return;
+    console.log('[EFFECT DEBUG] Starting effect animation for:', effect);
+    if (!effect) return;
+    
+    // Clear any existing animation
+    if (animationRef.current) {
+      cancelAnimationFrame(animationRef.current);
+    }
 
     // Reset animation state
     setCurrentFrame(0);
     lastUpdateTime.current = performance.now();
     hasCompleted.current = false;
 
-    // Load the image
+    // Load the effect image
     const img = new Image();
     img.src = new URL(`../assets/effects/${effect}.png`, import.meta.url).href;
     effectRef.current = img;
-
+    
+    // Animation loop function
     const animate = (timestamp: number) => {
       if (!isMounted.current) return;
       
@@ -78,39 +120,51 @@ const useEffectAnimation = (effect: EffectType, onComplete: () => void) => {
       
       const delta = timestamp - lastUpdateTime.current;
       
-      if (delta >= FRAME_DURATION) {
+      if (delta >= EFFECT_CONSTANTS.FRAME_DURATION) {
         setCurrentFrame(prev => {
           const nextFrame = prev + 1;
-          if (nextFrame >= FRAME_COUNT - 1) {
+          // Check if animation is complete
+          if (nextFrame >= EFFECT_CONSTANTS.FRAME_COUNT) {
             if (!hasCompleted.current) {
               hasCompleted.current = true;
               onComplete();
             }
-            return FRAME_COUNT - 1; // Stay on last frame
+            return prev; // Stay on last frame
           }
           return nextFrame;
         });
         lastUpdateTime.current = timestamp;
       }
       
-      if (currentFrame < FRAME_COUNT - 1) {
+      // Continue animation loop until we've completed all frames
+      if (!hasCompleted.current) {
         animationRef.current = requestAnimationFrame(animate);
       }
     };
 
+    // Start animation
     animationRef.current = requestAnimationFrame(animate);
 
+    // Cleanup function
     return () => {
       if (animationRef.current) {
         cancelAnimationFrame(animationRef.current);
         animationRef.current = null;
       }
     };
-  }, [effect]);
+  }, [effect, onComplete]);
 
-  return { currentFrame, effectRef, FRAME_COUNT, FRAME_SIZE };
+  return { 
+    currentFrame, 
+    effectRef, 
+    FRAME_COUNT: EFFECT_CONSTANTS.FRAME_COUNT, 
+    FRAME_SIZE: EFFECT_CONSTANTS.FRAME_SIZE 
+  };
 };
 
+/**
+ * Component that renders an effect animation over the monster
+ */
 const EffectAnimation: React.FC<EffectAnimationProps> = React.memo(({ 
   effect, 
   onComplete,
@@ -120,6 +174,7 @@ const EffectAnimation: React.FC<EffectAnimationProps> = React.memo(({
   const { currentFrame, effectRef, FRAME_COUNT, FRAME_SIZE } = 
     useEffectAnimation(effect, onComplete);
 
+  // Don't render anything if no effect is provided
   if (!effect) return null;
 
   // Calculate the scale based on container dimensions
@@ -172,23 +227,24 @@ const MonsterSpriteView: React.FC<MonsterSpriteViewProps> = ({
   effect: externalEffect,
   onEffectComplete
 }) => {
-  const [effect, setEffect] = useState<EffectType>(null);
-  const effectCompletedRef = useRef(false);
-
-  // Handle external effect changes
-  useEffect(() => {
-    if (externalEffect && externalEffect !== effect) {
-      effectCompletedRef.current = false;
-      setEffect(externalEffect);
-    }
-  }, [externalEffect]);
-
+  // Effect completion handling - completely independent of monster animation
+  // No local effect state - use external effect directly to prevent interruption
   const handleEffectComplete = useCallback(() => {
-    if (effectCompletedRef.current) return;
-    effectCompletedRef.current = true;
-    setEffect(null);
-    onEffectComplete?.();
-  }, [onEffectComplete]);
+    console.log('[EFFECT DEBUG] Effect animation completed:', externalEffect);
+    if (onEffectComplete) {
+      onEffectComplete();
+    }
+  }, [onEffectComplete, externalEffect]);
+  
+  // Log when effect prop changes
+  useEffect(() => {
+    console.log('[EFFECT DEBUG] MonsterSpriteView received effect:', externalEffect);
+    if (externalEffect) {
+      console.log('[EFFECT DEBUG] Sprite for effect:', sprite);
+    }
+  }, [externalEffect, sprite]);
+
+  // Monster animation state - completely separate from effect system
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const [spriteImage, setSpriteImage] = useState<HTMLImageElement | null>(null);
   const animationFrameRef = useRef<number>(0);
@@ -203,6 +259,13 @@ const MonsterSpriteView: React.FC<MonsterSpriteViewProps> = ({
   const [currentBehavior, setCurrentBehavior] = useState<AnimationType | null>(null);
   const [activityAnimation, setActivityAnimation] = useState<AnimationType | null>(null);
   const randomPauseDurationRef = useRef<number>(Math.floor(Math.random() * 3000) + 2000);
+  
+  // Animation control state to prevent conflicts
+  const animationControllerRef = useRef<{
+    currentAnimation: AnimationType | null;
+    isRunning: boolean;
+    cleanup: (() => void) | null;
+  }>({ currentAnimation: null, isRunning: false, cleanup: null });
 
   // Load sprite sheet from local assets
   useEffect(() => {
@@ -246,7 +309,7 @@ const MonsterSpriteView: React.FC<MonsterSpriteViewProps> = ({
     }
   };
 
-  // Draw current frame
+  // Draw current frame - this is the ONLY function that should modify the canvas
   const drawFrame = (ctx: CanvasRenderingContext2D, frameIndex: number, row: number, animationType?: AnimationType) => {
     if (!spriteImage) return;
     
@@ -267,83 +330,88 @@ const MonsterSpriteView: React.FC<MonsterSpriteViewProps> = ({
     );
   };
 
-  // Handle explicitly provided animation
-  useEffect(() => {
+  // Unified animation controller - prevents conflicts between different animation sources
+  const startAnimation = useCallback((animationType: AnimationType, shouldLoop: boolean = true) => {
     const canvas = canvasRef.current;
     const ctx = canvas?.getContext('2d');
-    if (!canvas || !ctx || !spriteImage || !currentAnimation) return;
+    if (!canvas || !ctx || !spriteImage) return;
 
-    const row = getAnimationRow(currentAnimation);
+    // Stop any existing animation
+    if (animationControllerRef.current.cleanup) {
+      animationControllerRef.current.cleanup();
+    }
+
+    const controller = animationControllerRef.current;
+    controller.currentAnimation = animationType;
+    controller.isRunning = true;
+
+    const row = getAnimationRow(animationType);
+    let startTime: number | null = null;
     let frame = 0;
+    let cycleCount = 0;
 
-    const animate = () => {
-      drawFrame(ctx, frame, row, currentAnimation);
-      frame = (frame + 1) % FRAMES_PER_ANIMATION;
-      currentFrameRef.current = frame;
-
-      if (frame === 0 && currentAnimation.startsWith('attack')) {
-        // Stop attack animations after one cycle
-        if (onAnimationComplete) {
-          onAnimationComplete();
-        }
-        return;
+    const animate = (timestamp: number) => {
+      if (!controller.isRunning || controller.currentAnimation !== animationType) {
+        return; // Animation was stopped or changed
       }
 
-      animationFrameRef.current = requestAnimationFrame(animate);
-    };
+      if (!startTime) startTime = timestamp;
+      const elapsed = timestamp - startTime;
+      const currentFrame = Math.floor((elapsed / ANIMATION_SPEED) % FRAMES_PER_ANIMATION);
+      
+      if (currentFrame !== frame) {
+        frame = currentFrame;
+        drawFrame(ctx, frame, row, animationType);
+        currentFrameRef.current = frame;
 
-    // Start animation with precise timing
-    const startAnimation = () => {
-      let startTime: number | null = null;
-      let frame = 0;
-      let cycleCount = 0;
-
-      const animate = (timestamp: number) => {
-        if (!startTime) startTime = timestamp;
-        const elapsed = timestamp - startTime;
-        const currentFrame = Math.floor((elapsed / ANIMATION_SPEED) % FRAMES_PER_ANIMATION);
-        
-        if (currentFrame !== frame) {
-          frame = currentFrame;
-          drawFrame(ctx, frame, row, currentAnimation);
-          currentFrameRef.current = frame;
-
-          // Check for cycle completion
-          if (frame === 0 && elapsed > 0) {
-            cycleCount++;
-            // For attack animations, complete after one cycle
-            if (currentAnimation.startsWith('attack') && cycleCount >= 4) { // 4 cycles = 2 seconds
-              if (onAnimationComplete) {
-                onAnimationComplete();
-              }
-              return;
+        // Check for cycle completion
+        if (frame === 0 && elapsed > 0) {
+          cycleCount++;
+          // For attack animations or non-looping animations, complete after one cycle
+          if (!shouldLoop || (animationType.startsWith('attack') && cycleCount >= 1)) {
+            controller.isRunning = false;
+            if (onAnimationComplete) {
+              onAnimationComplete();
             }
+            return;
           }
         }
-
-        animationFrameRef.current = requestAnimationFrame(animate);
-      };
-
-      if (animationFrameRef.current) {
-        cancelAnimationFrame(animationFrameRef.current);
       }
-      animationFrameRef.current = requestAnimationFrame(animate);
+
+      if (controller.isRunning) {
+        animationFrameRef.current = requestAnimationFrame(animate);
+      }
     };
 
-    startAnimation();
+    // Set up cleanup function
+    controller.cleanup = () => {
+      controller.isRunning = false;
+      if (animationFrameRef.current) {
+        cancelAnimationFrame(animationFrameRef.current);
+        animationFrameRef.current = 0;
+      }
+    };
+
+    animationFrameRef.current = requestAnimationFrame(animate);
+  }, [spriteImage, onAnimationComplete]);
+
+  // Handle explicitly provided animation using unified controller
+  useEffect(() => {
+    if (!spriteImage || !currentAnimation) return;
+    
+    console.log('[ANIMATION DEBUG] Starting explicit animation:', currentAnimation);
+    startAnimation(currentAnimation, !currentAnimation.startsWith('attack'));
 
     return () => {
-      if (animationFrameRef.current) {
-        cancelAnimationFrame(animationFrameRef.current);
+      if (animationControllerRef.current.cleanup) {
+        animationControllerRef.current.cleanup();
       }
     };
-  }, [spriteImage, currentAnimation, onAnimationComplete]);
-  
-  // Handle behavior-based animations
+  }, [currentAnimation, spriteImage, startAnimation]);
+
+  // Handle behavior-based animations using unified controller
   useEffect(() => {
-    const canvas = canvasRef.current;
-    const ctx = canvas?.getContext('2d');
-    if (!canvas || !ctx || !spriteImage || currentAnimation) return;
+    if (!spriteImage || currentAnimation) return;
     
     let animation: AnimationType | null = null;
     
@@ -352,44 +420,22 @@ const MonsterSpriteView: React.FC<MonsterSpriteViewProps> = ({
       animation = currentBehavior;
     } else if (behaviorMode === 'activity' && activityAnimation) {
       animation = activityAnimation;
+    } else {
+      // Default to idle if no specific behavior is set
+      animation = 'idle';
     }
     
-    if (!animation) return;
-    
-    const row = getAnimationRow(animation);
-    let frame = 0;
-    
-    const startAnimation = () => {
-      let startTime: number | null = null;
-      
-      const animate = (timestamp: number) => {
-        if (!startTime) startTime = timestamp;
-        const elapsed = timestamp - startTime;
-        const currentFrame = Math.floor((elapsed / ANIMATION_SPEED) % FRAMES_PER_ANIMATION);
-        
-        if (currentFrame !== frame) {
-          frame = currentFrame;
-          drawFrame(ctx, frame, row);
-          currentFrameRef.current = frame;
-        }
-        
-        animationFrameRef.current = requestAnimationFrame(animate);
-      };
-      
-      if (animationFrameRef.current) {
-        cancelAnimationFrame(animationFrameRef.current);
-      }
-      animationFrameRef.current = requestAnimationFrame(animate);
-    };
-    
-    startAnimation();
+    if (animation) {
+      console.log('[ANIMATION DEBUG] Starting behavior animation:', animation);
+      startAnimation(animation, true); // Always loop behavior animations
+    }
     
     return () => {
-      if (animationFrameRef.current) {
-        cancelAnimationFrame(animationFrameRef.current);
+      if (animationControllerRef.current.cleanup) {
+        animationControllerRef.current.cleanup();
       }
     };
-  }, [spriteImage, currentAnimation, currentBehavior, activityAnimation, behaviorMode]);
+  }, [spriteImage, currentAnimation, currentBehavior, activityAnimation, behaviorMode, startAnimation]);
 
   // Pacing animation logic
   useEffect(() => {
@@ -633,7 +679,7 @@ const MonsterSpriteView: React.FC<MonsterSpriteViewProps> = ({
       </div>
       
       {/* Effect animation container - positioned absolutely over the monster */}
-      {effect && (
+      {externalEffect && (
         <div 
           style={{
             position: 'absolute',
@@ -646,7 +692,7 @@ const MonsterSpriteView: React.FC<MonsterSpriteViewProps> = ({
           }}
         >
           <EffectAnimation 
-            effect={effect} 
+            effect={externalEffect} 
             onComplete={handleEffectComplete}
             containerWidth={containerWidth}
             containerHeight={containerHeight}

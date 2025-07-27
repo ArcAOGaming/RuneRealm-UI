@@ -1,5 +1,5 @@
-import React, { useState, useEffect } from 'react';
-import MonsterSpriteView from './MonsterSpriteView';
+import React, { useState, useEffect, useCallback } from 'react';
+import MonsterSpriteView, { EffectType } from './MonsterSpriteView';
 import { MonsterStats } from '../utils/aoHelpers';
 import BattleStatus from './BattleStatus';
 import { BATTLE_POSITIONS } from '../constants/Constants';
@@ -17,6 +17,12 @@ interface BattleSceneProps {
   } | null;
   shieldRestoring: boolean;
   showEndOfRound: boolean;
+  // New props for effects
+  playerEffect?: EffectType;
+  opponentEffect?: EffectType;
+  onPlayerEffectComplete?: () => void;
+  onOpponentEffectComplete?: () => void;
+  // Original callbacks
   onAttackComplete: () => void;
   onShieldComplete: () => void;
   onRoundComplete: () => void;
@@ -32,12 +38,29 @@ const BattleScene: React.FC<BattleSceneProps> = ({
   attackAnimation,
   shieldRestoring,
   showEndOfRound,
+  playerEffect,
+  opponentEffect,
+  onPlayerEffectComplete,
+  onOpponentEffectComplete,
   onAttackComplete,
   onShieldComplete,
   onRoundComplete
 }) => {
   const [playerPosition, setPlayerPosition] = useState<'home' | 'attack'>('home');
   const [opponentPosition, setOpponentPosition] = useState<'home' | 'attack'>('home');
+  
+  // Handler callbacks for effect animations
+  const handlePlayerEffectComplete = useCallback(() => {
+    if (onPlayerEffectComplete) {
+      onPlayerEffectComplete();
+    }
+  }, [onPlayerEffectComplete]);
+  
+  const handleOpponentEffectComplete = useCallback(() => {
+    if (onOpponentEffectComplete) {
+      onOpponentEffectComplete();
+    }
+  }, [onOpponentEffectComplete]);
 
   // Update positions based on animations
   useEffect(() => {
@@ -60,15 +83,22 @@ const BattleScene: React.FC<BattleSceneProps> = ({
     <div className="relative w-full h-full overflow-hidden rounded-lg">
       {/* Background */}
       <div 
-        className="absolute inset-0 bg-cover bg-center"
-        style={{ backgroundImage: `url(${new URL('../assets/backgrounds/1.png', import.meta.url).href})` }}
+        className="absolute inset-0 bg-contain bg-center bg-no-repeat"
+        style={{ 
+          backgroundImage: `url(${new URL('../assets/backgrounds/1.png', import.meta.url).href})`,
+          backgroundColor: '#1a1a2e' // Fallback color for areas not covered by background
+        }}
       />
       
       {/* Player Monster */}
       <div 
         className="absolute bottom-[15%] transition-all duration-[750ms] ease-in-out"
         style={{ 
-          left: playerPosition === 'attack' ? BATTLE_POSITIONS.ATTACK_OFFSET : BATTLE_POSITIONS.HOME_OFFSET
+          left: playerPosition === 'attack' ? BATTLE_POSITIONS.ATTACK_OFFSET : BATTLE_POSITIONS.HOME_OFFSET,
+          width: 'min(20vw, 200px)',
+          height: 'min(20vw, 200px)',
+          minWidth: '120px',
+          minHeight: '120px'
         }}
       >
         {/* Stats Display */}
@@ -96,18 +126,28 @@ const BattleScene: React.FC<BattleSceneProps> = ({
         </div>
         
         {/* Monster Sprite */}
-        <MonsterSpriteView
-          sprite={challenger.sprite}
-          currentAnimation={playerAnimation}
-          onAnimationComplete={onPlayerAnimationComplete}
-        />
+        <div className="w-full h-full">
+          <MonsterSpriteView
+            sprite={challenger.sprite}
+            currentAnimation={playerAnimation}
+            onAnimationComplete={onPlayerAnimationComplete}
+            containerWidth={200}
+            containerHeight={200}
+            effect={playerEffect}
+            onEffectComplete={handlePlayerEffectComplete}
+          />
+        </div>
       </div>
       
       {/* Opponent Monster */}
       <div 
         className="absolute bottom-[15%] transition-all duration-[750ms] ease-in-out"
         style={{ 
-          right: opponentPosition === 'attack' ? BATTLE_POSITIONS.ATTACK_OFFSET : BATTLE_POSITIONS.HOME_OFFSET
+          right: opponentPosition === 'attack' ? BATTLE_POSITIONS.ATTACK_OFFSET : BATTLE_POSITIONS.HOME_OFFSET,
+          width: 'min(20vw, 200px)',
+          height: 'min(20vw, 200px)',
+          minWidth: '120px',
+          minHeight: '120px'
         }}
       >
         {/* Stats Display */}
@@ -135,12 +175,18 @@ const BattleScene: React.FC<BattleSceneProps> = ({
         </div>
         
         {/* Monster Sprite */}
-        <MonsterSpriteView
-          sprite={accepter.sprite}
-          currentAnimation={opponentAnimation}
-          onAnimationComplete={onOpponentAnimationComplete}
-          isOpponent
-        />
+        <div className="w-full h-full">
+          <MonsterSpriteView
+            sprite={accepter.sprite}
+            currentAnimation={opponentAnimation}
+            onAnimationComplete={onOpponentAnimationComplete}
+            isOpponent
+            containerWidth={200}
+            containerHeight={200}
+            effect={opponentEffect}
+            onEffectComplete={handleOpponentEffectComplete}
+          />
+        </div>
       </div>
 
       {/* Battle Status Overlay */}

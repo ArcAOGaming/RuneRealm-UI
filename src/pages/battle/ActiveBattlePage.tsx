@@ -8,43 +8,66 @@ import {
 } from "../../utils/aoHelpers";
 import type {
   BattleManagerInfo,
-  ActiveBattle
+  ActiveBattle,
+  BattleTurn,
+  BattleResult
 } from "../../utils/interefaces";
 import { currentTheme } from "../../constants/theme";
-import Header from "../../components/Header";
-import Footer from "../../components/Footer";
 import Loading from "../../components/Loading";
 import { useNavigate } from "react-router-dom";
 import BattleScene from "../../components/BattleScene";
-import BattleOverlays from "../../components/BattleOverlays";
+
+import { EffectType } from "../../components/MonsterSpriteView";
 import BattleStats from "../../components/BattleStats";
 
-// Function to determine move color based on type
-const getMoveColor = (moveName: string, move: any) => {
-  //console.log('Move:', moveName, move);
+// Import new modular components
+import WinnerAnnouncement from "../../components/battle/WinnerAnnouncement";
+import BattleInterface from "../../components/battle/BattleInterface";
+import UpdateIndicator from "../../components/battle/UpdateIndicator";
+import { getMoveColor } from "../../utils/battleUtils";
 
-  if (moveName === "struggle") return "bg-purple-700";
-  // Determine type based on name
-  const type = move.type.toLowerCase();
-  if (type == "heal") return "bg-green-600"; // Brighter green
-  if (type == "boost") return "bg-yellow-400"; // More vibrant yellow
-  if (type == "fire") return "bg-red-600"; // Intense red
-  if (type == "water") return "bg-blue-600"; // Richer blue
-  if (type == "air") return "bg-cyan-400"; // Lighter cyan for contrast
-  if (type == "rock") return "bg-orange-700"; // More earthy and striking
-  if (type == "normal") return "bg-gray-500"; // More distinct neutral tone
-
-  // Default to a deep, intense red for attack moves
-  return "bg-red-700";
-};
-
-// Small loading indicator for updates
-const UpdateIndicator: React.FC = () => (
-  <div className="fixed bottom-4 right-4 bg-blue-500 text-white px-3 py-1 rounded-full text-sm animate-pulse">
-    Updating...
-  </div>
-);
-
+/**
+ * ActiveBattlePage Component
+ * 
+ * This is the main battle interface where players engage in turn-based combat.
+ * The component has been refactored into smaller, modular components for better maintainability.
+ * 
+ * ARCHITECTURE OVERVIEW:
+ * =====================
+ * 
+ * 1. STATE MANAGEMENT:
+ *    - battleManagerInfo: Contains general battle system information
+ *    - activeBattle: Current battle state with player/monster stats and moves
+ *    - previousBattle: Previous battle state for comparison and animation triggers
+ *    - Animation states: Controls character animations during attacks
+ *    - UI states: Loading, updating, disabled states for user interactions
+ * 
+ * 2. BATTLE FLOW:
+ *    - Initial load: Fetches battle data and determines if battle is active/ended
+ *    - Move selection: Players select moves which trigger attack animations
+ *    - Turn processing: Processes battle turns sequentially with animations
+ *    - Battle end: Shows winner announcement and provides exit option
+ * 
+ * 3. ANIMATION SYSTEM:
+ *    - Character animations: Walk, attack, heal/boost sequences
+ *    - Attack animations: Visual feedback for different move types
+ *    - Shield restoration: End-of-round shield regeneration animation
+ *    - Winner announcement: Modal overlay when battle concludes
+ * 
+ * 4. MODULAR COMPONENTS:
+ *    - WinnerAnnouncement: Modal for battle completion
+ *    - BattleMoves: Container for both players' move interfaces
+ *    - PlayerMoves: Individual player's move buttons and struggle option
+ *    - MoveButton: Individual move button with stats and styling
+ *    - StruggleButton: Last resort move when all others are exhausted
+ *    - UpdateIndicator: Loading indicator during battle updates
+ * 
+ * 5. DATA FLOW:
+ *    - Wallet connection triggers battle data fetching
+ *    - Battle state changes trigger re-renders and animations
+ *    - Move selection triggers API calls and state updates
+ *    - Animation completion triggers next phase of battle sequence
+ */
 export const ActiveBattlePage: React.FC = (): JSX.Element => {
   const {
     wallet,
@@ -86,18 +109,36 @@ export const ActiveBattlePage: React.FC = (): JSX.Element => {
     | "attack2"
     | undefined
   >();
+  // Effect animation states for heal/boost effects
+  const [playerEffect, setPlayerEffect] = useState<EffectType>(null);
+  const [opponentEffect, setOpponentEffect] = useState<EffectType>(null);
   const [initialLoading, setInitialLoading] = useState(true);
   const [isUpdating, setIsUpdating] = useState(false);
   const [showBattleLog, setShowBattleLog] = useState(true);
   const theme = currentTheme(darkMode);
   const navigate = useNavigate();
 
-  // Memoized comparison function to prevent unnecessary updates
+  /**
+   * Battle Change Detection Function
+   * 
+   * Memoized comparison function that determines if a battle state has meaningfully changed.
+   * This prevents unnecessary re-renders and animations when only status fields change.
+   * 
+   * Key Features:
+   * - Excludes 'status' field from comparison to avoid animation loops
+   * - Compares player stats, turns, and move counts
+   * - Uses JSON.stringify for deep comparison (acceptable for battle data size)
+   * - Returns true if battles are different or if either is null
+   * 
+   * @param oldBattle - Previous battle state
+   * @param newBattle - New battle state from API
+   * @returns boolean indicating if battle has meaningfully changed
+   */
   const hasBattleChanged = useCallback(
     (oldBattle: ActiveBattle | null, newBattle: ActiveBattle | null) => {
       if (!oldBattle || !newBattle) return true;
 
-      // Compare relevant battle data excluding status
+      // Compare relevant battle data excluding status to prevent animation loops
       const oldData = {
         challenger: { ...oldBattle.challenger, status: undefined },
         accepter: { ...oldBattle.accepter, status: undefined },
@@ -186,21 +227,40 @@ export const ActiveBattlePage: React.FC = (): JSX.Element => {
     isUpdating,
   ]);
 
+  /**
+   * Handle Attack Function
+   * 
+   * Core battle logic that processes a player's move selection and manages the entire
+   * battle sequence including animations, state updates, and battle conclusion.
+   * 
+   * BATTLE PROCESSING FLOW:
+   * 1. Validation: Ensure wallet, battle state, and no ongoing updates
+   * 2. State Lock: Disable moves and show updating indicator
+   * 3. API Call: Execute attack through blockchain/backend
+   * 4. Response Processing: Handle battle data and determine if battle ended
+   * 5. Turn Processing: Animate and apply each turn's effects sequentially
+   * 6. Battle Conclusion: Show winner or continue for next round
+   * 
+   * @param moveName - Name of the selected move (e.g., "fireball", "heal", "struggle")
+   */
   const handleAttack = async (moveName: string) => {
+    // Validation: Prevent multiple simultaneous attacks or invalid states
     if (!wallet?.address || !activeBattle || isUpdating || movesDisabled)
       return;
 
     try {
+      // Lock UI to prevent additional move selections during processing
       setMovesDisabled(true);
       setIsUpdating(true);
 
-      // Save current state before update
+      // Save current battle state for comparison and rollback if needed
       const previousState = {
         challenger: { ...activeBattle.challenger },
         accepter: { ...activeBattle.accepter },
       };
       setPreviousBattle({ ...activeBattle });
 
+      // Execute the attack through the blockchain/backend API
       const response = await executeAttack(wallet, activeBattle.id, moveName);
 
       if (response.status === "success" && response.data) {
@@ -212,7 +272,7 @@ export const ActiveBattlePage: React.FC = (): JSX.Element => {
         //  - Otherwise, `response.data` has a `battle` object
         const battleData = isBattleOver
           ? (response.data as ActiveBattle)
-          : (response.data as { battle: ActiveBattle }).battle;
+          : (response.data as any).battle as ActiveBattle;
 
         // If the battle has new turns, figure them out
         const previousTurns = activeBattle?.turns.length || 0;
@@ -220,7 +280,7 @@ export const ActiveBattlePage: React.FC = (): JSX.Element => {
         const turnsToProcess = battleData.turns.slice(previousTurns);
 
         // Helper to update challenger/accepter from a single turn
-        const applyTurnChanges = (turn: Turn, localBattle: ActiveBattle) => {
+        const applyTurnChanges = (turn: BattleTurn, localBattle: ActiveBattle) => {
           if (turn.attacker === "challenger") {
             localBattle.challenger.attack = turn.attackerState.attack;
             localBattle.challenger.defense = turn.attackerState.defense;
@@ -258,6 +318,7 @@ export const ActiveBattlePage: React.FC = (): JSX.Element => {
           // Decide if it's an attacking move or heal/boost
           const isAttackMove = turn.healthDamage > 0 || turn.shieldDamage > 0;
           if (isAttackMove) {
+            // Normal attack sequence with walking and attacking animation
             if (turn.attacker === "challenger") {
               setPlayerAnimation("walkRight");
               await new Promise((res) => setTimeout(res, 1000));
@@ -278,25 +339,73 @@ export const ActiveBattlePage: React.FC = (): JSX.Element => {
               await new Promise((res) => setTimeout(res, 1000));
             }
           } else {
-            // Heal/Boost sequence
+            // Heal/Boost sequence - ONLY use effect animations, NO walking animations
             if (turn.attacker === "challenger") {
-              setPlayerAnimation("walkUp");
-              await new Promise((res) => setTimeout(res, 1000));
-
-              setPlayerAnimation("walkLeft");
-              await new Promise((res) => setTimeout(res, 1000));
-
-              setPlayerAnimation("walkDown");
-              await new Promise((res) => setTimeout(res, 1000));
+              // Make sure no animations are active
+              setPlayerAnimation(undefined);
+              setOpponentAnimation(undefined);
+              
+              // Determine effect type based on what stats changed
+              let effectType: EffectType = null;
+              
+              // Check for healing
+              if (turn.attackerState.healthPoints > activeBattle.challenger.healthPoints) {
+                effectType = "Medium Heal";
+              }
+              // Check for stat boosts
+              else if (turn.attackerState.attack > activeBattle.challenger.attack ||
+                     turn.attackerState.defense > activeBattle.challenger.defense ||
+                     turn.attackerState.speed > activeBattle.challenger.speed) {
+                // Use Small Heal for Attack Boost since we don't have Attack Boost images
+                effectType = "Small Heal";
+                console.log('[EFFECT DEBUG] Using Small Heal for Attack Boost');
+              }
+              // Check for shield increase
+              else if (turn.attackerState.shield > activeBattle.challenger.shield) {
+                // Use Large Heal for Shield Boost since we don't have Shield Boost images
+                effectType = "Large Heal";
+                console.log('[EFFECT DEBUG] Using Large Heal for Shield Boost');
+              }
+              
+              // Set the effect animation
+              console.log('[EFFECT DEBUG] Setting player effect:', effectType);
+              setPlayerEffect(effectType);
+              
+              // Wait for effect animation to complete (8 frames * 100ms = ~800ms)
+              await new Promise((res) => setTimeout(res, 800));
             } else {
-              setOpponentAnimation("walkUp");
-              await new Promise((res) => setTimeout(res, 1000));
-
-              setOpponentAnimation("walkLeft");
-              await new Promise((res) => setTimeout(res, 1000));
-
-              setOpponentAnimation("walkDown");
-              await new Promise((res) => setTimeout(res, 1000));
+              // Similar logic for opponent
+              // Make sure no animations are active
+              setPlayerAnimation(undefined);
+              setOpponentAnimation(undefined);
+              
+              let effectType: EffectType = null;
+              
+              // Check for healing
+              if (turn.attackerState.healthPoints > activeBattle.accepter.healthPoints) {
+                effectType = "Medium Heal";
+              }
+              // Check for stat boosts
+              else if (turn.attackerState.attack > activeBattle.accepter.attack ||
+                     turn.attackerState.defense > activeBattle.accepter.defense ||
+                     turn.attackerState.speed > activeBattle.accepter.speed) {
+                // Use Small Heal for Attack Boost since we don't have Attack Boost images
+                effectType = "Small Heal";
+                console.log('[EFFECT DEBUG] Using Small Heal for Attack Boost');
+              }
+              // Check for shield increase
+              else if (turn.attackerState.shield > activeBattle.accepter.shield) {
+                // Use Large Heal for Shield Boost since we don't have Shield Boost images
+                effectType = "Large Heal";
+                console.log('[EFFECT DEBUG] Using Large Heal for Shield Boost');
+              }
+              
+              // Set the effect animation
+              console.log('[EFFECT DEBUG] Setting opponent effect:', effectType);
+              setOpponentEffect(effectType);
+              
+              // Wait for effect animation to complete (8 frames * 100ms = ~800ms)
+              await new Promise((res) => setTimeout(res, 800));
             }
           }
 
@@ -304,6 +413,8 @@ export const ActiveBattlePage: React.FC = (): JSX.Element => {
           setAttackAnimation(null);
           setPlayerAnimation(undefined);
           setOpponentAnimation(undefined);
+          setPlayerEffect(null);
+          setOpponentEffect(null);
         };
 
 // Process exactly the last 2 turns (or just the last turn if only one), considering battle ending edge case
@@ -328,13 +439,11 @@ const processTurnsSequentially = async () => {
 
     await new Promise((res) => setTimeout(res, 500));
 
-    if (isBattleOver && i === 0 && turnsToRun.length === 2) {
-      // If the second turn ended the battle, ensure the first turn also plays
-      await runTurn(i + 1);
-      return;
-    }
-
-    if (isBattleOver) {
+    // Check if this is the last turn to process
+    const isLastTurn = i === turnsToRun.length - 1;
+    
+    if (isBattleOver && isLastTurn) {
+      // Battle is over and this was the final turn - show winner announcement
       const playerWon = updatedBattle.challenger.healthPoints > 0;
       const winnerName = playerWon
         ? "Player 1's " + updatedBattle.challenger.name
@@ -345,9 +454,9 @@ const processTurnsSequentially = async () => {
       setShowWinnerAnnouncement(null);
       return;
     }
-
-    if (i === turnsToRun.length - 1) {
-      // End of round steps
+    
+    if (!isBattleOver && isLastTurn) {
+      // Battle continues - show end of round and shield restoration
       setShowEndOfRound(true);
       await new Promise((res) => setTimeout(res, 3000));
       setShowEndOfRound(false);
@@ -357,11 +466,11 @@ const processTurnsSequentially = async () => {
       await new Promise((res) => setTimeout(res, 2000));
       setShieldRestoring(false);
 
-      const finalBattle = {
+      const finalBattle: ActiveBattle = {
         ...updatedBattle,
         challenger: { ...updatedBattle.challenger },
         accepter: { ...updatedBattle.accepter },
-        status: isBattleOver ? "ended" : updatedBattle.status,
+        status: "active" as const,
       };
       setActiveBattle(finalBattle);
       setPreviousBattle(finalBattle);
@@ -370,14 +479,13 @@ const processTurnsSequentially = async () => {
       return;
     }
 
-    runTurn(i + 1);
+    // Continue to next turn if not the last turn
+    if (!isLastTurn) {
+      await runTurn(i + 1);
+    }
   };
 
-  // Adjust to show both attacks if the battle ended on the second turn
-  if (isBattleOver && totalTurns >= 2 && turnsToProcess[totalTurns - 1].causedEnd) {
-    turnsToRun.unshift(turnsToProcess[totalTurns - 2]);
-  }
-
+  // Start processing turns from the beginning
   runTurn(0);
 };
         // If the battle is over, we only have to process the *final* turn.
@@ -408,48 +516,30 @@ const processTurnsSequentially = async () => {
     }
   };
 
+  const handleToggleBattleLog = () => {
+    setShowBattleLog(!showBattleLog);
+  };
+
+  // Effect completion handlers
+  const handlePlayerEffectComplete = useCallback(() => {
+    setPlayerEffect(null);
+  }, []);
+
+  const handleOpponentEffectComplete = useCallback(() => {
+    setOpponentEffect(null);
+  }, []);
+
   return (
-    <div className="min-h-screen flex flex-col">
-      <div className={`min-h-screen flex flex-col ${theme.bg}`}>
-        <Header
+    <div className={`min-h-screen flex flex-col ${theme.bg} overflow-hidden`}>
+      {/* Winner Announcement Overlay */}
+      {showWinnerAnnouncement && (
+        <WinnerAnnouncement
+          winner={showWinnerAnnouncement.winner}
           theme={theme}
-          darkMode={darkMode}
-          onDarkModeToggle={() => setDarkMode(!darkMode)}
         />
+      )}
 
-        {/* Battle Overlays */}
-        {walletStatus?.isUnlocked && activeBattle && (
-          <BattleOverlays
-            turns={activeBattle.turns}
-            showBattleLog={showBattleLog}
-            onToggleBattleLog={() => setShowBattleLog(!showBattleLog)}
-            theme={theme}
-            playerName={"Player 1's  " + activeBattle.challenger.name}
-            opponentName={"Player 2's  " + activeBattle.accepter.name}
-          />
-        )}
-
-        {/* Winner Announcement Overlay */}
-        {showWinnerAnnouncement && (
-          <div className="fixed inset-0 flex items-center justify-center z-50 bg-black bg-opacity-50">
-            <div
-              className={`${theme.container} border ${theme.border} backdrop-blur-md p-8 rounded-xl animate-fade-in text-center`}
-            >
-              <h2 className="text-3xl font-bold mb-4 text-yellow-400">
-                Battle Complete!
-              </h2>
-              <p className="text-xl text-white">
-                {showWinnerAnnouncement.winner} has won the battle!
-              </p>
-            </div>
-          </div>
-        )}
-
-        <div className={`container mx-auto px-4 flex-1 ${theme.text}`}>
-          <div
-            className="w-full mx-auto flex flex-col items-center"
-            style={{ maxWidth: "95vw", height: "calc(100vh - 180px)" }}
-          >
+      <div className={`w-full h-screen flex flex-col ${theme.text} p-1`}>
             {!wallet?.address ? (
               <div
                 className={`p-6 rounded-xl ${theme.container} border ${theme.border} backdrop-blur-md text-center`}
@@ -477,9 +567,7 @@ const processTurnsSequentially = async () => {
                 </p>
               </div>
             ) : (
-              <div
-                className={`rounded-xl ${theme.container} border ${theme.border} backdrop-blur-md`}
-              >
+              <div className="flex flex-col h-full">
                 {isUpdating && <UpdateIndicator />}
                 {activeBattle.status === "ended" && (
                   <button
@@ -489,319 +577,61 @@ const processTurnsSequentially = async () => {
                     Exit Battle
                   </button>
                 )}
-                <div
-                  className={`rounded-lg ${theme.container} bg-opacity-20 transition-all duration-300 overflow-hidden`}
-                >
-                  {/* Battle Scene */}
-                  <div
-                    className="relative mx-auto"
-                    style={{
-                      height: "min(65vh, calc(100vh - 280px))",
-                      width: "min(calc((100vh - 280px) * 1.7777), calc(95vw))",
-                      maxHeight: "800px",
-                    }}
-                  >
-                    <BattleScene
-                      challenger={activeBattle.challenger}
-                      accepter={activeBattle.accepter}
-                      playerAnimation={playerAnimation}
-                      opponentAnimation={opponentAnimation}
-                      onPlayerAnimationComplete={() => {}}
-                      onOpponentAnimationComplete={() => {}}
-                      attackAnimation={attackAnimation}
-                      shieldRestoring={shieldRestoring}
-                      showEndOfRound={showEndOfRound}
-                      onAttackComplete={() => setAttackAnimation(null)}
-                      onShieldComplete={() => setShieldRestoring(false)}
-                      onRoundComplete={() => setShowEndOfRound(false)}
-                    />
-                    <BattleStats battle={activeBattle} theme={theme} />
+                
+                {/* Battle Scene - Maximized with expanded space */}
+                <div className="flex-1 flex flex-col max-h-[80vh] mt-0">
+                  <div className="flex-1 flex items-center justify-center p-0">
+                    <div
+                      className={`relative rounded-xl ${theme.container} border ${theme.border} backdrop-blur-md overflow-hidden`}
+                      style={{
+                        height: "min(calc(100vh - 200px), 74vh)", 
+                        width: "min(calc((100vh - 200px) * 1.7777), calc(100vw - 8px))",
+                        maxWidth: "100vw",
+                        minHeight: "340px",
+                      }}
+                    >
+                      <BattleScene
+                        challenger={activeBattle.challenger}
+                        accepter={activeBattle.accepter}
+                        playerAnimation={playerAnimation}
+                        opponentAnimation={opponentAnimation}
+                        onPlayerAnimationComplete={() => {}}
+                        onOpponentAnimationComplete={() => {}}
+                        attackAnimation={attackAnimation}
+                        shieldRestoring={shieldRestoring}
+                        showEndOfRound={showEndOfRound}
+                        onAttackComplete={() => setAttackAnimation(null)}
+                        onShieldComplete={() => setShieldRestoring(false)}
+                        onRoundComplete={() => setShowEndOfRound(false)}
+                        playerEffect={playerEffect}
+                        opponentEffect={opponentEffect}
+                        onPlayerEffectComplete={handlePlayerEffectComplete}
+                        onOpponentEffectComplete={handleOpponentEffectComplete}
+                      />
+                      <BattleStats battle={activeBattle} theme={theme} />
+                    </div>
                   </div>
                 </div>
 
-                <div className="mt-2">
-                  {/* Moves */}
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4 px-4 pb-4">
-                    {/* Player Moves */}
-                    <div
-                      className={`p-4 rounded-lg ${theme.container} bg-opacity-20`}
-                    >
-                      <h4 className="text-md font-semibold mb-3">
-                        Challenger's Moves
-                      </h4>
-                      <div className="relative">
-                        {/* Regular moves */}
-                        <div className="grid grid-cols-2 gap-2 relative">
-                          {Object.entries(activeBattle.challenger.moves).map(
-                            ([moveName, move]) => (
-                              <button
-                                key={moveName}
-                                onClick={() => handleAttack(moveName)}
-                                disabled={
-                                  isUpdating ||
-                                  movesDisabled ||
-                                  activeBattle.status === "ended" ||
-                                  move.count === 0
-                                }
-                                className={`w-full p-2 rounded-lg font-medium text-left transition-all duration-300 min-h-[80px]
-                                ${getMoveColor(
-                                  moveName,
-                                  move
-                                )} hover:brightness-110
-                                ${
-                                  activeBattle.status === "ended" ||
-                                  movesDisabled ||
-                                  move.count === 0
-                                    ? "opacity-50 cursor-not-allowed"
-                                    : ""
-                                }
-                                text-white relative overflow-hidden group flex flex-col justify-between`}
-                              >
-                                <div className="flex justify-between items-center relative">
-                                  <span className="capitalize">{moveName}</span>
-                                  <span className="text-sm opacity-75">
-                                    {move.count}
-                                  </span>
-                                </div>
-                                {move.count === 0 && (
-                                  <div className="absolute inset-0 bg-black/50 pointer-events-none">
-                                    <div className="absolute inset-0 flex items-center">
-                                      <div className="w-full h-0.5 bg-red-500 transform rotate-12"></div>
-                                    </div>
-                                  </div>
-                                )}
-                                <div className="text-sm mt-1">
-                                  <div className="grid grid-cols-3 grid-rows-2 gap-1 max-w-[200px] min-h-[32px]">
-                                    {move.damage !== 0 && (
-                                      <span>
-                                        ⚔️ {move.damage > 0 ? "+" : ""}
-                                        {move.damage}
-                                      </span>
-                                    )}
-                                    {move.attack !== 0 && (
-                                      <span>
-                                        💪 {move.attack > 0 ? "+" : ""}
-                                        {move.attack}
-                                      </span>
-                                    )}
-                                    {move.defense !== 0 && (
-                                      <span>
-                                        🛡️ {move.defense > 0 ? "+" : ""}
-                                        {move.defense}
-                                      </span>
-                                    )}
-                                    {move.speed !== 0 && (
-                                      <span>
-                                        ⚡ {move.speed > 0 ? "+" : ""}
-                                        {move.speed}
-                                      </span>
-                                    )}
-                                    {move.health !== 0 && (
-                                      <span>
-                                        ❤️ {move.health > 0 ? "+" : ""}
-                                        {move.health}
-                                      </span>
-                                    )}
-                                    {/* Add empty spans to maintain 3x2 grid layout */}
-                                    {[
-                                      ...Array(
-                                        6 -
-                                          [
-                                            move.damage,
-                                            move.attack,
-                                            move.defense,
-                                            move.speed,
-                                            move.health,
-                                          ].filter((v) => v !== 0).length
-                                      ),
-                                    ].map((_, i) => (
-                                      <span key={i} className="invisible">
-                                        placeholder
-                                      </span>
-                                    ))}
-                                  </div>
-                                </div>
-                                <div className="absolute inset-0 bg-white opacity-0 group-hover:opacity-10 transition-opacity duration-300"></div>
-                              </button>
-                            )
-                          )}
-
-                          {/* Struggle button - show when all moves have 0 uses */}
-                          {Object.values(activeBattle.challenger.moves).every(
-                            (move) => move.count === 0
-                          ) && (
-                            <button
-                              onClick={() => handleAttack("struggle")}
-                              disabled={
-                                isUpdating ||
-                                movesDisabled ||
-                                activeBattle.status === "ended"
-                              }
-                              className={`absolute inset-0 m-auto w-32 h-32 p-2 rounded-lg font-medium transition-all duration-300 
-                                bg-purple-500 hover:brightness-110 z-10
-                                ${
-                                  activeBattle.status === "ended" ||
-                                  movesDisabled
-                                    ? "opacity-50 cursor-not-allowed"
-                                    : ""
-                                }
-                                text-white overflow-hidden group flex flex-col justify-center items-center`}
-                            >
-                              <span className="capitalize text-lg mb-1">
-                                Struggle
-                              </span>
-                              <span className="text-sm opacity-75 mb-2">
-                                Last Resort
-                              </span>
-                              <span className="text-sm">⚔️ +1</span>
-                            </button>
-                          )}
-                        </div>
-                      </div>
-                    </div>
-
-                    {/* Opponent Moves */}
-                    <div
-                      className={`p-4 rounded-lg ${theme.container} bg-opacity-20`}
-                    >
-                      <h4 className="text-md font-semibold mb-3">
-                        Accepter's Moves
-                      </h4>
-                      <div className="relative">
-                        <div className="grid grid-cols-2 gap-2 relative">
-                          {Object.entries(activeBattle.accepter.moves).map(
-                            ([moveName, move]) => (
-                              <button
-                                key={moveName}
-                                onClick={() => handleAttack(moveName)}
-                                disabled={
-                                  isUpdating ||
-                                  movesDisabled ||
-                                  activeBattle.status === "ended" ||
-                                  move.count === 0
-                                }
-                                className={`w-full p-2 rounded-lg font-medium text-left transition-all duration-300 min-h-[80px]
-                                ${getMoveColor(
-                                  moveName,
-                                  move
-                                )} hover:brightness-110
-                                ${
-                                  activeBattle.status === "ended" ||
-                                  movesDisabled ||
-                                  move.count === 0
-                                    ? "opacity-50 cursor-not-allowed"
-                                    : ""
-                                }
-                                text-white relative overflow-hidden group flex flex-col justify-between`}
-                              >
-                                <div className="flex justify-between items-center relative">
-                                  <span className="capitalize">{moveName}</span>
-                                  <span className="text-sm opacity-75">
-                                    {move.count}
-                                  </span>
-                                </div>
-                                {move.count === 0 && (
-                                  <div className="absolute inset-0 bg-black/50 pointer-events-none">
-                                    <div className="absolute inset-0 flex items-center">
-                                      <div className="w-full h-0.5 bg-red-500 transform rotate-12"></div>
-                                    </div>
-                                  </div>
-                                )}
-                                <div className="text-sm mt-1">
-                                  <div className="grid grid-cols-3 grid-rows-2 gap-1 max-w-[200px] min-h-[32px]">
-                                    {move.damage !== 0 && (
-                                      <span>
-                                        ⚔️ {move.damage > 0 ? "+" : ""}
-                                        {move.damage}
-                                      </span>
-                                    )}
-                                    {move.attack !== 0 && (
-                                      <span>
-                                        💪 {move.attack > 0 ? "+" : ""}
-                                        {move.attack}
-                                      </span>
-                                    )}
-                                    {move.defense !== 0 && (
-                                      <span>
-                                        🛡️ {move.defense > 0 ? "+" : ""}
-                                        {move.defense}
-                                      </span>
-                                    )}
-                                    {move.speed !== 0 && (
-                                      <span>
-                                        ⚡ {move.speed > 0 ? "+" : ""}
-                                        {move.speed}
-                                      </span>
-                                    )}
-                                    {move.health !== 0 && (
-                                      <span>
-                                        ❤️ {move.health > 0 ? "+" : ""}
-                                        {move.health}
-                                      </span>
-                                    )}
-                                    {/* Add empty spans to maintain 3x2 grid layout */}
-                                    {[
-                                      ...Array(
-                                        6 -
-                                          [
-                                            move.damage,
-                                            move.attack,
-                                            move.defense,
-                                            move.speed,
-                                            move.health,
-                                          ].filter((v) => v !== 0).length
-                                      ),
-                                    ].map((_, i) => (
-                                      <span key={i} className="invisible">
-                                        placeholder
-                                      </span>
-                                    ))}
-                                  </div>
-                                </div>
-                                <div className="absolute inset-0 bg-white opacity-0 group-hover:opacity-10 transition-opacity duration-300"></div>
-                              </button>
-                            )
-                          )}
-
-                          {Object.values(activeBattle.accepter.moves).every(
-                            (move) => move.count === 0
-                          ) && (
-                            <button
-                              onClick={() => handleAttack("struggle")}
-                              disabled={
-                                isUpdating ||
-                                movesDisabled ||
-                                activeBattle.status === "ended"
-                              }
-                              className={`absolute inset-0 m-auto w-32 h-32 p-2 rounded-lg font-medium transition-all duration-300 
-                                bg-purple-500 hover:brightness-110 z-10
-                                ${
-                                  activeBattle.status === "ended" ||
-                                  movesDisabled
-                                    ? "opacity-50 cursor-not-allowed"
-                                    : ""
-                                }
-                                text-white overflow-hidden group flex flex-col justify-center items-center`}
-                            >
-                              <span className="capitalize text-lg mb-1">
-                                Struggle
-                              </span>
-                              <span className="text-sm opacity-75 mb-2">
-                                Last Resort
-                              </span>
-                              <span className="text-sm">⚔️ +1</span>
-                            </button>
-                          )}
-                        </div>
-                      </div>
-                    </div>
-                  </div>
+                {/* Bottom Section: Battle Interface with minimal spacing */}
+                <div className="min-h-48 flex-shrink-0 mt-0.5 px-2">
+                  <BattleInterface
+                    challengerMoves={activeBattle.challenger.moves}
+                    accepterMoves={activeBattle.accepter.moves}
+                    onAttack={handleAttack}
+                    isDisabled={isUpdating || movesDisabled}
+                    battleStatus={activeBattle.status}
+                    theme={theme}
+                    getMoveColor={getMoveColor}
+                    battleTurns={activeBattle.turns || []}
+                    showBattleLog={showBattleLog}
+                    onToggleBattleLog={handleToggleBattleLog}
+                    challengerName={activeBattle.challenger.name}
+                    accepterName={activeBattle.accepter.name}
+                  />
                 </div>
               </div>
             )}
-          </div>
-        </div>
-        <Footer darkMode={darkMode} />
       </div>
     </div>
   );

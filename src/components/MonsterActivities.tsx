@@ -71,7 +71,6 @@ const MonsterActivities: React.FC<MonsterActivitiesProps> = ({
   if (!monster) {
     return (
       <div className={`activities-section ${theme.container} rounded-lg p-4 ${className}`}>
-        <h3 className={`text-xl font-bold mb-2 ${theme.text}`}>Activities</h3>
         <p className={`${theme.text}`}>Loading monster data...</p>
       </div>
     );
@@ -208,8 +207,7 @@ const MonsterActivities: React.FC<MonsterActivitiesProps> = ({
   };
   return (
     <div className={`activities-section ${theme.container} rounded-lg p-4 ${className}`}>
-      <h3 className={`text-xl font-bold mb-2 ${theme.text}`}>Activities</h3>
-      <div className="grid grid-cols-[repeat(auto-fit,minmax(180px,1fr))] gap-4">
+      <div className="flex flex-col sm:flex-row gap-2 sm:gap-3">
         <ActivityCard
           title="Feed"
           buttonText={feedButtonText}
