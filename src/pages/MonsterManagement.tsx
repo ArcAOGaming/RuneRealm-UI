@@ -45,6 +45,13 @@ export const MonsterManagement: React.FC = (): JSX.Element => {
   const effectTimeoutRef = useRef<NodeJS.Timeout | null>(null);
 
   const triggerEffect = (effect: string) => {
+    // Prevent triggering if an effect is already playing
+    if (currentEffect) {
+      console.log('[MonsterManagement] Effect already playing, ignoring trigger:', effect);
+      return;
+    }
+    
+    console.log('[MonsterManagement] Triggering effect:', effect);
     setCurrentEffect(effect);
     
     // Clear any existing timeout
@@ -52,10 +59,26 @@ export const MonsterManagement: React.FC = (): JSX.Element => {
       clearTimeout(effectTimeoutRef.current);
     }
     
-    // Auto-clear the effect after 2 seconds (the duration of the effect animation)
+    // Auto-clear the effect after 1 second (allowing effect animation to complete naturally)
+    // This is a fallback - the effect should complete via the animation system
     effectTimeoutRef.current = setTimeout(() => {
+      console.log('[MonsterManagement] Auto-clearing effect after timeout:', effect);
       setCurrentEffect(null);
-    }, 2000);
+    }, 1000);
+  };
+
+  // Handle effect completion from the sprite component
+  const handleEffectComplete = () => {
+    console.log('[MonsterManagement] Effect completed, clearing state');
+    
+    // Clear the timeout since effect completed naturally
+    if (effectTimeoutRef.current) {
+      clearTimeout(effectTimeoutRef.current);
+      effectTimeoutRef.current = null;
+    }
+    
+    // Clear the effect state
+    setCurrentEffect(null);
   };
 
   // Force a re-render when time update trigger changes in the context
@@ -214,6 +237,7 @@ export const MonsterManagement: React.FC = (): JSX.Element => {
                 theme={theme}
                 currentEffect={currentEffect}
                 onEffectTrigger={triggerEffect}
+                onEffectComplete={handleEffectComplete}
                 formatTimeRemaining={formatTimeRemaining}
                 calculateProgress={calculateProgress}
                 isActivityComplete={isActivityComplete}

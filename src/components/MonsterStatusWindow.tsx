@@ -18,6 +18,7 @@ interface MonsterStatusWindowProps {
   theme: Theme;
   currentEffect: string | null;
   onEffectTrigger: (effect: string) => void;
+  onEffectComplete?: () => void;
   formatTimeRemaining: (until: number) => string;
   calculateProgress: (since: number, until: number) => number;
   isActivityComplete: (monster: MonsterStats) => boolean;
@@ -31,6 +32,7 @@ const MonsterStatusWindow: React.FC<MonsterStatusWindowProps> = ({
   theme,
   currentEffect,
   onEffectTrigger,
+  onEffectComplete,
   formatTimeRemaining,
   calculateProgress,
   isActivityComplete,
@@ -115,6 +117,8 @@ const MonsterStatusWindow: React.FC<MonsterStatusWindowProps> = ({
   }, [containerSize, fullWalkDistance, normalizedPos]);
   
   const triggerEffect = (effect: string) => {
+    // Prevent triggering if an effect is already playing
+    if (currentEffect) return;
     onEffectTrigger(effect);
   };
 
@@ -198,7 +202,7 @@ const MonsterStatusWindow: React.FC<MonsterStatusWindowProps> = ({
       ].map(({ text, color }) => (
         <button 
           key={text}
-          onClick={() => onEffectTrigger(text)}
+          onClick={() => triggerEffect(text)}
           className={`px-3 py-1.5 text-sm rounded transition-colors whitespace-nowrap text-white ${
             currentEffect ? 'bg-gray-400 cursor-not-allowed' : color
           }`}
@@ -290,7 +294,14 @@ const MonsterStatusWindow: React.FC<MonsterStatusWindowProps> = ({
               containerHeight={monsterSize}
               activityType={monster.status.type}
               effect={currentEffect as any}
-              onEffectComplete={() => {}}
+              onEffectComplete={() => {
+                // Effect animation completed - notify parent for cleanup
+                // This ensures effect overlay is independent of monster animation
+                console.log('[MonsterStatusWindow] Effect animation completed:', currentEffect);
+                if (onEffectComplete) {
+                  onEffectComplete();
+                }
+              }}
             />
           </div>
         )}
