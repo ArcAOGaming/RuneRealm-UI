@@ -20,7 +20,7 @@ import { BotBattlePage } from "./pages/battle/BotBattlePage";
 import { RankedBattlePage } from "./pages/battle/RankedBattlePage";
 import Inventory from "./components/Inventory";
 import { MonsterProvider } from "./contexts/MonsterContext";
-import DebugView from "./pages/admin/DebugView";
+import DebugPage from "./pages/debug/DebugPage";
 import StartPage from "./pages/StartPage";
 import ActiveBattlePage from "./pages/battle/ActiveBattlePage";
 import Admin from "./pages/admin/Admin";
@@ -86,7 +86,7 @@ const AppContent = () => {
           <Route path="/battle/bot" element={<BotBattlePage />} />
           <Route path="/battle/ranked" element={<RankedBattlePage />} />
           <Route path="/battle/active" element={<ActiveBattlePage />} />
-          <Route path="/debug" element={<DebugView />} />
+          <Route path="/debug" element={<DebugPage />} />
           <Route
             path="/reality/*"
             element={

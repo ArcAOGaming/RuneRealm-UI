@@ -227,46 +227,21 @@ export const MonsterManagement: React.FC = (): JSX.Element => {
     
     return (
       <>
-        <div className={`monster-card ${theme.container} border ${theme.border} backdrop-blur-md p-6 flex flex-col h-full max-h-full min-h-[600px]`}>
-          {/* Top section containing status window and secondary panel - Flexible height */}
+        <div className={`monster-card ${theme.container} border ${theme.border} backdrop-blur-md p-6 flex flex-col h-full max-h-full min-h-[700px]`}>
+          {/* Main layout - Left side (status + level up) and Right side (stats, lootbox, activities) */}
           <div className="flex flex-row space-x-4 flex-1 min-h-0">
-            {/* Main Content Area - Status Window (65%) */}
-            <div className="monster-status-section flex-grow flex flex-col">
-              <MonsterStatusWindow 
-                monster={monster}
-                theme={theme}
-                currentEffect={currentEffect}
-                onEffectTrigger={triggerEffect}
-                onEffectComplete={handleEffectComplete}
-                formatTimeRemaining={formatTimeRemaining}
-                calculateProgress={calculateProgress}
-                isActivityComplete={isActivityComplete}
-                onShowCard={() => setShowCardModal(true)}
-              />
-            </div>
-
-            {/* Secondary Panel - Monster Stats, Treasure and Level Up (35%) */}
-            <div className="monster-secondary-section w-[35%] flex flex-col">
-              {/* Monster Stats Display - Flexible height */}
+            {/* Left Side - Status Window and Level Up (65%) */}
+            <div className="monster-status-section flex-grow flex flex-col space-y-4">
+              {/* Monster Status Window - Expanded height */}
               <div className="flex-1 min-h-0">
-                <MonsterStatsDisplay
+                <MonsterStatusWindow 
                   monster={monster}
                   theme={theme}
-                  isLevelingUp={isLevelingUp}
-                  onLevelUp={handleLevelUp}
+                  onShowCard={() => setShowCardModal(true)}
                 />
               </div>
               
-              {/* Loot Box Section - Fixed height but responsive */}
-              <div className={`loot-box-section ${theme.container} rounded-lg p-2 mb-3 h-[200px] flex-shrink-0`}>
-                <LootBoxUtil 
-                  className="w-full h-full"
-                  externalLootBoxes={lootBoxes} 
-                  loadDataIndependently={false} 
-                />
-              </div>
-              
-              {/* Level Up Button - Fixed height */}
+              {/* Level Up Section - Moved to left side */}
               {monster.status.type === 'Home' && monster.exp >= getFibonacciExp(monster.level) && (
                 <div className={`level-up-section ${theme.container} rounded-lg p-4 flex-shrink-0`}>
                   <div className="flex justify-between items-center">
@@ -285,12 +260,30 @@ export const MonsterManagement: React.FC = (): JSX.Element => {
                 </div>
               )}
             </div>
-          </div>
 
-          {/* Activities Section - Always visible at bottom, centered and evenly spaced */}
-          <div className="monster-activities-section w-full mt-6 flex-shrink-0">
-            <div className="flex justify-center">
-              <div className="w-full max-w-6xl">
+            {/* Right Side Panel - Monster Stats, Loot Box, and Activities (35%) */}
+            <div className="monster-secondary-section w-[35%] flex flex-col space-y-4">
+              {/* Monster Stats Display - Equal height (1/3) */}
+              <div className="flex-1 min-h-0">
+                <MonsterStatsDisplay
+                  monster={monster}
+                  theme={theme}
+                  isLevelingUp={isLevelingUp}
+                  onLevelUp={handleLevelUp}
+                />
+              </div>
+              
+              {/* Loot Box Section - Equal height (1/3) */}
+              <div className={`loot-box-section ${theme.container} rounded-lg p-2 flex-1 min-h-0`}>
+                <LootBoxUtil 
+                  className="w-full h-full"
+                  externalLootBoxes={lootBoxes} 
+                  loadDataIndependently={false} 
+                />
+              </div>
+              
+              {/* Activities Section - Equal height (1/3) */}
+              <div className="monster-activities-section flex-1 min-h-0">
                 <MonsterActivities 
                   monster={monster}
                   activities={activities}
