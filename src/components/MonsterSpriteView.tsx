@@ -11,17 +11,27 @@ export type EffectType = 'Full Heal' | 'Large Heal' | 'Medium Heal' | 'Small Hea
  * Animation types for monster sprite
  */
 type AnimationType = 'walkRight' | 'walkLeft' | 'walkUp' | 'walkDown' | 'attack1' | 'attack2' | 
-                    'idle' | 'sleep' | 'eat' | 'train' | 'play' | 'happy';
+                    'idle' | 'idleRight' | 'idleLeft' | 'sleep' | 'eat' | 'train' | 'play' | 'happy';
 
 /**
  * Static poses when not animating
  */
 type PoseType = 'right' | 'left';
 
+
+
 /**
- * Animation behavior modes that control how the sprite moves
+ * Animation control types for flexible animation handling
  */
-type BehaviorMode = 'static' | 'pacing' | 'activity';
+type AnimationControlType = 'perpetual' | 'duration' | 'loops' | 'once';
+
+/**
+ * Animation control configuration
+ */
+interface AnimationControl {
+  type: AnimationControlType;
+  value?: number; // Duration in ms for 'duration', number of loops for 'loops'
+}
 
 /**
  * Props for the MonsterSpriteView component
@@ -29,12 +39,12 @@ type BehaviorMode = 'static' | 'pacing' | 'activity';
 interface MonsterSpriteViewProps {
   sprite: string;                          // Filename for the sprite sheet
   currentAnimation?: AnimationType;        // Explicit animation to play
+  animationControl?: AnimationControl;     // How to control the animation (perpetual, duration, loops, once)
+  scale?: number;                          // Scale factor for monster and effects (default: 1.0)
   pose?: PoseType;                         // Static pose when not animating
   onAnimationComplete?: () => void;        // Callback when animation completes
   isOpponent?: boolean;                    // Used to determine facing direction
-  behaviorMode?: BehaviorMode;             // Controls how the sprite behaves
-  activityType?: string;                   // Type of activity the monster is doing
-  containerWidth?: number;                 // Width of container for pacing calculations
+  containerWidth?: number;                 // Width of container for scaling calculations
   containerHeight?: number;                // Height of container for animation positioning
   effect?: EffectType;                     // Current effect to display
   onEffectComplete?: () => void;           // Callback when effect animation completes
@@ -59,6 +69,7 @@ interface EffectAnimationProps {
   onComplete: () => void;           // Callback when animation completes
   containerWidth: number;           // Container width for scaling
   containerHeight: number;          // Container height for scaling
+  scale?: number;                   // Additional scale factor (default: 1.0)
 }
 
 /**
@@ -127,7 +138,12 @@ const useEffectAnimation = (effect: EffectType, onComplete: () => void) => {
           if (nextFrame >= EFFECT_CONSTANTS.FRAME_COUNT) {
             if (!hasCompleted.current) {
               hasCompleted.current = true;
-              onComplete();
+              // Defer onComplete callback to avoid setState during render
+              setTimeout(() => {
+                if (isMounted.current) {
+                  onComplete();
+                }
+              }, 0);
             }
             return prev; // Stay on last frame
           }
@@ -169,7 +185,8 @@ const EffectAnimation: React.FC<EffectAnimationProps> = React.memo(({
   effect, 
   onComplete,
   containerWidth,
-  containerHeight
+  containerHeight,
+  scale = 1.0
 }) => {
   const { currentFrame, effectRef, FRAME_COUNT, FRAME_SIZE } = 
     useEffectAnimation(effect, onComplete);
@@ -177,8 +194,10 @@ const EffectAnimation: React.FC<EffectAnimationProps> = React.memo(({
   // Don't render anything if no effect is provided
   if (!effect) return null;
 
-  // Calculate the scale based on container dimensions
-  const scale = Math.min(containerWidth, containerHeight) / FRAME_SIZE;
+  // Calculate the scale based on container dimensions and user scale
+  // Use same approach as monster sprite: ensure 4x space and apply user scale
+  const baseEffectScale = Math.min(containerWidth / (FRAME_SIZE * 4), containerHeight / (FRAME_SIZE * 4));
+  const finalEffectScale = Math.max(baseEffectScale, 1.0) * scale;
 
   return (
     <div 
@@ -206,7 +225,7 @@ const EffectAnimation: React.FC<EffectAnimationProps> = React.memo(({
           backgroundSize: `${FRAME_SIZE * FRAME_COUNT}px ${FRAME_SIZE}px`,
           backgroundRepeat: 'no-repeat',
           imageRendering: 'pixelated',
-          transform: `scale(${scale})`,
+          transform: `scale(${finalEffectScale})`,
           transformOrigin: 'center center',
         }} 
       />
@@ -214,35 +233,35 @@ const EffectAnimation: React.FC<EffectAnimationProps> = React.memo(({
   );
 });
 
-const MonsterSpriteView: React.FC<MonsterSpriteViewProps> = ({ 
-  sprite, 
+const MonsterSpriteView: React.FC<MonsterSpriteViewProps> = ({
+  sprite,
   currentAnimation,
-  pose,
+  animationControl = { type: 'perpetual' },
+  scale = 1.0,
+  pose = 'right',
   onAnimationComplete,
   isOpponent = false,
-  behaviorMode = 'static',
-  activityType,
-  containerWidth = FRAME_WIDTH * 4,
-  containerHeight = FRAME_HEIGHT * 4,
-  effect: externalEffect,
+  containerWidth = 256,
+  containerHeight = 256,
+  effect,
   onEffectComplete
 }) => {
   // Effect completion handling - completely independent of monster animation
   // No local effect state - use external effect directly to prevent interruption
   const handleEffectComplete = useCallback(() => {
-    console.log('[EFFECT DEBUG] Effect animation completed:', externalEffect);
+    console.log('[EFFECT DEBUG] Effect animation completed:', effect);
     if (onEffectComplete) {
       onEffectComplete();
     }
-  }, [onEffectComplete, externalEffect]);
+  }, [onEffectComplete, effect]);
   
   // Log when effect prop changes
   useEffect(() => {
-    console.log('[EFFECT DEBUG] MonsterSpriteView received effect:', externalEffect);
-    if (externalEffect) {
+    console.log('[EFFECT DEBUG] MonsterSpriteView received effect:', effect);
+    if (effect) {
       console.log('[EFFECT DEBUG] Sprite for effect:', sprite);
     }
-  }, [externalEffect, sprite]);
+  }, [effect, sprite]);
 
   // Monster animation state - completely separate from effect system
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -251,14 +270,8 @@ const MonsterSpriteView: React.FC<MonsterSpriteViewProps> = ({
   const currentFrameRef = useRef<number>(0);
   const animationTimerRef = useRef<NodeJS.Timeout | null>(null);
   
-  // Position state for animations
-  const [position, setPosition] = useState(0); // For pacing (horizontal only)
-  const [positionX, setPositionX] = useState(containerWidth / 2); // For 2D movement
-  const [positionY, setPositionY] = useState(containerHeight / 2); // For 2D movement
+  // Direction state for animations
   const [direction, setDirection] = useState<'right' | 'left'>('right');
-  const [currentBehavior, setCurrentBehavior] = useState<AnimationType | null>(null);
-  const [activityAnimation, setActivityAnimation] = useState<AnimationType | null>(null);
-  const randomPauseDurationRef = useRef<number>(Math.floor(Math.random() * 3000) + 2000);
   
   // Animation control state to prevent conflicts
   const animationControllerRef = useRef<{
@@ -277,17 +290,7 @@ const MonsterSpriteView: React.FC<MonsterSpriteViewProps> = ({
     };
   }, [sprite]);
 
-  // Map activity types to appropriate animations
-  const getActivityAnimation = useCallback((activity: string | undefined): AnimationType => {
-    if (!activity) return 'idle';
-    
-    switch (activity) {
-      case 'Play': return 'play';
-      case 'Mission': return 'walkUp';
-      case 'Battle': return 'attack1';
-      default: return 'idle';
-    }
-  }, []);
+
 
   // Animation mapping
   const getAnimationRow = (type: AnimationType): number => {
@@ -301,6 +304,8 @@ const MonsterSpriteView: React.FC<MonsterSpriteViewProps> = ({
       case 'idle': 
         // For idle, we'll use the same row as the last direction
         return direction === 'left' ? 1 : 0; // Use walkLeft or walkRight row based on direction
+      case 'idleRight': return 0; // Use walkRight row for right-facing idle
+      case 'idleLeft': return 1;  // Use walkLeft row for left-facing idle
       case 'sleep': return 3; // Use walkDown row
       case 'eat': return 3;  // Use walkDown row
       case 'train': return 4; // Use attack1 row
@@ -313,8 +318,8 @@ const MonsterSpriteView: React.FC<MonsterSpriteViewProps> = ({
   const drawFrame = (ctx: CanvasRenderingContext2D, frameIndex: number, row: number, animationType?: AnimationType) => {
     if (!spriteImage) return;
     
-    // For idle animation, always use the first frame
-    const frameToUse = (animationType === 'idle') ? 0 : frameIndex;
+    // For idle animations, always use the first frame
+    const frameToUse = (animationType === 'idle' || animationType === 'idleRight' || animationType === 'idleLeft') ? 0 : frameIndex;
     
     ctx.clearRect(0, 0, FRAME_WIDTH, FRAME_HEIGHT);
     ctx.drawImage(
@@ -330,14 +335,21 @@ const MonsterSpriteView: React.FC<MonsterSpriteViewProps> = ({
     );
   };
 
-  // Unified animation controller - prevents conflicts between different animation sources
-  const startAnimation = useCallback((animationType: AnimationType, shouldLoop: boolean = true) => {
+  // Enhanced animation controller with flexible control options
+  const startAnimation = useCallback((animationType: AnimationType, control: AnimationControl = { type: 'perpetual' }) => {
+    const timestamp = new Date().toISOString();
+    console.log(`[${timestamp}] MonsterSpriteView.startAnimation: Starting '${animationType}' with control:`, control);
+    
     const canvas = canvasRef.current;
     const ctx = canvas?.getContext('2d');
-    if (!canvas || !ctx || !spriteImage) return;
+    if (!canvas || !ctx || !spriteImage) {
+      console.log(`[${timestamp}] MonsterSpriteView.startAnimation: Missing dependencies - canvas:`, !!canvas, 'ctx:', !!ctx, 'spriteImage:', !!spriteImage);
+      return;
+    }
 
     // Stop any existing animation
     if (animationControllerRef.current.cleanup) {
+      console.log(`[${timestamp}] MonsterSpriteView.startAnimation: Cleaning up previous animation:`, animationControllerRef.current.currentAnimation);
       animationControllerRef.current.cleanup();
     }
 
@@ -349,9 +361,25 @@ const MonsterSpriteView: React.FC<MonsterSpriteViewProps> = ({
     let startTime: number | null = null;
     let frame = 0;
     let cycleCount = 0;
+    let durationTimeout: NodeJS.Timeout | null = null;
+
+    // Set up duration-based timeout if needed
+    if (control.type === 'duration' && control.value) {
+      console.log(`[${timestamp}] MonsterSpriteView.startAnimation: Setting duration timeout for ${control.value}ms`);
+      durationTimeout = setTimeout(() => {
+        const endTimestamp = new Date().toISOString();
+        console.log(`[${endTimestamp}] MonsterSpriteView.startAnimation: Duration timeout reached for '${animationType}'`);
+        controller.isRunning = false;
+        if (onAnimationComplete) {
+          onAnimationComplete();
+        }
+      }, control.value);
+    }
 
     const animate = (timestamp: number) => {
       if (!controller.isRunning || controller.currentAnimation !== animationType) {
+        const stopTimestamp = new Date().toISOString();
+        console.log(`[${stopTimestamp}] MonsterSpriteView.animate: Animation stopped - isRunning:`, controller.isRunning, 'currentAnimation:', controller.currentAnimation, 'expected:', animationType);
         return; // Animation was stopped or changed
       }
 
@@ -367,8 +395,35 @@ const MonsterSpriteView: React.FC<MonsterSpriteViewProps> = ({
         // Check for cycle completion
         if (frame === 0 && elapsed > 0) {
           cycleCount++;
-          // For attack animations or non-looping animations, complete after one cycle
-          if (!shouldLoop || (animationType.startsWith('attack') && cycleCount >= 1)) {
+          const cycleTimestamp = new Date().toISOString();
+          console.log(`[${cycleTimestamp}] MonsterSpriteView.animate: Cycle ${cycleCount} completed for '${animationType}' with control type '${control.type}'`);
+          
+          // Handle different control types
+          let shouldStop = false;
+          
+          switch (control.type) {
+            case 'once':
+              shouldStop = cycleCount >= 1;
+              console.log(`[${cycleTimestamp}] MonsterSpriteView.animate: 'once' control - shouldStop:`, shouldStop);
+              break;
+            case 'loops':
+              shouldStop = control.value ? cycleCount >= control.value : false;
+              console.log(`[${cycleTimestamp}] MonsterSpriteView.animate: 'loops' control (${control.value}) - shouldStop:`, shouldStop);
+              break;
+            case 'duration':
+              // Duration is handled by timeout, don't stop here
+              shouldStop = false;
+              console.log(`[${cycleTimestamp}] MonsterSpriteView.animate: 'duration' control - continuing until timeout`);
+              break;
+            case 'perpetual':
+            default:
+              shouldStop = false;
+              console.log(`[${cycleTimestamp}] MonsterSpriteView.animate: 'perpetual' control - continuing indefinitely`);
+              break;
+          }
+          
+          if (shouldStop) {
+            console.log(`[${cycleTimestamp}] MonsterSpriteView.animate: Stopping animation '${animationType}' after ${cycleCount} cycles`);
             controller.isRunning = false;
             if (onAnimationComplete) {
               onAnimationComplete();
@@ -390,227 +445,36 @@ const MonsterSpriteView: React.FC<MonsterSpriteViewProps> = ({
         cancelAnimationFrame(animationFrameRef.current);
         animationFrameRef.current = 0;
       }
+      if (durationTimeout) {
+        clearTimeout(durationTimeout);
+      }
     };
 
     animationFrameRef.current = requestAnimationFrame(animate);
   }, [spriteImage, onAnimationComplete]);
 
-  // Handle explicitly provided animation using unified controller
+  // Handle explicitly provided animation using enhanced controller
   useEffect(() => {
-    if (!spriteImage || !currentAnimation) return;
+    const timestamp = new Date().toISOString();
     
-    console.log('[ANIMATION DEBUG] Starting explicit animation:', currentAnimation);
-    startAnimation(currentAnimation, !currentAnimation.startsWith('attack'));
+    if (!spriteImage || !currentAnimation) {
+      console.log(`[${timestamp}] MonsterSpriteView: Skipping animation - spriteImage:`, !!spriteImage, 'currentAnimation:', currentAnimation);
+      return;
+    }
+    
+    console.log(`[${timestamp}] MonsterSpriteView: Starting animation:`, currentAnimation, 'with control:', animationControl);
+    
+    // Use the enhanced animation controller with the provided control settings
+    startAnimation(currentAnimation, animationControl);
 
     return () => {
+      const cleanupTimestamp = new Date().toISOString();
+      console.log(`[${cleanupTimestamp}] MonsterSpriteView: Cleaning up animation:`, currentAnimation);
       if (animationControllerRef.current.cleanup) {
         animationControllerRef.current.cleanup();
       }
     };
-  }, [currentAnimation, spriteImage, startAnimation]);
-
-  // Handle behavior-based animations using unified controller
-  useEffect(() => {
-    if (!spriteImage || currentAnimation) return;
-    
-    let animation: AnimationType | null = null;
-    
-    // Determine which animation to use based on behavior mode
-    if (behaviorMode === 'pacing' && currentBehavior) {
-      animation = currentBehavior;
-    } else if (behaviorMode === 'activity' && activityAnimation) {
-      animation = activityAnimation;
-    } else {
-      // Default to idle if no specific behavior is set
-      animation = 'idle';
-    }
-    
-    if (animation) {
-      console.log('[ANIMATION DEBUG] Starting behavior animation:', animation);
-      startAnimation(animation, true); // Always loop behavior animations
-    }
-    
-    return () => {
-      if (animationControllerRef.current.cleanup) {
-        animationControllerRef.current.cleanup();
-      }
-    };
-  }, [spriteImage, currentAnimation, currentBehavior, activityAnimation, behaviorMode, startAnimation]);
-
-  // Pacing animation logic
-  useEffect(() => {
-    if (behaviorMode !== 'pacing' || !spriteImage || currentAnimation) return;
-    
-    let pacingTimer: NodeJS.Timeout;
-    let pauseTimer: NodeJS.Timeout;
-    let isPaused = false;
-    let isMoving = false;
-    
-    const updatePosition = () => {
-      if (isPaused) return;
-      
-      if (isMoving) {
-        setPosition(prevPos => {
-          let newPos = prevPos;
-          const movementRate = 5; // Maximum movement speed for very fast walking
-          
-          if (direction === 'right') {
-            newPos += movementRate;
-            if (newPos >= containerWidth - FRAME_WIDTH * 3) {
-              // Reached right boundary, now pause before turning
-              isMoving = false;
-              setCurrentBehavior('idle');
-              setTimeout(() => {
-                setDirection('left');
-                setCurrentBehavior('walkLeft');
-                isMoving = true;
-              }, Math.floor(Math.random() * 1000) + 500); // Random pause before turning
-            }
-          } else {
-            newPos -= movementRate;
-            if (newPos <= 0) {
-              // Reached left boundary, now pause before turning
-              isMoving = false;
-              setCurrentBehavior('idle');
-              setTimeout(() => {
-                setDirection('right');
-                setCurrentBehavior('walkRight');
-                isMoving = true;
-              }, Math.floor(Math.random() * 1000) + 500); // Random pause before turning
-            }
-          }
-          
-          return newPos;
-        });
-      }
-    };
-    
-    const togglePause = () => {
-      isPaused = !isPaused;
-      isMoving = !isPaused;
-      
-      if (isPaused) {
-        // Switch to idle animation when paused
-        setCurrentBehavior('idle');
-        randomPauseDurationRef.current = Math.floor(Math.random() * 3000) + 2000;
-        pauseTimer = setTimeout(() => {
-          isPaused = false;
-          isMoving = true;
-          setCurrentBehavior(direction === 'right' ? 'walkRight' : 'walkLeft');
-        }, randomPauseDurationRef.current);
-      }
-    };
-    
-    // Start with idle animation briefly, then start moving
-    setCurrentBehavior('idle');
-    setTimeout(() => {
-      setCurrentBehavior(direction === 'right' ? 'walkRight' : 'walkLeft');
-      isMoving = true;
-    }, 1500);
-    
-    pacingTimer = setInterval(() => {
-      updatePosition();
-      
-      // Randomly decide to pause (only if currently moving)
-      if (isMoving && !isPaused && Math.random() < 0.01) { // 1% chance to pause per interval
-        togglePause();
-      }
-    }, 33); // Faster update interval for smoother motion
-    
-    return () => {
-      clearInterval(pacingTimer);
-      clearTimeout(pauseTimer);
-    };
-  }, [behaviorMode, containerWidth, direction, spriteImage, currentAnimation]);
-
-  // Activity animation logic
-  useEffect(() => {
-    if (behaviorMode !== 'activity' || !spriteImage || currentAnimation) return;
-    
-    // Set the initial animation based on activity type
-    const baseAnimation = getActivityAnimation(activityType);
-    setActivityAnimation(baseAnimation);
-    
-    // Track whether monster is in a movement animation
-    const isMovementAnimation = (anim: AnimationType) => {
-      return anim === 'walkRight' || anim === 'walkLeft' || anim === 'walkUp' || anim === 'walkDown';
-    };
-    
-    // Position management for movement animations
-    let moveTimerId: NodeJS.Timeout;
-    let currentPos = { x: containerWidth / 2, y: containerHeight / 2 };
-    let targetPos = { x: currentPos.x, y: currentPos.y };
-    let isMoving = false;
-    
-    // Function to move monster around during activity
-    const moveMonster = () => {
-      if (isMovementAnimation(baseAnimation) && Math.random() < 0.4) { // 40% chance to move
-        isMoving = true;
-        // Calculate a random target position within container bounds
-        targetPos = {
-          x: Math.random() * (containerWidth - FRAME_WIDTH * 3.5),
-          y: Math.min(containerHeight * 0.6, Math.max(containerHeight * 0.2, Math.random() * containerHeight * 0.4))
-        };
-        
-        // Determine which direction to walk based on target position
-        if (Math.abs(targetPos.x - currentPos.x) > Math.abs(targetPos.y - currentPos.y)) {
-          // Horizontal movement is dominant
-          setActivityAnimation(targetPos.x > currentPos.x ? 'walkRight' : 'walkLeft');
-        } else {
-          // Vertical movement is dominant
-          setActivityAnimation(targetPos.y > currentPos.y ? 'walkDown' : 'walkUp');
-        }
-        
-        // Set up movement interval
-        moveTimerId = setInterval(() => {
-          setPosition(prevPos => {
-            // Move towards target position
-            const moveSpeed = 1.5;
-            const dx = targetPos.x - currentPos.x;
-            const dy = targetPos.y - currentPos.y;
-            const dist = Math.sqrt(dx * dx + dy * dy);
-            
-            if (dist < moveSpeed) {
-              // Reached target, stop moving and switch to idle
-              currentPos = targetPos;
-              clearInterval(moveTimerId);
-              setActivityAnimation('idle');
-              isMoving = false;
-              return prevPos; // This doesn't matter as we're updating X/Y separately
-            }
-            
-            // Move towards target
-            currentPos.x += (dx / dist) * moveSpeed;
-            currentPos.y += (dy / dist) * moveSpeed;
-            
-            // Update the position state for X and Y
-            setPositionX(currentPos.x);
-            setPositionY(currentPos.y);
-            
-            return prevPos; // This is only used for the horizontal pacing
-          });
-        }, 33);
-      } else {
-        // Not moving, switch between idle and activity-specific animations
-        if (!isMoving) {
-          setActivityAnimation(Math.random() < 0.7 ? baseAnimation : 'idle');
-        }
-      }
-    };
-    
-    // Occasionally change animations to make it more dynamic
-    const activityTimer = setInterval(() => {
-      // Only change animation if not currently moving to a target
-      if (!isMoving) {
-        moveMonster();
-      }
-    }, 3000);
-    
-    return () => {
-      clearInterval(activityTimer);
-      clearInterval(moveTimerId);
-    };
-  }, [behaviorMode, activityType, spriteImage, currentAnimation, getActivityAnimation, containerWidth, containerHeight]);
+  }, [currentAnimation, animationControl, spriteImage, startAnimation]);
 
   // Draw idle frame when no animation is playing
   useEffect(() => {
@@ -618,17 +482,22 @@ const MonsterSpriteView: React.FC<MonsterSpriteViewProps> = ({
     const ctx = canvas?.getContext('2d');
     if (!canvas || !ctx || !spriteImage) return;
 
-    if (!currentAnimation && !currentBehavior && !activityAnimation) {
-      // Use the last known direction for idle pose
+    if (!currentAnimation) {
+      const timestamp = new Date().toISOString();
       const poseAnimation = direction === 'left' ? 'walkLeft' : 'walkRight';
+      console.log(`[${timestamp}] MonsterSpriteView: Drawing idle frame with direction:`, direction, 'poseAnimation:', poseAnimation);
+      // Use the last known direction for idle pose
       drawFrame(ctx, 0, getAnimationRow(poseAnimation), 'idle');
     }
-  }, [spriteImage, currentAnimation, isOpponent, currentBehavior, activityAnimation, direction]);
+  }, [spriteImage, currentAnimation, isOpponent, direction]);
 
-  // Calculate scaling factor based on container size
-  const scale = Math.min(containerWidth / FRAME_WIDTH, containerHeight / FRAME_HEIGHT);
-  const scaledWidth = FRAME_WIDTH * scale;
-  const scaledHeight = FRAME_HEIGHT * scale;
+  // Calculate base scale to fit container, but ensure minimum 2x space for scaling
+  const baseScale = Math.min(containerWidth / (FRAME_WIDTH * 2), containerHeight / (FRAME_HEIGHT * 2));
+  // Apply user-defined scale on top of base scale, clamped to 0.5x-2x range
+  const clampedScale = Math.max(0.5, Math.min(2.0, scale));
+  const finalScale = Math.max(baseScale, 1.0) * clampedScale;
+  const scaledWidth = FRAME_WIDTH * finalScale;
+  const scaledHeight = FRAME_HEIGHT * finalScale;
 
   return (
     <div 
@@ -646,21 +515,13 @@ const MonsterSpriteView: React.FC<MonsterSpriteViewProps> = ({
       <div 
         style={{
           position: 'relative',
-          width: scaledWidth,
-          height: scaledHeight,
+          width: FRAME_WIDTH,
+          height: FRAME_HEIGHT,
           transform: `
-            translateX(${
-              behaviorMode === 'pacing' 
-                ? `${position}px` 
-                : behaviorMode === 'activity' 
-                  ? `${positionX}px`
-                  : '0'
-            })
+            scale(${finalScale})
             ${isOpponent ? 'scaleX(-1)' : ''}
           `,
-          transition: behaviorMode === 'pacing' 
-            ? 'transform 0.1s linear' 
-            : 'transform 0.3s ease',
+          transition: 'transform 0.3s ease',
         }}
       >
         <canvas
@@ -679,7 +540,7 @@ const MonsterSpriteView: React.FC<MonsterSpriteViewProps> = ({
       </div>
       
       {/* Effect animation container - positioned absolutely over the monster */}
-      {externalEffect && (
+      {effect && (
         <div 
           style={{
             position: 'absolute',
@@ -692,10 +553,11 @@ const MonsterSpriteView: React.FC<MonsterSpriteViewProps> = ({
           }}
         >
           <EffectAnimation 
-            effect={externalEffect} 
+            effect={effect} 
             onComplete={handleEffectComplete}
             containerWidth={containerWidth}
             containerHeight={containerHeight}
+            scale={scale}
           />
         </div>
       )}
