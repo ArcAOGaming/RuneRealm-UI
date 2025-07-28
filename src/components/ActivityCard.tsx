@@ -1,5 +1,6 @@
 import React from 'react';
 import { Gateway } from '../constants/Constants';
+import { Zap, Play, Sword, Compass, Trophy } from 'lucide-react';
 
 interface ActivityCardProps {
   title: string;
@@ -26,16 +27,46 @@ interface ActivityCardProps {
   buttonText: string;
   theme: any;
   highlightSelectable?: boolean;
-  remainingTime?: string;
-  progress?: number;
 }
+
+// Activity color configurations matching the beautiful design
+const activityColors = {
+  Feed: {
+    bgGradient: 'from-blue-500/10 to-cyan-500/10',
+    borderColor: 'border-blue-200',
+    buttonColor: 'bg-blue-500 hover:bg-blue-600',
+    icon: Zap,
+    textColor: 'text-slate-800'
+  },
+  Play: {
+    bgGradient: 'from-green-500/10 to-emerald-500/10',
+    borderColor: 'border-green-200',
+    buttonColor: 'bg-green-500 hover:bg-green-600',
+    icon: Play,
+    textColor: 'text-slate-800'
+  },
+  Battle: {
+    bgGradient: 'from-red-500/10 to-orange-500/10',
+    borderColor: 'border-red-200',
+    buttonColor: 'bg-red-500 hover:bg-red-600',
+    icon: Sword,
+    textColor: 'text-slate-800'
+  },
+  Explore: {
+    bgGradient: 'from-purple-500/10 to-indigo-500/10',
+    borderColor: 'border-purple-200',
+    buttonColor: 'bg-purple-500 hover:bg-purple-600',
+    icon: Compass,
+    textColor: 'text-slate-800'
+  }
+};
 
 export const ActivityCard: React.FC<ActivityCardProps> = ({
   title,
   badge,
   badgeColor,
-  gradientFrom, // Kept for button, but not for top bar
-  gradientTo,   // Kept for button, but not for top bar
+  gradientFrom,
+  gradientTo,
   tokenLogo,
   tokenBalance,
   tokenRequired,
@@ -46,14 +77,23 @@ export const ActivityCard: React.FC<ActivityCardProps> = ({
   isDisabled,
   buttonText,
   theme,
-  highlightSelectable = false,
-  remainingTime,
-  progress
+  highlightSelectable = false
 }) => {
+  // Get activity configuration
+  const activityConfig = activityColors[title] || activityColors.Feed;
+  const IconComponent = activityConfig.icon;
+  
+  // Helper to get reward icons
+  const getRewardIcon = (cost: any) => {
+    if (cost.icon === '⚡' || cost.text.includes('Energy')) return '⚡';
+    if (cost.text.includes('Happy') || cost.icon === '💝') return '❤️';
+    return '💰';
+  };
+
   // Enhanced border effect for selectable items
   const borderStyle = !isDisabled && highlightSelectable
     ? `border-2 border-${gradientFrom}`
-    : `border-2 ${theme.border}`;
+    : activityConfig.borderColor;
 
   // Enhanced glow effect for selectable items
   const glowEffect = !isDisabled && highlightSelectable
@@ -62,13 +102,13 @@ export const ActivityCard: React.FC<ActivityCardProps> = ({
     
   // Enhanced scale effect for selectable items
   const hoverEffect = !isDisabled
-    ? 'hover:scale-105'
+    ? 'hover:scale-[1.02]'
     : '';
 
   // Enhanced button styling for better visual feedback
   const buttonStyle = !isDisabled 
-    ? `bg-gradient-to-r from-${gradientFrom} to-${gradientTo} hover:from-${gradientFrom}-700 hover:to-${gradientTo}-700 transform hover:scale-105 hover:shadow-md` 
-    : 'bg-gray-400 cursor-not-allowed';
+    ? `${activityConfig.buttonColor} text-white font-medium shadow-lg hover:shadow-xl` 
+    : 'bg-gray-400 cursor-not-allowed text-white';
 
   // Add a highlight indicator for selectable items
   const SelectableIndicator = () => {
@@ -82,116 +122,78 @@ export const ActivityCard: React.FC<ActivityCardProps> = ({
 
   return (
     <div
-      className={`activity-card relative overflow-hidden rounded-xl 
-      ${theme.container} ${borderStyle} ${glowEffect} transform ${hoverEffect} 
-      transition-all duration-300 h-[200px] w-[180px] flex flex-col`}>
-
-      {/* --- NEW Integrated Progress/Header Bar --- */}
-      {(() => {
-        const isActivityCompleted = progress === 100;
-        const isActivityInProgress = progress !== undefined && progress < 100;
-        const baseBgColor = theme.isDarkMode ? 'bg-[#2A1912]' : 'bg-[#F4E4C1]'; // Theme-aligned dark and light backgrounds
-
-        return (
-          <div 
-            className={`absolute top-0 left-0 w-full h-3 flex items-center justify-center text-white text-xs font-bold overflow-hidden`}
-          >
-            {isActivityCompleted ? (
-              <div className="w-full h-full flex items-center justify-center bg-purple-600 shadow-lg shadow-purple-500/50 text-black">
-                COMPLETE
-              </div>
-            ) : isActivityInProgress ? (
-              <div className={`w-full h-full relative ${baseBgColor} flex items-center justify-center`}>
-                <div 
-                  className="absolute top-0 left-0 h-full bg-gradient-to-r from-purple-500 to-pink-500 animate-magical-progress"
-                  style={{ width: `${progress}%` }}
-                />
-                {remainingTime && <span className="relative z-10 text-black text-xs font-bold">{remainingTime}</span>}
-              </div>
-            ) : (
-              <div className={`w-full h-full ${baseBgColor}`} />
-            )}
-          </div>
-        );
-      })()}
+      className={`activity-card relative overflow-hidden bg-gradient-to-br ${activityConfig.bgGradient} ${borderStyle} border-2 hover:shadow-xl transition-all duration-300 ${hoverEffect} ${glowEffect} rounded-xl`}>
       
-      {/* Selectable indicator (ensure it's visible on top of the new header) */}
+      {/* Selectable indicator */}
       <SelectableIndicator />
       
-      {/* Main content - Adjusted pt-3 to account for h-2 header */}
-      <div className="p-3 pt-4 flex flex-col h-full">
-        {/* Header (Title and Badge) */}
-        <div className="flex justify-between items-center mb-1"> {/* Reduced mb from mb-2 */}
-          <h3 className={`text-base font-bold ${theme.text}`}>{title}</h3>
-          <span className={`px-1.5 py-0.5 bg-${badgeColor} text-${badgeColor}-900 rounded-full text-xs font-bold`}>
+      <div className="p-4">
+        {/* Header */}
+        <div className="flex items-center justify-between mb-3">
+          <div className="flex items-center gap-2">
+            <div className="p-1.5 bg-white/20 backdrop-blur-sm rounded-lg">
+              <IconComponent className="w-4 h-4 text-slate-700" />
+            </div>
+            <h3 className={`text-lg font-semibold ${activityConfig.textColor}`}>{title}</h3>
+          </div>
+          <div className={`px-2 py-1 bg-${badgeColor}-500 text-${badgeColor}-900 rounded-full text-xs font-bold`}>
             {badge}
-          </span>
+          </div>
         </div>
 
-        {/* Token info and requirements */}
-        <div className="flex-grow space-y-2">
-          {/* Token display */}
-          <div className="flex items-center gap-1.5 mb-2">
-            {tokenLogo && (
+        {/* Stats */}
+        <div className="flex items-center gap-3 mb-3">
+          <div className="flex items-center gap-1">
+            {tokenLogo ? (
               <img 
                 src={`${Gateway}${tokenLogo}`}
                 alt="Token"
-                className="w-5 h-5 rounded-full"
+                className="w-4 h-4 rounded-full"
               />
+            ) : (
+              <Trophy className="w-3 h-3 text-slate-600" />
             )}
-            <span className={`text-base font-medium ${tokenBalance >= tokenRequired ? 'text-green-500' : 'text-red-500'}`}>
-              {tokenBalance}/{tokenRequired}
-            </span>
+            <span className="text-sm font-bold text-slate-700">{tokenBalance}/{tokenRequired}</span>
           </div>
-          
-          {/* Costs and Rewards side by side */}
-          <div className="flex justify-between items-start">
-            {/* Costs section */}
-            <div className="space-y-1">
-              {costs.map((cost, index) => {
-                // Extract just the number from the text
-                const number = cost.text.match(/-?\d+/)?.[0] || '';
-                // Replace energy emoji with battery if present
-                const icon = cost.icon === '⚡' ? '🔋' : cost.icon;
-                return (
-                  <div key={index} className="flex items-center gap-1">
-                    <span>{icon}</span>
-                    <span className={`text-base ${cost.isAvailable ? 'text-red-500' : 'text-red-700'}`}>{number}</span>
-                  </div>
-                );
-              })}
-            </div>
-
-            {/* Rewards section */}
-            <div className="space-y-1">
-              {rewards.map((reward, index) => {
-                // Extract just the number from the text
-                const number = reward.text.match(/\d+/)?.[0] || '';
-                // Replace energy emoji with battery if present
-                const icon = reward.icon === '⚡' ? '🔋' : reward.icon;
-                return (
-                  <div key={index} className="flex items-center gap-1">
-                    <span>{icon}</span>
-                    <span className={`text-base text-${reward.color}`}>+{number}</span>
-                  </div>
-                );
-              })}
-            </div>
+          <div className="flex items-center gap-2">
+            {/* Cost display */}
+            {costs.map((cost, index) => {
+              const number = cost.text.match(/-?\d+/)?.[0] || '';
+              const icon = getRewardIcon(cost);
+              return (
+                <div key={index} className="flex items-center gap-0.5">
+                  <span className="text-xs">{icon}</span>
+                  <span className={`text-xs font-semibold ${cost.isAvailable ? 'text-red-500' : 'text-red-400'}`}>
+                    {number}
+                  </span>
+                </div>
+              );
+            })}
+            
+            {/* Reward display */}
+            {rewards.map((reward, index) => {
+              const number = reward.text.match(/\d+/)?.[0] || '';
+              const icon = getRewardIcon(reward);
+              return (
+                <div key={index} className="flex items-center gap-0.5">
+                  <span className="text-xs">{icon}</span>
+                  <span className="text-xs font-semibold text-green-500">+{number}</span>
+                </div>
+              );
+            })}
           </div>
         </div>
 
-        {/* Action button - always at bottom */}
-        <div className="mt-2">
-          <button
-            onClick={onAction}
-            disabled={isLoading || isDisabled}
-            className={`w-full px-3 py-1.5 rounded-lg font-bold text-white text-sm
-              ${buttonStyle} transition-all duration-300 
-              ${!isDisabled && highlightSelectable ? 'ring-2 ring-offset-1 ring-' + gradientFrom : ''}`}
-          >
-            {buttonText}
-          </button>
-        </div>
+        {/* Action Button */}
+        <button
+          onClick={onAction}
+          disabled={isLoading || isDisabled}
+          className={`w-full ${buttonStyle} py-1.5 rounded-lg transition-all duration-200 text-sm ${
+            isLoading || isDisabled ? 'opacity-50 cursor-not-allowed' : ''
+          } ${!isDisabled && highlightSelectable ? 'ring-2 ring-offset-1 ring-opacity-50' : ''}`}
+        >
+          {buttonText}
+        </button>
       </div>
     </div>
   );

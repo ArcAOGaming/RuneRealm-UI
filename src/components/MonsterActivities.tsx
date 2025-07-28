@@ -8,6 +8,7 @@ import { useNavigate } from 'react-router-dom';
 import { useWallet } from '../hooks/useWallet';
 import { useTokens } from '../contexts/TokenContext';
 import { useMonster } from '../contexts/MonsterContext';
+import { Zap } from 'lucide-react';
 
 interface Asset {
   info: {
@@ -43,13 +44,17 @@ interface MonsterActivitiesProps {
   activities?: Activities;
   theme: Theme;
   className?: string;
+  onEffectTrigger?: (effect: string) => void;
+  onTriggerReturn?: () => void;
 }
 
 const MonsterActivities: React.FC<MonsterActivitiesProps> = ({
   monster: monsterProp,
   activities: activitiesProp,
   theme,
-  className = ''
+  className = '',
+  onEffectTrigger,
+  onTriggerReturn
 }) => {
   const navigate = useNavigate();
   const { triggerRefresh, wallet } = useWallet();
@@ -136,6 +141,7 @@ const MonsterActivities: React.FC<MonsterActivitiesProps> = ({
                    (monster.status.type === 'Battle' && canReturn);
 
   // Handle feed monster
+  // Handle feed monster
   const monsterInteraction = async (actionType) => {
     if (!monster) return;
   
@@ -163,13 +169,13 @@ const MonsterActivities: React.FC<MonsterActivitiesProps> = ({
       else if (actionType === 'PLAY') setIsPlaying(true);
       else if (actionType === 'BATTLE') setIsInBattle(true);
       else if (actionType === 'MISSION') setIsOnMission(true);
-  
+
       if (!wallet) {
         console.error('No wallet connected');
         return;
       }
       const signer = await createDataItemSigner(wallet);
-  
+
       await message({
         process: canReturn ? targetProcessId : config.cost.token,
         tags: canReturn ? [
@@ -185,6 +191,20 @@ const MonsterActivities: React.FC<MonsterActivitiesProps> = ({
       }, () => {
         // First trigger the regular refresh
         triggerRefresh();
+        
+        // Trigger return animation for return actions
+        if (canReturn && onTriggerReturn) {
+          console.log(`[MonsterActivities] Return action completed, triggering return animation for ${actionType}`);
+          onTriggerReturn();
+        }
+        
+        // Trigger healing effect after feed process completes successfully
+        if (actionType === 'FEED' && onEffectTrigger) {
+          const healingEffects = ['Small Heal', 'Medium Heal', 'Large Heal', 'Full Heal'];
+          const randomHeal = healingEffects[Math.floor(Math.random() * healingEffects.length)];
+          console.log(`[MonsterActivities] Feed completed successfully, triggering healing effect: ${randomHeal}`);
+          onEffectTrigger(randomHeal);
+        }
         
         // Then schedule the forced monster data refresh after delay
         console.log(`[MonsterActivities] ${actionType} completed, scheduling monster refresh`);
@@ -205,9 +225,22 @@ const MonsterActivities: React.FC<MonsterActivitiesProps> = ({
       else if (actionType === 'MISSION') setIsOnMission(false);
     }
   };
+  // Detect if we're in compact mode
+  const isCompact = className?.includes('compact-mode');
+
   return (
-    <div className={`activities-section ${theme.container} rounded-lg p-4 ${className}`}>
-      <div className="flex flex-col sm:flex-row gap-2 sm:gap-3">
+    <div className={`activities-section bg-gradient-to-br from-slate-50 to-slate-100 ${isCompact ? 'p-3 rounded-2xl' : 'p-6 rounded-3xl'} ${className}`}>
+      <div className={isCompact ? 'flex flex-col' : 'max-w-4xl mx-auto'}>
+        {/* Header */}
+        <div className={`flex items-center gap-3 ${isCompact ? 'mb-4' : 'mb-8'}`}>
+          <div className={`${isCompact ? 'p-1.5' : 'p-2'} bg-gradient-to-r from-orange-400 to-yellow-400 rounded-xl`}>
+            <Zap className={`${isCompact ? 'w-4 h-4' : 'w-6 h-6'} text-white`} />
+          </div>
+          <h1 className={`${isCompact ? 'text-xl' : 'text-3xl'} font-bold text-slate-800`}>Activities</h1>
+        </div>
+
+        {/* Activities Grid */}
+        <div className={`grid grid-cols-1 md:grid-cols-2 gap-3 ${isCompact ? 'mb-3 flex-1' : 'gap-6 mb-8'}`}>
         <ActivityCard
           title="Feed"
           buttonText={feedButtonText}
@@ -248,8 +281,8 @@ const MonsterActivities: React.FC<MonsterActivitiesProps> = ({
           onAction={() => monsterInteraction('PLAY')}
           isLoading={isPlaying || (monster.status.type === 'Play' && !timeUp)}
           isDisabled={!canPlay || (monster.status.type !== 'Home' && (monster.status.type !== 'Play' || (monster.status.type === 'Play' && !timeUp)))}
-          remainingTime={monster.status.type === 'Play' && monster.status.until_time ? formatTimeRemaining(monster.status.until_time) : undefined}
-          progress={monster.status.type === 'Play' && monster.status.since && monster.status.until_time ? calculateProgress(monster.status.since, monster.status.until_time) : undefined}
+
+          
           theme={theme}
           highlightSelectable={!isPlaying && canPlay}
         />
@@ -274,8 +307,7 @@ const MonsterActivities: React.FC<MonsterActivitiesProps> = ({
           onAction={() => monsterInteraction('BATTLE')}
           isLoading={isInBattle || (monster.status.type === 'Battle' && !timeUp)}
           isDisabled={!canBattle || (monster.status.type !== 'Home' && (monster.status.type !== 'Battle' || (monster.status.type === 'Battle' && !timeUp)))}
-          remainingTime={monster.status.type === 'Battle' && monster.status.until_time ? formatTimeRemaining(monster.status.until_time) : undefined}
-          progress={monster.status.type === 'Battle' && monster.status.since && monster.status.until_time ? calculateProgress(monster.status.since, monster.status.until_time) : undefined}
+
           theme={theme}
           highlightSelectable={!isInBattle && canBattle}
         />
@@ -300,11 +332,11 @@ const MonsterActivities: React.FC<MonsterActivitiesProps> = ({
           onAction={() => monsterInteraction('MISSION')}
           isLoading={isOnMission || (monster.status.type === 'Mission' && !timeUp)}
           isDisabled={!canMission || (monster.status.type !== 'Home' && (monster.status.type !== 'Mission' || (monster.status.type === 'Mission' && !timeUp)))}
-          remainingTime={monster.status.type === 'Mission' && monster.status.until_time ? formatTimeRemaining(monster.status.until_time) : undefined}
-          progress={monster.status.type === 'Mission' && monster.status.since && monster.status.until_time ? calculateProgress(monster.status.since, monster.status.until_time) : undefined}
+
           theme={theme}
           highlightSelectable={!isOnMission && canMission}
         />
+        </div>
       </div>
     </div>
   );
