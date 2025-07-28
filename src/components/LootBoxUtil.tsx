@@ -593,7 +593,7 @@ const LootBoxUtil = ({
         )}
         {isLoading ? (
           <p className={`${theme.text}`}>Loading treasures...</p>
-        ) : lootBoxes.length === 0 ? (
+        ) : lootBoxes.length === 0 && !openResult ? (
           <p className={`${theme.text} text-sm`}>Your vault is empty. Complete activities to earn treasure!</p>
         ) : (
           <div className="space-y-2">

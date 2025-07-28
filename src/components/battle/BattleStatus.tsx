@@ -62,7 +62,7 @@ export const BattleStatus: React.FC<BattleStatusProps> = ({
           <div className="space-y-3">
             <p className="text-red-500 text-sm bg-red-50 dark:bg-red-900/20 p-2 rounded">⚠️ You are not currently in battle mode.</p>
             <button
-              onClick={() => navigate('/monster')}
+              onClick={() => navigate('/monsters')}
               className="w-full px-4 py-3 bg-gradient-to-r from-purple-500 to-purple-600 hover:from-purple-600 hover:to-purple-700 text-white rounded-xl font-semibold shadow-lg hover:shadow-xl transition-all duration-300 transform hover:scale-105"
             >
               🐲 Go to Monster Page to Enter Battle
