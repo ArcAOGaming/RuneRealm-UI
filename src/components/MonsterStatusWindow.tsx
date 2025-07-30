@@ -54,6 +54,8 @@ const MonsterStatusWindow: React.FC<MonsterStatusWindowProps> = ({
   const [isWalking, setIsWalking] = useState(false);
   const [containerSize, setContainerSize] = useState({ width: 0, height: 0 });
   const [selectedBackground, setSelectedBackground] = useState('home');
+  const [forestBackgrounds] = useState(['forest']); // Multiple nature backgrounds for Play/Exploring
+  const [currentForestIndex, setCurrentForestIndex] = useState(0);
 
   // State for transition animations
   const [isExitAnimation, setIsExitAnimation] = useState(false);
@@ -83,16 +85,39 @@ const MonsterStatusWindow: React.FC<MonsterStatusWindowProps> = ({
   const isExploringOrPlaying = monster.status.type.toLowerCase() === 'exploring' || 
                                monster.status.type.toLowerCase() === 'play';
 
-  // Set background based on monster status
+  // Set background based on monster status with multiple forest options
   useEffect(() => {
     switch(monster.status.type.toLowerCase()) {
-      case 'home': setSelectedBackground('home'); break;
-      case 'play': setSelectedBackground('forest'); break;
-      case 'exploring': setSelectedBackground('forest'); break;
-      case 'mission': setSelectedBackground(Math.random() > 0.5 ? 'greenhouse' : 'beach'); break;
-      default: setSelectedBackground('home'); break;
+              case 'home': 
+          setSelectedBackground('home'); 
+          setBackgroundPosition(0); // Always keep centered
+          setAnimationControl({ type: 'once' }); // Reset to normal animation
+          break;
+              case 'play': 
+          // Select random forest background when starting play
+          const randomPlayIndex = Math.floor(Math.random() * forestBackgrounds.length);
+          setCurrentForestIndex(randomPlayIndex);
+          setSelectedBackground(forestBackgrounds[randomPlayIndex]); 
+          setBackgroundPosition(0); // Always keep centered
+          break;
+        case 'exploring': 
+          // Select random forest background when starting exploring
+          const randomExploreIndex = Math.floor(Math.random() * forestBackgrounds.length);
+          setCurrentForestIndex(randomExploreIndex);
+          setSelectedBackground(forestBackgrounds[randomExploreIndex]); 
+          setBackgroundPosition(0); // Always keep centered
+          break;
+              case 'mission': 
+          const missionBg = Math.random() > 0.5 ? 'greenhouse' : 'beach';
+          setSelectedBackground(missionBg); 
+          setBackgroundPosition(0); // Always keep centered
+          break;
+        default: 
+          setSelectedBackground('home'); 
+          setBackgroundPosition(0); // Always keep centered
+          break;
     }
-  }, [monster.status.type]);
+  }, [monster.status.type, forestBackgrounds]);
 
   // Handle manual return trigger
   useEffect(() => {
@@ -337,26 +362,35 @@ const MonsterStatusWindow: React.FC<MonsterStatusWindowProps> = ({
 
     console.log(`[MonsterStatusWindow] Starting exploring/playing behavior - monster stays center, background scrolls`);
 
-    // For play/explore: monster stays in center with continuous walking animation
-    setIsWalking(true); // Always walking when playing/exploring
+    // For play/explore: monster stays in center with continuous running animation
+    setIsWalking(true); // Always running when playing/exploring
     setPosition(0); // Keep monster at center
     
     console.log(`[MonsterStatusWindow] Play/Explore mode: isWalking=true, position=0, background will scroll`);
     
+    // Start with right direction for running
+    setDirection('right');
+    setCurrentAnimation('walkRight');
+    // Set perpetual animation for continuous running effect
+    setAnimationControl({ type: 'perpetual' });
+    
+    // Faster direction changes for more dynamic running effect
     const changeDirection = () => {
-      // Randomly change direction every 2-4 seconds for variety
       const newDirection = Math.random() < 0.5 ? 'left' : 'right';
       setDirection(newDirection);
       setCurrentAnimation(newDirection === 'right' ? 'walkRight' : 'walkLeft');
+      // Keep perpetual animation
+      setAnimationControl({ type: 'perpetual' });
       
-      const directionChangeInterval = 2000 + Math.random() * 2000;
+      // Shorter intervals for more active running animation
+      const directionChangeInterval = 1500 + Math.random() * 1500; // 1.5-3 seconds
       
       roamingTimerRef.current = setTimeout(() => {
         changeDirection();
       }, directionChangeInterval);
     };
 
-    // Start with initial direction
+    // Start the continuous animation cycle
     changeDirection();
     
     return () => {
@@ -376,6 +410,19 @@ const MonsterStatusWindow: React.FC<MonsterStatusWindowProps> = ({
 
     return () => clearInterval(updateTimer);
   }, [monster.status.type, monster.status.until_time]);
+
+  // Static background - no scrolling to avoid motion sickness
+  // The running effect is now purely from monster animation
+  useEffect(() => {
+    // Reset background position to center when starting/stopping activities
+    if (isExploringOrPlaying && hasCompletedEntrance && !isExitAnimation && !isEntranceAnimation && !isReturnAnimation) {
+      // Keep background perfectly centered during activities
+      setBackgroundPosition(0);
+    }
+  }, [isExploringOrPlaying, hasCompletedEntrance, isExitAnimation, isEntranceAnimation, isReturnAnimation]);
+
+  // Disabled background rotation to keep it simple and stable
+  // Background stays consistent during activities to avoid visual distraction
 
   // Helper functions for the design
   const getEnvironmentName = (status: string) => {
@@ -433,10 +480,8 @@ const MonsterStatusWindow: React.FC<MonsterStatusWindowProps> = ({
             backgroundImage: `url(${new URL(`../assets/window-backgrounds/${selectedBackground}.png`, import.meta.url).href})`,
             backgroundSize: 'cover',
             backgroundRepeat: 'no-repeat',
-            backgroundPosition: isExploringOrPlaying && hasCompletedEntrance 
-              ? `${backgroundPosition}% center` 
-              : 'center',
-            transition: isExploringOrPlaying && hasCompletedEntrance ? 'none' : 'background-position 0.1s linear',
+            backgroundPosition: 'center', // Always perfectly centered - no scrolling
+            transition: 'background-image 1.5s ease-in-out', // Only smooth background image changes
           }}
         >
           <div className="absolute inset-0 bg-gradient-to-t from-black/30 to-transparent" />
@@ -497,9 +542,11 @@ const MonsterStatusWindow: React.FC<MonsterStatusWindowProps> = ({
               style={{
                 width: `${Math.min(monsterSize, 120)}px`,
                 height: `${Math.min(monsterSize, 120)}px`,
-                transform: `translateX(calc(-50% + ${position * 0.5}px))`,
+                transform: isExploringOrPlaying && hasCompletedEntrance 
+                  ? `translateX(-50%)` // Keep perfectly centered when running
+                  : `translateX(calc(-50% + ${position * 0.5}px))`, // Normal movement when at home
                 bottom: '0px',
-                transition: 'transform 0.1s linear',
+                transition: isExploringOrPlaying ? 'none' : 'transform 0.1s linear',
                 zIndex: 10
               }}
             >
