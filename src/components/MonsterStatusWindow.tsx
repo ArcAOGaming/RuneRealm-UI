@@ -64,7 +64,7 @@ const MonsterStatusWindow: React.FC<MonsterStatusWindowProps> = ({
   const [hasCompletedEntrance, setHasCompletedEntrance] = useState(false);
   const [previousActivityType, setPreviousActivityType] = useState<string>('');
   const [backgroundPosition, setBackgroundPosition] = useState(0);
-  
+
   // State for real-time progress animation
   const [currentTime, setCurrentTime] = useState(Date.now());
 
@@ -82,40 +82,40 @@ const MonsterStatusWindow: React.FC<MonsterStatusWindowProps> = ({
   const walkDistance = fullWalkDistance;
 
   // Check if monster is in exploring or playing state
-  const isExploringOrPlaying = monster.status.type.toLowerCase() === 'exploring' || 
-                               monster.status.type.toLowerCase() === 'play';
+  const isExploringOrPlaying = monster.status.type.toLowerCase() === 'exploring' ||
+    monster.status.type.toLowerCase() === 'play';
 
   // Set background based on monster status with multiple forest options
   useEffect(() => {
-    switch(monster.status.type.toLowerCase()) {
-              case 'home': 
-          setSelectedBackground('home'); 
-          setBackgroundPosition(0); // Always keep centered
-          setAnimationControl({ type: 'once' }); // Reset to normal animation
-          break;
-              case 'play': 
-          // Select random forest background when starting play
-          const randomPlayIndex = Math.floor(Math.random() * forestBackgrounds.length);
-          setCurrentForestIndex(randomPlayIndex);
-          setSelectedBackground(forestBackgrounds[randomPlayIndex]); 
-          setBackgroundPosition(0); // Always keep centered
-          break;
-        case 'exploring': 
-          // Select random forest background when starting exploring
-          const randomExploreIndex = Math.floor(Math.random() * forestBackgrounds.length);
-          setCurrentForestIndex(randomExploreIndex);
-          setSelectedBackground(forestBackgrounds[randomExploreIndex]); 
-          setBackgroundPosition(0); // Always keep centered
-          break;
-              case 'mission': 
-          const missionBg = Math.random() > 0.5 ? 'greenhouse' : 'beach';
-          setSelectedBackground(missionBg); 
-          setBackgroundPosition(0); // Always keep centered
-          break;
-        default: 
-          setSelectedBackground('home'); 
-          setBackgroundPosition(0); // Always keep centered
-          break;
+    switch (monster.status.type.toLowerCase()) {
+      case 'home':
+        setSelectedBackground('home');
+        setBackgroundPosition(0); // Always keep centered
+        setAnimationControl({ type: 'once' }); // Reset to normal animation
+        break;
+      case 'play':
+        // Select random forest background when starting play
+        const randomPlayIndex = Math.floor(Math.random() * forestBackgrounds.length);
+        setCurrentForestIndex(randomPlayIndex);
+        setSelectedBackground(forestBackgrounds[randomPlayIndex]);
+        setBackgroundPosition(0); // Always keep centered
+        break;
+      case 'exploring':
+        // Select random forest background when starting exploring
+        const randomExploreIndex = Math.floor(Math.random() * forestBackgrounds.length);
+        setCurrentForestIndex(randomExploreIndex);
+        setSelectedBackground(forestBackgrounds[randomExploreIndex]);
+        setBackgroundPosition(0); // Always keep centered
+        break;
+      case 'mission':
+        const missionBg = Math.random() > 0.5 ? 'greenhouse' : 'beach';
+        setSelectedBackground(missionBg);
+        setBackgroundPosition(0); // Always keep centered
+        break;
+      default:
+        setSelectedBackground('home');
+        setBackgroundPosition(0); // Always keep centered
+        break;
     }
   }, [monster.status.type, forestBackgrounds]);
 
@@ -129,7 +129,7 @@ const MonsterStatusWindow: React.FC<MonsterStatusWindowProps> = ({
       setHasCompletedEntrance(false);
       setCurrentAnimation('walkLeft');
       setPosition(0); // Start from center in current background
-      
+
       // Clear roaming timers
       if (roamingTimerRef.current) {
         clearTimeout(roamingTimerRef.current);
@@ -140,10 +140,10 @@ const MonsterStatusWindow: React.FC<MonsterStatusWindowProps> = ({
   // Track activity changes for transition animations
   useEffect(() => {
     const currentActivity = monster.status.type.toLowerCase();
-    
+
     // When switching from home to play/exploring, trigger exit animation
-    if ((currentActivity === 'play' || currentActivity === 'exploring') && 
-        previousActivityType === 'home') {
+    if ((currentActivity === 'play' || currentActivity === 'exploring') &&
+      previousActivityType === 'home') {
       console.log(`[MonsterStatusWindow] Starting exit animation from home to ${currentActivity}`);
       setIsExitAnimation(true);
       setIsReturnAnimation(false);
@@ -153,9 +153,9 @@ const MonsterStatusWindow: React.FC<MonsterStatusWindowProps> = ({
       setPosition(0); // Start from center
     }
     // When switching from play/exploring to home, trigger return animation (auto return)
-    else if (currentActivity === 'home' && 
-             (previousActivityType === 'play' || previousActivityType === 'exploring') &&
-             !triggerReturn) { // Only auto-return if not manually triggered
+    else if (currentActivity === 'home' &&
+      (previousActivityType === 'play' || previousActivityType === 'exploring') &&
+      !triggerReturn) { // Only auto-return if not manually triggered
       console.log(`[MonsterStatusWindow] Auto return animation from ${previousActivityType} to home`);
       setIsReturnAnimation(true);
       setIsExitAnimation(false);
@@ -171,7 +171,7 @@ const MonsterStatusWindow: React.FC<MonsterStatusWindowProps> = ({
       setPosition(-walkDistance); // Start from left edge
       setCurrentAnimation('walkRight');
     }
-    
+
     setPreviousActivityType(currentActivity);
   }, [monster.status.type, isExploringOrPlaying, walkDistance, hasCompletedEntrance, isExitAnimation, isReturnAnimation, previousActivityType, triggerReturn]);
 
@@ -213,7 +213,7 @@ const MonsterStatusWindow: React.FC<MonsterStatusWindowProps> = ({
         // Exit animation: monster walks from center to right edge (in home background)
         setPosition(prevPos => {
           let newPos = prevPos + WALK_SPEED;
-          
+
           // When monster reaches right edge, complete exit and immediately trigger entrance
           if (newPos >= walkDistance) {
             newPos = walkDistance;
@@ -223,36 +223,36 @@ const MonsterStatusWindow: React.FC<MonsterStatusWindowProps> = ({
             setIsEntranceAnimation(true);
             setPosition(-walkDistance); // Monster appears from left edge
           }
-          
+
           return newPos;
         });
-             } else if (isReturnAnimation) {
-         // Return animation: monster walks from center to left edge (in forest background)  
-         setPosition(prevPos => {
-           let newPos = prevPos - WALK_SPEED;
-           
-           // When monster reaches left edge, complete return and enter home from left
-           if (newPos <= -walkDistance) {
-             newPos = -walkDistance;
-             console.log(`[MonsterStatusWindow] Return animation complete, entering home`);
-             setIsReturnAnimation(false);
-             // Background changes to home immediately, then enter from left
-             setPosition(-walkDistance);
-             setIsEntranceAnimation(true);
-             
-             // Notify parent that return is complete
-             if (onReturnComplete) {
-               onReturnComplete();
-             }
-           }
-           
-           return newPos;
-         });
-       } else if (isEntranceAnimation && !hasCompletedEntrance) {
+      } else if (isReturnAnimation) {
+        // Return animation: monster walks from center to left edge (in forest background)  
+        setPosition(prevPos => {
+          let newPos = prevPos - WALK_SPEED;
+
+          // When monster reaches left edge, complete return and enter home from left
+          if (newPos <= -walkDistance) {
+            newPos = -walkDistance;
+            console.log(`[MonsterStatusWindow] Return animation complete, entering home`);
+            setIsReturnAnimation(false);
+            // Background changes to home immediately, then enter from left
+            setPosition(-walkDistance);
+            setIsEntranceAnimation(true);
+
+            // Notify parent that return is complete
+            if (onReturnComplete) {
+              onReturnComplete();
+            }
+          }
+
+          return newPos;
+        });
+      } else if (isEntranceAnimation && !hasCompletedEntrance) {
         // Entrance animation: monster walks from left to center (in current background)
         setPosition(prevPos => {
           let newPos = prevPos + WALK_SPEED;
-          
+
           // When monster reaches center, stop entrance animation
           if (newPos >= 0) {
             newPos = 0;
@@ -268,36 +268,36 @@ const MonsterStatusWindow: React.FC<MonsterStatusWindowProps> = ({
               setBackgroundPosition(0);
             }
           }
-          
+
           return newPos;
         });
       }
-      
+
       // Background scrolling for exploring/playing monsters (after entrance, no other animations)
       if (isExploringOrPlaying && hasCompletedEntrance && !isExitAnimation && !isEntranceAnimation && !isReturnAnimation) {
         // Keep monster at center position when exploring/playing
         setPosition(0);
-        
+
         // Scroll background continuously
         setBackgroundPosition(prevPos => {
           let newPos = prevPos + BACKGROUND_SCROLL_SPEED;
-          
+
           // Reset background position to create seamless loop
           if (newPos >= 100) {
             newPos = 0;
           }
-          
+
           return newPos;
         });
       }
-      
+
       // Original walking logic for other activities (home, etc.) - only when no transitions
       if (!isExitAnimation && !isEntranceAnimation && !isReturnAnimation && !isExploringOrPlaying) {
         setPosition(prevPos => {
           // Calculate movement based on direction
           const directionMultiplier = direction === 'right' ? 1 : -1;
           let newPos = prevPos + (WALK_SPEED * directionMultiplier);
-          
+
           // Handle direction change at restricted boundaries
           if (newPos >= walkDistance) {
             newPos = walkDistance - 0.1;
@@ -310,7 +310,7 @@ const MonsterStatusWindow: React.FC<MonsterStatusWindowProps> = ({
           } else {
             setCurrentAnimation(direction === 'right' ? 'walkRight' : 'walkLeft');
           }
-          
+
           return newPos;
         });
       }
@@ -337,17 +337,17 @@ const MonsterStatusWindow: React.FC<MonsterStatusWindowProps> = ({
     const decideState = () => {
       const shouldWalk = Math.random() < 0.3; // 30% chance to walk
       setIsWalking(shouldWalk);
-      
+
       // Set a random time for the next state change (between 2-5 seconds)
       const nextStateChange = 2000 + Math.random() * 3000;
-      
+
       roamingTimerRef.current = setTimeout(() => {
         decideState();
       }, nextStateChange);
     };
 
     decideState();
-    
+
     return () => {
       if (roamingTimerRef.current) clearTimeout(roamingTimerRef.current);
       if (animationRef.current) cancelAnimationFrame(animationRef.current);
@@ -365,15 +365,15 @@ const MonsterStatusWindow: React.FC<MonsterStatusWindowProps> = ({
     // For play/explore: monster stays in center with continuous running animation
     setIsWalking(true); // Always running when playing/exploring
     setPosition(0); // Keep monster at center
-    
+
     console.log(`[MonsterStatusWindow] Play/Explore mode: isWalking=true, position=0, background will scroll`);
-    
+
     // Start with right direction for running
     setDirection('right');
     setCurrentAnimation('walkRight');
     // Set perpetual animation for continuous running effect
     setAnimationControl({ type: 'perpetual' });
-    
+
     // Faster direction changes for more dynamic running effect
     const changeDirection = () => {
       const newDirection = Math.random() < 0.5 ? 'left' : 'right';
@@ -381,10 +381,10 @@ const MonsterStatusWindow: React.FC<MonsterStatusWindowProps> = ({
       setCurrentAnimation(newDirection === 'right' ? 'walkRight' : 'walkLeft');
       // Keep perpetual animation
       setAnimationControl({ type: 'perpetual' });
-      
+
       // Shorter intervals for more active running animation
       const directionChangeInterval = 1500 + Math.random() * 1500; // 1.5-3 seconds
-      
+
       roamingTimerRef.current = setTimeout(() => {
         changeDirection();
       }, directionChangeInterval);
@@ -392,7 +392,7 @@ const MonsterStatusWindow: React.FC<MonsterStatusWindowProps> = ({
 
     // Start the continuous animation cycle
     changeDirection();
-    
+
     return () => {
       if (roamingTimerRef.current) clearTimeout(roamingTimerRef.current);
     };
@@ -426,7 +426,7 @@ const MonsterStatusWindow: React.FC<MonsterStatusWindowProps> = ({
 
   // Helper functions for the design
   const getEnvironmentName = (status: string) => {
-    switch(status.toLowerCase()) {
+    switch (status.toLowerCase()) {
       case 'home': return 'Living Room';
       case 'play': return 'Forest Playground';
       case 'exploring': return 'Whispering Woods';
@@ -436,7 +436,7 @@ const MonsterStatusWindow: React.FC<MonsterStatusWindowProps> = ({
   };
 
   const getEnvironmentDescription = (status: string) => {
-    switch(status.toLowerCase()) {
+    switch (status.toLowerCase()) {
       case 'home': return 'A warm and inviting space with a comfy couch.';
       case 'play': return 'Running around and having fun in nature.';
       case 'exploring': return 'Discovering new paths and hidden treasures.';
@@ -451,9 +451,9 @@ const MonsterStatusWindow: React.FC<MonsterStatusWindowProps> = ({
   };
 
   // Check if activity is complete using real-time
-  const activityTimeUp = monster.status.type !== 'Home' && 
-                        monster.status.until_time && 
-                        currentTime >= monster.status.until_time;
+  const activityTimeUp = monster.status.type !== 'Home' &&
+    monster.status.until_time &&
+    currentTime >= monster.status.until_time;
 
   return (
     <div className="monster-status-container w-full">
@@ -485,7 +485,7 @@ const MonsterStatusWindow: React.FC<MonsterStatusWindowProps> = ({
           }}
         >
           <div className="absolute inset-0 bg-gradient-to-t from-black/30 to-transparent" />
-          
+
           {/* Time of Day Badge */}
           <div className="absolute top-3 left-3 flex items-center gap-1.5 bg-white/70 backdrop-blur-sm px-3 py-1.5 rounded-full shadow-md z-20">
             {getTimeOfDay() === 'Day' ? (
@@ -514,7 +514,7 @@ const MonsterStatusWindow: React.FC<MonsterStatusWindowProps> = ({
                   const hours = Math.floor(remaining / (1000 * 60 * 60));
                   const minutes = Math.floor((remaining % (1000 * 60 * 60)) / (1000 * 60));
                   const seconds = Math.floor((remaining % (1000 * 60)) / 1000);
-                  
+
                   if (hours > 0) {
                     return `${hours}h ${minutes}m ${seconds}s`;
                   } else if (minutes > 0) {
@@ -542,7 +542,7 @@ const MonsterStatusWindow: React.FC<MonsterStatusWindowProps> = ({
               style={{
                 width: `${Math.min(monsterSize, 120)}px`,
                 height: `${Math.min(monsterSize, 120)}px`,
-                transform: isExploringOrPlaying && hasCompletedEntrance 
+                transform: isExploringOrPlaying && hasCompletedEntrance
                   ? `translateX(-50%)` // Keep perfectly centered when running
                   : `translateX(calc(-50% + ${position * 0.5}px))`, // Normal movement when at home
                 bottom: '0px',
@@ -588,20 +588,20 @@ const MonsterStatusWindow: React.FC<MonsterStatusWindowProps> = ({
               </button>
             </div>
             <p className={`${theme.text} opacity-70 text-xs`}>{getEnvironmentDescription(monster.status.type)}</p>
-            
+
             {/* Progress Bar for activities */}
             {monster.status.type !== 'Home' && monster.status.until_time && (
               <div className="mt-3">
                 {/* Progress Bar with clear background */}
                 <div className="w-full bg-gray-200 dark:bg-gray-700 rounded-full h-3 border border-gray-300 dark:border-gray-600 shadow-inner">
-                  <div 
+                  <div
                     className="bg-gradient-to-r from-orange-400 to-red-500 h-full rounded-full transition-all duration-1000 shadow-sm"
-                    style={{ 
+                    style={{
                       width: `${Math.min(100, (() => {
                         const totalDuration = monster.status.until_time - monster.status.since;
                         const elapsed = currentTime - monster.status.since;
                         return Math.max(0, (elapsed / totalDuration) * 100);
-                      })())}%` 
+                      })())}%`
                     }}
                   />
                 </div>
@@ -613,7 +613,7 @@ const MonsterStatusWindow: React.FC<MonsterStatusWindowProps> = ({
                       const hours = Math.floor(remaining / (1000 * 60 * 60));
                       const minutes = Math.floor((remaining % (1000 * 60 * 60)) / (1000 * 60));
                       const seconds = Math.floor((remaining % (1000 * 60)) / 1000);
-                      
+
                       if (hours > 0) {
                         return `⏰ ${hours}h ${minutes}m ${seconds}s remaining`;
                       } else if (minutes > 0) {
