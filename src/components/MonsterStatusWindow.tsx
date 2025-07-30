@@ -26,6 +26,9 @@ interface MonsterStatusWindowProps {
   onEffectTrigger?: (effect: string) => void;
   triggerReturn?: boolean;
   onReturnComplete?: () => void;
+  isLevelingUp?: boolean;
+  onLevelUp?: () => void;
+  getFibonacciExp?: (level: number) => number;
 }
 
 const MonsterStatusWindow: React.FC<MonsterStatusWindowProps> = ({
@@ -39,6 +42,9 @@ const MonsterStatusWindow: React.FC<MonsterStatusWindowProps> = ({
   onEffectTrigger,
   triggerReturn,
   onReturnComplete,
+  isLevelingUp,
+  onLevelUp,
+  getFibonacciExp,
 }) => {
   // State for monster roaming behavior
   const [currentAnimation, setCurrentAnimation] = useState<AnimationType>('idleRight');
@@ -56,6 +62,9 @@ const MonsterStatusWindow: React.FC<MonsterStatusWindowProps> = ({
   const [hasCompletedEntrance, setHasCompletedEntrance] = useState(false);
   const [previousActivityType, setPreviousActivityType] = useState<string>('');
   const [backgroundPosition, setBackgroundPosition] = useState(0);
+  
+  // State for real-time progress animation
+  const [currentTime, setCurrentTime] = useState(Date.now());
 
   // Refs for timers and animation
   const roamingTimerRef = useRef<NodeJS.Timeout>();
@@ -355,6 +364,19 @@ const MonsterStatusWindow: React.FC<MonsterStatusWindowProps> = ({
     };
   }, [isExploringOrPlaying, hasCompletedEntrance, isExitAnimation, isEntranceAnimation, isReturnAnimation]);
 
+  // Real-time progress bar animation
+  useEffect(() => {
+    if (monster.status.type === 'Home' || !monster.status.until_time) {
+      return;
+    }
+
+    const updateTimer = setInterval(() => {
+      setCurrentTime(Date.now());
+    }, 1000); // Update every second
+
+    return () => clearInterval(updateTimer);
+  }, [monster.status.type, monster.status.until_time]);
+
   // Helper functions for the design
   const getEnvironmentName = (status: string) => {
     switch(status.toLowerCase()) {
@@ -381,32 +403,36 @@ const MonsterStatusWindow: React.FC<MonsterStatusWindowProps> = ({
     return hour >= 6 && hour < 18 ? 'Day' : 'Night';
   };
 
-  const activityTimeUp = isActivityComplete ? isActivityComplete(monster) : false;
+  // Check if activity is complete using real-time
+  const activityTimeUp = monster.status.type !== 'Home' && 
+                        monster.status.until_time && 
+                        currentTime >= monster.status.until_time;
 
   return (
-    <div className="monster-status-container">
+    <div className="monster-status-container w-full">
       {/* Header */}
-      <div className="flex items-center gap-4 mb-6">
-        <div className="p-3 bg-gradient-to-r from-orange-500 to-red-600 rounded-2xl shadow-lg">
-          <PawPrint className="w-6 h-6 text-white" />
+      <div className="flex items-center gap-3 mb-4">
+        <div className="p-2 bg-gradient-to-r from-orange-500 to-red-600 rounded-xl shadow-lg">
+          <PawPrint className="w-5 h-5 text-white" />
         </div>
         <div>
-          <h1 className="text-2xl font-bold bg-gradient-to-r from-slate-800 to-slate-600 bg-clip-text text-transparent">
+          <h1 className={`text-xl font-bold ${theme.text}`}>
             Monster Status
           </h1>
-          <p className="text-slate-600 text-sm">Keep an eye on your companion</p>
+          <p className={`${theme.text} opacity-70 text-xs`}>Keep an eye on your companion</p>
         </div>
       </div>
 
       {/* Status Card */}
-      <div className="bg-white/80 backdrop-blur-sm border-2 border-white/50 shadow-xl hover:shadow-2xl transition-all duration-300 overflow-hidden rounded-xl">
+      <div className={`w-full ${theme.container} shadow-xl hover:shadow-2xl transition-all duration-300 overflow-hidden rounded-xl backdrop-blur-sm`}>
         {/* Environment Display */}
         <div
           ref={containerRef}
-          className="relative w-full h-64 overflow-hidden"
+          className="relative w-full h-80 overflow-hidden"
           style={{
             backgroundImage: `url(${new URL(`../assets/window-backgrounds/${selectedBackground}.png`, import.meta.url).href})`,
             backgroundSize: 'cover',
+            backgroundRepeat: 'no-repeat',
             backgroundPosition: isExploringOrPlaying && hasCompletedEntrance 
               ? `${backgroundPosition}% center` 
               : 'center',
@@ -416,31 +442,53 @@ const MonsterStatusWindow: React.FC<MonsterStatusWindowProps> = ({
           <div className="absolute inset-0 bg-gradient-to-t from-black/30 to-transparent" />
           
           {/* Time of Day Badge */}
-          <div className="absolute top-4 left-4 flex items-center gap-2 bg-white/70 backdrop-blur-sm px-4 py-2 rounded-full shadow-md z-20">
+          <div className="absolute top-3 left-3 flex items-center gap-1.5 bg-white/70 backdrop-blur-sm px-3 py-1.5 rounded-full shadow-md z-20">
             {getTimeOfDay() === 'Day' ? (
-              <Sun className="w-4 h-4 text-yellow-500" />
+              <Sun className="w-3.5 h-3.5 text-yellow-500" />
             ) : (
-              <Moon className="w-4 h-4 text-blue-500" />
+              <Moon className="w-3.5 h-3.5 text-blue-500" />
             )}
-            <span className="text-slate-700 font-medium text-sm">
+            <span className="text-slate-700 font-medium text-xs">
               {getTimeOfDay()}
             </span>
           </div>
 
           {/* Location Badge */}
-          <div className="absolute bottom-4 left-4 flex items-center gap-2 bg-white/70 backdrop-blur-sm px-4 py-2 rounded-full shadow-md z-20">
-            <MapPin className="w-4 h-4 text-slate-600" />
-            <span className="text-slate-700 font-medium text-sm">{getEnvironmentName(monster.status.type)}</span>
+          <div className="absolute bottom-3 left-3 flex items-center gap-1.5 bg-white/70 backdrop-blur-sm px-3 py-1.5 rounded-full shadow-md z-20">
+            <MapPin className="w-3.5 h-3.5 text-slate-600" />
+            <span className="text-slate-700 font-medium text-xs">{getEnvironmentName(monster.status.type)}</span>
           </div>
 
           {/* Activity Status Badge */}
           {(monster.status.type !== 'Home' && (monster.status.until_time || activityTimeUp)) && (
             <div className="absolute top-4 right-4 bg-white/70 backdrop-blur-sm px-4 py-2 rounded-full shadow-md z-20">
               <span className="text-slate-700 font-medium text-sm">
-                {activityTimeUp ? 'Complete!' : formatTimeRemaining ? formatTimeRemaining(monster.status.until_time) : ''}
+                {activityTimeUp ? 'Complete!' : (() => {
+                  if (!monster.status.until_time) return '';
+                  const remaining = Math.max(0, monster.status.until_time - currentTime);
+                  const hours = Math.floor(remaining / (1000 * 60 * 60));
+                  const minutes = Math.floor((remaining % (1000 * 60 * 60)) / (1000 * 60));
+                  const seconds = Math.floor((remaining % (1000 * 60)) / 1000);
+                  
+                  if (hours > 0) {
+                    return `${hours}h ${minutes}m ${seconds}s`;
+                  } else if (minutes > 0) {
+                    return `${minutes}m ${seconds}s`;
+                  } else {
+                    return `${seconds}s`;
+                  }
+                })()}
               </span>
             </div>
           )}
+
+          {/* View NFT Card Button Overlay */}
+          <button
+            onClick={onShowCard}
+            className="absolute bottom-4 right-4 bg-gradient-to-r from-purple-500 to-blue-500 hover:from-purple-600 hover:to-blue-600 text-white px-3 py-1.5 rounded-lg font-medium transition-all hover:scale-105 text-xs shadow-lg z-20"
+          >
+            View NFT
+          </button>
 
           {/* Monster Sprite */}
           {monsterSize > 0 && (
@@ -475,28 +523,67 @@ const MonsterStatusWindow: React.FC<MonsterStatusWindowProps> = ({
         </div>
 
         {/* Monster and Status Info */}
-        <div className="p-6">
+        <div className="p-4">
           <div className="text-center md:text-left">
-            <div className="flex items-center justify-center md:justify-start gap-2 mb-2">
-              <Home className="w-5 h-5 text-slate-600" />
-              <h2 className="text-xl font-bold text-slate-800">Status: {monster.status.type}</h2>
+            <div className="flex items-center justify-between mb-1">
+              <div className="flex items-center gap-2">
+                <Home className={`w-4 h-4 ${theme.text} opacity-70`} />
+                <h2 className={`text-lg font-bold ${theme.text}`}>Status: {monster.status.type}</h2>
+              </div>
+              {/* Level Up Button - Always show for debugging */}
+              <button
+                onClick={onLevelUp}
+                disabled={isLevelingUp || monster.status.type !== 'Home'}
+                className="px-3 py-1 rounded-lg bg-yellow-500 hover:bg-yellow-600 text-yellow-900 font-semibold transition-all transform hover:scale-105 disabled:opacity-50 text-xs"
+                title={monster.status.type !== 'Home' ? 'Monster must be at Home to level up' : ''}
+              >
+                {isLevelingUp ? 'Leveling...' : 'Level Up'}
+              </button>
             </div>
-            <p className="text-slate-600 text-sm">{getEnvironmentDescription(monster.status.type)}</p>
+            <p className={`${theme.text} opacity-70 text-xs`}>{getEnvironmentDescription(monster.status.type)}</p>
             
             {/* Progress Bar for activities */}
-            {monster.status.type !== 'Home' && monster.status.until_time && calculateProgress && (
+            {monster.status.type !== 'Home' && monster.status.until_time && (
               <div className="mt-3">
-                <div className="w-full bg-gray-200 rounded-full h-2">
+                {/* Progress Bar with clear background */}
+                <div className="w-full bg-gray-200 dark:bg-gray-700 rounded-full h-3 border border-gray-300 dark:border-gray-600 shadow-inner">
                   <div 
-                    className="bg-gradient-to-r from-orange-400 to-red-500 h-2 rounded-full transition-all duration-300"
+                    className="bg-gradient-to-r from-orange-400 to-red-500 h-full rounded-full transition-all duration-1000 shadow-sm"
                     style={{ 
-                      width: `${Math.min(100, calculateProgress(monster.status.since, monster.status.until_time))}%` 
+                      width: `${Math.min(100, (() => {
+                        const totalDuration = monster.status.until_time - monster.status.since;
+                        const elapsed = currentTime - monster.status.since;
+                        return Math.max(0, (elapsed / totalDuration) * 100);
+                      })())}%` 
                     }}
                   />
                 </div>
-                <p className="text-xs text-slate-500 mt-1">
-                  {activityTimeUp ? 'Activity completed!' : `${formatTimeRemaining ? formatTimeRemaining(monster.status.until_time) : ''} remaining`}
-                </p>
+                {/* Time remaining with better visibility */}
+                <div className="flex justify-between items-center mt-2">
+                  <p className={`text-xs ${theme.text} opacity-80 font-medium`}>
+                    {activityTimeUp ? '✅ Activity completed!' : (() => {
+                      const remaining = Math.max(0, monster.status.until_time - currentTime);
+                      const hours = Math.floor(remaining / (1000 * 60 * 60));
+                      const minutes = Math.floor((remaining % (1000 * 60 * 60)) / (1000 * 60));
+                      const seconds = Math.floor((remaining % (1000 * 60)) / 1000);
+                      
+                      if (hours > 0) {
+                        return `⏰ ${hours}h ${minutes}m ${seconds}s remaining`;
+                      } else if (minutes > 0) {
+                        return `⏰ ${minutes}m ${seconds}s remaining`;
+                      } else {
+                        return `⏰ ${seconds}s remaining`;
+                      }
+                    })()}
+                  </p>
+                  <p className={`text-xs ${theme.text} opacity-60`}>
+                    {Math.round(Math.min(100, (() => {
+                      const totalDuration = monster.status.until_time - monster.status.since;
+                      const elapsed = currentTime - monster.status.since;
+                      return Math.max(0, (elapsed / totalDuration) * 100);
+                    })()))}%
+                  </p>
+                </div>
               </div>
             )}
           </div>

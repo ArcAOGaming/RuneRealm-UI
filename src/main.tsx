@@ -63,7 +63,7 @@ const AppContent = () => {
   }, []);
 
   const location = useLocation();
-  const showInventory = ["/start", "/", "/monsters", "/reality"].includes(
+  const showInventory = ["/start", "/", "/reality"].includes(
     location.pathname
   );
 

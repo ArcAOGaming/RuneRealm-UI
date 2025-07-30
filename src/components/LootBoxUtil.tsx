@@ -15,6 +15,8 @@ interface LootBoxProps {
   externalLootBoxes?: LootBox[];
   // Flag to control whether this component should load data independently
   loadDataIndependently?: boolean;
+  // Theme for consistent styling
+  theme?: any;
 }
 
 // Type to represent a loot box with rarity/level
@@ -26,7 +28,8 @@ interface LootBox {
 const LootBoxUtil = ({ 
   className = '', 
   externalLootBoxes, 
-  loadDataIndependently = true 
+  loadDataIndependently = true,
+  theme
 }: LootBoxProps): JSX.Element => {
   const { wallet, darkMode, triggerRefresh, refreshTrigger } = useWallet();
   const { tokenBalances, retryToken } = useTokens();
@@ -46,7 +49,8 @@ const LootBoxUtil = ({
   const [timerProgress, setTimerProgress] = useState<number>(100);
   const timerRef = useRef<NodeJS.Timeout | null>(null);
   
-  const theme = currentTheme(darkMode);
+  const currentThemeData = currentTheme(darkMode);
+  const themeToUse = theme || currentThemeData;
   
   /**
    * Maps a numerical rarity level to its human-readable display name
@@ -227,10 +231,10 @@ const LootBoxUtil = ({
     // Reset timer to 100%
     setTimerProgress(100);
     
-    // Decrease by 2% every 100ms (5 seconds total = 50 steps * 100ms)
+    // Decrease by ~3.33% every 100ms (3 seconds total = 30 steps * 100ms)
     timerRef.current = setInterval(() => {
       setTimerProgress(prev => {
-        const newProgress = Math.max(0, prev - 2);
+        const newProgress = Math.max(0, prev - 3.33);
         
         // When timer reaches zero, close the rewards
         if (newProgress === 0) {
@@ -260,61 +264,78 @@ const LootBoxUtil = ({
     // Don't allow closing multiple times
     if (isCollecting) return;
     
-    // Clear timer if exists
+    console.log('[LootBoxUtil] Starting collection animation');
+    setIsCollecting(true);
+    
+    // Stop the timer
     if (timerRef.current) {
       clearInterval(timerRef.current);
       timerRef.current = null;
     }
     
-    // Get all reward items from the current result
-    if (openResult?.result && Array.isArray(openResult.result)) {
-      // Find all berry elements in the DOM
-      const berryElements = document.querySelectorAll('.berry-emoji');
-      const collectionItems: {content: React.ReactNode, x: number, y: number}[] = [];
-      
-      // Extract position and content for each reward
-      berryElements.forEach((element, index) => {
-        const rect = element.getBoundingClientRect();
+         // Create floating animated items for each reward - positioned from reward cards
+     if (openResult && Array.isArray(openResult.result)) {
+       // Create items with staggered delays
+       const itemsToAnimate = [];
+       
+       for (let i = 0; i < openResult.result.length; i++) {
+         const item = openResult.result[i];
+         
+         // Create multiple berries for items with quantity > 1
+         const quantity = Math.min(item.quantity, 5); // Max 5 berries per item for performance
+         
+         for (let q = 0; q < quantity; q++) {
+           // Get the reward card element position as starting point
+           const rewardCard = document.querySelector(`[data-reward-index="${i}"]`);
+           let startX = window.innerWidth - 200; // Start from rewards popup area
+           let startY = 100;
+           
+           if (rewardCard) {
+             const rect = rewardCard.getBoundingClientRect();
+             startX = rect.left + rect.width / 2 + (Math.random() - 0.5) * 20; // Add slight randomness
+             startY = rect.top + rect.height / 2 + (Math.random() - 0.5) * 20;
+           }
+           
+           // Create the animated content - berry/token representation
+           const tokenIcon = getTokenIcon(item.token, tokenBalances);
+           const content = (
+             <div className="flex items-center justify-center w-6 h-6 bg-gradient-to-r from-green-400 to-emerald-500 text-white rounded-full text-xs font-bold shadow-lg border-2 border-white">
+               <div className="w-3 h-3 flex items-center justify-center">
+                 {tokenIcon}
+               </div>
+             </div>
+           );
+           
+           itemsToAnimate.push({
+             content,
+             x: startX,
+             y: startY,
+             delay: (i * 3 + q) * 100 // Stagger each berry by 100ms
+           });
+         }
+       }
+       
+       // Start animations with delays
+       itemsToAnimate.forEach((item, index) => {
+         setTimeout(() => {
+           setCollectingItems(prev => [...prev, {
+             content: item.content,
+             x: item.x,
+             y: item.y
+           }]);
+         }, item.delay);
+               });
         
-        // Calculate center position of the element
-        const x = rect.left + rect.width / 2;
-        const y = rect.top + rect.height / 2;
-        
-        // Get the token ID from the reward result
-        const tokenId = openResult.result[index]?.token;
-        let content: React.ReactNode;
-        
-        // If we have token ID and it exists in ASSET_INFO, use its logo
-        if (tokenId && ASSET_INFO[tokenId] && ASSET_INFO[tokenId].logo) {
-          content = (
-            <img 
-              src={`https://arweave.net/${ASSET_INFO[tokenId].logo}`}
-              alt={ASSET_INFO[tokenId].name || 'Reward'}
-              className="inline-block h-6 w-6 object-contain"
-            />
-          );
-        } else {
-          // Fallback to emoji if no logo available
-          const emoji = element.textContent || '🌟';
-          content = emoji;
-        }
-        
-        // Add this item to the collection
-        collectionItems.push({ content, x, y });
-      });
-      
-      // Update state with collection items
-      setCollectingItems(collectionItems);
-    }
-    
-    // Start collection animation
-    setIsCollecting(true);
+        // Log the berries animation start
+        console.log('[LootBoxUtil] Berries flying to inventory!', itemsToAnimate.length, 'berries total');
+     }
+
     setShowCloseButton(false);
     
     // Hide confetti
     setShowConfetti(false);
     
-    // After collection animation completes (1 second), reset the UI and refresh
+    // After collection animation completes, reset the UI and refresh
     setTimeout(() => {
       console.log('[LootBoxUtil] Resetting UI and refreshing data');
       setSelectedRarity(null);
@@ -323,7 +344,6 @@ const LootBoxUtil = ({
       setIsCollecting(false);
       setIsOpening(false); // Fix: Ensure isOpening is reset
       setOpenResult(null);
-      setCollectingItems([]); // Clear collecting items
       setTimerProgress(100); // Reset timer progress
       
       // Trigger a refresh to update the loot boxes
@@ -331,6 +351,12 @@ const LootBoxUtil = ({
         triggerRefresh();
       }
     }, 1000);
+    
+    // Clear collecting items after all animations are done (1.5 seconds to account for staggered delays)
+    setTimeout(() => {
+      setCollectingItems([]);
+      console.log('[LootBoxUtil] All berries have reached the inventory!');
+    }, 1500);
   };
 
   /**
@@ -407,6 +433,11 @@ const LootBoxUtil = ({
       
       // Show confetti with the result
       setShowConfetti(true);
+      
+      // Hide confetti after 3 seconds
+      setTimeout(() => {
+        setShowConfetti(false);
+      }, 3000);
       
       if (result) {
         // Store the structured result
@@ -588,12 +619,13 @@ const LootBoxUtil = ({
   // Sort rarity levels for consistent display
   const rarityLevels = Object.keys(groupedLootboxes).map(Number).sort((a, b) => a - b);
   
-  // Detect if we're in compact mode
+  // Detect if we're in compact mode and minimized mode
   const isCompact = className?.includes('compact-mode');
+  const isMinimized = className?.includes('minimized');
 
   const renderLootBoxes = () => {
     return (
-      <div className={`treasure-vault-container relative bg-gradient-to-br from-slate-50 to-slate-100 ${isCompact ? 'p-3 rounded-2xl' : 'p-6 rounded-3xl'} ${className}`}>
+      <div className={`treasure-vault-container relative ${themeToUse.container} ${isMinimized ? 'p-2 rounded-lg' : isCompact ? 'p-3 rounded-xl' : 'p-6 rounded-3xl'} ${className} h-full overflow-hidden`}>
         {showConfetti && (
           <div className="confetti-wrapper fixed inset-0 z-50 pointer-events-none">
             <Confetti 
@@ -610,20 +642,20 @@ const LootBoxUtil = ({
           </div>
         )}
         
-        <div className={isCompact ? 'flex flex-col' : 'max-w-4xl mx-auto'}>
+        <div className={`${isCompact ? 'flex flex-col h-full' : 'max-w-4xl mx-auto'} h-full`}>
           {/* Header */}
-          <div className={`flex items-center gap-3 ${isCompact ? 'mb-4' : 'mb-8'}`}>
+          <div className={`flex items-center gap-2 ${isMinimized ? 'mb-1' : isCompact ? 'mb-2' : 'mb-8'} flex-shrink-0`}>
             <div className="relative">
-              <div className={`${isCompact ? 'p-1.5' : 'p-3'} bg-gradient-to-r from-blue-500 to-purple-600 rounded-2xl shadow-lg`}>
-                <Diamond className={`${isCompact ? 'w-4 h-4' : 'w-8 h-8'} text-white`} />
+              <div className={`${isMinimized ? 'p-1.5' : isCompact ? 'p-1.5' : 'p-3'} bg-gradient-to-r from-blue-500 to-purple-600 rounded-lg shadow-lg`}>
+                <Diamond className={`${isMinimized ? 'w-4 h-4' : isCompact ? 'w-4 h-4' : 'w-8 h-8'} text-white`} />
               </div>
               {!isCompact && <div className="absolute -top-1 -right-1 w-4 h-4 bg-yellow-400 rounded-full animate-pulse" />}
             </div>
             <div>
-              <h1 className={`${isCompact ? 'text-xl' : 'text-4xl'} font-bold bg-gradient-to-r from-slate-800 to-slate-600 bg-clip-text text-transparent`}>
+              <h1 className={`${isMinimized ? 'text-lg' : isCompact ? 'text-lg' : 'text-4xl'} font-bold ${themeToUse.text}`}>
                 Treasure Vault
               </h1>
-              {!isCompact && <p className="text-slate-600 mt-1">Discover amazing rewards in your collection</p>}
+              {!isCompact && <p className={`${themeToUse.text} opacity-70 mt-1`}>Discover amazing rewards in your collection</p>}
             </div>
           </div>
           
@@ -638,7 +670,7 @@ const LootBoxUtil = ({
           ) : (
             <>
               {/* Treasure Boxes Grid */}
-                             <div className={`grid grid-cols-1 md:grid-cols-2 ${isCompact ? 'lg:grid-cols-3 gap-2 mb-3 p-4' : 'lg:grid-cols-3 gap-6 mb-8 p-6'}`}>
+                             <div className={`grid grid-cols-1 md:grid-cols-2 ${isMinimized ? 'lg:grid-cols-3 gap-1 flex-1 p-2' : isCompact ? 'lg:grid-cols-3 gap-2 flex-1 p-2' : 'lg:grid-cols-3 gap-6 mb-8 p-6'}`}>
                 {[1, 2, 3, 4, 5].map(rarity => {
                   const config = rarityConfigs[rarity];
                   const count = groupedLootboxes[rarity] || 0;
@@ -648,29 +680,31 @@ const LootBoxUtil = ({
                   return (
                     <div
                       key={rarity}
-                      className={`group relative bg-gradient-to-br ${config.bgGradient} ${config.borderColor} border-2 hover:border-opacity-60 transition-all duration-300 cursor-pointer hover:scale-[1.02] ${config.shadowColor} hover:shadow-xl ${config.glowColor} rounded-xl ${
+                      className={`group relative bg-gradient-to-br ${config.bgGradient} ${config.borderColor} ${isMinimized ? 'border' : 'border-2'} hover:border-opacity-60 transition-all duration-300 cursor-pointer hover:scale-[1.02] ${config.shadowColor} hover:shadow-xl ${config.glowColor} ${isMinimized ? 'rounded-lg' : 'rounded-xl'} ${
                         count === 0 ? 'opacity-50 cursor-not-allowed' : ''
                       } ${isSelected ? 'scale-[1.05] ring-4 ring-blue-400/50 shadow-2xl' : ''}`}
                       onClick={() => count > 0 && !isOpening && handleOpenLootBox(rarity)}
                     >
-                      {/* Count Badge - Completely outside the card */}
-                      <div className="absolute -top-2 -right-2 z-30 transform translate-x-1 -translate-y-1">
-                        <div className={`${config.badgeColor} text-white font-bold ${isCompact ? 'text-xs px-2.5 py-1 min-w-[28px] h-7' : 'text-sm px-3 py-1.5 min-w-[32px] h-8'} rounded-full shadow-2xl border-2 border-white flex items-center justify-center ${count === 0 ? 'opacity-50' : ''}`}>
-                          {count}
+                      {/* Count Badge - Only show when count > 0 */}
+                      {count > 0 && (
+                        <div className="absolute -top-1 -right-1 z-30">
+                          <div className={`${config.badgeColor} text-white font-bold ${isMinimized ? 'text-xs px-2 py-1 min-w-[24px] h-6' : isCompact ? 'text-xs px-2.5 py-1 min-w-[28px] h-7' : 'text-sm px-3 py-1.5 min-w-[32px] h-8'} rounded-full shadow-2xl border-2 border-white flex items-center justify-center`}>
+                            {count}
+                          </div>
                         </div>
-                      </div>
+                      )}
 
-                      <div className={`${isCompact ? 'p-3' : 'p-6'} text-center relative overflow-hidden`}>
+                      <div className={`${isMinimized ? 'p-2' : isCompact ? 'p-3' : 'p-6'} text-center relative overflow-hidden`}>
                         {/* Background Decoration */}
                         <div className="absolute inset-0 opacity-5">
-                          <div className={`absolute top-2 right-2 ${isCompact ? 'w-8 h-8' : 'w-16 h-16'} rounded-full bg-current`} />
-                          <div className={`absolute bottom-2 left-2 ${isCompact ? 'w-6 h-6' : 'w-12 h-12'} rounded-full bg-current`} />
+                          <div className={`absolute top-2 right-2 ${isMinimized ? 'w-6 h-6' : isCompact ? 'w-8 h-8' : 'w-16 h-16'} rounded-full bg-current`} />
+                          <div className={`absolute bottom-2 left-2 ${isMinimized ? 'w-4 h-4' : isCompact ? 'w-6 h-6' : 'w-12 h-12'} rounded-full bg-current`} />
                         </div>
 
                         {/* Icon Container with Enhanced Animations */}
-                        <div className={`relative ${isCompact ? 'mb-2' : 'mb-4'}`}>
+                        <div className={`relative ${isMinimized ? 'mb-1' : isCompact ? 'mb-2' : 'mb-4'}`}>
                           <div
-                            className={`${isCompact ? 'w-12 h-12' : 'w-20 h-20'} mx-auto rounded-2xl bg-gradient-to-r ${config.gradient} ${isCompact ? 'p-2' : 'p-4'} shadow-lg group-hover:shadow-xl transition-all duration-300 group-hover:scale-110 ${
+                            className={`${isMinimized ? 'w-10 h-10' : isCompact ? 'w-12 h-12' : 'w-20 h-20'} mx-auto rounded-xl bg-gradient-to-r ${config.gradient} ${isMinimized ? 'p-2' : isCompact ? 'p-2' : 'p-4'} shadow-lg group-hover:shadow-xl transition-all duration-300 group-hover:scale-110 ${
                               isSelected && isShaking ? 'animate-bounce' : ''
                             } ${isSelected && isExploding ? 'animate-ping scale-125' : ''}`}
                           >
@@ -681,28 +715,28 @@ const LootBoxUtil = ({
                           <div className={`absolute -top-1 -right-1 transition-opacity duration-300 ${
                             isSelected || !count ? 'opacity-100' : 'opacity-0 group-hover:opacity-100'
                           }`}>
-                            <Zap className={`${isCompact ? 'w-3 h-3' : 'w-4 h-4'} text-yellow-400 animate-pulse`} />
+                            <Zap className={`${isMinimized ? 'w-3 h-3' : isCompact ? 'w-3 h-3' : 'w-4 h-4'} text-yellow-400 animate-pulse`} />
                           </div>
                           <div className={`absolute -bottom-1 -left-1 transition-opacity duration-300 delay-100 ${
                             isSelected || !count ? 'opacity-100' : 'opacity-0 group-hover:opacity-100'
                           }`}>
-                            <Sparkles className={`${isCompact ? 'w-3 h-3' : 'w-4 h-4'} text-yellow-400 animate-pulse`} />
+                            <Sparkles className={`${isMinimized ? 'w-3 h-3' : isCompact ? 'w-3 h-3' : 'w-4 h-4'} text-yellow-400 animate-pulse`} />
                           </div>
                         </div>
 
                         {/* Title */}
-                        <h3 className={`${isCompact ? 'text-sm' : 'text-xl'} font-bold ${config.textColor} ${isCompact ? 'mb-1' : 'mb-2'}`}>{config.name}</h3>
+                        <h3 className={`${isMinimized ? 'text-sm' : isCompact ? 'text-sm' : 'text-xl'} font-bold ${config.textColor} ${isMinimized ? 'mb-0.5' : isCompact ? 'mb-1' : 'mb-2'}`}>{config.name}</h3>
 
                         {/* Rarity Indicator */}
-                        <div className={`flex justify-center ${isCompact ? 'mb-2' : 'mb-4'}`}>
+                        <div className={`flex justify-center ${isMinimized ? 'mb-1' : isCompact ? 'mb-2' : 'mb-4'}`}>
                           {Array.from({ length: config.stars }, (_, i) => (
-                            <Star key={i} className={`${isCompact ? 'w-2 h-2' : 'w-4 h-4'} ${config.textColor} fill-current`} />
+                            <Star key={i} className={`${isMinimized ? 'w-2 h-2' : isCompact ? 'w-2 h-2' : 'w-4 h-4'} ${config.textColor} fill-current`} />
                           ))}
                         </div>
 
                         {/* Open Button */}
                         <button
-                          className={`w-full ${config.borderColor} ${config.textColor} hover:bg-white/50 transition-all duration-200 group-hover:shadow-md border border-current rounded-lg ${isCompact ? 'py-1 px-2 text-xs' : 'py-2 px-4'} font-medium ${
+                          className={`w-full ${config.borderColor} ${config.textColor} hover:bg-white/50 transition-all duration-200 group-hover:shadow-md border border-current rounded-lg ${isMinimized ? 'py-1 px-2 text-xs' : isCompact ? 'py-1 px-2 text-xs' : 'py-2 px-4'} font-medium ${
                             count === 0 || isOpening ? 'opacity-50 cursor-not-allowed' : ''
                           } ${isSelected ? 'animate-pulse bg-white/30' : ''}`}
                           disabled={count === 0 || isOpening}
@@ -720,33 +754,34 @@ const LootBoxUtil = ({
                 })}
               </div>
 
-              {/* Instructions - Always show in compact mode */}
-              <div className={`text-center ${isCompact ? 'mt-2' : 'mb-4'}`}>
-                <div className={`inline-flex items-center gap-2 bg-white/60 backdrop-blur-sm rounded-full ${isCompact ? 'px-3 py-1.5' : 'px-6 py-3'} shadow-lg`}>
-                  <Package2 className={`${isCompact ? 'w-3 h-3' : 'w-5 h-5'} text-slate-600`} />
-                  <p className={`text-slate-600 font-medium ${isCompact ? 'text-xs' : 'text-sm'}`}>
-                    Click on a treasure box to open it and discover amazing rewards!
-                  </p>
+              {/* Instructions - Hide in minimized mode */}
+              {!isMinimized && (
+                <div className={`text-center ${isCompact ? 'mt-2' : 'mb-4'} flex-shrink-0`}>
+                  <div className={`inline-flex items-center gap-2 bg-white/60 backdrop-blur-sm rounded-full ${isCompact ? 'px-3 py-1.5' : 'px-6 py-3'} shadow-lg`}>
+                    <Package2 className={`${isCompact ? 'w-3 h-3' : 'w-5 h-5'} text-slate-600 dark:text-slate-400`} />
+                    <p className={`text-slate-600 dark:text-slate-400 font-medium ${isCompact ? 'text-xs' : 'text-sm'}`}>
+                      Click on a treasure box to open it and discover amazing rewards!
+                    </p>
+                  </div>
                 </div>
-              </div>
+              )}
 
-              {/* Enhanced Rewards section - Now as Popup Modal */}
+              {/* Simple Inventory-Style Rewards Display */}
               {openResult && openResult.result && (
-                <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-                  <div className={`bg-white rounded-3xl shadow-2xl max-w-4xl w-full max-h-[90vh] overflow-hidden transition-all duration-300 ${isFadingOut ? 'opacity-0 scale-95' : 'opacity-100 scale-100'} animate-in zoom-in-95`}>
+                <div className="fixed top-4 right-4 z-40 max-w-sm w-auto">
+                  <div className={`bg-white rounded-2xl shadow-xl border-2 border-gray-200 overflow-hidden transition-all duration-300 ${isFadingOut ? 'opacity-0 scale-95 translate-x-8' : 'opacity-100 scale-100 translate-x-0'} animate-in slide-in-from-right-4`}>
+                    {/* Progress Bar */}
+                    <div className="h-2 bg-gray-200">
+                      <div 
+                        className="h-full bg-gradient-to-r from-red-400 via-orange-400 to-yellow-400 transition-all duration-100"
+                        style={{ width: `${timerProgress}%` }}
+                      />
+                    </div>
+
                     {/* Header */}
-                    <div className="bg-gradient-to-r from-purple-600 to-pink-600 p-6 text-white relative overflow-hidden">
-                      <div className="absolute inset-0 bg-[url('data:image/svg+xml,%3Csvg width=60 height=60 viewBox=0 0 60 60 xmlns=http://www.w3.org/2000/svg%3E%3Cg fill=none fillRule=evenodd%3E%3Cg fill=%23ffffff fillOpacity=0.1%3E%3Ccircle cx=30 cy=30 r=4/%3E%3C/g%3E%3C/g%3E%3C/svg%3E')] opacity-20"></div>
-                      <div className="relative flex items-center justify-between">
-                        <div className="flex items-center gap-3">
-                          <div className="p-2 bg-white/20 rounded-xl">
-                            <Gift className="w-8 h-8" />
-                          </div>
-                          <div>
-                            <h2 className="text-3xl font-bold">Rewards Received!</h2>
-                            <p className="text-purple-100 mt-1">Congratulations on your amazing loot!</p>
-                          </div>
-                        </div>
+                    <div className="p-4 pb-2">
+                      <div className="flex items-center justify-between">
+                        <h2 className="text-lg font-bold text-gray-800">Rewards:</h2>
                         <button
                           onClick={() => {
                             setIsFadingOut(true);
@@ -757,55 +792,45 @@ const LootBoxUtil = ({
                               setSelectedRarity(null);
                             }, 300);
                           }}
-                          className="p-2 hover:bg-white/20 rounded-xl transition-colors duration-200"
+                          className="p-1 hover:bg-gray-100 rounded-full transition-colors duration-200"
                         >
-                          <X className="w-6 h-6" />
+                          <X className="w-5 h-5 text-gray-500" />
                         </button>
                       </div>
                     </div>
 
-                    {/* Rewards Grid */}
-                    <div className="p-6">
-                      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 mb-6">
+                    {/* Compact Rewards Grid */}
+                    <div className="px-4 pb-2">
+                      <div className="flex gap-2 overflow-x-auto">
                         {Array.isArray(openResult.result) && openResult.result.length > 0 ? (
                           openResult.result.map((item, index) => (
                             <div
                               key={index}
-                              className={`relative overflow-hidden rounded-2xl bg-gradient-to-r ${getRewardGradient(item.token)} p-4 text-white shadow-lg hover:shadow-xl transition-all duration-300 hover:scale-[1.02] animate-in slide-in-from-bottom-4`}
+                              data-reward-index={index}
+                              className="flex-shrink-0 bg-gray-700 rounded-xl p-3 min-w-[80px] text-center animate-in fade-in-50"
                               style={{ animationDelay: `${index * 100}ms` }}
                             >
-                              <div className="flex items-center justify-between">
-                                <div className="flex items-center gap-3">
-                                                                     {getTokenIcon(item.token, tokenBalances)}
-                                   <div>
-                                     <h3 className="font-bold text-lg">{getTokenName(item.token)}</h3>
-                                    <p className="text-white/80 text-sm">Collected</p>
-                                  </div>
+                              <div className="flex flex-col items-center gap-1">
+                                <div className="w-8 h-8 flex items-center justify-center">
+                                  {getTokenIcon(item.token, tokenBalances)}
                                 </div>
-                                <div className="text-right">
-                                  <div className="text-2xl font-bold">x{item.quantity}</div>
-                                </div>
+                                <div className="text-white font-bold text-sm">x{item.quantity}</div>
                               </div>
-
-                              {/* Shine effect */}
-                              <div className="absolute inset-0 bg-gradient-to-r from-transparent via-white/20 to-transparent -skew-x-12 translate-x-[-100%] group-hover:translate-x-[100%] transition-transform duration-1000"></div>
                             </div>
                           ))
                         ) : (
-                          <div className="col-span-full text-center py-8">
-                            <p className="text-slate-600 text-xl">No rewards received. Try again!</p>
+                          <div className="text-center py-4 text-gray-600">
+                            No rewards received
                           </div>
                         )}
                       </div>
+                    </div>
 
-                      {/* Footer Message */}
-                      {Array.isArray(openResult.result) && openResult.result.length > 0 && (
-                        <div className="text-center">
-                          <div className="inline-flex items-center gap-2 bg-gradient-to-r from-green-100 to-emerald-100 text-green-800 px-6 py-3 rounded-full font-medium">
-                            <span className="text-xl">✨</span> Items added to your inventory!
-                          </div>
-                        </div>
-                      )}
+                    {/* Footer */}
+                    <div className="px-4 pb-4">
+                      <div className="text-center text-sm font-medium text-gray-600 bg-gray-50 rounded-lg py-2">
+                        Added to inventory!
+                      </div>
                     </div>
                   </div>
                 </div>

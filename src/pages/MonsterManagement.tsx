@@ -17,6 +17,7 @@ import { useMonster } from '../contexts/MonsterContext';
 import MonsterStatusWindow from '../components/MonsterStatusWindow';
 import MonsterStatsDisplay from '../components/MonsterStatsDisplay';
 import MonsterCardModal from '../components/MonsterCardModal';
+import Inventory from '../components/Inventory';
 
 export const MonsterManagement: React.FC = (): JSX.Element => {
   const navigate = useNavigate();
@@ -240,108 +241,70 @@ export const MonsterManagement: React.FC = (): JSX.Element => {
     
     return (
       <>
-        <div className={`monster-card ${theme.container} border ${theme.border} backdrop-blur-md p-6`}>
-          {/* Main layout - Left side (status + level up) and Right side (stats, lootbox, activities) */}
-        {/* Main Grid Layout */}
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-          {/* Left Column - Monster Status Window + Stats + Info */}
-          <div className="space-y-4">
-            {/* Monster Status Window */}
-            <div className={`${theme.container} rounded-xl p-4`}>
-              <MonsterStatusWindow 
-                monster={monster}
-                theme={theme}
-                onShowCard={() => setShowCardModal(true)}
-                formatTimeRemaining={formatTimeRemaining}
-                calculateProgress={calculateProgress}
-                isActivityComplete={isActivityComplete}
-                currentEffect={currentEffect}
-                onEffectTrigger={(effect: string) => {
-                  if (effect === '') {
-                    setCurrentEffect(null);
-                  } else {
-                    setCurrentEffect(effect);
-                  }
-                }}
-                triggerReturn={triggerReturn}
-                onReturnComplete={handleReturnComplete}
-              />
-            </div>
-            
-            {/* Monster Header - moved below status window */}
-            <div className={`${theme.container} rounded-xl p-3 flex items-center justify-between`}>
-              <div className="flex items-center space-x-3">
-                <div className="w-10 h-10 bg-gradient-to-br from-purple-400 to-blue-500 rounded-lg flex items-center justify-center text-sm">
-                  👾
+        {/* Main Layout: Monster Status + Activities + Treasure Vault (satu area) | Inventory (dempet) */}
+        <div className="grid grid-cols-1 lg:grid-cols-12 gap-1 h-[calc(100vh-12rem)]">
+          {/* Main Area - Monster Status + Activities + Treasure Vault dalam satu container */}
+          <div className="lg:col-span-10">
+            <div className={`monster-card ${theme.container} border ${theme.border} backdrop-blur-md p-4 h-full`}>
+              {/* Grid dalam container: Monster Status | Activities + Treasure Vault */}
+              <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 h-full">
+                {/* Left - Monster Status */}
+                <div className="h-full">
+                  <MonsterStatusWindow 
+                    monster={monster}
+                    theme={theme}
+                    onShowCard={() => setShowCardModal(true)}
+                    formatTimeRemaining={formatTimeRemaining}
+                    calculateProgress={calculateProgress}
+                    isActivityComplete={isActivityComplete}
+                    currentEffect={currentEffect}
+                    onEffectTrigger={(effect: string) => {
+                      if (effect === '') {
+                        setCurrentEffect(null);
+                      } else {
+                        setCurrentEffect(effect);
+                      }
+                    }}
+                    triggerReturn={triggerReturn}
+                    onReturnComplete={handleReturnComplete}
+                    isLevelingUp={isLevelingUp}
+                    onLevelUp={handleLevelUp}
+                    getFibonacciExp={getFibonacciExp}
+                  />
                 </div>
-                <div>
-                  <h1 className={`text-lg font-bold ${theme.text}`}>
-                    {monster.name || 'FireFox'}
-                  </h1>
-                  <p className={`text-xs ${theme.text} opacity-70`}>
-                    {monster.status.type} Mode • Level {monster.level} • EXP: {monster.exp}/{getFibonacciExp(monster.level)}
-                    {monster.status.type === 'Home' && monster.exp >= getFibonacciExp(monster.level) && (
-                      <span className="ml-2 px-2 py-1 bg-yellow-500 text-yellow-900 rounded-full text-xs font-bold">
-                        READY TO LEVEL UP!
-                      </span>
-                    )}
-                  </p>
+
+                {/* Right - Activities (atas) + Treasure Vault (bawah) - Better spacing */}
+                <div className="flex flex-col gap-4 h-full">
+                  {/* Activities - Atas */}
+                  <div className="flex-1 overflow-hidden">
+                    <MonsterActivities 
+                      monster={monster}
+                      activities={activities}
+                      theme={theme}
+                      className="compact-mode h-full text-xs minimized"
+                      onEffectTrigger={triggerEffect}
+                      onTriggerReturn={triggerReturnAnimation}
+                    />
+                  </div>
+
+                  {/* Treasure Vault - Bawah */}
+                  <div className="flex-1 overflow-hidden">
+                    <LootBoxUtil 
+                      className="compact-mode h-full text-xs minimized" 
+                      externalLootBoxes={lootBoxes} 
+                      loadDataIndependently={false}
+                      theme={theme}
+                    />
+                  </div>
                 </div>
               </div>
-              <div className="flex space-x-2">
-                {monster.status.type === 'Home' && monster.exp >= getFibonacciExp(monster.level) && (
-                  <button
-                    onClick={handleLevelUp}
-                    disabled={isLevelingUp}
-                    className={`px-3 py-2 rounded-lg bg-yellow-500 hover:bg-yellow-600 text-yellow-900 font-semibold transition-all transform hover:scale-105 disabled:opacity-50 text-xs`}
-                  >
-                    {isLevelingUp ? 'Leveling...' : 'Level Up'}
-                  </button>
-                )}
-                <button
-                  onClick={() => setShowCardModal(true)}
-                  className={`px-4 py-2 rounded-lg ${theme.buttonBg} ${theme.buttonHover} ${theme.text} font-medium transition-all hover:scale-105 text-xs`}
-                >
-                  View NFT Card
-                </button>
-              </div>
-            </div>
-            
-            {/* Monster Stats Display - moved to bottom */}
-            <div className="flex-shrink-0">
-              <MonsterStatsDisplay
-                monster={monster}
-                theme={theme}
-                isLevelingUp={isLevelingUp}
-                onLevelUp={handleLevelUp}
-              />
             </div>
           </div>
 
-          {/* Right Column - Activities & Treasure Vault */}
-          <div className="flex flex-col gap-4">
-            {/* Activities Section - Compact */}
-            <div>
-              <MonsterActivities 
-                monster={monster}
-                activities={activities}
-                theme={theme}
-                className="compact-mode"
-                onEffectTrigger={triggerEffect}
-                onTriggerReturn={triggerReturnAnimation}
-              />
-            </div>
-
-            {/* Treasure Vault Section - Compact */}
-            <div>
-              <LootBoxUtil 
-                className="compact-mode" 
-                externalLootBoxes={lootBoxes} 
-                loadDataIndependently={false} 
-              />
-            </div>
+          {/* Inventory Area (dempet dengan main area) */}
+          <div className="lg:col-span-2 h-full">
+            <Inventory />
           </div>
-        </div>
         </div>
         
         {/* Monster Card Modal */}

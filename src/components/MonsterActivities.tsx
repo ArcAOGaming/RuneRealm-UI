@@ -225,22 +225,23 @@ const MonsterActivities: React.FC<MonsterActivitiesProps> = ({
       else if (actionType === 'MISSION') setIsOnMission(false);
     }
   };
-  // Detect if we're in compact mode
+  // Detect if we're in compact mode and minimized mode
   const isCompact = className?.includes('compact-mode');
+  const isMinimized = className?.includes('minimized');
 
   return (
-    <div className={`activities-section bg-gradient-to-br from-slate-50 to-slate-100 ${isCompact ? 'p-3 rounded-2xl' : 'p-6 rounded-3xl'} ${className}`}>
-      <div className={isCompact ? 'flex flex-col' : 'max-w-4xl mx-auto'}>
+    <div className={`activities-section ${theme.container} ${isCompact ? 'p-2 rounded-xl' : 'p-6 rounded-3xl'} ${className} h-full overflow-hidden`}>
+      <div className={`${isCompact ? 'flex flex-col h-full' : 'max-w-4xl mx-auto'} h-full`}>
         {/* Header */}
-        <div className={`flex items-center gap-3 ${isCompact ? 'mb-4' : 'mb-8'}`}>
-          <div className={`${isCompact ? 'p-1.5' : 'p-2'} bg-gradient-to-r from-orange-400 to-yellow-400 rounded-xl`}>
-            <Zap className={`${isCompact ? 'w-4 h-4' : 'w-6 h-6'} text-white`} />
+        <div className={`flex items-center gap-2 ${isMinimized ? 'mb-1' : isCompact ? 'mb-2' : 'mb-8'} flex-shrink-0`}>
+          <div className={`${isMinimized ? 'p-1.5' : isCompact ? 'p-1.5' : 'p-2'} bg-gradient-to-r from-orange-400 to-yellow-400 rounded-lg`}>
+            <Zap className={`${isMinimized ? 'w-4 h-4' : isCompact ? 'w-4 h-4' : 'w-6 h-6'} text-white`} />
           </div>
-          <h1 className={`${isCompact ? 'text-xl' : 'text-3xl'} font-bold text-slate-800`}>Activities</h1>
+          <h1 className={`${isMinimized ? 'text-lg' : isCompact ? 'text-lg' : 'text-3xl'} font-bold ${theme.text}`}>Activities</h1>
         </div>
 
         {/* Activities Grid */}
-        <div className={`grid grid-cols-1 md:grid-cols-2 gap-3 ${isCompact ? 'mb-3 flex-1' : 'gap-6 mb-8'}`}>
+        <div className={`grid grid-cols-1 md:grid-cols-2 ${isMinimized ? 'gap-1 flex-1' : isCompact ? 'gap-2 flex-1' : 'gap-6 mb-8'} overflow-hidden`}>
         <ActivityCard
           title="Feed"
           buttonText={feedButtonText}
@@ -260,6 +261,7 @@ const MonsterActivities: React.FC<MonsterActivitiesProps> = ({
           isDisabled={!canFeed}
           theme={theme}
           highlightSelectable={!isFeeding && canFeed}
+          className={className}
         />
 
         <ActivityCard
@@ -281,10 +283,9 @@ const MonsterActivities: React.FC<MonsterActivitiesProps> = ({
           onAction={() => monsterInteraction('PLAY')}
           isLoading={isPlaying || (monster.status.type === 'Play' && !timeUp)}
           isDisabled={!canPlay || (monster.status.type !== 'Home' && (monster.status.type !== 'Play' || (monster.status.type === 'Play' && !timeUp)))}
-
-          
           theme={theme}
           highlightSelectable={!isPlaying && canPlay}
+          className={className}
         />
 
         <ActivityCard
@@ -310,6 +311,7 @@ const MonsterActivities: React.FC<MonsterActivitiesProps> = ({
 
           theme={theme}
           highlightSelectable={!isInBattle && canBattle}
+          className={className}
         />
 
         <ActivityCard
@@ -335,6 +337,7 @@ const MonsterActivities: React.FC<MonsterActivitiesProps> = ({
 
           theme={theme}
           highlightSelectable={!isOnMission && canMission}
+          className={className}
         />
         </div>
       </div>

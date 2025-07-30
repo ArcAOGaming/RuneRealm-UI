@@ -171,8 +171,8 @@ const Inventory = () => {
   const hasWallet = !!wallet?.address;
 
   return (
-    <div className={`fixed right-4 top-32 ${theme.container} border ${theme.border} backdrop-blur-md transition-all duration-300 rounded-xl z-40 inventory-container max-w-[280px]`}>
-      <div className={`flex items-center justify-between p-3 ${theme.text}`}>
+    <div className={`w-full ${theme.container} border ${theme.border} backdrop-blur-md transition-all duration-300 rounded-xl inventory-container h-full overflow-hidden flex flex-col`}>
+      <div className={`flex items-center justify-between p-3 ${theme.text} flex-shrink-0`}>
         <div className="flex items-center gap-2 cursor-pointer" onClick={() => toggleSection('main')}>
           <span className="text-xl">👜</span>
           <h2 className="text-lg font-bold">Inventory</h2>
@@ -195,11 +195,11 @@ const Inventory = () => {
         </div>
       </div>
       {!hasWallet && openSections.main ? (
-        <div className="p-3 text-center">
+        <div className="p-3 text-center flex-1 flex items-center justify-center">
           <p className={`${theme.text} text-sm`}>Connect wallet to view assets</p>
         </div>
       ) : (
-        <div className={`overflow-hidden transition-all duration-300 ${openSections.main ? 'max-h-fit w-full p-3' : 'max-h-0 w-0 p-0'}`}>
+        <div className={`overflow-y-auto transition-all duration-300 ${openSections.main ? 'flex-1 w-full p-3' : 'max-h-0 w-0 p-0'}`}>
           <div className="space-y-3">
             {inventorySections.map((section) => (
               <div key={section.title} className="border-b border-[#F4860A]/30 last:border-b-0 pb-3 last:pb-0">
