@@ -15,7 +15,7 @@
 
 .monster-management-content {
   container: mx-auto;
-  padding: 1rem 1.5rem;
+  padding: 0.75rem 1.5rem;
   flex: 1;
   overflow: hidden;
   display: flex;
@@ -86,19 +86,18 @@
   overflow: hidden;
 }
 
-.monster-card .space-y-6 > * {
+.monster-card .space-y-6>* {
   margin-top: 0;
   margin-bottom: 0.5rem;
 }
 
-.monster-card .space-y-6 > *:last-child {
+.monster-card .space-y-6>*:last-child {
   margin-bottom: 0;
 }
 
 /* Ensure loot box section is compact */
 .loot-box-section {
   flex-shrink: 0;
-  max-height: 200px;
   overflow-y: auto;
   margin-top: 0.25rem !important;
   margin-bottom: 0.25rem !important;
@@ -118,17 +117,17 @@
 }
 
 @media (min-width: 768px) {
-  .monster-management-content {
+  /* .monster-management-content {
     padding-right: 10rem;
-  }
+  } */
 }
 
 .monster-management-wrapper {
-  margin-right: 2rem;
   flex: 1;
   display: flex;
   flex-direction: column;
-  min-height: 0; /* Important for flex shrinking */
+  min-height: 0;
+  /* Important for flex shrinking */
 }
 
 .monster-management-title {
@@ -142,8 +141,7 @@
 .monster-card {
   padding: 1rem;
   border-radius: 0.75rem;
-  width: 95%;
-  margin: 0 auto;
+  width: calc(100% - 240px - 0.5rem);
   flex: 1;
   display: flex;
   flex-direction: column;
@@ -200,12 +198,29 @@
   border-radius: 0.5rem;
 }
 
-.move-card.fire { background-color: rgba(239, 68, 68, 0.2); }
-.move-card.water { background-color: rgba(59, 130, 246, 0.2); }
-.move-card.air { background-color: rgba(209, 213, 219, 0.2); }
-.move-card.rock { background-color: rgba(146, 64, 14, 0.2); }
-.move-card.boost { background-color: rgba(168, 85, 247, 0.2); }
-.move-card.heal { background-color: rgba(34, 197, 94, 0.2); }
+.move-card.fire {
+  background-color: rgba(239, 68, 68, 0.2);
+}
+
+.move-card.water {
+  background-color: rgba(59, 130, 246, 0.2);
+}
+
+.move-card.air {
+  background-color: rgba(209, 213, 219, 0.2);
+}
+
+.move-card.rock {
+  background-color: rgba(146, 64, 14, 0.2);
+}
+
+.move-card.boost {
+  background-color: rgba(168, 85, 247, 0.2);
+}
+
+.move-card.heal {
+  background-color: rgba(34, 197, 94, 0.2);
+}
 
 .move-name {
   font-weight: 600;
@@ -250,10 +265,21 @@
   transition: all 1s;
 }
 
-.progress-bar-fill.energy { background-color: #2563eb; }
-.progress-bar-fill.happiness { background-color: #db2777; }
-.progress-bar-fill.experience { background-color: #9333ea; }
-.progress-bar-fill.activity { background-color: #ca8a04; }
+.progress-bar-fill.energy {
+  background-color: #2563eb;
+}
+
+.progress-bar-fill.happiness {
+  background-color: #db2777;
+}
+
+.progress-bar-fill.experience {
+  background-color: #9333ea;
+}
+
+.progress-bar-fill.activity {
+  background-color: #ca8a04;
+}
 
 /* Stats Display */
 .stats-display {
@@ -343,7 +369,8 @@
   align-items: start;
 }
 
-.costs-section, .rewards-section {
+.costs-section,
+.rewards-section {
   width: 50%;
   padding: 0 1rem;
 }
@@ -369,7 +396,8 @@
   color: #9ca3af;
 }
 
-.costs-list, .rewards-list {
+.costs-list,
+.rewards-list {
   display: flex;
   flex-wrap: wrap;
   gap: 0.5rem;
@@ -412,9 +440,17 @@
   font-weight: 500;
 }
 
-.reward-item.energy { background-color: rgba(59, 130, 246, 0.3); }
-.reward-item.happiness { background-color: rgba(234, 179, 8, 0.3); }
-.reward-item.exp { background-color: rgba(16, 185, 129, 0.3); }
+.reward-item.energy {
+  background-color: rgba(59, 130, 246, 0.3);
+}
+
+.reward-item.happiness {
+  background-color: rgba(234, 179, 8, 0.3);
+}
+
+.reward-item.exp {
+  background-color: rgba(16, 185, 129, 0.3);
+}
 
 /* Action Buttons */
 .action-button {
@@ -499,9 +535,11 @@
   0% {
     box-shadow: 0 0 5px #ffcc00, 0 0 10px #ffcc00;
   }
+
   50% {
     box-shadow: 0 0 15px #ffcc00, 0 0 20px #ffcc00, 0 0 25px #ffcc00;
   }
+
   100% {
     box-shadow: 0 0 5px #ffcc00, 0 0 10px #ffcc00;
   }

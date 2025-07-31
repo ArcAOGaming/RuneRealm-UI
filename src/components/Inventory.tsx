@@ -171,7 +171,7 @@ const Inventory = () => {
   const hasWallet = !!wallet?.address;
 
   return (
-    <div className={`fixed right-4 top-32 ${theme.container} border ${theme.border} backdrop-blur-md transition-all duration-300 rounded-xl z-40 inventory-container max-w-[280px]`}>
+    <div className={`fixed right-4 top-32 ${theme.container} border ${theme.border} backdrop-blur-md transition-all duration-300 rounded-xl z-40 inventory-container w-full max-w-60`}>
       <div className={`flex items-center justify-between p-3 ${theme.text}`}>
         <div className="flex items-center gap-2 cursor-pointer" onClick={() => toggleSection('main')}>
           <span className="text-xl">👜</span>
