@@ -218,7 +218,7 @@ const MonsterStatusWindow: React.FC<MonsterStatusWindowProps> = ({
         {/* Environment Display */}
         <div
           ref={containerRef}
-          className="relative w-full min-w-20 aspect-[4/2] overflow-hidden"
+          className="relative w-full min-w-20 aspect-[5/2] lg:aspect-[5/3] xl:aspect-[5/2] 2xl:aspect-[2/1]"
           style={{
             backgroundImage: `url(${new URL(`../assets/window-backgrounds/${selectedBackground}.png`, import.meta.url).href})`,
             backgroundSize: 'cover',

@@ -101,7 +101,7 @@ export const ActivityCard: React.FC<ActivityCardProps> = ({
 
   return (
     <div
-      className={`activity-card relative overflow-hidden bg-[#fcf8f3] ${borderStyle} rounded-lg hover:shadow-xl transition-all duration-300 ${hoverEffect} ${glowEffect} h-fit`}>
+      className={`activity-card relative overflow-hidden bg-[#fcf8f3] ${borderStyle} rounded-lg hover:shadow-xl transition-all duration-300 ${hoverEffect} ${glowEffect}`}>
       <SelectableIndicator />
       <div className="p-2 flex flex-col h-full">
         {/* Header */}
@@ -110,7 +110,7 @@ export const ActivityCard: React.FC<ActivityCardProps> = ({
             <h3 className="text-sm font-semibold text-slate-800">{title}</h3>
           </div>
           <div
-            className={`px-2 py-1 rounded-full text-xs font-bold ${badgeTextMap[badgeColor] || 'text-slate-800'}`}
+            className={`xl:px-2 xl:py-1 px-1 py-0.5 rounded-full xl:text-xs text-[10px] font-bold ${badgeTextMap[badgeColor] || 'text-slate-800'}`}
             style={{
               background: badgeColor === 'yellow'
                 ? '#facc15'
@@ -129,7 +129,7 @@ export const ActivityCard: React.FC<ActivityCardProps> = ({
 
         {/* Stats */}
         <div className="flex items-center gap-2 mb-4">
-          <div className="flex items-center gap-1">
+          <div className="flex items-center gap-1 flex-wrap">
             {tokenLogo ? (
               <img
                 src={`${Gateway}${tokenLogo}`}
@@ -140,8 +140,6 @@ export const ActivityCard: React.FC<ActivityCardProps> = ({
               <span className="w-3 h-3 inline-block">🪙</span>
             )}
             <span className="text-xs font-bold text-slate-800">{tokenBalance}/{tokenRequired}</span>
-          </div>
-          <div className="flex items-center gap-1">
             {/* Cost display */}
             {costs.map((cost, index) => {
               const number = cost.text.match(/-?\d+/)?.[0] || '';

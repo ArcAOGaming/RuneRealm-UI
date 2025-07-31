@@ -224,11 +224,12 @@ export const MonsterManagement: React.FC = (): JSX.Element => {
 
     return (
       <>
-        <div className={`monster-card ${theme.container} border ${theme.border} backdrop-blur-md p-4 flex flex-col h-full max-h-full min-h-[700px]`}>
-          {/* Main layout - Left side (status + level up) and Right side (stats, lootbox, activities) */}
-          <div className="flex flex-row space-x-4 flex-1 min-h-0">
+        <div className={`monster-card ${theme.container} border ${theme.border} backdrop-blur-md p-4 flex flex-col h-full max-h-full min-h-[640px]`}>
+          {/* Main layout - Use monster-layout-container for responsive grid */}
+          <div className="monster-layout-container flex-1 min-h-0 w-full"
+          >
             {/* Left Side - Status Window and Level Up (65%) */}
-            <div className="monster-status-section flex-grow flex flex-col space-y-4">
+            <div className="monster-status-section flex flex-col space-y-4 min-h-0" style={{ minWidth: 0 }}>
               {/* Monster Status Window - Expanded height */}
               <div className="flex-1 min-h-0">
                 <MonsterStatusWindow
@@ -253,7 +254,7 @@ export const MonsterManagement: React.FC = (): JSX.Element => {
               {/* Level Up Section - Moved to left side */}
               {monster.status.type === 'Home' && monster.exp >= getFibonacciExp(monster.level) && (
                 <div className={`level-up-section ${theme.container} rounded-lg p-4 flex-shrink-0 border`}>
-                  <div className="flex justify-between items-center">
+                  <div className="flex flex-col lg:flex-row justify-between items-start lg:items-center gap-2">
                     <div>
                       <h3 className={`text-xl font-bold ${theme.text}`}>Level Up Available</h3>
                       <p className={`${theme.text}`}>Your monster has enough experience to level up</p>
@@ -261,7 +262,7 @@ export const MonsterManagement: React.FC = (): JSX.Element => {
                     <button
                       onClick={handleLevelUp}
                       disabled={isLevelingUp}
-                      className={`px-4 py-2 rounded-lg ${theme.buttonBg} ${theme.buttonHover} ${theme.text} level-up-button-glow`}
+                      className={`mt-2 lg:mt-0 px-4 py-2 rounded-lg ${theme.buttonBg} ${theme.buttonHover} ${theme.text} level-up-button-glow`}
                     >
                       {isLevelingUp ? 'Leveling...' : 'Level Up'}
                     </button>
@@ -269,10 +270,7 @@ export const MonsterManagement: React.FC = (): JSX.Element => {
                 </div>
               )}
             </div>
-
-            {/* Right Side Panel - Monster Stats, Loot Box, and Activities (35%) */}
-            <div className="monster-secondary-section w-[35%] gap-2">
-              {/* Monster Stats Display - Equal height (1/3) */}
+            <div className="monster-activities-section">
               <MonsterActivities
                 monster={monster}
                 activities={activities}
@@ -280,8 +278,11 @@ export const MonsterManagement: React.FC = (): JSX.Element => {
                 onEffectTrigger={triggerEffect}
                 onTriggerReturn={triggerReturnAnimation}
               />
-              {/* Loot Box Section - Equal height (1/3) */}
+            </div>
+            {/* Right Side Panel - Monster Stats, Loot Box, and Activities (35%) */}
+            <div className="monster-box-section pb-3">
               <LootBoxUtil
+                className='h-full'
                 externalLootBoxes={lootBoxes}
                 loadDataIndependently={false}
               />
@@ -370,8 +371,6 @@ export const MonsterManagement: React.FC = (): JSX.Element => {
             ) : (
               renderMonsterCard
             )}
-
-            {/* Loot boxes now appear within the monster card component */}
           </div>
         </div>
         <Footer darkMode={darkMode} />

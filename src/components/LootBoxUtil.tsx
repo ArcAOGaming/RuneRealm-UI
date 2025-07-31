@@ -539,7 +539,7 @@ const LootBoxUtil = ({
       <div className="flex gap-2 p-1">
         {count > 0 ? (
           <div
-            className={`group hover:z-20 loot-box-item relative p-3 rounded-lg border shrink-0 w-full ${colorClass} ${glowClass} flex flex-col items-center justify-center transition-transform hover:scale-105 cursor-pointer w-20 min-h-20 space-y-1 ${isSelected ? 'scale-110' : ''}`}
+            className={`group hover:z-20 loot-box-item relative p-3 rounded-lg border shrink-0 w-full ${colorClass} ${glowClass} flex flex-col items-center justify-center transition-transform hover:scale-105 cursor-pointer w-20 min-h-20 xl:space-y-1 ${isSelected ? 'scale-110' : ''}`}
             title={`Open ${rarityName} Loot Box`}
             onClick={() => !isOpening && handleOpenLootBox(rarity)}
           >
@@ -553,11 +553,11 @@ const LootBoxUtil = ({
               {count}
             </span>
             {/* Icon */}
-            <div className={`loot-box-icon text-4xl ${isSelected && isShaking ? 'shake-animation' : ''} ${isSelected && isExploding ? 'explode-animation' : ''} ${rarity > 3 ? 'animate-pulse' : ''}`}>
+            <div className={`loot-box-icon text-3xl xl:text-4xl ${isSelected && isShaking ? 'shake-animation' : ''} ${isSelected && isExploding ? 'explode-animation' : ''} ${rarity > 3 ? 'animate-pulse' : ''}`}>
               📦
             </div>
             {/* Name */}
-            <span className="font-bold text-sm text-center">{rarityName}</span>
+            <span className="font-bold text-xs xl:text-sm text-center">{rarityName}</span>
             <div className={`flex justify-center pb-1 text-xs`}>
               {Array.from({ length: rarity }, (_, i) => (
                 <span key={i}>★</span>
@@ -565,7 +565,7 @@ const LootBoxUtil = ({
             </div>
             {/* Open Button */}
             <button
-              className={`w-full transition-all duration-200 group-hover:shadow-md hover:bg-none hover:shadow border border-current rounded-lg py-1 px-2 text-xs font-medium ${count === 0 || isOpening ? 'opacity-50 cursor-not-allowed' : ''
+              className={`button-loot hidden 2xl:block w-full transition-all duration-200 group-hover:shadow-md hover:bg-none hover:shadow border border-current rounded-lg py-1 px-2 text-xs font-medium ${count === 0 || isOpening ? 'opacity-50 cursor-not-allowed' : ''
                 } ${isSelected ? 'animate-pulse bg-white/30' : ''}`}
               disabled={count === 0 || isOpening}
             >
@@ -574,10 +574,15 @@ const LootBoxUtil = ({
           </div>
         ) : (
           <div
-            className={`loot-box-item-empty relative p-3 rounded-lg border-2 border-gray-700 bg-gray-800 bg-opacity-50 flex flex-col items-center justify-center w-20 min-h-20 space-y-1`}
+            className={`loot-box-item-empty relative p-3 rounded-lg border-2 border-gray-700 bg-gray-800 bg-opacity-50 flex flex-col items-center justify-center w-20 min-h-20 xl:space-y-1`}
           >
-            <div className="loot-box-icon text-4xl opacity-30">📦</div>
-            <span className="font-bold text-sm text-center opacity-30">{rarityName}</span>
+            <div className="loot-box-icon text-3xl xl:text-4xl opacity-30">📦</div>
+            <span className="font-bold text-xs xl:text-sm text-center opacity-30">{rarityName}</span>
+            <div className={`flex justify-center pb-1 text-xs`}>
+              {Array.from({ length: rarity }, (_, i) => (
+                <span key={i}>★</span>
+              ))}
+            </div>
           </div>
         )}
       </div>
@@ -585,7 +590,7 @@ const LootBoxUtil = ({
   };
 
   return (
-    <div className={`loot-box-section rounded-xl h-fit backdrop-blur-md ${theme.container} p-2 ${className} overflow-hidden w-full max-w-full`}>
+    <div className={`loot-box-section rounded-xl backdrop-blur-md ${theme.container} p-2 ${className} overflow-hidden w-full max-w-full`}>
       {/* Floating collecting items that animate to wallet */}
       {collectingItems.map((item, index) => (
         <div
@@ -603,7 +608,7 @@ const LootBoxUtil = ({
         </div>
       ))}
 
-      <div className={`loot-box-container relative`}>
+      <div className={`loot-box-container relative b-g`}>
         <h1 className={`text-lg font-bold ${theme.text} mb-1 shrink-0`}>Treasure Vault</h1>
         {showConfetti && (
           <div className="confetti-wrapper">
@@ -682,18 +687,23 @@ const LootBoxUtil = ({
               <div className="flex justify-center p-4">
                 {/* Only show the single selected box during animation */}
                 <div
-                  className={`loot-box-item relative p-3 rounded-lg border-2 ${getRarityColorClass(selectedRarity)} ${getRarityGlowClass(selectedRarity)} flex flex-col items-center justify-center w-28 h-28 scale-105`}
+                  className={`loot-box-item relative p-3 rounded-lg border-2 ${getRarityColorClass(selectedRarity)} ${getRarityGlowClass(selectedRarity)} flex flex-col items-center justify-center w-28 h-28 scale-105 space-y-1`}
                 >
-                  <div className={`loot-box-icon text-4xl mb-2 ${isShaking ? 'shake-animation' : ''} ${isExploding ? 'explode-animation' : ''}`}>
+                  <div className={`loot-box-icon text-3xl xl:text-4xl mb-2 ${isShaking ? 'shake-animation' : ''} ${isExploding ? 'explode-animation' : ''}`}>
                     📦
                   </div>
                   <span className="font-medium text-sm text-center">{getRarityName(selectedRarity)}</span>
+                  <div className={`flex justify-center pb-1 text-xs`}>
+                    {Array.from({ length: selectedRarity }, (_, i) => (
+                      <span key={i}>★</span>
+                    ))}
+                  </div>
                 </div>
               </div>
             ) : (
               /* Default view: show all available treasures */
               <>
-                <div className="grid grid-cols-2 xl:grid-cols-5">
+                <div className="grid grid-cols-3 sm:grid-cols-5 lg:grid-cols-3 2xl:grid-cols-2">
                   {rarityLevels.map(renderRaritySection)}
                 </div>
                 <div className="text-xs text-center text-gray-400 mt-2">
