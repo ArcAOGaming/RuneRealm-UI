@@ -217,13 +217,13 @@ const MonsterActivities: React.FC<MonsterActivitiesProps> = ({
   };
 
   return (
-    <div className={`activities-section ${theme.container} p-2 rounded-xl ${className}`}>
+    <div className={`activities-section ${theme.container} p-2 rounded-xl ${className} h-full xl:h-fit`}>
       <div className="flex flex-col h-full">
         {/* Header */}
         <h1 className={`text-lg font-bold ${theme.text} mb-1 shrink-0`}>Activities</h1>
 
         {/* Activities Grid */}
-        <div className="grid grid-cols-1 md:grid-cols-4 gap-2 p-1 -mx-1">
+        <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-2 p-1 -mx-1">
           <ActivityCard
             title="Feed"
             buttonText={feedButtonText}

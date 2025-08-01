@@ -25,6 +25,7 @@ export const MonsterManagement: React.FC = (): JSX.Element => {
   const {
     monster: localMonster,
     lootBoxes,
+    isLoadingLootBoxes,
     timeUpdateTrigger,
     formatTimeRemaining,
     calculateProgress,
@@ -224,14 +225,13 @@ export const MonsterManagement: React.FC = (): JSX.Element => {
 
     return (
       <>
-        <div className={`monster-card ${theme.container} border ${theme.border} backdrop-blur-md p-4 flex flex-col h-full max-h-full min-h-[640px]`}>
+        <div className={`monster-card ${theme.container} border ${theme.border} backdrop-blur-mdflex flex-col h-full max-h-full min-h-[640px] p-0`}>
           {/* Main layout - Use monster-layout-container for responsive grid */}
-          <div className="monster-layout-container flex-1 min-h-0 w-full"
-          >
+          <div className="monster-layout-container grid lg:col-span-2 xl:grid-cols-3 flex-1 min-h-0 w-full gap-4 p-4 overflow-auto">
             {/* Left Side - Status Window and Level Up (65%) */}
-            <div className="monster-status-section flex flex-col space-y-4 min-h-0" style={{ minWidth: 0 }}>
+            <div className="monster-status-section lg:col-span-2 lg:order-1 -mb-1.5" style={{ minWidth: 0 }}>
               {/* Monster Status Window - Expanded height */}
-              <div className="flex-1 min-h-0">
+              <div className="h-full">
                 <MonsterStatusWindow
                   monster={monster}
                   theme={theme}
@@ -270,7 +270,7 @@ export const MonsterManagement: React.FC = (): JSX.Element => {
                 </div>
               )}
             </div>
-            <div className="monster-activities-section">
+            <div className="monster-activities-section order-2 lg:order-3 xl:col-span-3">
               <MonsterActivities
                 monster={monster}
                 activities={activities}
@@ -280,11 +280,12 @@ export const MonsterManagement: React.FC = (): JSX.Element => {
               />
             </div>
             {/* Right Side Panel - Monster Stats, Loot Box, and Activities (35%) */}
-            <div className="monster-box-section pb-3">
+            <div className="monster-box-section order-3 lg:order-2 xl:col-span-1">
               <LootBoxUtil
                 className='h-full'
                 externalLootBoxes={lootBoxes}
                 loadDataIndependently={false}
+                loading={isLoadingLootBoxes}
               />
             </div>
           </div>
