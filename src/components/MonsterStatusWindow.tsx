@@ -463,7 +463,7 @@ const MonsterStatusWindow: React.FC<MonsterStatusWindowProps> = ({
         {/* Environment Display */}
         <div
           ref={containerRef}
-          className="relative w-full min-w-20 aspect-[4/2] xl:aspect-auto flex-1 min-h-64"
+          className="relative w-full min-w-20 aspect-[4/2] xl:aspect-auto flex-1 min-h-[252px] 2xl:min-h-[340px]"
           style={{
             backgroundImage: `url(${new URL(`../assets/window-backgrounds/${selectedBackground}.png`, import.meta.url).href})`,
             backgroundSize: 'cover',
@@ -527,7 +527,7 @@ const MonsterStatusWindow: React.FC<MonsterStatusWindowProps> = ({
                 height: `${Math.min(monsterSize, 120)}px`,
                 transform: isExploringOrPlaying && hasCompletedEntrance
                   ? `translateX(-50%)` // Keep perfectly centered when running
-                  : `translateX(calc(-50% + ${position * 0.5}px))`, // Normal movement when at home
+                  : `translateX(calc(-50% + ${position}px))`, // Normal movement when at home
                 bottom: '0px',
                 transition: isExploringOrPlaying ? 'none' : 'transform 0.1s linear',
                 zIndex: 10

@@ -387,7 +387,7 @@ const LootBoxUtil = ({
   }, {});
 
   // Sort rarity levels for consistent display
-  const rarityLevels = Object.keys(groupedLootboxes).map(Number).sort((a, b) => a - b);
+  const rarityLevels = [1, 2, 3, 4, 5];
 
   // Render each rarity section
   const renderRaritySection = (rarity: number) => {
@@ -445,15 +445,23 @@ const LootBoxUtil = ({
           </div>
         ) : (
           <div
-            className={`loot-box-item-empty relative p-3 rounded-lg border-2 border-gray-700 bg-gray-800 bg-opacity-50 flex flex-col items-center justify-center w-20 min-h-20 xl:space-y-1`}
+            className={`group hover:z-20 loot-box-item relative p-3 rounded-lg border shrink-0 w-full hover:scale-100 ${colorClass} flex flex-col items-center justify-center transition-transform cursor-not-allowed w-20 min-h-20 xl:space-y-1`}
+            title={`${rarityName} Loot Box (Empty)`}
           >
             <div className="loot-box-icon text-3xl xl:text-4xl opacity-30">📦</div>
             <span className="font-bold text-xs xl:text-sm text-center opacity-30">{rarityName}</span>
-            <div className={`flex justify-center pb-1 text-xs`}>
+            <div className={`flex justify-center pb-1 text-xs opacity-30`}>
               {Array.from({ length: rarity }, (_, i) => (
                 <span key={i}>★</span>
               ))}
             </div>
+            <button
+              className={`button-loot hidden 2xl:block w-full transition-all duration-200 group-hover:shadow-md hover:bg-none hover:shadow border border-current rounded-lg py-1 px-2 text-xs font-medium ${count === 0 || isOpening ? 'opacity-50 cursor-not-allowed' : ''
+                } ${isSelected ? 'animate-pulse bg-white/30' : ''}`}
+              disabled={count === 0 || isOpening}
+            >
+              {isSelected ? 'Opening...' : 'Open'}
+            </button>
           </div>
         )}
       </div>
