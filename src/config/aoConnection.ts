@@ -6,6 +6,7 @@ import { connect, createDataItemSigner } from "@permaweb/aoconnect";
 const AO_CONFIG = {
   MU_URL: "https://ur-mu.randao.net",
   GATEWAY_URL: "https://arweave.net",
+  MODE: "legacy" as "legacy", // Required by the connect function with literal type
 };
 
 /**
@@ -103,13 +104,21 @@ const getConnection = () => {
 /**
  * Wrapped methods with automatic persistent fallback logic.
  */
-export const message = async (params) =>
-  attemptWithFallback((cu) =>
-    connect({ ...AO_CONFIG, CU_URL: cu }).message({
-      ...params,
+export const message = async (params) => {
+  // Extract muUrl if provided in params, otherwise use default
+  const { muUrl, ...restParams } = params;
+  const config = { 
+    ...AO_CONFIG, // This includes MODE: "legacy"
+    ...(muUrl ? { MU_URL: muUrl } : {}) // Override MU_URL if provided
+  };
+  
+  return attemptWithFallback((cu) =>
+    connect({ ...config, CU_URL: cu }).message({
+      ...restParams,
       signer: createDataItemSigner(window.arweaveWallet),
     })
   );
+};
 
 export const result = async (params) =>
   attemptWithFallback((cu) =>

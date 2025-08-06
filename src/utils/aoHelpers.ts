@@ -246,14 +246,27 @@ export const getProfileInfo = async (
   }
 };
 
-// Wrap the original message function to include refresh callback
-export const message = async (params: any, refreshCallback?: () => void) => {
-  const response = await aoMessage(params);
-  // If a refresh callback is provided, call it immediately after message is sent
-  if (refreshCallback) {
-    refreshCallback();
+// Wrap the original message function to include refresh callback and optional MU_URL override
+export const message = async (params: any, refreshCallback?: () => void, overrideMuUrl: boolean = false) => {
+  // Override MU_URL for specific functions
+  if (overrideMuUrl) {
+    // Clone the params to avoid modifying the original
+    const paramsWithMuUrl = { ...params, muUrl: 'https://mu.ao-testnet.xyz' };
+    const response = await aoMessage(paramsWithMuUrl);
+    // If a refresh callback is provided, call it immediately after message is sent
+    if (refreshCallback) {
+      refreshCallback();
+    }
+    return response;
+  } else {
+    // Use default MU_URL
+    const response = await aoMessage(params);
+    // If a refresh callback is provided, call it immediately after message is sent
+    if (refreshCallback) {
+      refreshCallback();
+    }
+    return response;
   }
-  return response;
 };
 
 
@@ -512,11 +525,18 @@ export const purchaseAccess = async (wallet: any, selectedToken: TokenOption, re
         const signer = createDataItemSigner(wallet);
         console.log("Created signer for wallet");
 
-        // Check for referrer cookie
-        const referrer = document.cookie
-            .split('; ')
-            .find(row => row.startsWith('X-Referer='))
-            ?.split('=')[1];
+        // Check for referrer in localStorage first, then fall back to cookie
+        let referrer = localStorage.getItem('X-Referer');
+        
+        // If not in localStorage, check cookies (for backward compatibility)
+        if (!referrer) {
+            referrer = document.cookie
+                .split('; ')
+                .find(row => row.startsWith('X-Referer='))
+                ?.split('=')[1];
+        }
+        
+        console.log(`Using referrer for purchase: ${referrer || 'none'}`);
 
         // Prepare tags for the message
         const tags = [
@@ -530,13 +550,13 @@ export const purchaseAccess = async (wallet: any, selectedToken: TokenOption, re
             tags.push({ name: "X-Referer", value: referrer });
         }
 
-        // Send the transfer message
+        // Send the transfer message with MU_URL override
         const messageResult = await message({
             process: selectedToken.token, // Token contract
             tags,
             signer,
             data: "" // Empty data for transfer
-        }, refreshCallback);
+        }, refreshCallback, true); // Added true to override MU_URL
 
         console.log("Transfer message sent:", messageResult);
 
@@ -1221,35 +1241,43 @@ export const adjustAllMonsters = async (refreshCallback?: () => void): Promise<b
 };
 
 // Generate a referral link for the current user
-export const generateReferralLink = async (): Promise<string> => {
-    // Get wallet from context
-    const { wallet } = useWallet();
+export const generateReferralLink = async (wallet: any): Promise<string> => {
     if (!wallet) {
         throw new Error("Arweave wallet not found");
     }
     
-    const address = await wallet.getActiveAddress();
+    // Use wallet.address directly, which is the standard way to access the address in this codebase
+    const address = wallet.address;
+    if (!address) {
+        throw new Error("Wallet address not available");
+    }
+    
     const baseUrl = window.location.origin;
     return `${baseUrl}?ref=${address}`;
 };
 
-// Handle referral link parameters and set cookie
+// Handle referral link parameters and store in both cookie and localStorage
 export const handleReferralLink = (): void => {
     const urlParams = new URLSearchParams(window.location.search);
     const referrer = urlParams.get('ref');
     
     if (referrer) {
-        // Set cookie to expire in 24 hours
+        // Store in localStorage (no expiration)
+        localStorage.setItem('X-Referer', referrer);
+        console.log(`Stored referrer in localStorage: ${referrer}`);
+        
+        // Also set cookie to expire in 24 hours (for backward compatibility)
         const expirationDate = new Date();
         expirationDate.setTime(expirationDate.getTime() + (24 * 60 * 60 * 1000));
         
         document.cookie = `X-Referer=${referrer}; expires=${expirationDate.toUTCString()}; path=/`;
+        console.log(`Stored referrer in cookie: ${referrer}`);
     }
 };
 
 // Copy referral link to clipboard
-export const copyReferralLink = async (): Promise<void> => {
-    const link = await generateReferralLink();
+export const copyReferralLink = async (wallet: any): Promise<void> => {
+    const link = await generateReferralLink(wallet);
     await navigator.clipboard.writeText(link);
 };
 
