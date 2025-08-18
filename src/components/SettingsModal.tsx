@@ -1,5 +1,5 @@
 import React from 'react';
-import { useWallet } from '../hooks/useWallet';
+import { useWallet } from '../contexts/WalletContext';
 import { currentTheme } from '../constants/theme';
 
 interface SettingsModalProps {

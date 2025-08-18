@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { currentTheme } from '../constants/theme';
-import { useWallet } from '../hooks/useWallet';
+import { useWallet } from '../contexts/WalletContext';
 import { bulkImportAddresses } from '../utils/aoHelpers';
 
 const AdminBulkUnlock: React.FC = () => {

@@ -1,6 +1,6 @@
 import React from 'react';
 import { MonsterDebug } from '../../contexts/MonsterContext';
-import { useWallet } from '../../hooks/useWallet';
+import { useWallet } from '../../contexts/WalletContext';
 
 const DebugView: React.FC = () => {
   const { wallet, walletStatus, refreshTrigger } = useWallet();

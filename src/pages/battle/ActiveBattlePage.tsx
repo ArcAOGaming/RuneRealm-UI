@@ -1,5 +1,5 @@
 import React, { useEffect, useState, useCallback } from "react";
-import { useWallet } from "../../hooks/useWallet";
+import { useWallet } from "../../contexts/WalletContext";
 import {
   getBattleManagerInfo,
   getActiveBattle,

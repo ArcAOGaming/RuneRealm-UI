@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { purchaseAccess, TokenOption, copyReferralLink } from '../utils/aoHelpers';
-import { useWallet } from '../hooks/useWallet';
+import { useWallet } from '../contexts/WalletContext';
 import { currentTheme } from '../constants/theme';
 import accessTicketImg from '../assets/access-ticket.png';
 import PurchaseModal from '../components/PurchaseModal';

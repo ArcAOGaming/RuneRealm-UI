@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Theme } from '../constants/theme';
-import { useWallet } from '../hooks/useWallet';
+import { useWallet } from '../contexts/WalletContext';
 import CheckInButton from './CheckInButton';
 import CopyReferralLink from './CopyReferralLink';
 import SettingsModal from './SettingsModal';

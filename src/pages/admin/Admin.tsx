@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { getUserInfo, setUserStats, MonsterStatsUpdate, getFactionOptions, FactionOptions, adjustAllMonsters, adminReturnFromBattle } from '../../utils/aoHelpers';
 import { currentTheme } from '../../constants/theme';
-import { useWallet } from '../../hooks/useWallet';
+import { useWallet } from '../../contexts/WalletContext';
 import Header from '../../components/Header';
 import { Gateway, SUPPORTED_ASSET_IDS } from '../../constants/Constants';
 import AdminBulkUnlock from '../../components/AdminBulkUnlock';

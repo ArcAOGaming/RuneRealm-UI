@@ -13,7 +13,7 @@ import {
   drawInventorySlots,
   drawMoves
 } from '../utils/cardRenderHelpers';
-import { useWallet } from '../hooks/useWallet';
+import { useWallet } from '../contexts/WalletContext';
 import { useMonster } from '../contexts/MonsterContext';
 
 interface MonsterCardDisplayProps {

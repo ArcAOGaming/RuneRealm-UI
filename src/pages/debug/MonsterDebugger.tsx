@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { useMonster } from '../../contexts/MonsterContext';
 import { currentTheme } from '../../constants/theme';
-import { useWallet } from '../../hooks/useWallet';
+import { useWallet } from '../../contexts/WalletContext';
 import { getUserInfo } from '../../utils/aoHelpers';
 import { UserInfo } from '../../utils/interefaces';
 import { MonsterCardDisplay } from '../../components/MonsterCardDisplay';

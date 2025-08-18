@@ -1,12 +1,12 @@
 import React, { useEffect, useState, useRef } from 'react';
-import { useWallet } from '../hooks/useWallet';
+import { useWallet } from '../contexts/WalletContext';
 import { useTokens } from '../contexts/TokenContext';
 import { SUPPORTED_ASSET_IDS } from '../constants/Constants';
 import { getLootBoxes, openLootBoxWithRarity, LootBoxResponse } from '../utils/aoHelpers';
 import { currentTheme } from '../constants/theme';
 import { SupportedAssetId, ASSET_INFO } from '../constants/Constants';
 import Confetti from 'react-confetti';
-import '../styles/LootBoxUtil.css';
+import './LootBoxUtil.css';
 
 interface LootBoxProps {
   className?: string;

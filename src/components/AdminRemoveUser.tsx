@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { currentTheme } from '../constants/theme';
-import { useWallet } from '../hooks/useWallet';
+import { useWallet } from '../contexts/WalletContext';
 import { removeUser } from '../utils/aoHelpers';
 
 const AdminRemoveUser: React.FC = () => {

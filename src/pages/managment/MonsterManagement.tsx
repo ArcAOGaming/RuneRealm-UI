@@ -1,22 +1,22 @@
 import React, { useEffect, useState, useRef, useCallback } from 'react';
-import '../styles/MonsterManagement.css';
+import './MonsterManagement.css';
 import { useNavigate } from 'react-router-dom';
-import { useWallet } from '../hooks/useWallet';
-import { purchaseAccess, TokenOption, adoptMonster, MonsterStats } from '../utils/aoHelpers';
-import { createDataItemSigner } from '../config/aoConnection';
-import { message } from '../utils/aoHelpers';
-import { currentTheme } from '../constants/theme';
-import PurchaseModal from '../components/PurchaseModal';
-import StatAllocationModal from '../components/StatAllocationModal';
-import Header from '../components/Header';
-import Footer from '../components/Footer';
+import { useWallet } from '../../contexts/WalletContext';
+import { purchaseAccess, TokenOption, adoptMonster, MonsterStats } from '../../utils/aoHelpers';
+import { createDataItemSigner } from '../../config/aoConnection';
+import { message } from '../../utils/aoHelpers';
+import { currentTheme } from '../../constants/theme';
+import PurchaseModal from '../../components/PurchaseModal';
+import StatAllocationModal from '../../components/StatAllocationModal';
+import Header from '../../components/Header';
+import Footer from '../../components/Footer';
 import Confetti from 'react-confetti';
-import LootBoxUtil from '../components/LootBoxUtil';
-import MonsterActivities from '../components/MonsterActivities';
-import { useMonster } from '../contexts/MonsterContext';
-import MonsterStatusWindow from '../components/MonsterStatusWindow';
-import MonsterStatsDisplay from '../components/MonsterStatsDisplay';
-import MonsterCardModal from '../components/MonsterCardModal';
+import LootBoxUtil from '../../components/LootBoxUtil';
+import MonsterActivities from '../../components/MonsterActivities';
+import { useMonster } from '../../contexts/MonsterContext';
+import MonsterStatusWindow from '../../components/MonsterStatusWindow';
+import MonsterStatsDisplay from '../../components/MonsterStatsDisplay';
+import MonsterCardModal from '../../components/MonsterCardModal';
 
 export const MonsterManagement: React.FC = (): JSX.Element => {
   const navigate = useNavigate();
