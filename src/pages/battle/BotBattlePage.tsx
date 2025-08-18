@@ -5,7 +5,7 @@ import Header from '../../components/Header';
 import Footer from '../../components/Footer';
 import { useNavigate } from 'react-router-dom';
 import Loading from '../../components/Loading';
-import { useWallet } from '../../hooks/useWallet';
+import { useWallet } from '../../contexts/WalletContext';
 
 export const BotBattlePage = (): JSX.Element => {
   const { darkMode } = useWallet();

@@ -1,5 +1,5 @@
 import React, { createContext, useContext, useState, useEffect, useCallback, ReactNode } from 'react';
-import { useWallet } from '../hooks/useWallet';
+import { useWallet } from './WalletContext';
 import { getBattleManagerInfo, getActiveBattle, returnFromBattle, enterBattle, ActiveBattle } from '../utils/aoHelpers';
 
 interface BattleManagerInfo {

@@ -1,6 +1,6 @@
 import React from 'react';
 import { currentTheme } from '../../constants/theme';
-import { useWallet } from '../../hooks/useWallet';
+import { useWallet } from '../../contexts/WalletContext';
 
 const DryRunDebugger: React.FC = () => {
   const { darkMode } = useWallet();

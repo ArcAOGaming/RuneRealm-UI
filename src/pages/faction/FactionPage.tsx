@@ -1,15 +1,15 @@
 import React, { useEffect, useState } from 'react';
-import { useWallet } from '../hooks/useWallet';
+import { useWallet } from '../../contexts/WalletContext';
 import { useNavigate } from 'react-router-dom';
-import { getFactionOptions, FactionOptions, setFaction, purchaseAccess, TokenOption, getTotalOfferings, OfferingStats, getUserOfferings } from '../utils/aoHelpers';
-import { currentTheme } from '../constants/theme';
-import { Gateway, ACTIVITY_POINTS } from '../constants/Constants';
-import PurchaseModal from '../components/PurchaseModal';
-import CheckInButton from '../components/CheckInButton';
-import Header from '../components/Header';
+import { getFactionOptions, FactionOptions, setFaction, purchaseAccess, TokenOption, getTotalOfferings, OfferingStats, getUserOfferings } from '../../utils/aoHelpers';
+import { currentTheme } from '../../constants/theme';
+import { Gateway, ACTIVITY_POINTS } from '../../constants/Constants';
+import PurchaseModal from '../../components/PurchaseModal';
+import Header from '../../components/Header';
 import Confetti from 'react-confetti';
-import LoadingAnimation from '../components/LoadingAnimation';
-import Footer from '../components/Footer';
+import LoadingAnimation from '../../components/LoadingAnimation';
+import Footer from '../../components/Footer';
+import CheckInButton from '../../components/CheckInButton';
 
 const FACTION_TO_PATH = {
   'Sky Nomads': 'air',

@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { currentTheme } from '../../constants/theme';
-import { useWallet } from '../../hooks/useWallet';
+import { useWallet } from '../../contexts/WalletContext';
 
 interface CacheEntry {
   key: string;

@@ -1,21 +1,21 @@
 import { useState, useEffect } from 'react';
-import { useWallet } from '../hooks/useWallet';
-import LayerSelector from '../components/LayerSelector';
-import ExportAndUploadButton from '../services/upload';
-import WalkingPreview from '../components/WalkingPreview';
-import WarpTransition from '../components/WarpTransition';
-import PurchaseModal from '../components/PurchaseModal';
-import { currentTheme } from '../constants/theme';
-import { SPRITE_CATEGORIES } from '../constants/Constants';
+import { useWallet } from '../../contexts/WalletContext';
+import LayerSelector from '../../components/LayerSelector';
+import ExportAndUploadButton from '../../services/upload';
+import WalkingPreview from '../../components/WalkingPreview';
+import WarpTransition from '../../components/WarpTransition';
+import PurchaseModal from '../../components/PurchaseModal';
+import { currentTheme } from '../../constants/theme';
+import { SPRITE_CATEGORIES } from '../../constants/Constants';
 import { ArconnectSigner } from '@ardrive/turbo-sdk/web';
-import { TokenOption, purchaseAccess } from '../utils/aoHelpers';
+import { TokenOption, purchaseAccess } from '../../utils/aoHelpers';
 import Confetti from 'react-confetti';
-import Header from '../components/Header';
-import Footer from '../components/Footer';
+import Header from '../../components/Header';
+import Footer from '../../components/Footer';
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
 import { faShuffle, faRotateLeft, faUpload, faDoorOpen } from '@fortawesome/free-solid-svg-icons';
 import { useNavigate } from 'react-router-dom';
-import FourDirectionView from '../components/FourDirectionView';
+import FourDirectionView from '../../components/FourDirectionView';
 
 interface LayerState {
   style: string;

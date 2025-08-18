@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { useWallet } from '../hooks/useWallet';
+import { useWallet } from '../contexts/WalletContext';
 import { defaultInteraction, getUserOfferings, type OfferingData } from '../utils/aoHelpers';
 import { currentTheme } from '../constants/theme';
 

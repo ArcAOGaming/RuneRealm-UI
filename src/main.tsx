@@ -6,13 +6,13 @@ import {
   Route,
   useLocation,
 } from "react-router-dom";
-import SpriteCustomizer from "./pages/SpriteCustomizer";
+import SpriteCustomizer from "./pages/managment/SpriteCustomizer";
 import PurchaseInfo from "./pages/PurchaseInfo";
-import { MonsterManagement } from "./pages/MonsterManagement";
+import { MonsterManagement } from "./pages/managment/MonsterManagement";
 import { WalletProvider } from "./contexts/WalletContext";
 import { TokenProvider } from "./contexts/TokenContext";
 import { BattleProvider } from "./contexts/BattleContext";
-import { useWallet } from "./hooks/useWallet";
+import { useWallet } from "./contexts/WalletContext";
 import { WalletStatus } from "./utils/interefaces";
 import "./index.css";
 import { handleReferralLink } from "./utils/aoHelpers";
@@ -26,8 +26,8 @@ import ActiveBattlePage from "./pages/battle/ActiveBattlePage";
 import Admin from "./pages/admin/Admin";
 import BattlePage from "./pages/battle/BattleMain";
 import { Analytics } from "./components/Analytics";
-import { FactionPage } from "./pages/FactionPage";
-import { FactionDetailPage } from "./pages/FactionDetailPage";
+import { FactionPage } from "./pages/faction/FactionPage";
+import { FactionDetailPage } from "./pages/faction/FactionDetailPage";
 
 interface AppContentProps {
   wallet?: { address: string };

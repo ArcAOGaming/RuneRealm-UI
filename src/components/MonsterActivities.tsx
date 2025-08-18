@@ -5,7 +5,7 @@ import { Theme } from '../constants/theme';
 import { createDataItemSigner } from '../config/aoConnection';
 import { TARGET_BATTLE_PID, SupportedAssetId, AdminSkinChanger } from '../constants/Constants';
 import { useNavigate } from 'react-router-dom';
-import { useWallet } from '../hooks/useWallet';
+import { useWallet } from '../contexts/WalletContext';
 import { useTokens } from '../contexts/TokenContext';
 import { useMonster } from '../contexts/MonsterContext';
 

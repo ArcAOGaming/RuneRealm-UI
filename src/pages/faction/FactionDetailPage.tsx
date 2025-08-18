@@ -1,14 +1,14 @@
 import React, { useEffect, useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { useWallet } from '../hooks/useWallet';
-import { getFactionOptions, FactionOptions, ProfileInfo, getProfileInfo, getUserMonster, MonsterStats } from '../utils/aoHelpers';
-import { currentTheme } from '../constants/theme';
-import { Gateway } from '../constants/Constants';
-import Header from '../components/Header';
-import LoadingAnimation from '../components/LoadingAnimation';
-import Footer from '../components/Footer';
-import { ProfileCard } from '../components/ProfileCard';
-import { ProfileDetail } from '../components/ProfileDetail';
+import { useWallet } from '../../contexts/WalletContext';
+import { getFactionOptions, FactionOptions, ProfileInfo, getProfileInfo, getUserMonster, MonsterStats } from '../../utils/aoHelpers';
+import { currentTheme } from '../../constants/theme';
+import { Gateway } from '../../constants/Constants';
+import Header from '../../components/Header';
+import LoadingAnimation from '../../components/LoadingAnimation';
+import Footer from '../../components/Footer';
+import { ProfileCard } from '../../components/ProfileCard';
+import { ProfileDetail } from '../../components/ProfileDetail';
 
 interface FactionMember {
   id: string;
