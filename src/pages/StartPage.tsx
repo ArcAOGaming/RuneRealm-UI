@@ -1,25 +1,30 @@
 import React, { useState, useEffect } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { useWallet } from '../contexts/WalletContext';
-import Header from '../components/Header';
-import Modal from '../components/Modal';
+import Header from '../components/ui/Header';
+import Modal from '../components/ui/Modal';
 import { currentTheme, Theme } from '../constants/theme';
 
 const StartPage: React.FC = () => {
-  const { wallet, walletStatus, darkMode } = useWallet();
+  const { wallet, walletStatus, darkMode, isCheckingStatus } = useWallet();
   const theme = currentTheme(darkMode);
   const navigate = useNavigate();
   const [showPremiumPopup, setShowPremiumPopup] = useState(false);
 
-  // Show premium popup for non-premium users after a short delay
+  // Show premium popup for non-premium users after wallet status is fully loaded
   useEffect(() => {
-    if (wallet?.address && !walletStatus?.isUnlocked) {
+    // Only show popup if:
+    // 1. Wallet is connected
+    // 2. Status check is complete (not checking)
+    // 3. User is not unlocked
+    // 4. We have valid wallet status (not null)
+    if (wallet?.address && !isCheckingStatus && walletStatus && !walletStatus.isUnlocked) {
       const timer = setTimeout(() => {
         setShowPremiumPopup(true);
-      }, 1000); // Show popup after 1 second
+      }, 2000); // Show popup after 2 seconds to ensure status is loaded
       return () => clearTimeout(timer);
     }
-  }, [wallet?.address, walletStatus?.isUnlocked]);
+  }, [wallet?.address, walletStatus?.isUnlocked, isCheckingStatus, walletStatus]);
 
   const sectionCardStyle: React.CSSProperties = {
     backgroundColor: theme.cardBg,

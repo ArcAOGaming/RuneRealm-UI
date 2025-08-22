@@ -6,12 +6,12 @@ import { setFaction, purchaseAccess, TokenOption } from '../../utils/aoHelpers';
 import { FactionOptions, OfferingStats } from '../../utils/interefaces';
 import { currentTheme } from '../../constants/theme';
 import { Gateway, ACTIVITY_POINTS } from '../../constants/Constants';
-import PurchaseModal from '../../components/PurchaseModal';
-import Header from '../../components/Header';
+import PurchaseModal from '../../components/ui/PurchaseModal';
+import Header from '../../components/ui/Header';
 import Confetti from 'react-confetti';
-import LoadingAnimation from '../../components/LoadingAnimation';
-import Footer from '../../components/Footer';
-import CheckInButton from '../../components/CheckInButton';
+import LoadingAnimation from '../../components/ui/LoadingAnimation';
+import Footer from '../../components/ui/Footer';
+import CheckInButton from '../../components/faction/CheckInButton';
 
 const FACTION_TO_PATH = {
   'Sky Nomads': 'air',

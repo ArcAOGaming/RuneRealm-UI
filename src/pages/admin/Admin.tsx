@@ -2,10 +2,10 @@ import React, { useState, useEffect } from 'react';
 import { getUserInfo, setUserStats, MonsterStatsUpdate, getFactionOptions, FactionOptions, adjustAllMonsters, adminReturnFromBattle } from '../../utils/aoHelpers';
 import { currentTheme } from '../../constants/theme';
 import { useWallet } from '../../contexts/WalletContext';
-import Header from '../../components/Header';
+import Header from '../../components/ui/Header';
 import { Gateway, SUPPORTED_ASSET_IDS } from '../../constants/Constants';
-import AdminBulkUnlock from '../../components/AdminBulkUnlock';
-import AdminRemoveUser from '../../components/AdminRemoveUser';
+import AdminBulkUnlock from '../../components/admin/AdminBulkUnlock';
+import AdminRemoveUser from '../../components/admin/AdminRemoveUser';
 import { UserInfo } from '../../utils/interefaces';
 
 const Admin: React.FC = () => {

@@ -4,9 +4,9 @@ import { purchaseAccess, TokenOption, copyReferralLink } from '../utils/aoHelper
 import { useWallet } from '../contexts/WalletContext';
 import { currentTheme } from '../constants/theme';
 import accessTicketImg from '../assets/access-ticket.png';
-import PurchaseModal from '../components/PurchaseModal';
+import PurchaseModal from '../components/ui/PurchaseModal';
 import Confetti from 'react-confetti';
-import Header from '../components/Header';
+import Header from '../components/ui/Header';
 
 const PurchaseInfo: React.FC = () => {
   const { wallet, walletStatus, darkMode, connectWallet, setDarkMode, isCheckingStatus } = useWallet();

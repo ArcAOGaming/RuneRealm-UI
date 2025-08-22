@@ -6,17 +6,17 @@ import { purchaseAccess, TokenOption, adoptMonster, MonsterStats } from '../../u
 import { createDataItemSigner } from '../../config/aoConnection';
 import { message } from '../../utils/aoHelpers';
 import { currentTheme } from '../../constants/theme';
-import PurchaseModal from '../../components/PurchaseModal';
-import StatAllocationModal from '../../components/StatAllocationModal';
-import Header from '../../components/Header';
-import Footer from '../../components/Footer';
+import PurchaseModal from '../../components/ui/PurchaseModal';
+import StatAllocationModal from '../../components/ui/StatAllocationModal';
+import Header from '../../components/ui/Header';
+import Footer from '../../components/ui/Footer';
 import Confetti from 'react-confetti';
-import LootBoxUtil from '../../components/LootBoxUtil';
-import MonsterActivities from '../../components/MonsterActivities';
+import LootBoxUtil from '../../components/ui/LootBoxUtil';
+import MonsterActivities from '../../components/monster/MonsterActivities';
 import { useMonster } from '../../contexts/MonsterContext';
-import MonsterStatusWindow from '../../components/MonsterStatusWindow';
-import MonsterStatsDisplay from '../../components/MonsterStatsDisplay';
-import MonsterCardModal from '../../components/MonsterCardModal';
+import MonsterStatusWindow from '../../components/monster/MonsterStatusWindow';
+import MonsterStatsDisplay from '../../components/monster/MonsterStatsDisplay';
+import MonsterCardModal from '../../components/monster/MonsterCardModal';
 
 export const MonsterManagement: React.FC = (): JSX.Element => {
   const navigate = useNavigate();

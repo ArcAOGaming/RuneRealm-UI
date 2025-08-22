@@ -1,21 +1,21 @@
 import { useState, useEffect } from 'react';
 import { useWallet } from '../../contexts/WalletContext';
-import LayerSelector from '../../components/LayerSelector';
+import LayerSelector from '../../components/sprite/LayerSelector';
 import ExportAndUploadButton from '../../services/upload';
-import WalkingPreview from '../../components/WalkingPreview';
-import WarpTransition from '../../components/WarpTransition';
-import PurchaseModal from '../../components/PurchaseModal';
+import WalkingPreview from '../../components/sprite/WalkingPreview';
+import WarpTransition from '../../components/sprite/WarpTransition';
+import PurchaseModal from '../../components/ui/PurchaseModal';
 import { currentTheme } from '../../constants/theme';
 import { SPRITE_CATEGORIES } from '../../constants/Constants';
 import { ArconnectSigner } from '@ardrive/turbo-sdk/web';
 import { TokenOption, purchaseAccess } from '../../utils/aoHelpers';
 import Confetti from 'react-confetti';
-import Header from '../../components/Header';
-import Footer from '../../components/Footer';
+import Header from '../../components/ui/Header';
+import Footer from '../../components/ui/Footer';
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
 import { faShuffle, faRotateLeft, faUpload, faDoorOpen } from '@fortawesome/free-solid-svg-icons';
 import { useNavigate } from 'react-router-dom';
-import FourDirectionView from '../../components/FourDirectionView';
+import FourDirectionView from '../../components/sprite/FourDirectionView';
 
 interface LayerState {
   style: string;

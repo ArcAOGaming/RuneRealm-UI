@@ -1,5 +1,5 @@
 import React, { useState, useCallback, useRef, useEffect } from 'react';
-import MonsterSpriteView, { EffectType } from '../../components/MonsterSpriteView';
+import MonsterSpriteView, { EffectType } from '../../components/monster/MonsterSpriteView';
 import { useWallet } from '../../contexts/WalletContext';
 import { currentTheme } from '../../constants/theme';
 

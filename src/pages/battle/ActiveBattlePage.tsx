@@ -13,12 +13,12 @@ import type {
   BattleResult
 } from "../../utils/interefaces";
 import { currentTheme } from "../../constants/theme";
-import Loading from "../../components/Loading";
+import Loading from "../../components/ui/Loading";
 import { useNavigate } from "react-router-dom";
-import BattleScene from "../../components/BattleScene";
+import BattleScene from "../../components/battle/BattleScene";
 
-import { EffectType } from "../../components/MonsterSpriteView";
-import BattleStats from "../../components/BattleStats";
+import { EffectType } from "../../components/monster/MonsterSpriteView";
+import BattleStats from "../../components/battle/BattleStats";
 
 // Import new modular components
 import WinnerAnnouncement from "../../components/battle/WinnerAnnouncement";
@@ -311,7 +311,7 @@ export const ActiveBattlePage: React.FC = (): JSX.Element => {
         };
 
         // Helper to run the walking/attack animation for a single turn
-        const runAttackAnimation = async (turn: Turn) => {
+        const runAttackAnimation = async (turn: BattleTurn) => {
           console.log(turn)
           setAttackAnimation({ attacker: turn.attacker, moveName: turn.move });
 

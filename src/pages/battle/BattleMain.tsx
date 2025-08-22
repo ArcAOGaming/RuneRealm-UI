@@ -2,14 +2,14 @@ import React, { useState, useEffect } from 'react';
 import { useWallet } from '../../contexts/WalletContext';
 import { useBattle } from '../../contexts/BattleContext';
 import { currentTheme } from '../../constants/theme';
-import Header from '../../components/Header';
-import Footer from '../../components/Footer';
+import Header from '../../components/ui/Header';
+import Footer from '../../components/ui/Footer';
 import { Link, useNavigate } from 'react-router-dom';
 import { returnFromBattle } from '../../utils/aoHelpers';
 import { useTokens } from '../../contexts/TokenContext';
 import { useMonster } from '../../contexts/MonsterContext';
-import { MonsterCardDisplay } from '../../components/MonsterCardDisplay';
-import { BattleStatus } from '../../components/battle/BattleStatus';
+import { MonsterCardDisplay } from '../../components/monster/MonsterCardDisplay';
+import { BattleManagementStatus } from '../../components/battle/BattleManagementStatus';
 import { BattleEndModal } from '../../components/battle/BattleEndModal';
 
 // Simple button component
@@ -128,8 +128,8 @@ export const BattlePage = (): JSX.Element => {
               <div className="grid lg:grid-cols-2 gap-8 mb-8">
                 {/* Left Column: Battle Status + How Battles Work */}
                 <div className="space-y-6">
-                  {/* Battle Status */}
-                  <BattleStatus
+                  {/* Battle Management Status */}
+                  <BattleManagementStatus
                     theme={theme}
                     isReturningFromBattleDirect={isReturningFromBattleDirect}
                     onReturnFromBattleClick={handleReturnFromBattleClick}
