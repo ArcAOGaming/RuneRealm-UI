@@ -20,6 +20,7 @@ import { BotBattlePage } from "./pages/battle/BotBattlePage";
 import { RankedBattlePage } from "./pages/battle/RankedBattlePage";
 import Inventory from "./components/Inventory";
 import { MonsterProvider } from "./contexts/MonsterContext";
+import { FactionProvider } from "./contexts/FactionContext";
 import DebugPage from "./pages/debug/DebugPage";
 import StartPage from "./pages/StartPage";
 import ActiveBattlePage from "./pages/battle/ActiveBattlePage";
@@ -75,8 +76,8 @@ const AppContent = () => {
       <Analytics>
         <Routes>
 
-          <Route path="/" element={<PurchaseInfo />} />
-          <Route path="/play" element={<StartPage />} />
+          <Route path="/" element={<StartPage />} />
+          <Route path="/purchase" element={<PurchaseInfo />} />
           <Route path="/customize" element={<SpriteCustomizer />} />
           <Route path="/factions" element={<FactionPage />} />
           <Route path="/factions/:factionId" element={<FactionDetailPage />} />
@@ -118,9 +119,11 @@ const App = () => (
     <WalletProvider>
       <TokenProvider>
         <MonsterProvider>
-          <BattleProvider>
-            <AppContent />
-          </BattleProvider>
+          <FactionProvider>
+            <BattleProvider>
+              <AppContent />
+            </BattleProvider>
+          </FactionProvider>
         </MonsterProvider>
       </TokenProvider>
     </WalletProvider>

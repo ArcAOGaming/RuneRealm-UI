@@ -1,7 +1,9 @@
 import React, { useEffect, useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { useWallet } from '../../contexts/WalletContext';
-import { getFactionOptions, FactionOptions, ProfileInfo, getProfileInfo, getUserMonster, MonsterStats } from '../../utils/aoHelpers';
+import { useFaction } from '../../contexts/FactionContext';
+import { ProfileInfo, getProfileInfo, getUserMonster, MonsterStats } from '../../utils/aoHelpers';
+import { FactionOptions } from '../../utils/interefaces';
 import { currentTheme } from '../../constants/theme';
 import { Gateway } from '../../constants/Constants';
 import Header from '../../components/Header';
@@ -35,16 +37,63 @@ interface FactionWithProfiles {
   totalTimesMission: number;
 }
 
+// Cache utilities for member data
+const MEMBER_CACHE_DURATION = 24 * 60 * 60 * 1000; // 24 hours
+
+interface CachedMemberData {
+  profile: ProfileInfo | null;
+  monster: MonsterStats | null;
+  timestamp: number;
+  hasNoMonster?: boolean; // Track if user has no monster to avoid repeated requests
+}
+
+const getMemberCacheKey = (memberId: string) => `member-data-${memberId}`;
+
+const getCachedMemberData = (memberId: string): CachedMemberData | null => {
+  try {
+    const cached = localStorage.getItem(getMemberCacheKey(memberId));
+    if (!cached) return null;
+    
+    const parsedCache = JSON.parse(cached) as CachedMemberData;
+    if (!parsedCache.timestamp || Date.now() - parsedCache.timestamp > MEMBER_CACHE_DURATION) {
+      localStorage.removeItem(getMemberCacheKey(memberId));
+      return null;
+    }
+    
+    return parsedCache;
+  } catch (error) {
+    console.error(`Error getting cached member data for ${memberId}:`, error);
+    return null;
+  }
+};
+
+const setCachedMemberData = (memberId: string, profile: ProfileInfo | null, monster: MonsterStats | null) => {
+  try {
+    const cacheData: CachedMemberData = {
+      profile,
+      monster,
+      timestamp: Date.now(),
+      hasNoMonster: monster === null
+    };
+    localStorage.setItem(getMemberCacheKey(memberId), JSON.stringify(cacheData));
+  } catch (error) {
+    console.error(`Error caching member data for ${memberId}:`, error);
+  }
+};
+
 export const FactionDetailPage: React.FC = () => {
   const { factionId } = useParams();
   const navigate = useNavigate();
   const { wallet, darkMode, setDarkMode, refreshTrigger } = useWallet();
+  const { factions, isLoadingFactions } = useFaction();
   const [faction, setFaction] = useState<FactionWithProfiles | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [selectedMember, setSelectedMember] = useState<MemberWithProfile | null>(null);
   const [memberProfiles, setMemberProfiles] = useState<Record<string, ProfileInfo>>({});
   const [memberMonsters, setMemberMonsters] = useState<Record<string, MonsterStats | null>>({});
   const [loadingStates, setLoadingStates] = useState<Record<string, boolean>>({});
+  const [profileLoadingStates, setProfileLoadingStates] = useState<Record<string, boolean>>({});
+  const [monsterLoadingStates, setMonsterLoadingStates] = useState<Record<string, boolean>>({});
   const [currentPage, setCurrentPage] = useState(1);
   const [hasMore, setHasMore] = useState(true);
   const [isLoadingMore, setIsLoadingMore] = useState(false);
@@ -69,47 +118,100 @@ export const FactionDetailPage: React.FC = () => {
       return;
     }
 
-    // Set loading states
+    // Set loading states for members that aren't cached
     const newLoadingStates = { ...loadingStates };
+    const newProfileLoadingStates = { ...profileLoadingStates };
+    const newMonsterLoadingStates = { ...monsterLoadingStates };
+    const membersToFetch: FactionMember[] = [];
+    
     membersToLoad.forEach(member => {
-      newLoadingStates[member.id] = true;
+      const cachedData = getCachedMemberData(member.id);
+      
+      if (cachedData) {
+        // Use cached data immediately
+        if (cachedData.profile) {
+          setMemberProfiles(prev => ({
+            ...prev,
+            [member.id]: cachedData.profile!
+          }));
+        }
+        
+        setMemberMonsters(prev => ({
+          ...prev,
+          [member.id]: cachedData.monster
+        }));
+      } else {
+        // Mark for fetching
+        membersToFetch.push(member);
+        newLoadingStates[member.id] = true;
+        newProfileLoadingStates[member.id] = true;
+        newMonsterLoadingStates[member.id] = true;
+      }
     });
+    
     setLoadingStates(newLoadingStates);
+    setProfileLoadingStates(newProfileLoadingStates);
+    setMonsterLoadingStates(newMonsterLoadingStates);
 
-    // Load each member's data individually and update as they come in
-    membersToLoad.forEach(async (member) => {
-      try {
-        // Update loading state for this member
-        setLoadingStates(prev => ({ ...prev, [member.id]: true }));
+    // Load data for uncached members with individual promise tracking
+    const memberPromises = membersToFetch.map(async (member) => {
+      // Load profile and monster separately to update UI as each completes
+      const profilePromise = getProfileInfo(member.id, true).catch(() => null);
+      const monsterPromise = getUserMonster({ address: member.id }, true).catch(() => null);
 
-        // Load profile and monster in parallel
-        const [profile, monster] = await Promise.all([
-          getProfileInfo(member.id, true).catch(() => null),
-          getUserMonster({ address: member.id }, true).catch(() => null)
-        ]);
-
-        // Update state with the loaded data
+      // Update profile as soon as it loads
+      profilePromise.then(profile => {
         if (profile) {
           setMemberProfiles(prev => ({
             ...prev,
             [member.id]: profile
           }));
         }
+        setProfileLoadingStates(prev => ({
+          ...prev,
+          [member.id]: false
+        }));
+      });
 
+      // Update monster as soon as it loads
+      monsterPromise.then(monster => {
         setMemberMonsters(prev => ({
           ...prev,
           [member.id]: monster
         }));
-      } catch (error) {
-        console.error(`Error loading data for ${member.id}:`, error);
-      } finally {
-        // Clear loading state for this member
-        setLoadingStates(prev => ({
+        setMonsterLoadingStates(prev => ({
           ...prev,
           [member.id]: false
         }));
+      });
+
+      try {
+        // Wait for both to complete for caching
+        const [profile, monster] = await Promise.all([profilePromise, monsterPromise]);
+        
+        // Cache the results (including null values for "no monster" state)
+        setCachedMemberData(member.id, profile, monster);
+
+        return { memberId: member.id, success: true };
+      } catch (error) {
+        console.error(`Error loading data for ${member.id}:`, error);
+        
+        // Cache the failed state to avoid repeated requests
+        setCachedMemberData(member.id, null, null);
+        
+        return { memberId: member.id, success: false };
       }
     });
+
+    // Wait for all member data to load and update loading states
+    const results = await Promise.allSettled(memberPromises);
+    
+    const finalLoadingStates = { ...loadingStates };
+    results.forEach((result, index) => {
+      const memberId = membersToFetch[index].id;
+      finalLoadingStates[memberId] = false;
+    });
+    setLoadingStates(finalLoadingStates);
 
     // Check if there are more members to load
     setHasMore(endIdx < members.length);
@@ -126,8 +228,6 @@ export const FactionDetailPage: React.FC = () => {
   useEffect(() => {
     const loadFactionData = async () => {
       try {
-        const factions = await getFactionOptions(wallet);
-        
         if (!factions || factions.length === 0) {
           setIsLoading(false);
           return;
@@ -171,7 +271,7 @@ export const FactionDetailPage: React.FC = () => {
     };
 
     loadFactionData();
-  }, [factionId, navigate, refreshTrigger]);
+  }, [factionId, navigate, refreshTrigger, factions]);
 
   // Load more members when currentPage changes
   useEffect(() => {
@@ -180,7 +280,7 @@ export const FactionDetailPage: React.FC = () => {
     }
   }, [currentPage]);
 
-  if (isLoading) {
+  if (isLoading || isLoadingFactions) {
     return (
       <div className={`min-h-screen flex flex-col ${theme.bg}`}>
         <Header
@@ -199,138 +299,199 @@ export const FactionDetailPage: React.FC = () => {
   }
 
   return (
-    <div className={`min-h-screen flex flex-col ${theme.bg}`}>
+    <div className={`h-screen-safe flex flex-col ${theme.bg} overflow-hidden`}>
       <Header
         theme={theme}
         darkMode={darkMode}
       />
       
-      <div className={`container mx-auto px-6 py-8 flex-1 ${theme.text}`}>
-        <div className="max-w-[1920px] mx-auto">
-          <div className="flex items-center mb-6">
+      <div className={`container mx-auto px-4 sm:px-6 py-2 sm:py-4 flex-1 ${theme.text} overflow-hidden`}>
+        <div className="max-w-7xl mx-auto h-full flex flex-col">
+          <div className="flex flex-col sm:flex-row items-start sm:items-center gap-2 mb-3 sm:mb-4 flex-shrink-0">
             <button 
               onClick={() => navigate('/factions')}
-              className={`mr-4 px-4 py-2 rounded-lg ${theme.buttonBg} ${theme.buttonHover}`}
+              className={`px-4 py-2 rounded-xl ${theme.buttonBg} ${theme.buttonHover} font-bold transition-all duration-300 hover:scale-105 shadow-lg border border-blue-500/30 flex items-center gap-2`}
             >
-              ← Back
+              ⬅️ Back to Factions
             </button>
-            <h1 className="text-3xl font-bold">{faction.name}</h1>
+            <div className="relative">
+              <h1 className={`text-2xl sm:text-3xl lg:text-4xl font-bold bg-gradient-to-r from-blue-400 via-purple-500 to-pink-500 bg-clip-text text-transparent`}>
+                ⚔️ {faction.name} ⚔️
+              </h1>
+              <div className="absolute -inset-1 bg-gradient-to-r from-blue-600 via-purple-600 to-pink-600 rounded-lg blur opacity-20 animate-pulse"></div>
+            </div>
           </div>
 
-          <div className={`p-6 rounded-xl ${theme.container} border ${theme.border} backdrop-blur-md space-y-8`}>
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
-              <div>
-                {faction.mascot && (
-                  <img
-                    src={`${Gateway}${faction.mascot}`}
-                    alt={`${faction.name} Mascot`}
-                    className="w-full rounded-lg object-contain mb-4 max-h-[400px]"
-                  />
-                )}
-                <div className="space-y-4">
-                  <h2 className="text-2xl font-bold mb-2">Description</h2>
-                  <p className="text-lg">{faction.description}</p>
-                  <div>
-                    <h3 className="text-xl font-bold mb-2">Perks</h3>
-                    <ul className="space-y-2">
-                      {faction.perks.map((perk, index) => (
-                        <li key={index} className="flex items-start">
-                          <span className="mr-2 text-blue-400">•</span>
-                          <span>{perk}</span>
-                        </li>
-                      ))}
-                    </ul>
+          <div className="flex-1 flex flex-col gap-3 sm:gap-4 min-h-0">
+            {/* Compact Faction Overview Section */}
+            <div className="grid grid-cols-1 lg:grid-cols-3 gap-3 sm:gap-4 flex-shrink-0">
+              {/* Mascot */}
+              <div className={`relative p-3 rounded-xl ${theme.container} border ${theme.border} backdrop-blur-md overflow-hidden`}>
+                <div className="absolute inset-0 bg-gradient-to-br from-blue-500/10 via-purple-500/10 to-pink-500/10"></div>
+                <div className="relative z-10 text-center">
+                  {faction.mascot && (
+                    <img
+                      src={`${Gateway}${faction.mascot}`}
+                      alt={`${faction.name} Mascot`}
+                      className="w-full rounded-lg object-contain max-h-[120px] shadow-lg border border-blue-500/30 mx-auto"
+                    />
+                  )}
+                </div>
+              </div>
+
+              {/* Compact Stats */}
+              <div className={`relative p-3 rounded-xl ${theme.container} border ${theme.border} backdrop-blur-md overflow-hidden`}>
+                <div className="absolute inset-0 bg-gradient-to-br from-green-500/10 via-emerald-500/10 to-teal-500/10"></div>
+                <div className="relative z-10">
+                  <h3 className="text-base font-bold mb-2 text-green-400 flex items-center gap-2">📊 Stats</h3>
+                  <div className="grid grid-cols-2 gap-1.5">
+                    <div className="bg-blue-500/20 border border-blue-500/50 rounded-lg p-1.5 text-center">
+                      <div className="text-lg font-bold text-blue-400">{faction.memberCount}</div>
+                      <div className="text-xs opacity-70">👥 Members</div>
+                    </div>
+                    <div className="bg-green-500/20 border border-green-500/50 rounded-lg p-1.5 text-center">
+                      <div className="text-lg font-bold text-green-400">{faction.monsterCount}</div>
+                      <div className="text-xs opacity-70">🐲 Monsters</div>
+                    </div>
+                    <div className="bg-purple-500/20 border border-purple-500/50 rounded-lg p-1.5 text-center">
+                      <div className="text-lg font-bold text-purple-400">
+                        {typeof faction.averageLevel === 'number' ? Math.round(faction.averageLevel * 10) / 10 : 0}
+                      </div>
+                      <div className="text-xs opacity-70">📊 Avg Lv</div>
+                    </div>
+                    <div className="bg-yellow-500/20 border border-yellow-500/50 rounded-lg p-1.5 text-center">
+                      <div className="text-lg font-bold text-yellow-400">
+                        {(faction.totalTimesFed || 0) + (faction.totalTimesPlay || 0) + (faction.totalTimesMission || 0)}
+                      </div>
+                      <div className="text-xs opacity-70">🏆 Power</div>
+                    </div>
                   </div>
                 </div>
               </div>
 
-              <div className={`p-6 rounded-lg ${theme.container} bg-opacity-50`}>
-                <h2 className="text-2xl font-bold mb-4">Faction Statistics</h2>
-                <div className="grid grid-cols-2 gap-y-4">
-                  <div>
-                    <div className="text-sm opacity-70">Members</div>
-                    <div className="text-xl font-bold">{faction.memberCount}</div>
-                  </div>
-                  <div>
-                    <div className="text-sm opacity-70">Monsters</div>
-                    <div className="text-xl font-bold">{faction.monsterCount}</div>
-                  </div>
-                  <div>
-                    <div className="text-sm opacity-70">Average Level</div>
-                    <div className="text-xl font-bold">
-                      {typeof faction.averageLevel === 'number' ? Math.round(faction.averageLevel * 10) / 10 : 0}
-                    </div>
-                  </div>
-                  <div>
-                    <div className="text-sm opacity-70">Total Times Fed</div>
-                    <div className="text-xl font-bold">{faction.totalTimesFed}</div>
-                  </div>
-                  <div>
-                    <div className="text-sm opacity-70">Total Times Played</div>
-                    <div className="text-xl font-bold">{faction.totalTimesPlay}</div>
-                  </div>
-                  <div>
-                    <div className="text-sm opacity-70">Total Missions</div>
-                    <div className="text-xl font-bold">{faction.totalTimesMission}</div>
+              {/* Compact Description & Perks */}
+              <div className={`relative p-3 rounded-xl ${theme.container} border ${theme.border} backdrop-blur-md overflow-hidden`}>
+                <div className="absolute inset-0 bg-gradient-to-br from-purple-500/10 via-pink-500/10 to-red-500/10"></div>
+                <div className="relative z-10">
+                  <h3 className="text-base font-bold mb-2 text-yellow-400 flex items-center gap-2">✨ Perks</h3>
+                  <div className="space-y-1.5">
+                    {faction.perks.slice(0, 2).map((perk, index) => (
+                      <div key={index} className="bg-yellow-500/10 border border-yellow-500/30 rounded-lg p-1.5">
+                        <div className="flex items-start gap-2">
+                          <span className="text-yellow-400 text-sm flex-shrink-0">⭐</span>
+                          <span className="text-xs opacity-90 leading-tight">{perk}</span>
+                        </div>
+                      </div>
+                    ))}
                   </div>
                 </div>
               </div>
             </div>
 
-            <div className={`p-6 rounded-lg ${theme.container} bg-opacity-50`}>
-              <h2 className="text-2xl font-bold mb-4">Members</h2>
-              <div className="space-y-4">
-                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 xl:grid-cols-5 2xl:grid-cols-6 gap-3 max-h-[600px] overflow-y-auto px-1">
-                  {faction.members.slice(0, currentPage * ITEMS_PER_PAGE).map((member, index) => {
-                    const profile = memberProfiles[member.id];
-                    const monster = memberMonsters[member.id];
-                    const isLoading = loadingStates[member.id] === true;
-                    
-                    if (isLoading) {
-                      return (
-                        <div 
-                          key={`${member.id}-${index}`}
-                          className="relative bg-gray-800 bg-opacity-50 rounded-lg p-4 h-48 flex items-center justify-center"
-                        >
-                          <div className="absolute inset-0 bg-black bg-opacity-50 rounded-lg flex items-center justify-center">
-                            <div className="w-8 h-8 border-4 border-blue-500 border-t-transparent rounded-full animate-spin"></div>
-                          </div>
-                        </div>
-                      );
-                    }
-
-                    return (
-                      <ProfileCard
-                        key={`${member.id}-${index}`}
-                        profile={{
-                          ProfileImage: profile?.Profile?.ProfileImage,
-                          UserName: profile?.Profile?.UserName || 'Unknown',
-                          DisplayName: profile?.Profile?.DisplayName || 'Unknown',
-                          Description: profile?.Profile?.Description || ''
-                        }}
-                        address={member.id}
-                        onClick={() => setSelectedMember({
-                          ...member,
-                          profile,
-                          monster
-                        })}
-                        assets={profile?.Assets}
-                        monster={monster}
-                      />
-                    );
-                  })}
-                </div>
-                {hasMore && (
-                  <div className="flex justify-center">
-                    <button
-                      onClick={loadMoreMembers}
-                      disabled={isLoadingMore}
-                      className={`px-6 py-2 rounded-lg ${theme.buttonBg} ${theme.buttonHover} disabled:opacity-50`}
+            {/* Members Section */}
+            <div className={`relative p-1 rounded-2xl ${theme.container} border-2 ${theme.border} backdrop-blur-md overflow-hidden flex-1 min-h-0`}>
+              <div className="absolute inset-0 bg-gradient-to-br from-indigo-500/10 via-purple-500/10 to-pink-500/10"></div>
+              <div className="relative z-10 h-full flex flex-col">
+                <h2 className="text-xl sm:text-2xl font-bold mb-3 flex items-center gap-2 bg-gradient-to-r from-indigo-400 to-purple-400 bg-clip-text text-transparent flex-shrink-0">
+                  👥 Faction Warriors ({faction.memberCount})
+                </h2>
+                
+                <div className="flex-1 min-h-0">
+                  {/* Members grid - fixed to prevent horizontal scrolling */}
+                  <div className="w-full h-full overflow-hidden">
+                    <div 
+                      className="grid gap-x-4 gap-y-16 h-full overflow-y-auto pr-2 custom-scrollbar"
+                      style={{
+                        gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))',
+                        gridAutoRows: '250px'
+                      }}
                     >
-                      {isLoadingMore ? 'Loading...' : 'Load More'}
-                    </button>
+                      {faction.members.slice(0, currentPage * ITEMS_PER_PAGE).map((member, index) => {
+                        const profile = memberProfiles[member.id];
+                        const monster = memberMonsters[member.id];
+                        const isProfileLoading = profileLoadingStates[member.id] === true;
+                        const isMonsterLoading = monsterLoadingStates[member.id] === true;
+                        const hasAnyData = profile || monster !== undefined;
+                        
+                        // Show loading only if no data is available yet
+                        if (!hasAnyData && (isProfileLoading || isMonsterLoading)) {
+                          return (
+                            <div 
+                              key={`${member.id}-${index}`}
+                              className="relative bg-gray-800/30 border border-gray-600/30 rounded-xl p-2 h-full flex items-center justify-center group hover:bg-gray-700/30 transition-all duration-300"
+                            >
+                              <div className="absolute inset-0 bg-gradient-to-br from-blue-500/10 to-purple-500/10 rounded-xl"></div>
+                              <div className="relative z-10 text-center">
+                                <div className="w-8 h-8 border-4 border-blue-500 border-t-transparent rounded-full animate-spin mb-2"></div>
+                                <div className="text-xs opacity-60">Loading...</div>
+                              </div>
+                            </div>
+                          );
+                        }
+
+                        return (
+                          <div key={`${member.id}-${index}`} className="relative group">
+                            <div className="relative overflow-hidden rounded-xl border-2 border-purple-500/30 bg-gradient-to-br from-purple-500/10 to-pink-500/10 hover:from-purple-500/20 hover:to-pink-500/20 transition-all duration-300 hover:scale-105 hover:shadow-xl">
+                              <ProfileCard
+                                profile={{
+                                  ProfileImage: profile?.Profile?.ProfileImage,
+                                  UserName: profile?.Profile?.UserName || (isProfileLoading ? 'Loading...' : 'Unknown'),
+                                  DisplayName: profile?.Profile?.DisplayName || (isProfileLoading ? 'Loading...' : 'Unknown'),
+                                  Description: profile?.Profile?.Description || ''
+                                }}
+                                address={member.id}
+                                onClick={() => setSelectedMember({
+                                  ...member,
+                                  profile,
+                                  monster
+                                })}
+                                assets={profile?.Assets}
+                                monster={monster}
+                              />
+                              
+                              
+                              {/* Loading indicators for partial data */}
+                              {(isProfileLoading || isMonsterLoading) && (
+                                <div className="absolute top-2 right-2 flex gap-1">
+                                  {isProfileLoading && (
+                                    <div className="w-4 h-4 border-2 border-blue-500 border-t-transparent rounded-full animate-spin bg-black/50 p-1" 
+                                         title="Loading profile..."></div>
+                                  )}
+                                  {isMonsterLoading && (
+                                    <div className="w-4 h-4 border-2 border-green-500 border-t-transparent rounded-full animate-spin bg-black/50 p-1" 
+                                         title="Loading monster..."></div>
+                                  )}
+                                </div>
+                              )}
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
                   </div>
-                )}
+                  
+                  {/* Load more button */}
+                  {hasMore && (
+                    <div className="flex justify-center pt-2 flex-shrink-0">
+                      <button
+                        onClick={loadMoreMembers}
+                        disabled={isLoadingMore}
+                        className={`px-6 py-2 rounded-xl font-bold transition-all duration-300 hover:scale-105 ${theme.buttonBg} ${theme.buttonHover} disabled:opacity-50 shadow-lg hover:shadow-xl border-2 border-purple-500/50 bg-gradient-to-r from-purple-600/20 to-pink-600/20 flex items-center gap-2 text-sm`}
+                      >
+                        {isLoadingMore ? (
+                          <>
+                            <div className="w-3 h-3 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
+                            Loading...
+                          </>
+                        ) : (
+                          <>
+                            ⚔️ Load More ⚔️
+                          </>
+                        )}
+                      </button>
+                    </div>
+                  )}
+                </div>
               </div>
             </div>
           </div>
@@ -354,7 +515,6 @@ export const FactionDetailPage: React.FC = () => {
         />
       )}
 
-      <Footer darkMode={darkMode} />
     </div>
   );
 };

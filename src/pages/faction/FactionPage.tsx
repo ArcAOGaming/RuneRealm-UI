@@ -1,7 +1,9 @@
 import React, { useEffect, useState } from 'react';
 import { useWallet } from '../../contexts/WalletContext';
+import { useFaction } from '../../contexts/FactionContext';
 import { useNavigate } from 'react-router-dom';
-import { getFactionOptions, FactionOptions, setFaction, purchaseAccess, TokenOption, getTotalOfferings, OfferingStats, getUserOfferings } from '../../utils/aoHelpers';
+import { setFaction, purchaseAccess, TokenOption } from '../../utils/aoHelpers';
+import { FactionOptions, OfferingStats } from '../../utils/interefaces';
 import { currentTheme } from '../../constants/theme';
 import { Gateway, ACTIVITY_POINTS } from '../../constants/Constants';
 import PurchaseModal from '../../components/PurchaseModal';
@@ -18,37 +20,32 @@ const FACTION_TO_PATH = {
   'Stone Titans': 'rock'
 };
 
-interface OfferingData {
-  LastOffering: number;
-  IndividualOfferings: number;
-  Streak: number;
-}
-
-// Type guard function to check if a value is an OfferingData object
-const isOfferingData = (value: unknown): value is OfferingData => {
-  return typeof value === 'object' && 
-         value !== null && 
-         'LastOffering' in value &&
-         'IndividualOfferings' in value &&
-         'Streak' in value;
-};
 
 export const FactionPage: React.FC = () => {
   const navigate = useNavigate();
   const { wallet, walletStatus, darkMode, connectWallet, setDarkMode, refreshTrigger, triggerRefresh } = useWallet();
-  const [factions, setFactions] = useState<FactionOptions[]>([]);
+  const { 
+    factions, 
+    offeringStats, 
+    userFactionStatus, 
+    isLoadingFactions, 
+    isLoadingOfferingStats, 
+    isLoadingUserStatus,
+    refreshAllData,
+    hardRefresh,
+    getCurrentFaction,
+    getUserTotalPoints,
+    getFactionTotalPoints
+  } = useFaction();
   const [isPurchaseModalOpen, setIsPurchaseModalOpen] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
-  const [isInitialLoad, setIsInitialLoad] = useState(true);
   const [showConfetti, setShowConfetti] = useState(false);
-  const [offeringStats, setOfferingStats] = useState<OfferingStats | null>(null);
-  const [userOfferings, setUserOfferings] = useState<OfferingData | null>(null);
   const [nextOfferingTime, setNextOfferingTime] = useState<string>('');
   const theme = currentTheme(darkMode);
 
   useEffect(() => {
     const updateNextOfferingTime = () => {
-      if (!userOfferings?.LastOffering) {
+      if (!userFactionStatus?.offerings?.LastOffering) {
         const now = new Date();
         const midnight = new Date();
         midnight.setUTCHours(24, 0, 0, 0);
@@ -63,7 +60,7 @@ export const FactionPage: React.FC = () => {
 
         setNextOfferingTime(`${hours}h ${minutes}m ${seconds}s`);
       } else {
-        const lastOffering = new Date(userOfferings.LastOffering * 1000);
+        const lastOffering = new Date(userFactionStatus.offerings.LastOffering * 1000);
         const nextOffering = new Date(lastOffering);
         nextOffering.setUTCDate(nextOffering.getUTCDate() + 1);
         nextOffering.setUTCHours(0, 0, 0, 0);
@@ -87,43 +84,19 @@ export const FactionPage: React.FC = () => {
     updateNextOfferingTime();
     const interval = setInterval(updateNextOfferingTime, 1000);
     return () => clearInterval(interval);
-  }, [userOfferings?.LastOffering]);
+  }, [userFactionStatus?.offerings?.LastOffering]);
 
-  // Function to load data
+  // Function to load data - now uses context
   const loadAllData = async () => {
-    if (!wallet?.address) {
-      setFactions([]);
-      setOfferingStats(null);
-      setUserOfferings(null);
-      setIsInitialLoad(false);
-      return;
-    }
-
-    try {
-      const [factionData, totalStats, userStats] = await Promise.all([
-        getFactionOptions(wallet),
-        getTotalOfferings(),
-        getUserOfferings(wallet.address)
-      ]);
-
-      if (factionData) setFactions(factionData);
-      if (totalStats) setOfferingStats(totalStats);
-      if (userStats && isOfferingData(userStats)) {
-        setUserOfferings(userStats);
-      } else {
-        setUserOfferings(null);
-      }
-    } catch (error) {
-      console.error('Error loading faction data:', error);
-    } finally {
-      setIsInitialLoad(false);
-    }
+    await refreshAllData();
   };
 
   // Load data when wallet changes or refresh is triggered
   useEffect(() => {
-    loadAllData();
-  }, [wallet?.address, refreshTrigger]);
+    if (wallet?.address) {
+      refreshAllData();
+    }
+  }, [wallet?.address, refreshTrigger, refreshAllData]);
 
   const handleJoinFaction = async (factionName: string) => {
     if (!wallet) {
@@ -159,29 +132,21 @@ export const FactionPage: React.FC = () => {
     }
   };
 
-  // Calculate total points for a faction
+  // Calculate total points for a faction - now uses context
   const calculateFactionPoints = (faction: FactionOptions) => {
-    const offeringPoints = Number(offeringStats?.[faction.name as keyof OfferingStats] || 0) * ACTIVITY_POINTS.OFFERING;
-    const feedPoints = Number(faction.totalTimesFed || 0) * ACTIVITY_POINTS.FEED;
-    const playPoints = Number(faction.totalTimesPlay || 0) * ACTIVITY_POINTS.PLAY;
-    const missionPoints = Number(faction.totalTimesMission || 0) * ACTIVITY_POINTS.MISSION;
-    return offeringPoints + feedPoints + playPoints + missionPoints;
+    return getFactionTotalPoints(faction);
   };
 
-  // Calculate user's total points
+  // Calculate user's total points - now uses context
   const calculateUserPoints = () => {
-    const offeringPoints = Number(userOfferings?.IndividualOfferings || 0) * ACTIVITY_POINTS.OFFERING;
-    const feedPoints = Number(walletStatus?.monster?.totalTimesFed || 0) * ACTIVITY_POINTS.FEED;
-    const playPoints = Number(walletStatus?.monster?.totalTimesPlay || 0) * ACTIVITY_POINTS.PLAY;
-    const missionPoints = Number(walletStatus?.monster?.totalTimesMission || 0) * ACTIVITY_POINTS.MISSION;
-    return offeringPoints + feedPoints + playPoints + missionPoints;
+    return getUserTotalPoints();
   };
 
-  const currentFaction = factions.find(f => f.name === walletStatus?.faction);
+  const currentFaction = getCurrentFaction();
 
   return (
-    <div className="min-h-screen flex flex-col overflow-hidden">
-      <div className={`min-h-screen flex flex-col ${theme.bg}`}>
+    <div className="h-screen flex flex-col overflow-hidden">
+      <div className={`h-screen flex flex-col ${theme.bg}`}>
         <Header
           theme={theme}
           darkMode={darkMode}
@@ -204,111 +169,78 @@ export const FactionPage: React.FC = () => {
           contractName="Eternal Pass"
         />
 
-        <div className={`container mx-auto px-6 py-8 flex-1 overflow-y-auto ${theme.text}`}>
+        <div className={`flex-1 flex flex-col px-2 sm:px-4 py-2 sm:py-4 overflow-hidden ${theme.text}`}>
           {/* Header Section */}
-          <div className="max-w-6xl mx-auto mb-8">
-            <h1 className={`text-3xl font-bold mb-4 ${theme.text}`}>Factions</h1>
-            {!walletStatus?.faction && walletStatus?.isUnlocked && (
-              <div className={`p-6 rounded-xl ${theme.container} border ${theme.border} mb-8 backdrop-blur-md`}>
-                <h2 className={`text-2xl font-bold mb-4 ${theme.text}`}>Picking Your Faction</h2>
-                <div className={`space-y-3 ${theme.text}`}>
-                  <p className="text-lg font-semibold text-red-500">
-                    Important: Faction selection is final - Team players only, no team quitting!
-                  </p>
-                  <div className="space-y-2">
-                    <p>
-                      <span className="font-semibold">Rewards Distribution:</span> Faction rewards are split among all faction members - being in the biggest faction may not be the best strategy.
+          <div className="flex-shrink-0 mb-2 sm:mb-4">
+            <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-2 mb-2 sm:mb-4">
+              <div className="relative">
+                <h1 className={`text-2xl sm:text-3xl md:text-4xl font-bold ${theme.text} bg-gradient-to-r from-blue-400 via-purple-500 to-pink-500 bg-clip-text text-transparent`}>
+                  ⚔️ Factions ⚔️
+                </h1>
+                <div className="absolute -inset-1 bg-gradient-to-r from-blue-600 via-purple-600 to-pink-600 rounded-lg blur opacity-20 animate-pulse"></div>
+              </div>
+              <button
+                onClick={hardRefresh}
+                className={`px-3 py-1.5 sm:px-4 sm:py-2 text-sm sm:text-base rounded-lg font-bold transition-all duration-300 hover:scale-105 ${theme.buttonBg} ${theme.buttonHover} ${theme.text} shadow-lg hover:shadow-xl border border-blue-500/30`}
+                disabled={isLoadingFactions || isLoadingOfferingStats || isLoadingUserStatus}
+              >
+                {(isLoadingFactions || isLoadingOfferingStats || isLoadingUserStatus) ? '🔄 Refreshing...' : '🔄 Hard Refresh'}
+              </button>
+            </div>
+            
+            {/* Non-premium user message */}
+            {!walletStatus?.isUnlocked && (
+              <div className={`relative p-6 sm:p-8 rounded-2xl ${theme.container} border-2 ${theme.border} mb-6 sm:mb-8 backdrop-blur-md overflow-hidden`}>
+                <div className="absolute inset-0 bg-gradient-to-br from-red-500/10 via-orange-500/10 to-yellow-500/10 animate-pulse"></div>
+                <div className="relative z-10">
+                  <div className="text-center">
+                    <div className="text-6xl mb-4">🔒</div>
+                    <h2 className={`text-2xl sm:text-3xl font-bold mb-4 ${theme.text}`}>🏰 Join the Battle!</h2>
+                    <p className={`text-base sm:text-lg mb-6 ${theme.text} opacity-90`}>
+                      Unlock your destiny! Purchase an Eternal Pass to choose your faction and begin your legendary journey.
                     </p>
-                    <p>
-                      <span className="font-semibold">Activity Matters:</span> The most active members will receive additional rewards, while non-active members will receive no rewards.
-                    </p>
-                    <p>
-                      <span className="font-semibold">Reward Sources:</span> Rewards come from multiple sources:
-                    </p>
-                    <ul className="list-disc pl-6 space-y-1">
-                      <li>Partnerships</li>
-                      <li>Premium pass sales revenue</li>
-                      <li>In-game revenue</li>
-                      <li>Funds raised</li>
-                      <li>Profits from staking</li>
-                    </ul>
+                    <button
+                      onClick={() => setIsPurchaseModalOpen(true)}
+                      className={`px-8 py-4 rounded-xl font-bold text-lg transition-all duration-300 hover:scale-105 ${theme.buttonBg} ${theme.buttonHover} ${theme.text} shadow-2xl hover:shadow-3xl border-2 border-yellow-500/50 bg-gradient-to-r from-yellow-600/20 to-orange-600/20`}
+                    >
+                      ⚡ Buy Eternal Pass ⚡
+                    </button>
                   </div>
                 </div>
               </div>
             )}
-            {walletStatus?.faction && currentFaction && (
-              <div className={`p-6 rounded-xl ${theme.container} border ${theme.border} mb-8 backdrop-blur-md`}>
-                <div className="flex flex-col md:flex-row gap-6">
-                  <div className="flex items-start gap-4">
-                    {currentFaction.mascot && (
-                      <img 
-                        src={`${Gateway}${currentFaction.mascot}`}
-                        alt={`${currentFaction.name} Mascot`}
-                        className="w-24 h-24 object-cover rounded-lg"
-                      />
-                    )}
-                    <div>
-                      <h2 className={`text-2xl font-bold mb-2 ${theme.text}`}>Your Faction</h2>
-                      <p className={`text-xl ${theme.text} mb-2`}>{currentFaction.name}</p>
-                      {currentFaction.perks && (
-                        <div className="mb-4">
-                          <p className={`text-sm ${theme.text} opacity-75`}>{currentFaction.perks[0]}</p>
-                        </div>
-                      )}
-                    </div>
+            
+            {!walletStatus?.faction && walletStatus?.isUnlocked && (
+              <div className={`relative p-6 sm:p-8 rounded-2xl ${theme.container} border-2 ${theme.border} mb-6 sm:mb-8 backdrop-blur-md overflow-hidden`}>
+                <div className="absolute inset-0 bg-gradient-to-br from-purple-500/10 via-blue-500/10 to-cyan-500/10"></div>
+                <div className="relative z-10">
+                  <div className="text-center mb-6">
+                    <div className="text-5xl mb-3">⚡</div>
+                    <h2 className={`text-2xl sm:text-3xl font-bold mb-4 ${theme.text}`}>🎯 Choose Your Destiny</h2>
                   </div>
-                  
-                  <div className="flex-1 border-t md:border-l md:border-t-0 pt-4 md:pt-0 md:pl-6">
-                    <div className="mb-4">
-                      <h3 className={`text-lg font-semibold mb-2 ${theme.text}`}>Daily Offerings</h3>
-                      <p className={`text-sm ${theme.text} opacity-80 mb-2`}>
-                        Offer praise to the altar of your team once daily. Build streaks to earn RUNE rewards - consistency is key!
+                  <div className={`space-y-4 ${theme.text}`}>
+                    <div className="bg-red-500/20 border border-red-500/50 rounded-lg p-4 text-center">
+                      <p className="text-lg font-bold text-red-400 flex items-center justify-center gap-2">
+                        ⚠️ Faction selection is FINAL - No team switching! ⚠️
                       </p>
-                      <div className="grid grid-cols-2 gap-4">
-                        <div className={`grid grid-cols-2 gap-4 p-3 rounded-lg ${theme.container} bg-opacity-50 mb-4`}>
-                          <div>
-                            <div className={`text-sm ${theme.text}`}>
-                              <span className="opacity-70">Your Offerings:</span>
-                              <span className="float-right font-semibold">{userOfferings?.IndividualOfferings || 0}</span>
-                            </div>
-                            <div className={`text-sm ${theme.text}`}>
-                              <span className="opacity-70">Times Fed:</span>
-                              <span className="float-right font-semibold">{walletStatus?.monster?.totalTimesFed || 0}</span>
-                            </div>
-                            <div className={`text-sm ${theme.text}`}>
-                              <span className="opacity-70">Times Played:</span>
-                              <span className="float-right font-semibold">{walletStatus?.monster?.totalTimesPlay || 0}</span>
-                            </div>
-                            <div className={`text-sm ${theme.text}`}>
-                              <span className="opacity-70">Missions:</span>
-                              <span className="float-right font-semibold">{walletStatus?.monster?.totalTimesMission || 0}</span>
-                            </div>
-                            <div className={`text-sm ${theme.text} font-bold pt-2 border-t border-gray-600`}>
-                              <span>Total Points:</span>
-                              <span className="float-right">{calculateUserPoints()}</span>
-                            </div>
-                          </div>
-                          <div>
-                            <div className={`text-sm ${theme.text} mb-2`}>
-                              <span className="opacity-70">Avg Level:</span>
-                              <span className="float-right font-semibold">{currentFaction.averageLevel ? Math.round(currentFaction.averageLevel * 10) / 10 : 0}</span>
-                            </div>
-                            <div className={`text-sm ${theme.text} opacity-80`}>
-                              <div>Offering: {ACTIVITY_POINTS.OFFERING}pts</div>
-                              <div>Feed: {ACTIVITY_POINTS.FEED}pt</div>
-                              <div>Play: {ACTIVITY_POINTS.PLAY}pts</div>
-                              <div>Mission: {ACTIVITY_POINTS.MISSION}pts</div>
-                            </div>
-                          </div>
-                        </div>
+                    </div>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+                      <div className="bg-blue-500/10 border border-blue-500/30 rounded-lg p-4">
+                        <h3 className="font-bold text-blue-400 mb-2">💰 Rewards Distribution</h3>
+                        <p className="text-sm opacity-90">Faction rewards split among members - bigger isn't always better!</p>
                       </div>
-                      <div className="flex items-center gap-4">
-                        <CheckInButton onOfferingComplete={loadAllData} />
-                        {nextOfferingTime && (
-                          <div className={`text-sm ${theme.text} opacity-80`}>
-                            Next offering in: {nextOfferingTime}
-                          </div>
-                        )}
+                      <div className="bg-green-500/10 border border-green-500/30 rounded-lg p-4">
+                        <h3 className="font-bold text-green-400 mb-2">🎮 Activity Matters</h3>
+                        <p className="text-sm opacity-90">Active members get rewards, inactive members get nothing!</p>
+                      </div>
+                      <div className="bg-purple-500/10 border border-purple-500/30 rounded-lg p-4 sm:col-span-2 lg:col-span-1">
+                        <h3 className="font-bold text-purple-400 mb-2">🏆 Reward Sources</h3>
+                        <div className="text-xs opacity-80 space-y-1">
+                          <div>• Partnerships</div>
+                          <div>• Premium sales</div>
+                          <div>• In-game revenue</div>
+                          <div>• Staking profits</div>
+                        </div>
                       </div>
                     </div>
                   </div>
@@ -318,117 +250,174 @@ export const FactionPage: React.FC = () => {
           </div>
 
           {/* Loading State or Content */}
-          {isInitialLoad && !factions.length ? (
-            <div className="flex justify-center items-center min-h-[400px]">
+          {(isLoadingFactions || isLoadingOfferingStats) && !factions.length ? (
+            <div className="flex-1 flex justify-center items-center">
               <LoadingAnimation />
             </div>
           ) : factions.length > 0 && (
-            <div 
-              className={`grid gap-3 max-w-5xl mx-auto ${
-                factions.length <= 3 
-                  ? 'grid-cols-1 md:grid-cols-3' 
-                  : factions.length === 4 
-                  ? 'grid-cols-1 md:grid-cols-2' 
-                  : 'grid-cols-1'
-              }`}
-            >
-              {factions.map((faction) => (
-                <div
-                  key={faction.name}
-                  onClick={() => navigate(`/factions/${FACTION_TO_PATH[faction.name as keyof typeof FACTION_TO_PATH]}`)}
-                  className={`flex flex-col h-full p-2.5 rounded-xl ${theme.container} border ${theme.border} backdrop-blur-md transform transition-all duration-300 hover:scale-[1.02] hover:shadow-xl min-h-[480px] cursor-pointer`}
-                >
-                  <div className="relative rounded-lg overflow-hidden bg-black/5">
-                    {faction.mascot && (
-                      <img
-                        src={`${Gateway}${faction.mascot}`}
-                        alt={`${faction.name} Mascot`}
-                        className="w-full h-[360px] object-contain hover:scale-105 transition-transform duration-500"
-                      />
+            <div className="flex-1 flex flex-col overflow-hidden">
+              <div className={`grid gap-2 sm:gap-3 md:gap-4 h-full auto-rows-fr ${
+                factions.length <= 2 
+                  ? 'grid-cols-1 sm:grid-cols-2' 
+                  : factions.length === 3 
+                  ? 'grid-cols-1 sm:grid-cols-2 lg:grid-cols-3' 
+                  : 'grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4'
+              }`}>
+                {factions.map((faction) => {
+                  const isUserFaction = walletStatus?.faction === faction.name;
+                  return (
+                  <div
+                    key={faction.name}
+                    onClick={() => navigate(`/factions/${FACTION_TO_PATH[faction.name as keyof typeof FACTION_TO_PATH]}`)}
+                    className={`group relative flex flex-col h-full rounded-lg sm:rounded-xl md:rounded-2xl ${theme.container} border-2 ${isUserFaction ? 'border-yellow-400/70 shadow-yellow-400/30 shadow-lg' : theme.border} backdrop-blur-md transform transition-all duration-500 hover:scale-[1.02] hover:shadow-2xl cursor-pointer overflow-hidden ${isUserFaction ? 'animate-pulse' : ''}`}
+                  >
+                    {/* Gold shimmer effect for user's faction */}
+                    {isUserFaction && (
+                      <div className="absolute inset-0 bg-gradient-to-r from-transparent via-yellow-400/20 to-transparent animate-shimmer"></div>
                     )}
-                  </div>
-                  <div className="flex-grow mt-2.5 px-1.5">
-                    <h3 className={`text-xl font-bold ${theme.text} mb-3`}>{faction.name}</h3>
-                    <div className="grid grid-cols-2 gap-4">
-                      <div>
-                        {faction.perks && (
-                          <ul className="space-y-1.5">
-                            {faction.perks.map((perk, index) => (
-                              <li key={index} className={`text-sm ${theme.text} opacity-80 flex items-start leading-tight`}>
-                                <span className="mr-1.5 text-blue-400 flex-shrink-0">•</span>
-                                <span>{perk}</span>
-                              </li>
-                            ))}
-                          </ul>
+                    
+                    {/* Animated background gradient */}
+                    <div className={`absolute inset-0 bg-gradient-to-br ${isUserFaction ? 'from-yellow-500/10 via-gold-500/10 to-orange-500/10' : 'from-blue-500/5 via-purple-500/5 to-pink-500/5'} ${isUserFaction ? 'group-hover:from-yellow-500/20 group-hover:via-gold-500/20 group-hover:to-orange-500/20' : 'group-hover:from-blue-500/10 group-hover:via-purple-500/10 group-hover:to-pink-500/10'} transition-all duration-500`}></div>
+                    
+                    {/* Faction mascot with enhanced styling */}
+                    <div className="relative px-0.5 sm:px-1 pt-0.5 sm:pt-1 pb-0 flex-shrink-0">
+                      <div className="relative rounded-lg sm:rounded-xl overflow-hidden bg-gradient-to-br from-black/10 to-black/5 border border-white/10">
+                        {faction.mascot && (
+                          <img
+                            src={`${Gateway}${faction.mascot}`}
+                            alt={`${faction.name} Mascot`}
+                            className="w-full h-[100px] sm:h-[120px] md:h-[140px] lg:h-[160px] object-contain group-hover:scale-110 transition-transform duration-700"
+                          />
                         )}
-                      </div>
-                          <div className={`grid grid-cols-2 gap-4 p-4 rounded-lg ${theme.container} bg-opacity-50`}>
-                          <div className="space-y-4">
-                            <div className={`text-sm ${theme.text} mb-2`}>
-                              <span className="opacity-70">Members:</span>
-                              <span className="float-right font-semibold">{faction.memberCount}</span>
-                            </div>
-                            <div className={`text-sm ${theme.text} mb-2`}>
-                              <span className="opacity-70">Monsters:</span>
-                              <span className="float-right font-semibold">{faction.monsterCount}</span>
-                            </div>
-                            <div className={`text-sm ${theme.text} mb-2`}>
-                              <span className="opacity-70">Avg Level:</span>
-                              <span className="float-right font-semibold">{faction.averageLevel ? Math.round(faction.averageLevel * 10) / 10 : 0}</span>
-                            </div>
-                            <div className={`text-sm ${theme.text} mb-2`}>
-                              <span className="opacity-70">Offerings:</span>
-                              <span className="float-right font-semibold">
-                                {offeringStats?.[faction.name as keyof OfferingStats] || 0}
-                              </span>
-                            </div>
-                          </div>
-                          <div className="space-y-4">
-                            <div className={`text-sm ${theme.text} mb-2`}>
-                              <span className="opacity-70">Times Fed:</span>
-                              <span className="float-right font-semibold">{faction.totalTimesFed || 0}</span>
-                            </div>
-                            <div className={`text-sm ${theme.text} mb-2`}>
-                              <span className="opacity-70">Times Played:</span>
-                              <span className="float-right font-semibold">{faction.totalTimesPlay || 0}</span>
-                            </div>
-                            <div className={`text-sm ${theme.text} mb-2`}>
-                              <span className="opacity-70">Missions:</span>
-                              <span className="float-right font-semibold">{faction.totalTimesMission || 0}</span>
-                            </div>
-                            <div className={`text-sm ${theme.text} font-bold mt-4`}>
-                              <span>Points:</span>
-                              <span className="float-right">{calculateFactionPoints(faction)}</span>
-                            </div>
-                          </div>
+                        <div className="absolute inset-0 bg-gradient-to-t from-black/20 to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-300"></div>
                       </div>
                     </div>
-                  </div>
-                  <div className="mt-2.5 px-1.5">
-                    {!walletStatus?.isUnlocked ? (
-                      <button
-                        onClick={() => setIsPurchaseModalOpen(true)}
-                        className={`w-full px-3 py-1.5 rounded-lg font-bold transition-all duration-300 ${theme.buttonBg} ${theme.buttonHover} ${theme.text}`}
-                      >
-                        Unlock Access
-                      </button>
-                    ) : !walletStatus?.faction && (
-                      <button
-                        onClick={() => handleJoinFaction(faction.name)}
-                        disabled={isLoading}
-                        className={`w-full px-3 py-1.5 rounded-lg font-bold transition-all duration-300 ${theme.buttonBg} ${theme.buttonHover} hover:scale-105 ${theme.text}`}
-                      >
-                        {isLoading ? 'Joining...' : 'Join Faction'}
-                      </button>
-                    )}
-                    {walletStatus?.faction === faction.name && (
-                      <div className={`text-center py-1.5 font-bold ${theme.text} opacity-75`}>
-                        Current Faction
+                    
+                    {/* Faction info section */}
+                    <div className="relative z-10 flex-grow p-2 sm:p-3 md:p-4 pt-0 flex flex-col">
+                      <h3 className={`text-sm sm:text-base md:text-lg lg:text-xl font-bold ${theme.text} mb-2 sm:mb-3 md:mb-4 text-center bg-gradient-to-r from-blue-400 to-purple-400 bg-clip-text text-transparent`}>
+                        {faction.name}
+                      </h3>
+                      
+                      {/* Perks section */}
+                      <div className="mb-2 sm:mb-3 md:mb-4 flex-shrink-0">
+                        <h4 className="text-xs sm:text-sm font-bold text-yellow-400 mb-1 sm:mb-2 flex items-center gap-1">
+                          ✨ Faction Perks
+                        </h4>
+                        {faction.perks && (
+                          <div className="bg-yellow-500/10 border border-yellow-500/30 rounded-lg p-2 sm:p-3">
+                            <ul className="space-y-1">
+                              {faction.perks.slice(0, 1).map((perk, index) => (
+                                <li key={index} className={`text-xs ${theme.text} opacity-90 flex items-start leading-tight`}>
+                                  <span className="mr-1 sm:mr-2 text-yellow-400 flex-shrink-0">⭐</span>
+                                  <span className="line-clamp-2">{perk}</span>
+                                </li>
+                              ))}
+                            </ul>
+                          </div>
+                        )}
                       </div>
-                    )}
+                      
+                      {/* General Stats */}
+                      <div className="mb-1.5 sm:mb-2 flex-shrink-0">
+                        <h4 className="text-xs font-bold text-blue-400 mb-1 flex items-center gap-1">
+                          📊 General Stats
+                        </h4>
+                        <div className="grid grid-cols-3 gap-1">
+                          <div className="bg-blue-500/10 border border-blue-500/30 rounded-lg p-1 sm:p-1.5">
+                            <div className="text-center">
+                              <div className="text-xs sm:text-sm font-bold text-blue-400">{faction.memberCount}</div>
+                              <div className="text-xs opacity-70">👥 Members</div>
+                            </div>
+                          </div>
+                          <div className="bg-green-500/10 border border-green-500/30 rounded-lg p-1 sm:p-1.5">
+                            <div className="text-center">
+                              <div className="text-xs sm:text-sm font-bold text-green-400">{faction.monsterCount}</div>
+                              <div className="text-xs opacity-70">🐲 Monsters</div>
+                            </div>
+                          </div>
+                          <div className="bg-purple-500/10 border border-purple-500/30 rounded-lg p-1 sm:p-1.5">
+                            <div className="text-center">
+                              <div className="text-xs sm:text-sm font-bold text-purple-400">
+                                {faction.averageLevel ? Math.round(faction.averageLevel * 10) / 10 : 0}
+                              </div>
+                              <div className="text-xs opacity-70">📊 Avg Level</div>
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                      
+                      {/* Activity Stats */}
+                      <div className="mb-1.5 sm:mb-2 flex-shrink-0">
+                        <h4 className="text-xs font-bold text-orange-400 mb-1 flex items-center gap-1">
+                          ⚡ Activity Stats
+                        </h4>
+                        <div className="grid grid-cols-2 gap-1 mb-1">
+                          <div className="bg-orange-500/10 border border-orange-500/30 rounded-lg p-1 sm:p-1.5">
+                            <div className="text-center">
+                              <div className="text-xs sm:text-sm font-bold text-orange-400">
+                                {offeringStats?.[faction.name as keyof OfferingStats] || 0}
+                              </div>
+                              <div className="text-xs opacity-70">🙏 Offerings</div>
+                            </div>
+                          </div>
+                          <div className="bg-red-500/10 border border-red-500/30 rounded-lg p-1 sm:p-1.5">
+                            <div className="text-center">
+                              <div className="text-xs sm:text-sm font-bold text-red-400">{faction.totalTimesFed || 0}</div>
+                              <div className="text-xs opacity-70">🍖 Fed</div>
+                            </div>
+                          </div>
+                        </div>
+                        <div className="grid grid-cols-2 gap-1">
+                          <div className="bg-cyan-500/10 border border-cyan-500/30 rounded-lg p-1 sm:p-1.5">
+                            <div className="text-center">
+                              <div className="text-xs sm:text-sm font-bold text-cyan-400">{faction.totalTimesPlay || 0}</div>
+                              <div className="text-xs opacity-70">🎮 Played</div>
+                            </div>
+                          </div>
+                          <div className="bg-pink-500/10 border border-pink-500/30 rounded-lg p-1 sm:p-1.5">
+                            <div className="text-center">
+                              <div className="text-xs sm:text-sm font-bold text-pink-400">{faction.totalTimesMission || 0}</div>
+                              <div className="text-xs opacity-70">⚔️ Missions</div>
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                      
+                      {/* Total points highlight */}
+                      <div className="bg-gradient-to-r from-yellow-500/20 to-orange-500/20 border border-yellow-500/50 rounded-lg p-2 sm:p-3 mb-2 sm:mb-3 flex-shrink-0">
+                        <div className="text-center">
+                          <div className="text-xs opacity-70 mb-1">🏆 TOTAL FACTION POWER</div>
+                          <div className="text-base sm:text-lg md:text-xl font-bold text-yellow-400">
+                            {calculateFactionPoints(faction)}
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                    
+                    {/* Action button */}
+                    <div className="relative z-10 p-2 sm:p-3 md:p-4 pt-0 flex-shrink-0">
+                      {!walletStatus?.isUnlocked ? (
+                        <div className={`text-center py-3 font-bold ${theme.text} opacity-60 bg-gray-500/10 rounded-lg border border-gray-500/30`}>
+                          🔒 Premium Required
+                        </div>
+                      ) : !walletStatus?.faction ? (
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            handleJoinFaction(faction.name);
+                          }}
+                          disabled={isLoading}
+                          className={`w-full px-4 py-3 rounded-xl font-bold transition-all duration-300 ${theme.buttonBg} ${theme.buttonHover} hover:scale-105 ${theme.text} shadow-lg hover:shadow-xl border-2 border-green-500/50 bg-gradient-to-r from-green-600/20 to-emerald-600/20`}
+                        >
+                          {isLoading ? '⏳ Joining...' : '⚔️ Join Faction ⚔️'}
+                        </button>
+                      ) : null}
+                    </div>
                   </div>
-                </div>
-              ))}
+                  );
+                })}
+              </div>
             </div>
           )}
         </div>
