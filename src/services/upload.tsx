@@ -1,7 +1,7 @@
 import React, { useCallback, useState, useEffect, useMemo } from 'react';
 import { TurboFactory } from '@ardrive/turbo-sdk/web';
 import { message, createDataItemSigner } from '../config/aoConnection';
-import { AdminSkinChanger, DefaultAtlasTxID } from '../constants/Constants';
+import { AdminSkinChanger, DefaultAtlasTxID, PERMISSIONS } from '../constants/Constants';
 import { useWallet } from '../contexts/WalletContext';
 import { SpriteColorizer } from '../utils/spriteColorizer';
 import { faLockOpen } from '@fortawesome/free-solid-svg-icons';
@@ -77,22 +77,7 @@ const ExportAndUploadButton: React.FC<ExportAndUploadButtonProps> = ({
       canvas.height = 60; // Single row height
       console.log('Canvas created with dimensions:', canvas.width, 'x', canvas.height);
 
-      // Process BASE layer first
-      console.log('Loading BASE layer...');
-      const baseUrl = new URL('../assets/BASE.png', import.meta.url).href;
-      const baseImg = new Image();
-      baseImg.src = baseUrl;
-      await new Promise((resolve) => {
-        baseImg.onload = () => {
-          console.log('BASE layer loaded:', baseImg.width, 'x', baseImg.height);
-          // Draw only the first row (60 pixels height)
-          ctx.drawImage(baseImg, 0, 0, baseImg.width, 60, 0, 0, baseImg.width, 60);
-          console.log('Drew BASE layer to canvas:', canvas.width, 'x', canvas.height);
-          resolve(null);
-        };
-      });
-
-      // Process each layer
+      // Load and process each layer
       const processLayer = async (layerName: string, layerData: { style: string, color: string }) => {
         console.log(`Processing layer: ${layerName}, style: ${layerData.style}, color: ${layerData.color}`);
         // Load the sprite sheet image
@@ -113,46 +98,56 @@ const ExportAndUploadButton: React.FC<ExportAndUploadButtonProps> = ({
 
         // Create a temporary canvas for color processing
         const tempCanvas = document.createElement('canvas');
-        tempCanvas.width = 576;  // Fixed width
-        tempCanvas.height = 60;  // Fixed height
+        tempCanvas.width = img.width;
+        tempCanvas.height = img.height;
         const tempCtx = tempCanvas.getContext('2d')!;
         
-        // Draw only the first row of the original image, scaling to our target size
-        tempCtx.drawImage(img, 
-          0, 0,           // Source x, y
-          img.width, 60,  // Source width, height (only first row)
-          0, 0,           // Destination x, y
-          576, 60         // Destination width, height (fixed size)
-        );
-        console.log(`Drew ${layerName} to temp canvas:`, tempCanvas.width, 'x', tempCanvas.height);
+        // Draw the original image
+        tempCtx.drawImage(img, 0, 0);
+        console.log(`Drew ${layerName} to temp canvas`);
         
         // Get image data and apply color
         const imageData = tempCtx.getImageData(0, 0, tempCanvas.width, tempCanvas.height);
         console.log(`Got image data for ${layerName}: ${imageData.width}x${imageData.height}`);
-        const colorizedData = createColorizedTexture(imageData, layerData.color);
+        const colorizedData = SpriteColorizer.colorizeTexture(imageData, layerData.color, {
+          preserveAlpha: true,
+          cacheKey: `export_${layerName}_${layerData.color}`
+        });
         
         // Put the colorized data back
         tempCtx.putImageData(colorizedData, 0, 0);
-        console.log(`Applied color to ${layerName}, temp canvas:`, tempCanvas.width, 'x', tempCanvas.height);
+        console.log(`Applied color to ${layerName}`);
         
         // Draw the processed layer onto the main canvas
         ctx.drawImage(tempCanvas, 0, 0);
-        console.log(`Drew ${layerName} to main canvas:`, canvas.width, 'x', canvas.height);
+        console.log(`Drew ${layerName} to main canvas`);
       };
 
-      // Process all layers in order
+      // Process BASE layer first
+      console.log('Loading BASE layer...');
+      const baseUrl = new URL('../assets/BASE.png', import.meta.url).href;
+      const baseImg = new Image();
+      baseImg.src = baseUrl;
+      await new Promise((resolve) => {
+        baseImg.onload = () => {
+          console.log('BASE layer loaded:', baseImg.width, 'x', baseImg.height);
+          resolve(null);
+        };
+      });
+      ctx.drawImage(baseImg, 0, 0);
+      console.log('Drew BASE layer');
+
+      // Process all other layers in order
       console.log('Processing additional layers...');
       for (const [layerName, layerData] of Object.entries(layers)) {
         await processLayer(layerName, layerData);
       }
 
-      // Convert to blob
       console.log('Converting to blob...');
       const blob = await new Promise<Blob>((resolve, reject) => {
         canvas.toBlob((blob) => {
           if (blob) {
             console.log('Blob created successfully, size:', blob.size);
-            console.log('Final canvas dimensions:', canvas.width, 'x', canvas.height);
             resolve(blob);
           } else {
             console.error('Failed to create blob');
@@ -164,6 +159,23 @@ const ExportAndUploadButton: React.FC<ExportAndUploadButtonProps> = ({
       if (mode === 'arweave') {
         if (!signer) {
           throw new Error('Arweave wallet not connected');
+        }
+        
+        // Ensure wallet has proper permissions before creating TurboClient
+        try {
+          await window.arweaveWallet.getActiveAddress();
+          await window.arweaveWallet.getActivePublicKey();
+        } catch (permError) {
+          console.error('Wallet permission error:', permError);
+          // Try to reconnect with proper permissions
+          try {
+            //TODO maybe need this?
+            //await window.arweaveWallet.connect(PERMISSIONS);
+            await window.arweaveWallet.getActiveAddress();
+            await window.arweaveWallet.getActivePublicKey();
+          } catch (reconnectError) {
+            throw new Error(`Wallet connection failed: ${reconnectError.message}`);
+          }
         }
 
         console.log('Initializing TurboClient...');

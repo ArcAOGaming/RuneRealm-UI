@@ -2,10 +2,10 @@ import { useState } from 'react';
 import { useWallet } from '../../contexts/WalletContext';
 import { useBattle } from '../../contexts/BattleContext';
 import { currentTheme } from '../../constants/theme';
-import Header from '../../components/Header';
-import Footer from '../../components/Footer';
+import Header from '../../components/ui/Header';
+import Footer from '../../components/ui/Footer';
 import { useNavigate } from 'react-router-dom';
-import Loading from '../../components/Loading';
+import Loading from '../../components/ui/Loading';
 
 export const RankedBattlePage = (): JSX.Element => {
   const { darkMode } = useWallet();

@@ -4,7 +4,7 @@ import { currentTheme } from '../../constants/theme';
 import { useWallet } from '../../contexts/WalletContext';
 import { getUserInfo } from '../../utils/aoHelpers';
 import { UserInfo } from '../../utils/interefaces';
-import { MonsterCardDisplay } from '../../components/MonsterCardDisplay';
+import { MonsterCardDisplay } from '../../components/monster/MonsterCardDisplay';
 
 const MonsterDebugger: React.FC = () => {
   // Don't automatically load monster context data - make it search-only

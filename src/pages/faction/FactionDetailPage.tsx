@@ -6,11 +6,11 @@ import { ProfileInfo, getProfileInfo, getUserMonster, MonsterStats } from '../..
 import { FactionOptions } from '../../utils/interefaces';
 import { currentTheme } from '../../constants/theme';
 import { Gateway } from '../../constants/Constants';
-import Header from '../../components/Header';
-import LoadingAnimation from '../../components/LoadingAnimation';
-import Footer from '../../components/Footer';
-import { ProfileCard } from '../../components/ProfileCard';
-import { ProfileDetail } from '../../components/ProfileDetail';
+import Header from '../../components/ui/Header';
+import LoadingAnimation from '../../components/ui/LoadingAnimation';
+import Footer from '../../components/ui/Footer';
+import { ProfileCard } from '../../components/faction/ProfileCard';
+import { ProfileDetail } from '../../components/faction/ProfileDetail';
 
 interface FactionMember {
   id: string;
@@ -506,8 +506,8 @@ export const FactionDetailPage: React.FC = () => {
             DisplayName: selectedMember.profile?.Profile?.DisplayName || 'Unknown',
             Description: selectedMember.profile?.Profile?.Description || '',
             CoverImage: selectedMember.profile?.Profile?.CoverImage,
-            DateCreated: selectedMember.profile?.Profile?.DateCreated,
-            DateUpdated: selectedMember.profile?.Profile?.DateUpdated
+            DateCreated: selectedMember.profile?.Profile?.DateCreated ? parseInt(selectedMember.profile.Profile.DateCreated) : undefined,
+            DateUpdated: selectedMember.profile?.Profile?.DateUpdated ? parseInt(selectedMember.profile.Profile.DateUpdated) : undefined
           }}
           address={selectedMember.id}
           assets={selectedMember.profile?.Assets}

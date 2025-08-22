@@ -18,7 +18,7 @@ import "./index.css";
 import { handleReferralLink } from "./utils/aoHelpers";
 import { BotBattlePage } from "./pages/battle/BotBattlePage";
 import { RankedBattlePage } from "./pages/battle/RankedBattlePage";
-import Inventory from "./components/Inventory";
+import Inventory from "./components/ui/Inventory";
 import { MonsterProvider } from "./contexts/MonsterContext";
 import { FactionProvider } from "./contexts/FactionContext";
 import DebugPage from "./pages/debug/DebugPage";
