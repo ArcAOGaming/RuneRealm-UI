@@ -23,7 +23,7 @@ export const currentTheme = (isDark: boolean): Theme => ({
     : 'bg-gradient-to-br from-[#FCF5D8] via-[#F4E4C1] to-[#E8D4B4]',
   text: isDark ? 'text-[#FCF5D8]' : 'text-[#0D0705]',
   border: isDark ? 'border-[#F4860A]/30' : 'border-[#814E33]/30',
-  container: isDark ? 'bg-[#814E33]/20' : 'bg-white/50',
+  container: isDark ? 'bg-[#814E33]/20' : 'bg-[#814E33]/10',
   buttonBg: isDark ? 'bg-[#814E33]/20' : 'bg-white/50',
   buttonHover: isDark ? 'hover:bg-[#814E33]/30' : 'hover:bg-[#814E33]/10',
   cardBg: isDark ? 'transparent' : 'transparent',

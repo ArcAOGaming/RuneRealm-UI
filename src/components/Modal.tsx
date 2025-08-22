@@ -21,11 +21,10 @@ const Modal: React.FC<ModalProps> = ({ children, onClose, theme }) => {
   }, [onClose]);
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-50">
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-75">
       <div 
         ref={modalRef}
-        className="relative w-full max-w-lg p-6 mx-4 rounded-lg shadow-xl"
-        style={{ backgroundColor: theme.background }}
+        className={`relative w-full max-w-lg p-6 mx-4 rounded-xl ${theme.container} border ${theme.border} backdrop-blur-md shadow-2xl`}
       >
         <button
           onClick={onClose}

@@ -14,17 +14,7 @@ const PurchaseInfo: React.FC = () => {
   const navigate = useNavigate();
   const [showPurchaseModal, setShowPurchaseModal] = useState(false);
   const [showConfetti, setShowConfetti] = useState(false);
-  const [showCopiedNotification, setShowCopiedNotification] = useState(false);
 
-  const handleCopyReferralLink = async () => {
-    try {
-      await copyReferralLink();
-      setShowCopiedNotification(true);
-      setTimeout(() => setShowCopiedNotification(false), 2000);
-    } catch (error) {
-      console.error('Failed to copy referral link:', error);
-    }
-  };
 
   // Initial load of wallet status
   useEffect(() => {

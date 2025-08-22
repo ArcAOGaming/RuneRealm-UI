@@ -1,28 +1,25 @@
-import React from 'react';
-import { Link } from 'react-router-dom';
+import React, { useState, useEffect } from 'react';
+import { Link, useNavigate } from 'react-router-dom';
 import { useWallet } from '../contexts/WalletContext';
 import Header from '../components/Header';
+import Modal from '../components/Modal';
 import { currentTheme, Theme } from '../constants/theme';
 
 const StartPage: React.FC = () => {
   const { wallet, walletStatus, darkMode } = useWallet();
   const theme = currentTheme(darkMode);
+  const navigate = useNavigate();
+  const [showPremiumPopup, setShowPremiumPopup] = useState(false);
 
-  if (!wallet?.address || !walletStatus?.isUnlocked) {
-    return (
-      <div className={`min-h-screen ${theme.bg}`}>
-        <Header theme={theme} darkMode={darkMode} />
-        <div className="container mx-auto px-4 py-8 text-center">
-          <h1 className="text-3xl font-bold mb-6" style={{ color: theme.cardTitle }}>
-            Welcome to Rune Realm
-          </h1>
-          <p className="text-lg mb-8" style={{ color: theme.cardText }}>
-            Please connect your wallet to continue
-          </p>
-        </div>
-      </div>
-    );
-  }
+  // Show premium popup for non-premium users after a short delay
+  useEffect(() => {
+    if (wallet?.address && !walletStatus?.isUnlocked) {
+      const timer = setTimeout(() => {
+        setShowPremiumPopup(true);
+      }, 1000); // Show popup after 1 second
+      return () => clearTimeout(timer);
+    }
+  }, [wallet?.address, walletStatus?.isUnlocked]);
 
   const sectionCardStyle: React.CSSProperties = {
     backgroundColor: theme.cardBg,
@@ -94,6 +91,50 @@ const StartPage: React.FC = () => {
           </div>
         </div>
       </div>
+
+      {/* Premium Popup Modal */}
+      {showPremiumPopup && (
+        <Modal onClose={() => setShowPremiumPopup(false)} theme={theme}>
+          <div className="text-center">
+            <div className="text-4xl mb-4">🔒</div>
+            <h2 className="text-2xl font-bold mb-4" style={{ color: theme.cardTitle }}>
+              Premium Access Required
+            </h2>
+            <p className="text-lg mb-6" style={{ color: theme.cardText }}>
+              You are not a premium user. Please go to the purchase page to buy an Eternal Pass and unlock full access to all features.
+            </p>
+            
+            <div className="flex flex-col gap-3">
+              <button
+                onClick={() => {
+                  setShowPremiumPopup(false);
+                  navigate('/purchase');
+                }}
+                className="px-6 py-3 rounded-lg font-semibold text-white transition-all duration-300 hover:scale-105"
+                style={{
+                  backgroundColor: '#FFD700',
+                  color: '#1a1a1a',
+                  boxShadow: '0 4px 15px rgba(255, 215, 0, 0.3)'
+                }}
+              >
+                Get Premium Access
+              </button>
+              
+              <button
+                onClick={() => setShowPremiumPopup(false)}
+                className="px-6 py-3 rounded-lg font-medium transition-all duration-300 hover:opacity-80"
+                style={{
+                  backgroundColor: 'transparent',
+                  color: theme.cardText,
+                  border: `1px solid ${theme.cardBorder}`
+                }}
+              >
+                No thanks, I'm just looking for now
+              </button>
+            </div>
+          </div>
+        </Modal>
+      )}
     </div>
   );
 };
