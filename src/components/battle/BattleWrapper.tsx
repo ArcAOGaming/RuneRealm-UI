@@ -1,9 +1,9 @@
 import React from 'react';
-import { ActiveBattle as NewActiveBattle, MonsterStats, MonsterState } from '../utils/interefaces';
-import type { BattleParticipant } from '../utils/aoHelpers';
+import { ActiveBattle as NewActiveBattle, MonsterStats, MonsterState } from '../../utils/interefaces';
+import type { BattleParticipant } from '../../utils/aoHelpers';
 import BattleScene from './BattleScene';
 import BattleStats from './BattleStats';
-import { Theme } from '../constants/theme';
+import { Theme } from '../../constants/theme';
 
 interface BattleWrapperProps {
   battle: NewActiveBattle;

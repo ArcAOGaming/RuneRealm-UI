@@ -1,5 +1,5 @@
 import React from 'react';
-import { BattleTurn } from '../utils/interefaces';
+import { ActiveBattle as NewActiveBattle, BattleTurn } from '../../utils/interefaces';
 
 interface BattleLogToggleProps {
   turns: BattleTurn[];

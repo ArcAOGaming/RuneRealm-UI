@@ -1,6 +1,6 @@
 import React from 'react';
-import { BattleTurn } from '../utils/interefaces';
-import Inventory from './Inventory';
+import { BattleTurn } from '../../utils/interefaces';
+import Inventory from '../ui/Inventory';
 import BattleLogContainer from './BattleLogContainer';
 
 interface BattleOverlaysProps {

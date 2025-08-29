@@ -1,6 +1,6 @@
 import React, { useEffect, useRef } from 'react';
-import { ActiveBattle } from '../utils/aoHelpers';
-import { Theme } from '../constants/theme';
+import type { BattleParticipant, ActiveBattle } from '../../utils/aoHelpers';
+import { Theme } from '../../constants/theme';
 import styles from './BattleStats.module.css';
 
 interface BattleStatsProps {
