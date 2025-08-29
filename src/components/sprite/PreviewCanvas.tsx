@@ -16,7 +16,7 @@ type Direction = 'forward' | 'left' | 'right' | 'back';
 
 class SpritePreviewScene extends Phaser.Scene {
   private sprites: { [key: string]: { [direction in Direction]: Phaser.GameObjects.Sprite } } = {};
-  private textures: { [key: string]: HTMLCanvasElement } = {};
+  private textureCache: { [key: string]: HTMLCanvasElement } = {};
   private layers: PreviewCanvasProps['layers'];
   private animationPrefix: { [key in Direction]: string } = {
     forward: 'walk-down',
@@ -142,7 +142,12 @@ class SpritePreviewScene extends Phaser.Scene {
     this.add.text(324, positions.forward.y - frameStyle.height/2 + 30, 'Back', labelStyle).setOrigin(0.5);
 
     // Initialize sprite containers
-    this.sprites['BASE'] = {};
+    this.sprites['BASE'] = {
+      left: null as any,
+      right: null as any,
+      forward: null as any,
+      back: null as any
+    };
 
     // Create base sprites and animations for each direction
     directions.forEach(dir => {
@@ -168,10 +173,16 @@ class SpritePreviewScene extends Phaser.Scene {
     // Create layer sprites and their animations
     Object.entries(this.layers).forEach(([layerName, layer]) => {
       const spriteKey = `${layerName}.${layer.style}`;
-      this.sprites[layerName] = {};
+      this.sprites[layerName] = {
+        left: null as any,
+        right: null as any,
+        forward: null as any,
+        back: null as any
+      };
       
       // Create a new texture with color replacement
-      const colorizedKey = this.colorizeTexture(this.textures.get(spriteKey), layerName, layer.color);
+      const texture = this.textures.get(spriteKey);
+      const colorizedKey = this.colorizeTexture(texture, layerName, layer.color);
       
       // Create sprites and animations for each direction
       directions.forEach(dir => {
@@ -215,7 +226,7 @@ class SpritePreviewScene extends Phaser.Scene {
     tempCanvas.height = sourceImage.height;
     
     const ctx = tempCanvas.getContext('2d')!;
-    ctx.drawImage(sourceImage, 0, 0);
+    ctx.drawImage(sourceImage as CanvasImageSource, 0, 0);
     const imageData = ctx.getImageData(0, 0, tempCanvas.width, tempCanvas.height);
 
     // Use the shared colorizer
@@ -232,7 +243,7 @@ class SpritePreviewScene extends Phaser.Scene {
     colorizedCtx.putImageData(colorizedData, 0, 0);
 
     // Add the colorized texture to Phaser's texture manager with spritesheet config
-    this.textures.addSpriteSheet(key, colorizedCanvas, {
+    this.textures.addSpriteSheet(key, colorizedCanvas as any, {
       frameWidth: 48,
       frameHeight: 60
     });
@@ -260,6 +271,20 @@ class SpritePreviewScene extends Phaser.Scene {
             this.anims.remove(animKey);
           }
           
+          const frameSequences = {
+            forward: [0, 1, 2, 1],
+            left: [3, 4, 5, 4],
+            right: [6, 7, 8, 7],
+            back: [9, 10, 11, 10]
+          };
+          
+          const frameRates = {
+            forward: 8,
+            left: 8,
+            right: 8,
+            back: 8
+          };
+          
           this.anims.create({
             key: animKey,
             frames: this.anims.generateFrameNumbers(colorizedKey, {
@@ -277,11 +302,10 @@ class SpritePreviewScene extends Phaser.Scene {
     });
   }
 
-  destroy() {
-    Object.values(this.textures).forEach(canvas => {
+  cleanUp() {
+    Object.values(this.textureCache).forEach(canvas => {
       canvas.remove();
     });
-    super.destroy();
   }
 }
 
