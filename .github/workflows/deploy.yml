@@ -1,41 +1,24 @@
 name: Arweave Deploy
 
-# Trigger deployment only when pushing to the main branch
+# Trigger deployment only when pushing to the master branch
 on:
   push:
     branches:
-      - main
+      - master
 
 jobs:
   Arweave-build-and-deploy:
     runs-on: ubuntu-latest
     env:
       VITE_GA4_MEASUREMENT_ID: ${{ vars.GA4_MEASUREMENT_ID }}
-      DEPLOY_KEY: ${{ secrets.DEPLOY_KEY }}
-      DEPLOY_ARNS_NAME: ${{ vars.DEPLOY_ARNS_NAME }}
-      DEPLOY_UNDERNAME: ${{ vars.DEPLOY_UNDERNAME }}
 
     steps:
-      - name: Checkout repository
-        uses: actions/checkout@v3
-        with:
-          submodules: false # Disable automatic submodule checkout
-          fetch-depth: 0
-
-      - name: Initialize only required submodules
-        run: |
-          git submodule sync
-          git submodule update --init --force -- Reality  # Only initialize the Reality submodule
+      - uses: actions/checkout@v3
 
       - name: Setup Node.js
         uses: actions/setup-node@v3
         with:
-          node-version: "22"
-
-      - name: Install dependencies
-        run: |
-          npm ci
-          cd Reality && npm ci
+          node-version: '22'
 
       # Verify that required secret and variables are present
       # DEPLOY_KEY: Your Arweave wallet key (required secret)
@@ -51,10 +34,21 @@ jobs:
             echo "Error: DEPLOY_ARNS_NAME variable is required but not set"
             exit 1
           fi
+        env:
+          DEPLOY_KEY: ${{ secrets.DEPLOY_KEY }}
+          DEPLOY_ARNS_NAME: ${{ vars.DEPLOY_ARNS_NAME }}
+
+      # Install project dependencies
+      - name: Install dependencies
+        run: npm install
 
       # Default deployment configuration:
       # This requires DEPLOY_UNDERNAME to be set, ensuring deployments always use an undername
       - name: Deploy with undername (default)
+        env:
+          DEPLOY_KEY: ${{ secrets.DEPLOY_KEY }}
+          DEPLOY_ARNS_NAME: ${{ vars.DEPLOY_ARNS_NAME }}
+          DEPLOY_UNDERNAME: ${{ vars.DEPLOY_UNDERNAME }}
         run: |
           if [ -z "$DEPLOY_UNDERNAME" ]; then
             echo "Error: DEPLOY_UNDERNAME variable is required but not set"
@@ -69,6 +63,9 @@ jobs:
       # Use this if you want to deploy directly to the base ArNS without an undername
       # To use this, comment out the above "Deploy with undername" step and uncomment this one
       #- name: Deploy without undername
+      #  env:
+      #    DEPLOY_KEY: ${{ secrets.DEPLOY_KEY }}
+      #    DEPLOY_ARNS_NAME: ${{ vars.DEPLOY_ARNS_NAME }}
       #  run: |
       #    echo "Deploying without undername to base ArNS"
       #    npm run deploy
