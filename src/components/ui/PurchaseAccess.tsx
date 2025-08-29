@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
-import { getPurchaseOptions, purchaseAccess, TokenOption } from '../utils/aoHelpers';
-import { Gateway } from '../constants/Constants';
-import { currentTheme } from '../constants/theme';
+import { getPurchaseOptions, purchaseAccess, TokenOption } from '../../utils/aoHelpers';
+import { Gateway } from '../../constants/Constants';
+import { currentTheme } from '../../constants/theme';
 
 interface PurchaseAccessProps {
     wallet: any;
