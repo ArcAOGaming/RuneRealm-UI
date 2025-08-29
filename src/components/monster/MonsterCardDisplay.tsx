@@ -1,4 +1,5 @@
-import React, { useState, useCallback, useEffect, useRef, useMemo } from 'react';
+import React, { useState, useEffect, useRef, useContext, useMemo, useCallback } from 'react';
+import { InventoryItem } from '../../constants/CardConfig';
 import { MonsterStats } from '../../utils/aoHelpers';
 import { Gateway } from '../../constants/Constants';
 import { CARD_ZOOM } from "../../constants/CardLayout";
