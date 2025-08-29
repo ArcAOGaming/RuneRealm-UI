@@ -15,6 +15,9 @@ export interface Theme {
   statusEnergy: string;
   statusHappiness: string;
   statusExperience: string;
+  // Purple accent for special elements
+  purple: string;
+  purpleHover: string;
 }
 
 export const currentTheme = (isDark: boolean): Theme => ({
@@ -35,5 +38,8 @@ export const currentTheme = (isDark: boolean): Theme => ({
   // Keep consistent colors for status bars as they convey meaning
   statusEnergy: '#F59E0B', // amber
   statusHappiness: '#EC4899', // pink
-  statusExperience: '#3B82F6' // blue
+  statusExperience: '#3B82F6', // blue
+  // Purple accent for special elements
+  purple: isDark ? '#9333EA' : '#7C3AED', // purple-600/purple-700
+  purpleHover: isDark ? '#A855F7' : '#8B5CF6' // purple-500/purple-600
 });

@@ -181,7 +181,7 @@ export const FactionPage: React.FC = () => {
               </div>
               <button
                 onClick={hardRefresh}
-                className={`px-3 py-1.5 sm:px-4 sm:py-2 text-sm sm:text-base rounded-lg font-bold transition-all duration-300 hover:scale-105 ${theme.buttonBg} ${theme.buttonHover} ${theme.text} shadow-lg hover:shadow-xl border border-blue-500/30`}
+                className={`px-3 py-1.5 sm:px-4 sm:py-2 text-sm sm:text-base rounded-lg font-bold transition-all duration-300 ${theme.buttonBg} ${theme.buttonHover} ${theme.text} shadow-lg hover:shadow-xl border border-blue-500/30`}
                 disabled={isLoadingFactions || isLoadingOfferingStats || isLoadingUserStatus}
               >
                 {(isLoadingFactions || isLoadingOfferingStats || isLoadingUserStatus) ? '🔄 Refreshing...' : '🔄 Hard Refresh'}
@@ -201,7 +201,7 @@ export const FactionPage: React.FC = () => {
                     </p>
                     <button
                       onClick={() => setIsPurchaseModalOpen(true)}
-                      className={`px-8 py-4 rounded-xl font-bold text-lg transition-all duration-300 hover:scale-105 ${theme.buttonBg} ${theme.buttonHover} ${theme.text} shadow-2xl hover:shadow-3xl border-2 border-yellow-500/50 bg-gradient-to-r from-yellow-600/20 to-orange-600/20`}
+                      className={`px-8 py-4 rounded-xl font-bold text-lg transition-all duration-300 ${theme.buttonBg} ${theme.buttonHover} ${theme.text} shadow-2xl hover:shadow-3xl border-2 border-yellow-500/50 bg-gradient-to-r from-yellow-600/20 to-orange-600/20`}
                     >
                       ⚡ Buy Eternal Pass ⚡
                     </button>
@@ -269,7 +269,7 @@ export const FactionPage: React.FC = () => {
                   <div
                     key={faction.name}
                     onClick={() => navigate(`/factions/${FACTION_TO_PATH[faction.name as keyof typeof FACTION_TO_PATH]}`)}
-                    className={`group relative flex flex-col h-full rounded-lg sm:rounded-xl md:rounded-2xl ${theme.container} border-2 ${isUserFaction ? 'border-yellow-400/70 shadow-yellow-400/30 shadow-lg' : theme.border} backdrop-blur-md transform transition-all duration-500 hover:scale-[1.02] hover:shadow-2xl cursor-pointer overflow-hidden ${isUserFaction ? 'animate-pulse' : ''}`}
+                    className={`group relative flex flex-col h-full rounded-lg sm:rounded-xl md:rounded-2xl ${theme.container} border-2 ${isUserFaction ? 'border-yellow-400/70 shadow-yellow-400/30 shadow-lg' : theme.border} backdrop-blur-md transform transition-all duration-500 hover:shadow-2xl cursor-pointer overflow-hidden ${isUserFaction ? 'animate-pulse' : ''}`}
                   >
                     {/* Gold shimmer effect for user's faction */}
                     {isUserFaction && (
@@ -408,7 +408,7 @@ export const FactionPage: React.FC = () => {
                             handleJoinFaction(faction.name);
                           }}
                           disabled={isLoading}
-                          className={`w-full px-4 py-3 rounded-xl font-bold transition-all duration-300 ${theme.buttonBg} ${theme.buttonHover} hover:scale-105 ${theme.text} shadow-lg hover:shadow-xl border-2 border-green-500/50 bg-gradient-to-r from-green-600/20 to-emerald-600/20`}
+                          className={`w-full px-4 py-3 rounded-xl font-bold transition-all duration-300 ${theme.buttonBg} ${theme.buttonHover} ${theme.text} shadow-lg hover:shadow-xl border-2 border-green-500/50 bg-gradient-to-r from-green-600/20 to-emerald-600/20`}
                         >
                           {isLoading ? '⏳ Joining...' : '⚔️ Join Faction ⚔️'}
                         </button>
