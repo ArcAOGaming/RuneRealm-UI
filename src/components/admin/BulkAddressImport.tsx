@@ -74,7 +74,7 @@ export const BulkAddressImport: React.FC<BulkAddressImportProps> = ({ onImport }
             >
                 {isLoading ? 'Importing...' : 'Import Addresses'}
             </button>
-            <style jsx>{`
+            <style>{`
                 .bulk-address-import {
                     padding: 20px;
                     max-width: 600px;

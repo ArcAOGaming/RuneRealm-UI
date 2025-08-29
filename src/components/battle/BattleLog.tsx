@@ -1,5 +1,5 @@
 import React from 'react';
-import { BattleTurn } from '../utils/interefaces';
+import { BattleTurn } from '../../utils/interefaces';
 
 interface BattleLogProps {
   turns: BattleTurn[];
