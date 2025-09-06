@@ -5,7 +5,9 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "build": "tsc -b && vite build",
+    "build": "rm -rf dist && npm run build:main && npm run build:reality",
+    "build:main": "tsc -b && vite build",
+    "build:reality": "cd Reality && npm install && vite build --base=/reality/ --outDir=../dist/reality",
     "lint": "eslint .",
     "preview": "vite preview",
     "deploy": "npm run build && permaweb-deploy --deploy-folder ./dist --arns-name $DEPLOY_ARNS_NAME",
