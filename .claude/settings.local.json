@@ -3,7 +3,8 @@
     "allow": [
       "Bash(npm run build:*)",
       "Bash(npm install:*)",
-      "Bash(git submodule:*)"
+      "Bash(git submodule:*)",
+      "Bash(vite build:*)"
     ],
     "deny": [],
     "ask": []
