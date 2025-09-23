@@ -5,9 +5,11 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "build": "rm -rf dist && npm run build:main",
+    "build": "rm -rf dist && npm run build:main && npm run build:reality",
     "build:main": "vite build",
+    "build:reality": "cd Reality && npm install && vite build --base=/reality/ --outDir=../dist/reality",
     "deploy": "npm run build && permaweb-deploy --deploy-folder ./dist --ant-process $DEPLOY_ANT_PROCESS --undername=premium",
+    "deploy-undername": "npm run build && permaweb-deploy --deploy-folder ./dist --ant-process $DEPLOY_ANT_PROCESS --undername=$DEPLOY_UNDERNAME",
     "preview": "vite preview"
   },
   "dependencies": {
