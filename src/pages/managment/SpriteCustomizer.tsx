@@ -503,12 +503,6 @@ const SpriteCustomizer: React.FC<SpriteCustomizerProps> = ({ onEnter }) => {
           </div>
 
           <Footer darkMode={darkMode} />
-
-          {/* Admin Tools - Comment out when not needed DO NOT REMOVE*/}
-          {/* <div className={`flex flex-col gap-4 p-4 ${theme.container} border-t ${theme.border}`}>
-            <AdminBulkUnlock />
-            <AdminRemoveUser />
-          </div> */}
         </div>
       </div>
       <PurchaseModal
