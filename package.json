@@ -9,7 +9,7 @@
     "build:main": "vite build",
     "build:reality": "cd Reality && test -f index.html && npm install && npx vite build --base=/reality/ --outDir=../dist/reality --emptyOutDir || echo 'Reality submodule not found, skipping Reality build'",
     "deploy": "npm run build && permaweb-deploy --deploy-folder ./dist --ant-process $DEPLOY_ANT_PROCESS --undername=premium",
-    "deploy-undername": "npm run build && permaweb-deploy --deploy-folder ./dist --ant-process $DEPLOY_ANT_PROCESS --undername=$DEPLOY_UNDERNAME",
+    "deploy-undername": "npm run build && permaweb-deploy --deploy-folder ./build --arns-name $DEPLOY_ARNS_NAME --undername $DEPLOY_UNDERNAME",
     "preview": "vite preview"
   },
   "dependencies": {
