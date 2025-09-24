@@ -3,22 +3,17 @@
   "private": true,
   "version": "0.0.1",
   "type": "module",
-  "scripts": {
-    "dev": "vite",
-    "build": "rm -rf dist && npm run build:main && npm run build:reality",
-    "build:main": "vite build",
-    "build:reality": "cd Reality && test -f index.html && npm install && npx vite build --base=/reality/ --outDir=../dist/reality --emptyOutDir || echo 'Reality submodule not found, skipping Reality build'",
-    "deploy": "npm run build && permaweb-deploy --deploy-folder ./dist --arns-name $DEPLOY_ARNS_NAME --undername=$DEPLOY_UNDERNAME",
-    "deploy-undername": "npm run build && permaweb-deploy --deploy-folder ./dist --arns-name $DEPLOY_ARNS_NAME --undername $DEPLOY_UNDERNAME",
-    "preview": "vite preview"
-  },
+"scripts": {
+  "dev": "vite",
+  "build": "rm -rf dist && npm run build:main && npm run build:reality",
+  "build:main": "vite build",
+  "build:reality": "cd Reality && npm install && vite build --base=/reality/ --outDir=../dist/reality",
+  "deploy": "npm run build && permaweb-deploy --deploy-folder ./dist --ant-process $DEPLOY_ANT_PROCESS --undername=premium",
+  "preview": "vite preview"
+},
   "dependencies": {
     "@ardrive/turbo-sdk": "^1.21.0",
-    "@fortawesome/fontawesome-svg-core": "^7.0.1",
-    "@fortawesome/free-solid-svg-icons": "^7.0.1",
-    "@fortawesome/react-fontawesome": "^3.0.2",
-    "@permaweb/aoconnect": "^0.0.77",
-    "ao-js-sdk": "^0.3.5",
+    "@permaweb/aoconnect": "^0.0.62",
     "ao-process-clients": "^6.0.66",
     "arweave": "^1.15.5",
     "chart.js": "^4.4.7",
@@ -29,7 +24,6 @@
     "react-chartjs-2": "^5.3.0",
     "react-confetti": "^6.2.2",
     "react-dom": "^18.2.0",
-    "react-ga4": "^2.1.0",
     "react-router-dom": "^6.21.1",
     "vite-plugin-node-polyfills": "^0.22.0",
     "web-streams-polyfill": "^4.0.0"
