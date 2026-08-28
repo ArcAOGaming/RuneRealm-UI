@@ -1,0 +1,961 @@
+{
+ "process": "GhNl98tr7ZQxIJHx4YcVdGh7WkT9dD7X4kmQOipvePQ",
+ "name": "alter",
+ "label": "Alter — offerings and streaks",
+ "owner": "N90q65iT59dCo01-gtZRUlLMX0w6_ylFHv2uHaSUFNk",
+ "checkpoint": "6l2PDUdBV9O3JkQ_3QO-aOs89y8Zi19UEZGX5BzbyMY",
+ "nonce": 13626,
+ "checkpointedAt": "2025-09-13T22:47:04.933Z",
+ "module": "Do_Uc2Sju_ffp6Ev0AnLVdPtot15rvMjP-a9VVaA5fM",
+ "recoveredBy": "backend/native/recover-state.mjs",
+ "recoveredVia": "Eval",
+ "counts": {
+  "CheckinHistory": 131,
+  "IndividualOfferings": 91,
+  "LastOffering": 91,
+  "Streak": 80,
+  "TotalOfferings": 4
+ },
+ "scalars": {
+  "Bell": "\u0007",
+  "FactionProcess": "j7NcraZUL6GZlgdPEoph12Q5rk_dydvQDecLNxYi8rI",
+  "Name": "Alter",
+  "Owner": "N90q65iT59dCo01-gtZRUlLMX0w6_ylFHv2uHaSUFNk",
+  "RuneProcess": "4sKr4cf3kvbzFyhM6HmUsYG_Jz9bFZoNUrUX5KoVe0Q",
+  "Seeded": true,
+  "_VERSION": "Lua 5.3"
+ },
+ "state": {
+  "CheckinHistory": {
+   "20211": {
+    "High": 3,
+    "Low": 4,
+    "Medium": 0
+   },
+   "20212": {
+    "High": 3,
+    "Low": 5,
+    "Medium": 0
+   },
+   "20213": {
+    "High": 3,
+    "Low": 6,
+    "Medium": 0
+   },
+   "20214": {
+    "High": 3,
+    "Low": 6,
+    "Medium": 0
+   },
+   "20215": {
+    "High": 3,
+    "Low": 3,
+    "Medium": 3
+   },
+   "20216": {
+    "High": 3,
+    "Low": 3,
+    "Medium": 3
+   },
+   "20217": {
+    "High": 3,
+    "Low": 2,
+    "Medium": 3
+   },
+   "20218": {
+    "High": 3,
+    "Low": 5,
+    "Medium": 0
+   },
+   "20219": {
+    "High": 3,
+    "Low": 3,
+    "Medium": 0
+   },
+   "20220": {
+    "High": 3,
+    "Low": 7,
+    "Medium": 0
+   },
+   "20221": {
+    "High": 3,
+    "Low": 7,
+    "Medium": 0
+   },
+   "20222": {
+    "High": 3,
+    "Low": 7,
+    "Medium": 0
+   },
+   "20223": {
+    "High": 3,
+    "Low": 7,
+    "Medium": 0
+   },
+   "20224": {
+    "High": 3,
+    "Low": 8,
+    "Medium": 0
+   },
+   "20225": {
+    "High": 3,
+    "Low": 10,
+    "Medium": 0
+   },
+   "20226": {
+    "High": 3,
+    "Low": 11,
+    "Medium": 0
+   },
+   "20227": {
+    "High": 3,
+    "Low": 11,
+    "Medium": 0
+   },
+   "20228": {
+    "High": 3,
+    "Low": 1,
+    "Medium": 10
+   },
+   "20229": {
+    "High": 3,
+    "Low": 5,
+    "Medium": 10
+   },
+   "20230": {
+    "High": 3,
+    "Low": 0,
+    "Medium": 11
+   },
+   "20231": {
+    "High": 3,
+    "Low": 0,
+    "Medium": 0
+   },
+   "20235": {
+    "High": 0,
+    "Low": 10,
+    "Medium": 0
+   },
+   "20236": {
+    "High": 0,
+    "Low": 13,
+    "Medium": 0
+   },
+   "20237": {
+    "High": 0,
+    "Low": 4,
+    "Medium": 8
+   },
+   "20238": {
+    "High": 0,
+    "Low": 4,
+    "Medium": 8
+   },
+   "20239": {
+    "High": 0,
+    "Low": 2,
+    "Medium": 1
+   },
+   "20240": {
+    "High": 0,
+    "Low": 20,
+    "Medium": 1
+   },
+   "20241": {
+    "High": 0,
+    "Low": 18,
+    "Medium": 2
+   },
+   "20242": {
+    "High": 0,
+    "Low": 1,
+    "Medium": 9
+   },
+   "20243": {
+    "High": 0,
+    "Low": 5,
+    "Medium": 9
+   },
+   "20244": {
+    "High": 0,
+    "Low": 3,
+    "Medium": 9
+   },
+   "20245": {
+    "High": 0,
+    "Low": 0,
+    "Medium": 10
+   },
+   "20246": {
+    "High": 0,
+    "Low": 0,
+    "Medium": 10
+   },
+   "20247": {
+    "High": 0,
+    "Low": 3,
+    "Medium": 10
+   },
+   "20248": {
+    "High": 0,
+    "Low": 3,
+    "Medium": 10
+   },
+   "20249": {
+    "High": 8,
+    "Low": 11,
+    "Medium": 2
+   },
+   "20250": {
+    "High": 0,
+    "Low": 4,
+    "Medium": 1
+   },
+   "20251": {
+    "High": 0,
+    "Low": 12,
+    "Medium": 1
+   },
+   "20252": {
+    "High": 0,
+    "Low": 12,
+    "Medium": 1
+   },
+   "20253": {
+    "High": 0,
+    "Low": 14,
+    "Medium": 3
+   },
+   "20254": {
+    "High": 0,
+    "Low": 12,
+    "Medium": 4
+   },
+   "20255": {
+    "High": 0,
+    "Low": 6,
+    "Medium": 10
+   },
+   "20256": {
+    "High": 0,
+    "Low": 12,
+    "Medium": 9
+   },
+   "20257": {
+    "High": 0,
+    "Low": 3,
+    "Medium": 7
+   },
+   "20258": {
+    "High": 0,
+    "Low": 11,
+    "Medium": 7
+   },
+   "20259": {
+    "High": 0,
+    "Low": 11,
+    "Medium": 9
+   },
+   "20260": {
+    "High": 0,
+    "Low": 5,
+    "Medium": 16
+   },
+   "20261": {
+    "High": 1,
+    "Low": 8,
+    "Medium": 14
+   },
+   "20262": {
+    "High": 3,
+    "Low": 9,
+    "Medium": 15
+   },
+   "20263": {
+    "High": 4,
+    "Low": 5,
+    "Medium": 14
+   },
+   "20264": {
+    "High": 4,
+    "Low": 1,
+    "Medium": 4
+   },
+   "20265": {
+    "High": 4,
+    "Low": 14,
+    "Medium": 3
+   },
+   "20266": {
+    "High": 4,
+    "Low": 4,
+    "Medium": 3
+   },
+   "20267": {
+    "High": 4,
+    "Low": 4,
+    "Medium": 5
+   },
+   "20268": {
+    "High": 4,
+    "Low": 2,
+    "Medium": 5
+   },
+   "20269": {
+    "High": 4,
+    "Low": 4,
+    "Medium": 5
+   },
+   "20270": {
+    "High": 5,
+    "Low": 4,
+    "Medium": 3
+   },
+   "20271": {
+    "High": 5,
+    "Low": 2,
+    "Medium": 4
+   },
+   "20272": {
+    "High": 5,
+    "Low": 1,
+    "Medium": 2
+   },
+   "20273": {
+    "High": 5,
+    "Low": 2,
+    "Medium": 3
+   },
+   "20274": {
+    "High": 5,
+    "Low": 1,
+    "Medium": 2
+   },
+   "20275": {
+    "High": 3,
+    "Low": 2,
+    "Medium": 2
+   },
+   "20276": {
+    "High": 3,
+    "Low": 4,
+    "Medium": 1
+   },
+   "20277": {
+    "High": 3,
+    "Low": 7,
+    "Medium": 1
+   },
+   "20278": {
+    "High": 3,
+    "Low": 2,
+    "Medium": 4
+   },
+   "20279": {
+    "High": 3,
+    "Low": 3,
+    "Medium": 6
+   },
+   "20280": {
+    "High": 3,
+    "Low": 1,
+    "Medium": 6
+   },
+   "20281": {
+    "High": 3,
+    "Low": 1,
+    "Medium": 6
+   },
+   "20282": {
+    "High": 4,
+    "Low": 0,
+    "Medium": 5
+   },
+   "20283": {
+    "High": 4,
+    "Low": 1,
+    "Medium": 4
+   },
+   "20284": {
+    "High": 4,
+    "Low": 1,
+    "Medium": 4
+   },
+   "20285": {
+    "High": 6,
+    "Low": 3,
+    "Medium": 2
+   },
+   "20286": {
+    "High": 7,
+    "Low": 10,
+    "Medium": 2
+   },
+   "20287": {
+    "High": 7,
+    "Low": 11,
+    "Medium": 3
+   },
+   "20288": {
+    "High": 6,
+    "Low": 2,
+    "Medium": 1
+   },
+   "20289": {
+    "High": 6,
+    "Low": 12,
+    "Medium": 2
+   },
+   "20290": {
+    "High": 6,
+    "Low": 15,
+    "Medium": 1
+   },
+   "20291": {
+    "High": 4,
+    "Low": 4,
+    "Medium": 12
+   },
+   "20292": {
+    "High": 3,
+    "Low": 2,
+    "Medium": 5
+   },
+   "20293": {
+    "High": 4,
+    "Low": 14,
+    "Medium": 4
+   },
+   "20294": {
+    "High": 4,
+    "Low": 8,
+    "Medium": 5
+   },
+   "20295": {
+    "High": 3,
+    "Low": 12,
+    "Medium": 12
+   },
+   "20296": {
+    "High": 3,
+    "Low": 11,
+    "Medium": 12
+   },
+   "20297": {
+    "High": 3,
+    "Low": 3,
+    "Medium": 18
+   },
+   "20298": {
+    "High": 6,
+    "Low": 6,
+    "Medium": 16
+   },
+   "20299": {
+    "High": 6,
+    "Low": 3,
+    "Medium": 16
+   },
+   "20300": {
+    "High": 6,
+    "Low": 2,
+    "Medium": 11
+   },
+   "20301": {
+    "High": 6,
+    "Low": 4,
+    "Medium": 9
+   },
+   "20302": {
+    "High": 12,
+    "Low": 3,
+    "Medium": 3
+   },
+   "20303": {
+    "High": 11,
+    "Low": 11,
+    "Medium": 4
+   },
+   "20304": {
+    "High": 12,
+    "Low": 9,
+    "Medium": 5
+   },
+   "20305": {
+    "High": 13,
+    "Low": 3,
+    "Medium": 11
+   },
+   "20306": {
+    "High": 13,
+    "Low": 9,
+    "Medium": 10
+   },
+   "20307": {
+    "High": 13,
+    "Low": 3,
+    "Medium": 10
+   },
+   "20308": {
+    "High": 12,
+    "Low": 6,
+    "Medium": 10
+   },
+   "20309": {
+    "High": 13,
+    "Low": 13,
+    "Medium": 11
+   },
+   "20310": {
+    "High": 14,
+    "Low": 10,
+    "Medium": 12
+   },
+   "20311": {
+    "High": 15,
+    "Low": 2,
+    "Medium": 7
+   },
+   "20312": {
+    "High": 10,
+    "Low": 8,
+    "Medium": 5
+   },
+   "20313": {
+    "High": 5,
+    "Low": 7,
+    "Medium": 2
+   },
+   "20314": {
+    "High": 5,
+    "Low": 25,
+    "Medium": 3
+   },
+   "20315": {
+    "High": 5,
+    "Low": 4,
+    "Medium": 4
+   },
+   "20316": {
+    "High": 5,
+    "Low": 11,
+    "Medium": 6
+   },
+   "20317": {
+    "High": 5,
+    "Low": 3,
+    "Medium": 2
+   },
+   "20318": {
+    "High": 5,
+    "Low": 8,
+    "Medium": 1
+   },
+   "20319": {
+    "High": 5,
+    "Low": 8,
+    "Medium": 2
+   },
+   "20320": {
+    "High": 3,
+    "Low": 5,
+    "Medium": 5
+   },
+   "20321": {
+    "High": 3,
+    "Low": 10,
+    "Medium": 6
+   },
+   "20322": {
+    "High": 3,
+    "Low": 5,
+    "Medium": 7
+   },
+   "20323": {
+    "High": 3,
+    "Low": 4,
+    "Medium": 8
+   },
+   "20324": {
+    "High": 3,
+    "Low": 4,
+    "Medium": 8
+   },
+   "20325": {
+    "High": 3,
+    "Low": 2,
+    "Medium": 6
+   },
+   "20326": {
+    "High": 4,
+    "Low": 9,
+    "Medium": 4
+   },
+   "20327": {
+    "High": 6,
+    "Low": 3,
+    "Medium": 2
+   },
+   "20328": {
+    "High": 0,
+    "Low": 0,
+    "Medium": 1
+   },
+   "20329": {
+    "High": 0,
+    "Low": 6,
+    "Medium": 0
+   },
+   "20330": {
+    "High": 0,
+    "Low": 12,
+    "Medium": 0
+   },
+   "20331": {
+    "High": 0,
+    "Low": 7,
+    "Medium": 3
+   },
+   "20332": {
+    "High": 0,
+    "Low": 2,
+    "Medium": 8
+   },
+   "20333": {
+    "High": 0,
+    "Low": 3,
+    "Medium": 9
+   },
+   "20334": {
+    "High": 0,
+    "Low": 4,
+    "Medium": 9
+   },
+   "20335": {
+    "High": 0,
+    "Low": 0,
+    "Medium": 8
+   },
+   "20336": {
+    "High": 0,
+    "Low": 4,
+    "Medium": 8
+   },
+   "20337": {
+    "High": 0,
+    "Low": 3,
+    "Medium": 7
+   },
+   "20338": {
+    "High": 2,
+    "Low": 11,
+    "Medium": 8
+   },
+   "20339": {
+    "High": 6,
+    "Low": 10,
+    "Medium": 3
+   },
+   "20340": {
+    "High": 6,
+    "Low": 3,
+    "Medium": 0
+   },
+   "20341": {
+    "High": 6,
+    "Low": 4,
+    "Medium": 0
+   },
+   "20342": {
+    "High": 6,
+    "Low": 1,
+    "Medium": 1
+   },
+   "20343": {
+    "High": 6,
+    "Low": 4,
+    "Medium": 1
+   },
+   "20344": {
+    "High": 6,
+    "Low": 1,
+    "Medium": 0
+   }
+  },
+  "IndividualOfferings": {
+   "-RlCrWmyn9OaJ86tsr5qhmFRc0h5ovT5xjKQwySGZy0": 27,
+   "0xbvOzY0vgX0uj1HgOSw3lvD3POnOF38d9Ij9lZ7Eq8": 23,
+   "1WIZT9EL15vN4CoE9bEOHs0wlNR7VPS5h8EBxJOKEJE": 45,
+   "1wdb2k0RYBTisTdRvCLNpnReLgfq2H0XFjNhgxRmZo0": 1,
+   "27vY67xnvkJbrCh9_ebFZqqO7R-5DcbUDD8p565uVLI": 20,
+   "3-y5Td8hzGjPjOvkfCaLv4_kt334HZepIJUhr8o_qwc": 103,
+   "35H1BWdkxUF6qPS9o8CJjx4Tk_dONvAbwy7RceHcBdc": 47,
+   "3dTBoAtr9RA0DhNihHvcbInbsMO9nKscXyXarQ82uEM": 121,
+   "3wIO-CawjYirR6N4bIgqNm-rA4TmYObJK0VUoLhxzZQ": 54,
+   "4IvQcfhZV2wKQcTlkxKG0mdoUUGoOweDy5zLG8WnJGg": 12,
+   "4KcyhEoC96h9WQIorGog8QJvfzPBPjcMOAgpRqQQKL8": 23,
+   "4dmIzPuG4N5AWPviK-tEziShLc5WTStNjKamgxk1Z30": 3,
+   "4i_qBK2YUgFELXGcDhpq-zQyZOKxOcHiRVVnj3_OWBg": 28,
+   "5-NafxrUmiL9cAMRdPIJs83QrNPOfwU-5DOcR7I-J_Y": 101,
+   "5_D_Nzsev1Se1e1S0Y32TAubpcUrZM9t8JEmZdketpE": 4,
+   "7pZ31pDkI4TBa4FLNTicgj5WSjVhbXbRUgVLrBlRV9M": 94,
+   "8LrfiR9mKCsoNNM6cyOJNpQAZXFLUSUKCK4zy4vo2lg": 22,
+   "9U_MDLfzf-sdww7d7ydaApDiQz3nyHJ4kTS2-9K4AGA": 14,
+   "9YcwODxcwVKMLM2_PtrMuTMOACbv3iq0vU4-z0Na9rg": 2,
+   "A_9Hc-3xbzxGVjuotO14_2eqtW7QKMoSIHyAQBb6SVs": 29,
+   "BDnCGh-0Q10jecIG6bdjZsowhbvBqpQ6Oq_VVYpDumQ": 81,
+   "BaNVhZoSVna0uE_wqV1_wnaO7dwEO9Br1f6Ccc5N_lM": 99,
+   "BfJCvBjP2MzWgo9ZaK_m2MUU0hcwGwhasirxtXRhckM": 1,
+   "CPkTc_4pEBXQ4jT4Npjc373tGDbb2U7zf-OGz9IPz2A": 97,
+   "DZbalw2LOY5I1gQfYwv73RTuv-8igiu3KZUkSc3bEH0": 1,
+   "F7s3HXjgB3GC_B98_LiGvlSyCJkyYZRGCfPnLi0s1X8": 2,
+   "G0ZHA4gJpqIydYvVq0B41Mpzo0W6ONgwtgpGNVo6Lsg": 3,
+   "H-IldS90Uilwx0qb7A0VX-GELNcTIEz_HGryTNg0AV4": 6,
+   "HPYLYDh7G-PiQFfeHJ61Dn86HMRwP62t4DPf2Yl8RJA": 22,
+   "Hq0haLNws78n6LdILJkTKPIKnJ1EyLPnf1wZK3STaZA": 1,
+   "JYpttGaAMYSlNQuIT36shT03y4hNekbluy1aWGKbDi8": 98,
+   "JZNmYFKqDPOG59qr03wP4lGhyrQQQyGXDslXb7qgWqI": 97,
+   "LTxNyUaVVm-lwR-Wa7Z4LXbz3TvW5btEm-qoD9VhGm4": 4,
+   "LXxeW7s2Z7ISWqSSDiz_QOOr7cLyYQup0nOYyVYk0jU": 33,
+   "LeL57Lkx1bKzwmiiFvkVDtkTQ5Wh9d5xyQICj4cSajk": 67,
+   "LpjjcKnWS0H4LNxTcmanrcG0k0iqHCFW8mOW7hO0yuI": 4,
+   "N90q65iT59dCo01-gtZRUlLMX0w6_ylFHv2uHaSUFNk": 31,
+   "O94QpUJ4oZ8gXlAJMV_xcigO9VyD3Kgf_wI7hTo6SGM": 1,
+   "OdQHR5bwUJHaFpC2VUx321urTW8hd97-3TdB7oPW4iA": 2,
+   "PKLNYHbnlcnYkFATv5k3IyZCFgC0aVSX6Ay1CYCsiTw": 3,
+   "RTNoP5CkbQqjVEuuC9p08WnIsa1nKJH2lYvxOZj5MSU": 50,
+   "SZO5P5L0Eq1zErSk2O3Zxbt8Oamcj7bCaexunDissEg": 36,
+   "ScEtph9-vfY7lgqlUWwUwOmm99ySeZGQhOX0MFAyFEs": 79,
+   "SiIO6u2gow2AXXNNe9ZltI2AnOF75ywKW8GtVzvr3V0": 4,
+   "Tb5xrQGyvNZd87nC2h0E0sEYN9iJX_pZJUtsFm4EN8w": 5,
+   "U9i_nNyJMb_K_GbC_2YssrihKggCRWS4lVEPyLiHNws": 114,
+   "UI0mQ-TBKw_qwKmEN8ktiN8Snohsv0Kqfh5qLmLyXmQ": 28,
+   "V4XAxkILMSopedTbzS9aG7PUBESljte11vebh45Ccyo": 71,
+   "VvsIIcBODuMByebigUGC6Han_CUNR7VztgGCq76YmIQ": 2,
+   "WWRshZYp-kQqbfTWsE3JyPDWJ4tX58hRZ2NOYEYlpok": 54,
+   "XezqlWDceGXTTcdtS7B0J__UqDWhYKXo1xVftEywuSE": 100,
+   "XwO2tGSO_NLvTaUHycLAeTb-wbO0s1T6eKsLkxGeZkA": 2,
+   "Y6OiqyTH-KogzEyG3eO44UXvrifjmYbbs-14mJQLqto": 4,
+   "Ya-QT0DI-LyYQCwyAryJiHnTO99iKR5Tw7SxJ9RtNkI": 32,
+   "YlprxxUDtRCP2Ewfn5qEOQ0j1w_qLc9R6V6TnZ9HNSU": 14,
+   "ZEJr2SQX0HRCagAZFMR1wSAFiFLsjIRFDqy0LTZIpBM": 5,
+   "ZbbJIHw5aTw_tRk53Ky8bwKrQ3CJvKPv7PtEN1lTCAA": 143,
+   "Zwh1vYmwfbESP9-rXVXiNS8Ix0MEsUw5GSiObwkVEDE": 18,
+   "_riC-PcEMW7iywAkLNch5S0SrVru5YqBbqnHq2prMmQ": 4,
+   "_s0OHX6K7XAA1lKuZkNp6rrm-wHpWY6da4swILL69a8": 26,
+   "atkI1E32mchuz_nl9kgcDntECH0BOuHJ1FBgCvlcH5E": 1,
+   "bC2rCZdlm_oA7M75H7_G4yyL1u92884CP_HVZBMos_8": 1,
+   "bTMpUcWbZ5veIo8vRFbLug3dFW0YIxJichZ_Epr5K5g": 21,
+   "dDBv2vd6GJmi47ma4jOV37IfuvvxsXihuyLvm2e6gsE": 10,
+   "dUqCbSIdkxxSuIhq8ohcQMwI-oq-CPX1Ey6qUnam0jc": 13,
+   "eSRbMNB_wkZiiVeu2Axw5OC9AnRV-zU-vj_WDPbX-JY": 18,
+   "fr24DFR_Lg6Ff5ue0NFLOqtUH1gGrrPGkKRKxbeuSK8": 28,
+   "hIWyqevBhAbRw02-yBKvHRW731e6__jL2e4mWY65baw": 1,
+   "iQuZaChdbWyqpuUUodkMuwOunuqldCAsh4Nbq6txQCk": 75,
+   "iWpkCWDKVpvhWTi_iXlRdgnwEMs_l3rcQy7rWrGnhXA": 96,
+   "imBDcFoKtFqzNk5adStZQsnxo5yHuLFcgDBTeYZai34": 5,
+   "j36ZMY1DPYMZk-O7qHeUTAGK8DYpFBKKMf_5XA-XCEU": 96,
+   "jsj4RhU2OEpyenNTxdZdr7n9i25ct11CBP5BMZc8Ovs": 99,
+   "kyKvqAVtJH_DNGItB-sHh340xrwqZN3AWYp06pkU3hk": 122,
+   "l3kqa6OyTZUwzVLTRYFx2NLALjqjEtHCn5sMEAsNB9I": 4,
+   "mb7ZAIdT8Qvj93-998D0CB6NGjB7W1K1swWyu9T3eCg": 12,
+   "nH0c-gDj_Q01Y7NOgJ5SD8RkTpAMLeWCt-O5a6K0Cv0": 132,
+   "nV_65ULcw5vtyNEfERI5n8NVJIdp4pB5GEn-n2JQFak": 4,
+   "owtIzn4iCZe2Gzh2qY5hybs5DIo_qKV0KKyL9Y3o-44": 40,
+   "oys9hS8ku0nGf6juKCj4XaDbs-WjoJM9JkbCwg05k0g": 39,
+   "pABO-x-pCj3n_TZBNCYHrbQQpkxMbTQg1MSpqnTaqus": 7,
+   "pQV-MRGDsyi39lCkOSfz3IeWgEZ9mfxZhYqmI5GqAQE": 99,
+   "pWobDn83FZmTX-eVbRZkKGXXrF936gKNsKuW2zR0y8o": 17,
+   "pYh2YVJdqptUwOS4KGHeFYNKZrYUOVNCGrcAJ8XXCtw": 96,
+   "r9p1UKv3uzfH8KEYABgKXJFvgdS2oFgdxdt8rIFDw7o": 55,
+   "rH69dRyuzKqkMnV9F0ywIA8JrU33oHl3c7ANqVgUEcc": 28,
+   "sTN6iUHCG98SrRW13g0HOj6LRPKDHKqPiHNn2A67CX0": 4,
+   "twC5ykYK68fbfCjT9qWYpZX3_ev6XsQ0kCtnIhsItfo": 3,
+   "vOYSBRYMv2S5l1Zv50Z3_Yv-zTIaNzZgXx9WkgP-Rh4": 83,
+   "yEW0-7QtnJJJtOUOtyboU5H9gR0Q02pIQMiENhz5BOs": 1,
+   "z7bBs7YKX86ZOVznLAvP9sfgwRnrjgy5HqlLzLISKww": 69
+  },
+  "LastOffering": {
+   "-RlCrWmyn9OaJ86tsr5qhmFRc0h5ovT5xjKQwySGZy0": 20321,
+   "0xbvOzY0vgX0uj1HgOSw3lvD3POnOF38d9Ij9lZ7Eq8": 20281,
+   "1WIZT9EL15vN4CoE9bEOHs0wlNR7VPS5h8EBxJOKEJE": 20201,
+   "1wdb2k0RYBTisTdRvCLNpnReLgfq2H0XFjNhgxRmZo0": 20115,
+   "27vY67xnvkJbrCh9_ebFZqqO7R-5DcbUDD8p565uVLI": 20168,
+   "3-y5Td8hzGjPjOvkfCaLv4_kt334HZepIJUhr8o_qwc": 20339,
+   "35H1BWdkxUF6qPS9o8CJjx4Tk_dONvAbwy7RceHcBdc": 20252,
+   "3dTBoAtr9RA0DhNihHvcbInbsMO9nKscXyXarQ82uEM": 20344,
+   "3wIO-CawjYirR6N4bIgqNm-rA4TmYObJK0VUoLhxzZQ": 20169,
+   "4IvQcfhZV2wKQcTlkxKG0mdoUUGoOweDy5zLG8WnJGg": 20130,
+   "4KcyhEoC96h9WQIorGog8QJvfzPBPjcMOAgpRqQQKL8": 20314,
+   "4dmIzPuG4N5AWPviK-tEziShLc5WTStNjKamgxk1Z30": 20310,
+   "4i_qBK2YUgFELXGcDhpq-zQyZOKxOcHiRVVnj3_OWBg": 20236,
+   "5-NafxrUmiL9cAMRdPIJs83QrNPOfwU-5DOcR7I-J_Y": 20339,
+   "5_D_Nzsev1Se1e1S0Y32TAubpcUrZM9t8JEmZdketpE": 20314,
+   "7pZ31pDkI4TBa4FLNTicgj5WSjVhbXbRUgVLrBlRV9M": 20344,
+   "8LrfiR9mKCsoNNM6cyOJNpQAZXFLUSUKCK4zy4vo2lg": 20314,
+   "9U_MDLfzf-sdww7d7ydaApDiQz3nyHJ4kTS2-9K4AGA": 20316,
+   "9YcwODxcwVKMLM2_PtrMuTMOACbv3iq0vU4-z0Na9rg": 20286,
+   "A_9Hc-3xbzxGVjuotO14_2eqtW7QKMoSIHyAQBb6SVs": 20314,
+   "BDnCGh-0Q10jecIG6bdjZsowhbvBqpQ6Oq_VVYpDumQ": 20344,
+   "BaNVhZoSVna0uE_wqV1_wnaO7dwEO9Br1f6Ccc5N_lM": 20339,
+   "BfJCvBjP2MzWgo9ZaK_m2MUU0hcwGwhasirxtXRhckM": 20115,
+   "CPkTc_4pEBXQ4jT4Npjc373tGDbb2U7zf-OGz9IPz2A": 20339,
+   "DZbalw2LOY5I1gQfYwv73RTuv-8igiu3KZUkSc3bEH0": 20265,
+   "F7s3HXjgB3GC_B98_LiGvlSyCJkyYZRGCfPnLi0s1X8": 20259,
+   "G0ZHA4gJpqIydYvVq0B41Mpzo0W6ONgwtgpGNVo6Lsg": 20310,
+   "H-IldS90Uilwx0qb7A0VX-GELNcTIEz_HGryTNg0AV4": 20321,
+   "HPYLYDh7G-PiQFfeHJ61Dn86HMRwP62t4DPf2Yl8RJA": 20314,
+   "Hq0haLNws78n6LdILJkTKPIKnJ1EyLPnf1wZK3STaZA": 20132,
+   "JYpttGaAMYSlNQuIT36shT03y4hNekbluy1aWGKbDi8": 20339,
+   "JZNmYFKqDPOG59qr03wP4lGhyrQQQyGXDslXb7qgWqI": 20343,
+   "LTxNyUaVVm-lwR-Wa7Z4LXbz3TvW5btEm-qoD9VhGm4": 20329,
+   "LXxeW7s2Z7ISWqSSDiz_QOOr7cLyYQup0nOYyVYk0jU": 20164,
+   "LeL57Lkx1bKzwmiiFvkVDtkTQ5Wh9d5xyQICj4cSajk": 20340,
+   "LpjjcKnWS0H4LNxTcmanrcG0k0iqHCFW8mOW7hO0yuI": 20291,
+   "N90q65iT59dCo01-gtZRUlLMX0w6_ylFHv2uHaSUFNk": 20329,
+   "O94QpUJ4oZ8gXlAJMV_xcigO9VyD3Kgf_wI7hTo6SGM": 20127,
+   "OdQHR5bwUJHaFpC2VUx321urTW8hd97-3TdB7oPW4iA": 20145,
+   "PKLNYHbnlcnYkFATv5k3IyZCFgC0aVSX6Ay1CYCsiTw": 20301,
+   "RTNoP5CkbQqjVEuuC9p08WnIsa1nKJH2lYvxOZj5MSU": 20320,
+   "SZO5P5L0Eq1zErSk2O3Zxbt8Oamcj7bCaexunDissEg": 20165,
+   "ScEtph9-vfY7lgqlUWwUwOmm99ySeZGQhOX0MFAyFEs": 20333,
+   "SiIO6u2gow2AXXNNe9ZltI2AnOF75ywKW8GtVzvr3V0": 20143,
+   "Tb5xrQGyvNZd87nC2h0E0sEYN9iJX_pZJUtsFm4EN8w": 20336,
+   "U9i_nNyJMb_K_GbC_2YssrihKggCRWS4lVEPyLiHNws": 20344,
+   "UI0mQ-TBKw_qwKmEN8ktiN8Snohsv0Kqfh5qLmLyXmQ": 20344,
+   "V4XAxkILMSopedTbzS9aG7PUBESljte11vebh45Ccyo": 20340,
+   "VvsIIcBODuMByebigUGC6Han_CUNR7VztgGCq76YmIQ": 20319,
+   "WWRshZYp-kQqbfTWsE3JyPDWJ4tX58hRZ2NOYEYlpok": 20183,
+   "XezqlWDceGXTTcdtS7B0J__UqDWhYKXo1xVftEywuSE": 20339,
+   "XwO2tGSO_NLvTaUHycLAeTb-wbO0s1T6eKsLkxGeZkA": 20175,
+   "Y6OiqyTH-KogzEyG3eO44UXvrifjmYbbs-14mJQLqto": 20157,
+   "Ya-QT0DI-LyYQCwyAryJiHnTO99iKR5Tw7SxJ9RtNkI": 20334,
+   "YlprxxUDtRCP2Ewfn5qEOQ0j1w_qLc9R6V6TnZ9HNSU": 20175,
+   "ZEJr2SQX0HRCagAZFMR1wSAFiFLsjIRFDqy0LTZIpBM": 20129,
+   "ZbbJIHw5aTw_tRk53Ky8bwKrQ3CJvKPv7PtEN1lTCAA": 20343,
+   "Zwh1vYmwfbESP9-rXVXiNS8Ix0MEsUw5GSiObwkVEDE": 20159,
+   "_riC-PcEMW7iywAkLNch5S0SrVru5YqBbqnHq2prMmQ": 20314,
+   "_s0OHX6K7XAA1lKuZkNp6rrm-wHpWY6da4swILL69a8": 20154,
+   "atkI1E32mchuz_nl9kgcDntECH0BOuHJ1FBgCvlcH5E": 20125,
+   "bC2rCZdlm_oA7M75H7_G4yyL1u92884CP_HVZBMos_8": 20140,
+   "bTMpUcWbZ5veIo8vRFbLug3dFW0YIxJichZ_Epr5K5g": 20314,
+   "dDBv2vd6GJmi47ma4jOV37IfuvvxsXihuyLvm2e6gsE": 20155,
+   "dUqCbSIdkxxSuIhq8ohcQMwI-oq-CPX1Ey6qUnam0jc": 20312,
+   "eSRbMNB_wkZiiVeu2Axw5OC9AnRV-zU-vj_WDPbX-JY": 20158,
+   "fr24DFR_Lg6Ff5ue0NFLOqtUH1gGrrPGkKRKxbeuSK8": 20314,
+   "hIWyqevBhAbRw02-yBKvHRW731e6__jL2e4mWY65baw": 20117,
+   "iQuZaChdbWyqpuUUodkMuwOunuqldCAsh4Nbq6txQCk": 20343,
+   "iWpkCWDKVpvhWTi_iXlRdgnwEMs_l3rcQy7rWrGnhXA": 20344,
+   "imBDcFoKtFqzNk5adStZQsnxo5yHuLFcgDBTeYZai34": 20167,
+   "j36ZMY1DPYMZk-O7qHeUTAGK8DYpFBKKMf_5XA-XCEU": 20339,
+   "jsj4RhU2OEpyenNTxdZdr7n9i25ct11CBP5BMZc8Ovs": 20339,
+   "kyKvqAVtJH_DNGItB-sHh340xrwqZN3AWYp06pkU3hk": 20344,
+   "l3kqa6OyTZUwzVLTRYFx2NLALjqjEtHCn5sMEAsNB9I": 20321,
+   "mb7ZAIdT8Qvj93-998D0CB6NGjB7W1K1swWyu9T3eCg": 20169,
+   "nH0c-gDj_Q01Y7NOgJ5SD8RkTpAMLeWCt-O5a6K0Cv0": 20343,
+   "nV_65ULcw5vtyNEfERI5n8NVJIdp4pB5GEn-n2JQFak": 20310,
+   "owtIzn4iCZe2Gzh2qY5hybs5DIo_qKV0KKyL9Y3o-44": 20341,
+   "oys9hS8ku0nGf6juKCj4XaDbs-WjoJM9JkbCwg05k0g": 20227,
+   "pABO-x-pCj3n_TZBNCYHrbQQpkxMbTQg1MSpqnTaqus": 20314,
+   "pQV-MRGDsyi39lCkOSfz3IeWgEZ9mfxZhYqmI5GqAQE": 20339,
+   "pWobDn83FZmTX-eVbRZkKGXXrF936gKNsKuW2zR0y8o": 20199,
+   "pYh2YVJdqptUwOS4KGHeFYNKZrYUOVNCGrcAJ8XXCtw": 20339,
+   "r9p1UKv3uzfH8KEYABgKXJFvgdS2oFgdxdt8rIFDw7o": 20324,
+   "rH69dRyuzKqkMnV9F0ywIA8JrU33oHl3c7ANqVgUEcc": 20153,
+   "sTN6iUHCG98SrRW13g0HOj6LRPKDHKqPiHNn2A67CX0": 20311,
+   "twC5ykYK68fbfCjT9qWYpZX3_ev6XsQ0kCtnIhsItfo": 20122,
+   "vOYSBRYMv2S5l1Zv50Z3_Yv-zTIaNzZgXx9WkgP-Rh4": 20342,
+   "yEW0-7QtnJJJtOUOtyboU5H9gR0Q02pIQMiENhz5BOs": 20115,
+   "z7bBs7YKX86ZOVznLAvP9sfgwRnrjgy5HqlLzLISKww": 20330
+  },
+  "Streak": {
+   "-RlCrWmyn9OaJ86tsr5qhmFRc0h5ovT5xjKQwySGZy0": 1,
+   "0xbvOzY0vgX0uj1HgOSw3lvD3POnOF38d9Ij9lZ7Eq8": 1,
+   "1WIZT9EL15vN4CoE9bEOHs0wlNR7VPS5h8EBxJOKEJE": 1,
+   "27vY67xnvkJbrCh9_ebFZqqO7R-5DcbUDD8p565uVLI": 1,
+   "3-y5Td8hzGjPjOvkfCaLv4_kt334HZepIJUhr8o_qwc": 2,
+   "35H1BWdkxUF6qPS9o8CJjx4Tk_dONvAbwy7RceHcBdc": 1,
+   "3dTBoAtr9RA0DhNihHvcbInbsMO9nKscXyXarQ82uEM": 16,
+   "3wIO-CawjYirR6N4bIgqNm-rA4TmYObJK0VUoLhxzZQ": 7,
+   "4KcyhEoC96h9WQIorGog8QJvfzPBPjcMOAgpRqQQKL8": 1,
+   "4dmIzPuG4N5AWPviK-tEziShLc5WTStNjKamgxk1Z30": 2,
+   "4i_qBK2YUgFELXGcDhpq-zQyZOKxOcHiRVVnj3_OWBg": 1,
+   "5-NafxrUmiL9cAMRdPIJs83QrNPOfwU-5DOcR7I-J_Y": 2,
+   "5_D_Nzsev1Se1e1S0Y32TAubpcUrZM9t8JEmZdketpE": 1,
+   "7pZ31pDkI4TBa4FLNTicgj5WSjVhbXbRUgVLrBlRV9M": 15,
+   "8LrfiR9mKCsoNNM6cyOJNpQAZXFLUSUKCK4zy4vo2lg": 1,
+   "9U_MDLfzf-sdww7d7ydaApDiQz3nyHJ4kTS2-9K4AGA": 1,
+   "9YcwODxcwVKMLM2_PtrMuTMOACbv3iq0vU4-z0Na9rg": 1,
+   "A_9Hc-3xbzxGVjuotO14_2eqtW7QKMoSIHyAQBb6SVs": 1,
+   "BDnCGh-0Q10jecIG6bdjZsowhbvBqpQ6Oq_VVYpDumQ": 14,
+   "BaNVhZoSVna0uE_wqV1_wnaO7dwEO9Br1f6Ccc5N_lM": 2,
+   "CPkTc_4pEBXQ4jT4Npjc373tGDbb2U7zf-OGz9IPz2A": 2,
+   "DZbalw2LOY5I1gQfYwv73RTuv-8igiu3KZUkSc3bEH0": 1,
+   "F7s3HXjgB3GC_B98_LiGvlSyCJkyYZRGCfPnLi0s1X8": 1,
+   "G0ZHA4gJpqIydYvVq0B41Mpzo0W6ONgwtgpGNVo6Lsg": 2,
+   "H-IldS90Uilwx0qb7A0VX-GELNcTIEz_HGryTNg0AV4": 1,
+   "HPYLYDh7G-PiQFfeHJ61Dn86HMRwP62t4DPf2Yl8RJA": 1,
+   "JYpttGaAMYSlNQuIT36shT03y4hNekbluy1aWGKbDi8": 2,
+   "JZNmYFKqDPOG59qr03wP4lGhyrQQQyGXDslXb7qgWqI": 3,
+   "LTxNyUaVVm-lwR-Wa7Z4LXbz3TvW5btEm-qoD9VhGm4": 1,
+   "LXxeW7s2Z7ISWqSSDiz_QOOr7cLyYQup0nOYyVYk0jU": 1,
+   "LeL57Lkx1bKzwmiiFvkVDtkTQ5Wh9d5xyQICj4cSajk": 1,
+   "LpjjcKnWS0H4LNxTcmanrcG0k0iqHCFW8mOW7hO0yuI": 1,
+   "N90q65iT59dCo01-gtZRUlLMX0w6_ylFHv2uHaSUFNk": 1,
+   "OdQHR5bwUJHaFpC2VUx321urTW8hd97-3TdB7oPW4iA": 1,
+   "PKLNYHbnlcnYkFATv5k3IyZCFgC0aVSX6Ay1CYCsiTw": 2,
+   "RTNoP5CkbQqjVEuuC9p08WnIsa1nKJH2lYvxOZj5MSU": 1,
+   "SZO5P5L0Eq1zErSk2O3Zxbt8Oamcj7bCaexunDissEg": 1,
+   "ScEtph9-vfY7lgqlUWwUwOmm99ySeZGQhOX0MFAyFEs": 1,
+   "SiIO6u2gow2AXXNNe9ZltI2AnOF75ywKW8GtVzvr3V0": 1,
+   "Tb5xrQGyvNZd87nC2h0E0sEYN9iJX_pZJUtsFm4EN8w": 1,
+   "U9i_nNyJMb_K_GbC_2YssrihKggCRWS4lVEPyLiHNws": 15,
+   "UI0mQ-TBKw_qwKmEN8ktiN8Snohsv0Kqfh5qLmLyXmQ": 15,
+   "V4XAxkILMSopedTbzS9aG7PUBESljte11vebh45Ccyo": 1,
+   "VvsIIcBODuMByebigUGC6Han_CUNR7VztgGCq76YmIQ": 1,
+   "WWRshZYp-kQqbfTWsE3JyPDWJ4tX58hRZ2NOYEYlpok": 1,
+   "XezqlWDceGXTTcdtS7B0J__UqDWhYKXo1xVftEywuSE": 2,
+   "XwO2tGSO_NLvTaUHycLAeTb-wbO0s1T6eKsLkxGeZkA": 1,
+   "Y6OiqyTH-KogzEyG3eO44UXvrifjmYbbs-14mJQLqto": 1,
+   "Ya-QT0DI-LyYQCwyAryJiHnTO99iKR5Tw7SxJ9RtNkI": 1,
+   "YlprxxUDtRCP2Ewfn5qEOQ0j1w_qLc9R6V6TnZ9HNSU": 1,
+   "ZbbJIHw5aTw_tRk53Ky8bwKrQ3CJvKPv7PtEN1lTCAA": 1,
+   "Zwh1vYmwfbESP9-rXVXiNS8Ix0MEsUw5GSiObwkVEDE": 3,
+   "_riC-PcEMW7iywAkLNch5S0SrVru5YqBbqnHq2prMmQ": 1,
+   "_s0OHX6K7XAA1lKuZkNp6rrm-wHpWY6da4swILL69a8": 1,
+   "bTMpUcWbZ5veIo8vRFbLug3dFW0YIxJichZ_Epr5K5g": 1,
+   "dDBv2vd6GJmi47ma4jOV37IfuvvxsXihuyLvm2e6gsE": 1,
+   "dUqCbSIdkxxSuIhq8ohcQMwI-oq-CPX1Ey6qUnam0jc": 1,
+   "eSRbMNB_wkZiiVeu2Axw5OC9AnRV-zU-vj_WDPbX-JY": 1,
+   "fr24DFR_Lg6Ff5ue0NFLOqtUH1gGrrPGkKRKxbeuSK8": 1,
+   "iQuZaChdbWyqpuUUodkMuwOunuqldCAsh4Nbq6txQCk": 1,
+   "iWpkCWDKVpvhWTi_iXlRdgnwEMs_l3rcQy7rWrGnhXA": 2,
+   "imBDcFoKtFqzNk5adStZQsnxo5yHuLFcgDBTeYZai34": 1,
+   "j36ZMY1DPYMZk-O7qHeUTAGK8DYpFBKKMf_5XA-XCEU": 2,
+   "jsj4RhU2OEpyenNTxdZdr7n9i25ct11CBP5BMZc8Ovs": 2,
+   "kyKvqAVtJH_DNGItB-sHh340xrwqZN3AWYp06pkU3hk": 15,
+   "l3kqa6OyTZUwzVLTRYFx2NLALjqjEtHCn5sMEAsNB9I": 1,
+   "mb7ZAIdT8Qvj93-998D0CB6NGjB7W1K1swWyu9T3eCg": 2,
+   "nH0c-gDj_Q01Y7NOgJ5SD8RkTpAMLeWCt-O5a6K0Cv0": 1,
+   "nV_65ULcw5vtyNEfERI5n8NVJIdp4pB5GEn-n2JQFak": 2,
+   "owtIzn4iCZe2Gzh2qY5hybs5DIo_qKV0KKyL9Y3o-44": 1,
+   "oys9hS8ku0nGf6juKCj4XaDbs-WjoJM9JkbCwg05k0g": 1,
+   "pABO-x-pCj3n_TZBNCYHrbQQpkxMbTQg1MSpqnTaqus": 1,
+   "pQV-MRGDsyi39lCkOSfz3IeWgEZ9mfxZhYqmI5GqAQE": 2,
+   "pWobDn83FZmTX-eVbRZkKGXXrF936gKNsKuW2zR0y8o": 1,
+   "pYh2YVJdqptUwOS4KGHeFYNKZrYUOVNCGrcAJ8XXCtw": 2,
+   "r9p1UKv3uzfH8KEYABgKXJFvgdS2oFgdxdt8rIFDw7o": 1,
+   "rH69dRyuzKqkMnV9F0ywIA8JrU33oHl3c7ANqVgUEcc": 2,
+   "sTN6iUHCG98SrRW13g0HOj6LRPKDHKqPiHNn2A67CX0": 3,
+   "vOYSBRYMv2S5l1Zv50Z3_Yv-zTIaNzZgXx9WkgP-Rh4": 3,
+   "z7bBs7YKX86ZOVznLAvP9sfgwRnrjgy5HqlLzLISKww": 1
+  },
+  "TotalOfferings": {
+   "Aqua Guardians": 709,
+   "Inferno Blades": 1381,
+   "Sky Nomads": 620,
+   "Stone Titans": 786
+  }
+ }
+}

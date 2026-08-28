@@ -1,133 +1,1750 @@
-@import 'tailwindcss/base';
-@import 'tailwindcss/components';
-@import 'tailwindcss/utilities';
+@import url('https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wdth,wght@12..96,75..100,400;12..96,75..100,600;12..96,75..100,800&family=Instrument+Sans:ital,wght@0,400;0,500;0,600;1,400&family=JetBrains+Mono:wght@400;500&display=swap');
 
-/* Custom animation for fire emoji */
-@keyframes growShrink {
-  0%, 100% { transform: scale(1); }
-  50% { transform: scale(1.2); }
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/*
+  Rune Realm.
+
+  The thesis: every action in this game is a signature written permanently to a
+  chain. So the interface is carved stone and bone — and THE MAGIC IS THE ONLY
+  COLOUR. The chrome is deliberately near-colourless: cold ink, pale bone-gold
+  hairlines, no accent of its own. All chroma on screen belongs to one of the
+  four elements, which means colour always MEANS something. A fire companion's
+  screen is orange because it is a fire companion, not because orange was the
+  brand colour.
+
+  That is also why `--element` exists as a single variable rather than each
+  component taking a colour prop: anything that belongs to a faction, a
+  companion, a move or a fight sets `data-element` once, and everything inside
+  it — buttons, bars, borders, glow — agrees without being told.
+*/
+
+@layer base {
+  :root {
+    /* Ink, not black. A blue-violet undertone so the dark has depth and the
+       elemental chroma has something to sit against. */
+    --void:      7   9  16;
+    --surface:  13  16  27;
+    --raised:   21  25  40;
+    --edge:     46  53  78;
+    --ink:     233 236 246;
+    --muted:   150 159 184;
+    --faint:    98 108 133;
+
+    /* The chrome's own colour: carved bone-gold. Used for hairlines, rules and
+       the wordmark — never for state, never for emphasis.
+
+       It is also, to the byte, the colour of the mark: `rune` in
+       src/gfx/mark.json is the same 214 200 162, and that is what the seal is
+       cut in — in the browser tab, in the header, and in stone on the front
+       door. One value, one colour, three renderers. */
+    --rune:    214 200 162;
+
+    /* The four elements. The only saturated colour in the system. */
+    --ember:   255 122  67;
+    --tide:     74 176 255;
+    --gale:    126 226 200;
+    --stone:   201 162  93;
+    --arcane:  150 122 255;
+
+    --good:     74 210 149;
+    --warn:    255 190  74;
+    --bad:     255  94 105;
+
+    /* Defaults to arcane, which is what a player with no faction sees. */
+    --element: var(--arcane);
+
+    /* One notch, always the same corner. Panels read as tablets rather than
+       cards, and it costs nothing. */
+    --notch: 14px;
+
+    /* The small chamfer, for things the size of a button. The same two corners
+       the mark's own bezel is cut on — top-right and bottom-left — so a button
+       and the logo are the same shape at different scales. */
+    --cut: 9px;
+  }
+
+  [data-element='fire']  { --element: var(--ember); }
+  [data-element='water'] { --element: var(--tide); }
+  [data-element='air']   { --element: var(--gale); }
+  [data-element='rock']  { --element: var(--stone); }
+
+  * { border-color: rgb(var(--edge)); }
+
+  html, body, #root { height: 100%; }
+
+  body {
+    @apply bg-void text-ink font-sans antialiased;
+    /* The aether canvas paints behind this, so the body itself stays flat. */
+    background-color: rgb(var(--void));
+    /* `.full-bleed` is 100vw, which counts the scrollbar. Clipped, not hidden:
+       `hidden` would make the body a scroll container and unstick the header. */
+    overflow-x: clip;
+  }
+
+  h1, h2, h3 {
+    font-family: 'Bricolage Grotesque', ui-sans-serif, system-ui, sans-serif;
+    font-variation-settings: 'wdth' 88;
+    letter-spacing: -0.022em;
+  }
+
+  /* Pixel art must never be smoothed. */
+  img[data-pixel] { image-rendering: pixelated; }
+
+  ::selection { background: rgb(var(--element) / 0.32); }
+
+  ::-webkit-scrollbar { width: 10px; height: 10px; }
+  ::-webkit-scrollbar-track { background: transparent; }
+  ::-webkit-scrollbar-thumb {
+    background: rgb(var(--edge)); border-radius: 6px;
+    border: 2px solid rgb(var(--void));
+  }
+  ::-webkit-scrollbar-thumb:hover { background: rgb(var(--faint)); }
+
+  :focus-visible {
+    outline: 2px solid rgb(var(--element));
+    outline-offset: 2px;
+    border-radius: 2px;
+  }
 }
 
-/* Mobile orientation handling */
-@media screen and (max-width: 768px) and (orientation: portrait) {
-  body[data-rotate="true"] {
-    margin: 0;
-    padding: 0;
+@layer components {
+  /*
+    The panel is a tablet: one notched corner, a hairline inlay, and a face dark
+    enough that the aether reads through it. The notch is always top-right, so
+    a column of panels lines up rather than looking randomly chamfered.
+  */
+  .panel {
+    position: relative;
+    background: rgb(var(--surface) / 0.72);
+    backdrop-filter: blur(10px) saturate(120%);
+    clip-path: polygon(
+      0 0,
+      calc(100% - var(--notch)) 0,
+      100% var(--notch),
+      100% 100%,
+      0 100%
+    );
+    box-shadow:
+      0 1px 0 0 rgb(255 255 255 / 0.045) inset,
+      0 18px 44px -20px rgb(0 0 0 / 0.85);
+  }
+
+  /* The hairline. A clip-path cannot take a border, so the edge is drawn as an
+     inset overlay that follows the same shape. */
+  .panel::before {
+    content: '';
+    position: absolute;
+    inset: 0;
+    pointer-events: none;
+    background: rgb(var(--rune) / 0.16);
+    clip-path: polygon(
+      0 0, calc(100% - var(--notch)) 0, 100% var(--notch), 100% 100%, 0 100%,
+      0 1px, 1px 1px, 1px calc(100% - 1px), calc(100% - 1px) calc(100% - 1px),
+      calc(100% - 1px) calc(var(--notch) + 1px),
+      calc(100% - var(--notch) - 1px) 1px, 0 1px
+    );
+  }
+
+  .panel-lit::before { background: rgb(var(--element) / 0.45); }
+
+  /* Small caps label. The structural device of the whole interface: it marks
+     what a group of numbers IS, and it is the only place tracking opens up. */
+  .eyebrow {
+    font-family: 'JetBrains Mono', ui-monospace, monospace;
+    @apply text-[10px] font-medium uppercase text-faint;
+    letter-spacing: 0.18em;
+  }
+
+  .hairline { height: 1px; width: 100%; background: rgb(var(--rune) / 0.14); }
+
+  /*
+    The chamfer, at button scale.
+
+    A `rounded-xl` pill in the middle of an interface built out of cut stone was
+    the last piece of stock UI left in it. This takes the mark's own two corners
+    off anything that carries it, so the primary action reads as a small tablet
+    — a thing struck rather than a thing styled.
+
+    Only fills use it. A clip-path cannot take a border, and the bordered
+    variants would lose their edge along both diagonals; those stay square on a
+    3px radius, which is carved enough at that size.
+  */
+  .chamfer {
+    clip-path: polygon(
+      0 0,
+      calc(100% - var(--cut)) 0,
+      100% var(--cut),
+      100% 100%,
+      var(--cut) 100%,
+      0 calc(100% - var(--cut))
+    );
+  }
+
+  /*
+    Engraved text. One dark edge above and one pale edge below, both a single
+    pixel: the amount of relief a chisel leaves, and no more. For the numbers
+    that should feel struck into the surface rather than printed on it — never
+    on body copy, where it only costs legibility.
+  */
+  .carve {
+    text-shadow:
+      0 -1px 0 rgb(var(--void) / 0.9),
+      0 1px 0 rgb(255 255 255 / 0.055);
+  }
+
+  /*
+    Full bleed: out of the content column, edge to edge.
+
+    For the one thing on a screen that is a PLACE rather than a panel — the
+    Altar Hall. Constrained to `max-w-6xl` the hall was a viewport cut into the
+    page, cropped on all four sides, and it read as a window onto a room instead
+    of as the room. Out here it has no visible edges at all: the canvas is
+    feathered into the void with a mask, so it ends by fading rather than by
+    stopping.
+
+    `100vw` includes the scrollbar, so `body` clips the overflow — `clip` rather
+    than `hidden` because `hidden` makes the body a scroll container and the
+    sticky header stops sticking.
+  */
+  .full-bleed {
     width: 100vw;
-    height: 100vh;
-    overflow: hidden;
+    max-width: 100vw;
+    margin-left: 50%;
+    transform: translateX(-50%);
   }
 
-  body[data-rotate="true"] #root {
-    width: 100vw;
-    height: 100vh;
-    position: fixed;
-    overflow: hidden;
+  /* A gold inlay line, for dividing a tablet's face. Reads as a seam in the
+     stone rather than as a border between two boxes. */
+  .inlay {
+    height: 1px;
+    background: linear-gradient(90deg,
+      transparent, rgb(var(--rune) / 0.22) 12%, rgb(var(--rune) / 0.22) 88%, transparent);
   }
 
-  body[data-rotate="true"] .app-container {
-    position: fixed;
-    width: calc(100vh + 4px);
-    height: calc(100vw + 4px);
-    top: 50%;
-    left: 50%;
-    transform: translate(-50%, -50%) rotate(90deg);
-    transform-origin: center;
-    background: #fff;
-    overflow-y: auto;
-    overflow-x: hidden;
-    -webkit-overflow-scrolling: touch;
-    margin: -2px;
+  /* Loading shimmer. */
+  .shimmer {
+    background: linear-gradient(90deg,
+      rgb(var(--raised)) 0%, rgb(var(--edge)) 50%, rgb(var(--raised)) 100%);
+    background-size: 200% 100%;
+    @apply animate-sweep;
   }
 
-  body[data-rotate="true"] .app-container > * {
-    min-height: 100%;
-    width: 100%;
+  /* A rule with the element's mark in it — used under screen titles. */
+  .rule-runic {
+    height: 1px;
+    background: linear-gradient(90deg,
+      rgb(var(--element) / 0.55), rgb(var(--rune) / 0.16) 30%, transparent 70%);
   }
 
-  body[data-rotate="true"] header,
-  body[data-rotate="true"] nav,
-  body[data-rotate="true"] [class*="fixed"]:not(.inventory-container),
-  body[data-rotate="true"] [class*="sticky"] {
-    position: relative !important;
-    top: auto !important;
-    left: auto !important;
-    right: auto !important;
-    width: 100% !important;
-    padding: 8px !important;
-  }
-
-  body[data-rotate="true"] .minecraft-message {
-    transform: rotate(-20deg) skew(-5deg) scale(0.8);
+  .sr-only {
+    position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px;
+    overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; border: 0;
   }
 }
 
-/* Custom scrollbar styles for better vertical scrolling */
-.custom-scrollbar {
-  scrollbar-width: thin;
-  scrollbar-color: rgba(139, 92, 246, 0.6) transparent;
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
 }
 
-.custom-scrollbar::-webkit-scrollbar {
-  width: 8px;
+/* -------------------------------------------------------------------------
+   Public front door
+
+   This page has room to breathe beyond the game UI's six-column working
+   surface, but it keeps the same materials: ink, cut stone, bone inlay and
+   elemental light. No new brand palette is introduced for the marketing page.
+*/
+
+html { scroll-behavior: smooth; }
+
+.landing-shell {
+  position: relative;
+  width: 100%;
+  background:
+    linear-gradient(180deg, transparent 0%, rgb(var(--void)) 16%, rgb(var(--void)) 100%);
 }
 
-.custom-scrollbar::-webkit-scrollbar-track {
-  background: rgba(0, 0, 0, 0.1);
-  border-radius: 4px;
-}
-
-.custom-scrollbar::-webkit-scrollbar-thumb {
-  background: linear-gradient(180deg, rgba(139, 92, 246, 0.8), rgba(168, 85, 247, 0.8));
-  border-radius: 4px;
-  border: 1px solid rgba(139, 92, 246, 0.3);
-}
-
-.custom-scrollbar::-webkit-scrollbar-thumb:hover {
-  background: linear-gradient(180deg, rgba(139, 92, 246, 1), rgba(168, 85, 247, 1));
-}
-
-/* Game-like glow effects */
-.faction-glow {
-  box-shadow: 0 0 20px rgba(139, 92, 246, 0.3);
-}
-
-.faction-glow:hover {
-  box-shadow: 0 0 30px rgba(139, 92, 246, 0.5);
-}
-
-/* Gold shimmer animation for user's faction */
-@keyframes shimmer {
-  0% { transform: translateX(-100%); }
-  100% { transform: translateX(100%); }
-}
-
-.animate-shimmer {
-  animation: shimmer 3s ease-in-out infinite;
-}
-
-/* Responsive viewport utilities */
-.h-screen-safe {
-  height: 100vh;
-  height: 100dvh; /* Dynamic viewport height for mobile */
-}
-
-.min-h-screen-safe {
-  min-height: 100vh;
-  min-height: 100dvh;
-}
-
-/* Auto-sizing grid rows */
-.auto-rows-fr {
-  grid-auto-rows: 1fr;
-}
-
-/* Line clamp utility */
-.line-clamp-2 {
+.landing-hero {
+  position: relative;
+  min-height: calc(100svh - 65px);
   overflow: hidden;
-  display: -webkit-box;
-  -webkit-box-orient: vertical;
-  -webkit-line-clamp: 2;
-  line-clamp: 2; /* Standard property for compatibility */
+  isolation: isolate;
+  background:
+    radial-gradient(circle at 72% 45%, rgb(var(--arcane) / 0.095), transparent 34%),
+    linear-gradient(110deg, rgb(var(--void)) 0%, rgb(var(--void) / 0.96) 43%, rgb(var(--void) / 0.46) 72%, rgb(var(--void)) 100%);
 }
 
+.landing-hero::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  pointer-events: none;
+  background-image:
+    linear-gradient(rgb(var(--rune) / 0.025) 1px, transparent 1px),
+    linear-gradient(90deg, rgb(var(--rune) / 0.025) 1px, transparent 1px);
+  background-size: 72px 72px;
+  mask-image: linear-gradient(to right, #000 0%, transparent 64%);
+}
+
+.hero-vignette {
+  position: absolute;
+  inset: 0;
+  z-index: 2;
+  pointer-events: none;
+  background:
+    linear-gradient(90deg, rgb(var(--void)) 0%, rgb(var(--void) / 0.96) 28%, transparent 69%),
+    linear-gradient(0deg, rgb(var(--void)) 0%, transparent 28%),
+    radial-gradient(ellipse at center, transparent 44%, rgb(var(--void) / 0.62) 100%);
+}
+
+.hero-title {
+  max-width: 12ch;
+  font-family: 'Bricolage Grotesque', ui-sans-serif, system-ui, sans-serif;
+  font-size: clamp(3.25rem, 7vw, 7rem);
+  font-variation-settings: 'wdth' 78;
+  font-weight: 600;
+  line-height: 0.89;
+  letter-spacing: -0.065em;
+  text-wrap: balance;
+}
+
+.hero-title span {
+  color: rgb(var(--rune));
+  text-shadow: 0 0 52px rgb(var(--element) / 0.18);
+}
+
+.signal-pulse {
+  position: relative;
+  width: 7px;
+  height: 7px;
+  flex: none;
+  background: rgb(var(--element));
+  box-shadow: 0 0 12px rgb(var(--element) / 0.8);
+  transform: rotate(45deg);
+}
+
+.signal-pulse::after {
+  content: '';
+  position: absolute;
+  inset: -5px;
+  border: 1px solid rgb(var(--element) / 0.35);
+  animation: signal-ring 2.2s ease-out infinite;
+}
+
+@keyframes signal-ring {
+  0% { opacity: 0; transform: scale(0.5); }
+  35% { opacity: 1; }
+  100% { opacity: 0; transform: scale(1.7); }
+}
+
+.landing-secondary-link {
+  display: inline-flex;
+  height: 2.75rem;
+  align-items: center;
+  gap: 0.6rem;
+  padding: 0 0.3rem;
+  color: rgb(var(--muted));
+  font-size: 0.8rem;
+  transition: color 180ms ease, gap 180ms ease;
+}
+
+.landing-secondary-link:hover { color: rgb(var(--ink)); gap: 0.82rem; }
+
+.hero-scroll {
+  position: absolute;
+  right: 2.5rem;
+  bottom: 0;
+  z-index: 5;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.75rem;
+  color: rgb(var(--faint));
+  font-family: 'JetBrains Mono', ui-monospace, monospace;
+  font-size: 9px;
+  letter-spacing: 0.2em;
+  text-transform: uppercase;
+}
+
+.hero-scroll-line {
+  width: 1px;
+  height: 54px;
+  background: linear-gradient(rgb(var(--element) / 0.65), transparent);
+}
+
+.landing-section { padding-block: clamp(6rem, 10vw, 10rem); scroll-margin-top: 4rem; }
+
+.landing-kicker {
+  color: rgb(var(--rune) / 0.62);
+  font-family: 'JetBrains Mono', ui-monospace, monospace;
+  font-size: 9px;
+  font-weight: 500;
+  letter-spacing: 0.22em;
+  text-transform: uppercase;
+}
+
+.landing-title {
+  font-family: 'Bricolage Grotesque', ui-sans-serif, system-ui, sans-serif;
+  font-size: clamp(2.35rem, 5vw, 4.8rem);
+  font-variation-settings: 'wdth' 82;
+  font-weight: 600;
+  line-height: 0.98;
+  letter-spacing: -0.045em;
+  text-wrap: balance;
+}
+
+.landing-lore {
+  position: relative;
+  background:
+    linear-gradient(90deg, transparent 49.96%, rgb(var(--rune) / 0.08) 50%, transparent 50.04%);
+}
+
+.lore-copy {
+  display: grid;
+  gap: 1.5rem;
+  color: rgb(var(--muted));
+  font-size: clamp(0.96rem, 1.6vw, 1.15rem);
+  line-height: 1.85;
+}
+
+.lore-copy p:first-child::first-letter {
+  float: left;
+  margin: 0.12em 0.14em 0 0;
+  color: rgb(var(--rune));
+  font-family: 'Bricolage Grotesque', ui-sans-serif, system-ui, sans-serif;
+  font-size: 4.4rem;
+  line-height: 0.8;
+}
+
+.lore-copy blockquote {
+  position: relative;
+  margin-block: 1rem;
+  padding: 1.5rem 1.5rem 1.5rem 2rem;
+  color: rgb(var(--ink));
+  font-family: 'Bricolage Grotesque', ui-sans-serif, system-ui, sans-serif;
+  font-size: clamp(1.3rem, 2.6vw, 2rem);
+  font-variation-settings: 'wdth' 86;
+  line-height: 1.3;
+}
+
+.lore-copy blockquote::before {
+  content: '';
+  position: absolute;
+  inset-block: 0;
+  left: 0;
+  width: 1px;
+  background: linear-gradient(rgb(var(--element)), rgb(var(--rune) / 0.15));
+  box-shadow: 0 0 18px rgb(var(--element) / 0.35);
+}
+
+.faction-tablet {
+  position: relative;
+  min-width: 0;
+  overflow: hidden;
+  background:
+    linear-gradient(155deg, rgb(var(--element) / 0.08), transparent 42%),
+    rgb(var(--surface) / 0.62);
+  clip-path: polygon(0 0, calc(100% - 18px) 0, 100% 18px, 100% 100%, 12px 100%, 0 calc(100% - 12px));
+  transition: transform 260ms cubic-bezier(.2,.8,.3,1), background 260ms ease;
+}
+
+.faction-tablet::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background: rgb(var(--element) / 0.22);
+  clip-path: polygon(
+    0 0, calc(100% - 18px) 0, 100% 18px, 100% 100%, 12px 100%, 0 calc(100% - 12px),
+    0 0, 1px 1px, 1px calc(100% - 13px), 13px calc(100% - 1px), calc(100% - 1px) calc(100% - 1px),
+    calc(100% - 1px) 19px, calc(100% - 19px) 1px, 1px 1px
+  );
+}
+
+.faction-tablet:hover {
+  transform: translateY(-8px);
+  background:
+    linear-gradient(155deg, rgb(var(--element) / 0.14), transparent 48%),
+    rgb(var(--raised) / 0.72);
+}
+
+.faction-number {
+  position: absolute;
+  right: -0.06em;
+  top: 0.16em;
+  color: rgb(var(--element) / 0.055);
+  font-family: 'Bricolage Grotesque', ui-sans-serif, system-ui, sans-serif;
+  font-size: 7.8rem;
+  font-weight: 800;
+  line-height: 0.8;
+  letter-spacing: -0.08em;
+}
+
+.faction-creature {
+  filter: drop-shadow(0 24px 28px rgb(0 0 0 / 0.55)) drop-shadow(0 0 22px rgb(var(--element) / 0.13));
+  transform: translateY(0) scale(1);
+  transition: transform 340ms cubic-bezier(.2,.8,.3,1), filter 340ms ease;
+}
+
+.faction-tablet:hover .faction-creature {
+  filter: drop-shadow(0 28px 34px rgb(0 0 0 / 0.58)) drop-shadow(0 0 32px rgb(var(--element) / 0.25));
+  transform: translateY(-7px) scale(1.045);
+}
+
+.returning-glow {
+  position: absolute;
+  width: min(60vw, 680px);
+  aspect-ratio: 1;
+  right: -16%;
+  top: 12%;
+  border-radius: 50%;
+  background: rgb(var(--arcane) / 0.07);
+  filter: blur(90px);
+}
+
+.ritual-relic {
+  position: relative;
+  min-height: 25rem;
+  overflow: hidden;
+  border: 1px solid rgb(var(--rune) / 0.12);
+  background:
+    radial-gradient(circle at 50% 45%, rgb(var(--arcane) / 0.15), transparent 32%),
+    linear-gradient(135deg, rgb(var(--surface) / 0.7), rgb(var(--void) / 0.38));
+  clip-path: polygon(0 0, calc(100% - 18px) 0, 100% 18px, 100% 100%, 0 100%);
+}
+
+.ritual-orbit {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 18rem;
+  height: 18rem;
+  border: 1px solid rgb(var(--rune) / 0.12);
+  transform: translate(-50%, -50%) rotate(24deg);
+  animation: ritual-turn 32s linear infinite;
+}
+
+.ritual-orbit::before,
+.ritual-orbit::after {
+  content: '';
+  position: absolute;
+  border: 1px solid rgb(var(--arcane) / 0.22);
+}
+
+.ritual-orbit::before { inset: 1.5rem; transform: rotate(18deg); }
+.ritual-orbit::after { inset: 4rem; transform: rotate(42deg); }
+
+@keyframes ritual-turn {
+  to { transform: translate(-50%, -50%) rotate(384deg); }
+}
+
+.world-card {
+  position: relative;
+  min-height: 20rem;
+  padding: 2rem;
+  border: 1px solid rgb(var(--rune) / 0.11);
+  background: rgb(var(--surface) / 0.48);
+  clip-path: polygon(0 0, calc(100% - 16px) 0, 100% 16px, 100% 100%, 0 100%);
+  transition: border-color 180ms ease, background 180ms ease;
+}
+
+.world-card:hover {
+  border-color: rgb(var(--element) / 0.34);
+  background: rgb(var(--raised) / 0.58);
+}
+
+.hero-monolith {
+  position: absolute;
+  right: 3.5%;
+  top: 50%;
+  z-index: 3;
+  width: min(49vw, 43rem);
+  transform: translateY(-50%);
+  filter: drop-shadow(0 40px 55px rgb(0 0 0 / 0.42));
+}
+
+.hero-field-fallback {
+  position: absolute;
+  inset: 0;
+  background:
+    radial-gradient(circle at 72% 46%, rgb(var(--arcane) / 0.14), transparent 22%),
+    radial-gradient(circle at 72% 46%, transparent 28%, rgb(var(--rune) / 0.06) 28.2%, transparent 28.7%);
+}
+
+.hero-mark-fallback {
+  position: relative;
+  display: grid;
+  width: min(100%, 38rem);
+  aspect-ratio: 1;
+  margin-inline: auto;
+  place-items: center;
+  color: rgb(var(--rune));
+}
+
+.hero-mark-orbit {
+  position: absolute;
+  inset: 20%;
+  border: 1px solid rgb(var(--rune) / 0.16);
+  transform: rotate(24deg);
+  animation: hero-mark-orbit 18s linear infinite;
+}
+
+.hero-mark-orbit::before,
+.hero-mark-orbit::after {
+  content: '';
+  position: absolute;
+  width: 7px;
+  height: 7px;
+  background: rgb(var(--arcane));
+  box-shadow: 0 0 18px rgb(var(--arcane) / 0.9);
+  transform: rotate(45deg);
+}
+
+.hero-mark-orbit::before { left: -4px; top: 50%; }
+.hero-mark-orbit::after { bottom: -4px; right: 28%; }
+
+.hero-mark-orbit-inner {
+  inset: 28%;
+  border-color: rgb(var(--arcane) / 0.24);
+  animation-direction: reverse;
+  animation-duration: 11s;
+}
+
+.hero-mark-awakening,
+.hero-monolith > [role='img'] .absolute svg {
+  animation: hero-mark-awakening 2.4s ease-in-out infinite;
+}
+
+@keyframes hero-mark-orbit {
+  to { transform: rotate(384deg); }
+}
+
+@keyframes hero-mark-awakening {
+  0%, 100% { opacity: 0.62; transform: scale(0.97); filter: drop-shadow(0 0 8px rgb(var(--arcane) / 0.18)); }
+  50% { opacity: 1; transform: scale(1.02); filter: drop-shadow(0 0 24px rgb(var(--arcane) / 0.48)); }
+}
+
+/* The landing-page card gallery uses the game's real card painter. The stage
+   gives those canvases the depth and movement of objects without inventing a
+   second card design for marketing. */
+.landing-showcase {
+  position: relative;
+  overflow: hidden;
+  background:
+    radial-gradient(ellipse at 50% 44%, rgb(var(--arcane) / 0.1), transparent 48%),
+    linear-gradient(180deg, rgb(var(--surface) / 0.22), rgb(var(--void)) 86%);
+}
+
+.landing-showcase::after {
+  content: '';
+  position: absolute;
+  inset: 28% 0 auto;
+  height: 1px;
+  pointer-events: none;
+  background: linear-gradient(90deg, transparent, rgb(var(--rune) / 0.18), transparent);
+  box-shadow: 0 0 70px 18px rgb(var(--arcane) / 0.08);
+}
+
+.showcase-beam {
+  position: absolute;
+  left: 50%;
+  top: 31%;
+  width: min(88vw, 72rem);
+  height: 28rem;
+  border: 1px solid rgb(var(--rune) / 0.07);
+  transform: translateX(-50%) rotate(-3deg) perspective(900px) rotateX(64deg);
+  background-image:
+    linear-gradient(rgb(var(--rune) / 0.035) 1px, transparent 1px),
+    linear-gradient(90deg, rgb(var(--rune) / 0.035) 1px, transparent 1px);
+  background-size: 46px 46px;
+  mask-image: radial-gradient(ellipse at center, #000 20%, transparent 72%);
+}
+
+.monster-card-stage {
+  position: relative;
+  z-index: 2;
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: clamp(1rem, 2.4vw, 2.25rem);
+  perspective: 1400px;
+}
+
+.showcase-card { min-width: 0; }
+.showcase-card-1 { --card-y: 2.2rem; --card-turn: -2.6deg; --card-turn-alt: 1.7deg; --float-delay: -1.2s; }
+.showcase-card-2 { --card-y: 0rem; --card-turn: 1.8deg; --card-turn-alt: -1.2deg; --float-delay: -3.8s; }
+.showcase-card-3 { --card-y: 1rem; --card-turn: -1.2deg; --card-turn-alt: 0.8deg; --float-delay: -2.4s; }
+.showcase-card-4 { --card-y: 2.8rem; --card-turn: 2.4deg; --card-turn-alt: -1.6deg; --float-delay: -4.7s; }
+
+.showcase-card-object {
+  position: relative;
+  transform-origin: 50% 75%;
+  animation: showcase-card-float 7s ease-in-out var(--float-delay) infinite;
+  filter: drop-shadow(0 32px 34px rgb(0 0 0 / 0.5));
+  will-change: transform;
+}
+
+.showcase-card-glow {
+  position: absolute;
+  inset: 18% 7% 2%;
+  border-radius: 50%;
+  background: rgb(var(--element) / 0.22);
+  filter: blur(38px);
+  opacity: 0.62;
+  transition: opacity 260ms ease, transform 260ms ease;
+}
+
+.showcase-card:hover .showcase-card-glow {
+  opacity: 0.92;
+  transform: scale(1.08);
+}
+
+@keyframes showcase-card-float {
+  0%, 100% { transform: translateY(var(--card-y)) rotateZ(var(--card-turn)) rotateY(-2deg); }
+  50% { transform: translateY(calc(var(--card-y) - 0.7rem)) rotateZ(var(--card-turn-alt)) rotateY(2deg); }
+}
+
+.landing-altars-section {
+  position: relative;
+  overflow: hidden;
+  padding-bottom: clamp(5rem, 8vw, 8rem);
+  border-top: 1px solid rgb(var(--rune) / 0.1);
+  background:
+    radial-gradient(ellipse at 50% 58%, rgb(var(--arcane) / 0.075), transparent 52%),
+    linear-gradient(180deg, rgb(var(--void)), rgb(var(--surface) / 0.18) 58%, rgb(var(--void)));
+}
+
+.landing-altars-section::before {
+  content: '';
+  position: absolute;
+  inset: 24% 0 0;
+  pointer-events: none;
+  background-image:
+    linear-gradient(rgb(var(--rune) / 0.02) 1px, transparent 1px),
+    linear-gradient(90deg, rgb(var(--rune) / 0.02) 1px, transparent 1px);
+  background-size: 68px 68px;
+  mask-image: linear-gradient(transparent, #000 24%, transparent 94%);
+}
+
+.landing-altar-hall {
+  height: clamp(38rem, 66vw, 48rem) !important;
+  min-height: 38rem !important;
+}
+
+.scene-fallback {
+  display: grid;
+  min-height: inherit;
+  place-content: center;
+  justify-items: center;
+  color: rgb(var(--rune));
+  opacity: 0.36;
+}
+
+.landing-vault-section {
+  position: relative;
+  overflow: hidden;
+  border-block: 1px solid rgb(var(--rune) / 0.1);
+  background:
+    linear-gradient(115deg, rgb(var(--surface) / 0.34), transparent 52%),
+    rgb(var(--void));
+}
+
+.vault-section-glow {
+  position: absolute;
+  left: 50%;
+  bottom: -24rem;
+  width: min(80vw, 62rem);
+  aspect-ratio: 1;
+  border-radius: 50%;
+  background: rgb(var(--arcane) / 0.1);
+  filter: blur(110px);
+  transform: translateX(-50%);
+}
+
+.landing-vault-shell {
+  position: relative;
+  overflow: hidden;
+  border: 1px solid rgb(var(--rune) / 0.12);
+  background:
+    radial-gradient(circle at 50% 55%, rgb(var(--arcane) / 0.095), transparent 32%),
+    linear-gradient(180deg, rgb(var(--surface) / 0.46), rgb(var(--void) / 0.88));
+  clip-path: polygon(0 0, calc(100% - 18px) 0, 100% 18px, 100% 100%, 0 100%);
+}
+
+.landing-vault-shell::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background-image:
+    linear-gradient(rgb(var(--rune) / 0.025) 1px, transparent 1px),
+    linear-gradient(90deg, rgb(var(--rune) / 0.025) 1px, transparent 1px);
+  background-size: 54px 54px;
+  mask-image: radial-gradient(ellipse at 50% 58%, transparent 18%, #000 82%);
+}
+
+.landing-vault-stage {
+  position: relative;
+  min-height: clamp(31rem, 58vw, 43rem);
+}
+
+.landing-vault-controls {
+  position: relative;
+  z-index: 4;
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 1.5rem;
+  padding: 1rem 1.25rem 1.25rem;
+  border-top: 1px solid rgb(var(--rune) / 0.1);
+  background: rgb(var(--void) / 0.72);
+  backdrop-filter: blur(14px);
+}
+
+.landing-vault-replay {
+  flex: none;
+  min-height: 2.5rem;
+  padding-inline: 1rem;
+  border: 1px solid rgb(var(--rune) / 0.28);
+  border-radius: 3px;
+  color: rgb(var(--rune));
+  font-family: 'JetBrains Mono', ui-monospace, monospace;
+  font-size: 9px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  transition: border-color 180ms ease, background 180ms ease, color 180ms ease;
+}
+
+.landing-vault-replay:hover {
+  border-color: rgb(var(--rune) / 0.55);
+  background: rgb(var(--rune) / 0.08);
+  color: rgb(var(--ink));
+}
+
+.key-lore-section {
+  position: relative;
+  overflow: hidden;
+  border-block: 1px solid rgb(var(--rune) / 0.1);
+  background:
+    linear-gradient(100deg, rgb(var(--arcane) / 0.055), transparent 46%),
+    rgb(var(--surface) / 0.18);
+}
+
+.key-lore-mark {
+  position: absolute;
+  left: -10rem;
+  top: 50%;
+  color: rgb(var(--rune));
+  opacity: 0.025;
+  transform: translateY(-50%) rotate(-11deg);
+}
+
+.key-lore-list { border-top: 1px solid rgb(var(--rune) / 0.12); }
+
+.key-lore-item {
+  display: grid;
+  grid-template-columns: 2.5rem minmax(0, 1fr);
+  gap: 1rem;
+  padding-block: 1.65rem;
+  border-bottom: 1px solid rgb(var(--rune) / 0.12);
+}
+
+/* Hidden lore route. It intentionally uses the public visual language but has
+   no links pointing to it until the chronicle is ready to be discovered. */
+.lore-page {
+  position: relative;
+  width: 100%;
+  background: rgb(var(--void));
+}
+
+.lore-page-hero {
+  position: relative;
+  min-height: 42rem;
+  overflow: hidden;
+  border-bottom: 1px solid rgb(var(--rune) / 0.1);
+  background:
+    radial-gradient(circle at 76% 46%, rgb(var(--arcane) / 0.12), transparent 30%),
+    linear-gradient(120deg, rgb(var(--surface) / 0.45), rgb(var(--void)) 62%);
+}
+
+.lore-page-hero::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background-image:
+    linear-gradient(rgb(var(--rune) / 0.025) 1px, transparent 1px),
+    linear-gradient(90deg, rgb(var(--rune) / 0.025) 1px, transparent 1px);
+  background-size: 76px 76px;
+  mask-image: linear-gradient(90deg, #000, transparent 72%);
+}
+
+.lore-page-seal {
+  position: absolute;
+  right: -4rem;
+  top: 50%;
+  color: rgb(var(--rune));
+  opacity: 0.075;
+  transform: translateY(-50%) rotate(8deg);
+}
+
+.lore-page-title {
+  max-width: 11ch;
+  font-family: 'Bricolage Grotesque', ui-sans-serif, system-ui, sans-serif;
+  font-size: clamp(3.6rem, 8vw, 7.8rem);
+  font-variation-settings: 'wdth' 78;
+  font-weight: 600;
+  line-height: 0.88;
+  letter-spacing: -0.065em;
+  text-wrap: balance;
+}
+
+.lore-chapter {
+  position: relative;
+  padding-block: clamp(6rem, 10vw, 10rem);
+}
+
+.lore-chapter-machine {
+  overflow: hidden;
+  border-block: 1px solid rgb(var(--rune) / 0.1);
+  background:
+    repeating-linear-gradient(90deg, transparent 0 79px, rgb(var(--rune) / 0.025) 80px),
+    rgb(var(--surface) / 0.22);
+}
+
+.lore-prose {
+  display: grid;
+  gap: 1.6rem;
+  color: rgb(var(--muted));
+  font-size: clamp(0.98rem, 1.5vw, 1.14rem);
+  line-height: 1.85;
+}
+
+.lore-prose > p:first-child::first-letter {
+  float: left;
+  margin: 0.12em 0.14em 0 0;
+  color: rgb(var(--rune));
+  font-family: 'Bricolage Grotesque', ui-sans-serif, system-ui, sans-serif;
+  font-size: 4.2rem;
+  line-height: 0.8;
+}
+
+.lore-prose blockquote {
+  margin-block: 0.8rem;
+  padding: 1.6rem 1.7rem;
+  border-left: 1px solid rgb(var(--arcane));
+  background: rgb(var(--arcane) / 0.045);
+  color: rgb(var(--ink));
+  font-family: 'Bricolage Grotesque', ui-sans-serif, system-ui, sans-serif;
+  font-size: clamp(1.25rem, 2.4vw, 1.9rem);
+  font-variation-settings: 'wdth' 86;
+  line-height: 1.35;
+}
+
+.lore-currents {
+  border-block: 1px solid rgb(var(--rune) / 0.1);
+  background: radial-gradient(circle at 50% 40%, rgb(var(--arcane) / 0.07), transparent 45%);
+}
+
+.current-tablet {
+  min-height: 13rem;
+  padding: 1.5rem;
+  border: 1px solid rgb(var(--element) / 0.2);
+  background: linear-gradient(145deg, rgb(var(--element) / 0.09), rgb(var(--surface) / 0.55));
+  clip-path: polygon(0 0, calc(100% - 14px) 0, 100% 14px, 100% 100%, 0 100%);
+}
+
+.hidden-current {
+  position: relative;
+  min-height: 12rem;
+  overflow: hidden;
+  padding: 2rem;
+  border: 1px solid rgb(var(--rune) / 0.12);
+}
+
+.light-current {
+  background: linear-gradient(130deg, rgb(242 238 215 / 0.12), transparent 62%);
+  box-shadow: 0 0 50px rgb(242 238 215 / 0.04) inset;
+}
+
+.dark-current {
+  background: linear-gradient(130deg, rgb(3 2 8 / 0.72), rgb(var(--arcane) / 0.055));
+  box-shadow: 0 0 50px rgb(0 0 0 / 0.35) inset;
+}
+
+.returning-sequence {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 1px;
+  margin-block: 1.1rem;
+  border: 1px solid rgb(var(--rune) / 0.1);
+  background: rgb(var(--rune) / 0.1);
+}
+
+.returning-lore-step { padding: 1.25rem; background: rgb(var(--void) / 0.9); }
+
+.lore-faction {
+  position: relative;
+  min-height: 21rem;
+  overflow: hidden;
+  padding: 2rem;
+  border: 1px solid rgb(var(--element) / 0.2);
+  background:
+    linear-gradient(120deg, rgb(var(--element) / 0.1), transparent 56%),
+    rgb(var(--surface) / 0.55);
+  clip-path: polygon(0 0, calc(100% - 18px) 0, 100% 18px, 100% 100%, 0 100%);
+}
+
+.lore-faction-creature {
+  position: absolute;
+  right: -1rem;
+  bottom: -2rem;
+  width: 14rem;
+  opacity: 0.3;
+  filter: drop-shadow(0 0 28px rgb(var(--element) / 0.22));
+}
+
+.lore-page-end {
+  display: flex;
+  min-height: 28rem;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  border-top: 1px solid rgb(var(--rune) / 0.1);
+  background: radial-gradient(circle, rgb(var(--arcane) / 0.08), transparent 30%);
+}
+
+.landing-final {
+  position: relative;
+  display: flex;
+  min-height: 42rem;
+  align-items: center;
+  overflow: hidden;
+  padding-block: 8rem;
+  background:
+    radial-gradient(circle at 50% 50%, rgb(var(--arcane) / 0.09), transparent 36%),
+    rgb(var(--void));
+}
+
+.landing-final-mark {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  opacity: 0.035;
+  transform: translate(-50%, -50%) rotate(-7deg) scale(1.45);
+}
+
+.lore-reveal {
+  opacity: 0;
+  transform: translateY(28px);
+  transition:
+    opacity 720ms cubic-bezier(.2,.8,.3,1) var(--reveal-delay, 0ms),
+    transform 720ms cubic-bezier(.2,.8,.3,1) var(--reveal-delay, 0ms);
+}
+
+.lore-reveal.is-visible { opacity: 1; transform: none; }
+
+@media (max-width: 1023px) {
+  .hero-vignette {
+    background:
+      linear-gradient(0deg, rgb(var(--void)) 0%, rgb(var(--void) / 0.96) 34%, transparent 70%),
+      radial-gradient(ellipse at center, transparent 35%, rgb(var(--void) / 0.62) 100%);
+  }
+  .landing-lore { background: none; }
+  .monster-card-stage { gap: 1rem; }
+  .hero-monolith {
+    left: 50%;
+    right: auto;
+    top: 1rem;
+    width: min(78vw, 34rem);
+    transform: translateX(-50%);
+  }
+}
+
+@media (max-width: 767px) {
+  .landing-hero { min-height: calc(100svh - 57px); }
+  .hero-title { font-size: clamp(3rem, 16vw, 5rem); }
+  .hero-monolith {
+    top: -1.2rem;
+    width: min(92vw, 28rem);
+    opacity: 0.82;
+  }
+  .hero-scroll { display: none; }
+  .landing-section { padding-block: 5.5rem; }
+  .ritual-relic { min-height: 20rem; }
+  .ritual-orbit { width: 14rem; height: 14rem; }
+  .monster-card-stage {
+    display: flex;
+    margin-inline: -1.25rem;
+    padding: 0.5rem 1.25rem 4rem;
+    overflow-x: auto;
+    scroll-snap-type: x mandatory;
+    scrollbar-width: none;
+  }
+  .monster-card-stage::-webkit-scrollbar { display: none; }
+  .showcase-card {
+    width: min(74vw, 18rem);
+    flex: 0 0 min(74vw, 18rem);
+    scroll-snap-align: center;
+  }
+  .showcase-card-1,
+  .showcase-card-2,
+  .showcase-card-3,
+  .showcase-card-4 { --card-y: 0rem; }
+  .landing-altar-hall {
+    height: 38rem !important;
+    min-height: 38rem !important;
+  }
+  .landing-vault-stage { min-height: 30rem; }
+  .landing-vault-controls {
+    align-items: stretch;
+    flex-direction: column;
+  }
+  .landing-vault-replay { width: 100%; }
+  .lore-page-hero { min-height: 36rem; }
+  .lore-page-seal { right: -15rem; opacity: 0.045; }
+  .returning-sequence { grid-template-columns: 1fr; }
+  .lore-faction-creature { right: -3rem; opacity: 0.2; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  html { scroll-behavior: auto; }
+  .lore-reveal { opacity: 1; transform: none; }
+  .signal-pulse::after,
+  .ritual-orbit,
+  .showcase-card-object,
+  .hero-mark-orbit,
+  .hero-mark-awakening,
+  .hero-monolith > [role='img'] .absolute svg { animation: none; }
+  .showcase-card-object { transform: translateY(var(--card-y)) rotateZ(var(--card-turn)); }
+}
+
+/* -------------------------------------------------------------------------
+   Responsive contract
+
+   Desktop composition belongs to each screen. Mobile mechanics belong here.
+   New routes mounted in Shell automatically receive safe-area padding,
+   navigation clearance, thumb-sized shared controls and the landscape rail.
+   A screen only needs a named hook below when its content genuinely changes
+   shape (battle, companion, customiser), rather than a pile of device fixes.
+*/
+
+:root {
+  color-scheme: dark;
+  --app-header-height: 4rem;
+  --mobile-tabbar-height: 3.875rem;
+  --mobile-rail-width: calc(4.5rem + env(safe-area-inset-left));
+}
+
+html {
+  -webkit-text-size-adjust: 100%;
+  text-size-adjust: 100%;
+}
+
+body { min-height: 100dvh; }
+
+button,
+a[href],
+input,
+select,
+textarea {
+  touch-action: manipulation;
+  -webkit-tap-highlight-color: transparent;
+}
+
+code,
+pre,
+.font-mono,
+.panel p { overflow-wrap: anywhere; }
+
+.app-shell { min-height: 100dvh; }
+
+/* The header's surface extends behind a notch; its contents begin below it. */
+.app-header { padding-top: env(safe-area-inset-top); }
+
+.faction-hall-offset {
+  margin-top: calc(-89px - env(safe-area-inset-top));
+}
+
+/* Portals do not inherit Shell spacing, so each shared portal owns safe areas. */
+.dialog-backdrop {
+  padding-top: max(1rem, env(safe-area-inset-top));
+  padding-right: max(1rem, env(safe-area-inset-right));
+  padding-bottom: max(1rem, env(safe-area-inset-bottom));
+  padding-left: max(1rem, env(safe-area-inset-left));
+}
+
+.dialog-panel {
+  max-height: calc(100dvh - env(safe-area-inset-top) - env(safe-area-inset-bottom) - 2rem);
+}
+
+.satchel-drawer {
+  max-width: min(19rem, calc(100vw - env(safe-area-inset-left)));
+  padding-top: max(1rem, env(safe-area-inset-top));
+  padding-right: max(1rem, env(safe-area-inset-right));
+  padding-bottom: max(1rem, env(safe-area-inset-bottom));
+  padding-left: 1rem;
+}
+
+.safe-corner-button {
+  top: max(1rem, env(safe-area-inset-top));
+  right: max(1rem, env(safe-area-inset-right));
+}
+
+.safe-bottom-copy {
+  padding-bottom: max(2rem, env(safe-area-inset-bottom));
+}
+
+.card-viewer-stage {
+  padding-top: max(1.5rem, env(safe-area-inset-top));
+  padding-right: max(1.5rem, env(safe-area-inset-right));
+  padding-bottom: max(1.5rem, env(safe-area-inset-bottom));
+  padding-left: max(1.5rem, env(safe-area-inset-left));
+}
+
+.touch-icon-button {
+  display: inline-flex;
+  min-height: 2.75rem;
+  min-width: 2.75rem;
+  align-items: center;
+  justify-content: center;
+}
+
+.faction-roster-table,
+.admin-data-table { min-width: 30rem; }
+
+/* Realm command -----------------------------------------------------------
+   The admin surface is denser than the game screens, but it uses the same cut
+   stone and elemental light. A faint process grid makes it read as an
+   instrument panel without introducing a second visual system. */
+.admin-console { --element: var(--arcane); }
+
+.admin-hero {
+  position: relative;
+  overflow: hidden;
+  padding: clamp(1.25rem, 3vw, 2rem);
+  border: 1px solid rgb(var(--arcane) / .3);
+  background:
+    radial-gradient(circle at 86% 24%, rgb(var(--arcane) / .16), transparent 31%),
+    linear-gradient(120deg, rgb(var(--surface) / .94), rgb(var(--void) / .78));
+  clip-path: polygon(0 0, calc(100% - 20px) 0, 100% 20px, 100% 100%, 0 100%);
+}
+
+.admin-hero::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background-image:
+    linear-gradient(rgb(var(--rune) / .035) 1px, transparent 1px),
+    linear-gradient(90deg, rgb(var(--rune) / .035) 1px, transparent 1px);
+  background-size: 42px 42px;
+  mask-image: linear-gradient(90deg, transparent 16%, #000 100%);
+}
+
+.admin-status-light {
+  width: .5rem;
+  height: .5rem;
+  background: rgb(var(--good));
+  box-shadow: 0 0 12px rgb(var(--good) / .7);
+  animation: admin-signal 2.4s ease-in-out infinite;
+}
+
+@keyframes admin-signal {
+  50% { opacity: .42; box-shadow: 0 0 4px rgb(var(--good) / .35); }
+}
+
+.admin-process-line > div {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: .75rem;
+  padding: .55rem .7rem;
+  border: 1px solid rgb(var(--edge) / .6);
+  background: rgb(var(--void) / .46);
+}
+
+.admin-process-line span {
+  flex: none;
+  color: rgb(var(--faint));
+  font-family: 'JetBrains Mono', ui-monospace, monospace;
+  text-transform: uppercase;
+  letter-spacing: .14em;
+}
+
+.admin-process-line code {
+  min-width: 0;
+  overflow: hidden;
+  color: rgb(var(--muted));
+  font-family: 'JetBrains Mono', ui-monospace, monospace;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.admin-tabs {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(9rem, 1fr));
+  gap: 1px;
+  overflow: hidden;
+  padding: 1px;
+  border: 1px solid rgb(var(--edge) / .66);
+  background: rgb(var(--edge) / .48);
+}
+
+.admin-tab {
+  position: relative;
+  display: flex;
+  min-height: 3.5rem;
+  align-items: center;
+  justify-content: space-between;
+  gap: .75rem;
+  padding: .75rem 1rem;
+  background: rgb(var(--surface) / .94);
+  color: rgb(var(--muted));
+  font-size: .78rem;
+  transition: background 150ms ease, color 150ms ease;
+}
+
+.admin-tab::after {
+  content: '';
+  position: absolute;
+  right: 0;
+  bottom: 0;
+  left: 0;
+  height: 2px;
+  background: transparent;
+}
+
+.admin-tab:hover { color: rgb(var(--ink)); background: rgb(var(--raised)); }
+.admin-tab.is-active { color: rgb(var(--ink)); background: rgb(var(--arcane) / .1); }
+.admin-tab.is-active::after { background: rgb(var(--arcane)); }
+.admin-tab small { color: rgb(var(--faint)); font-family: 'JetBrains Mono', ui-monospace, monospace; font-size: .58rem; }
+
+.admin-kpi-grid {
+  display: grid;
+  grid-template-columns: repeat(6, minmax(0, 1fr));
+  gap: .75rem;
+}
+
+.admin-kpi { min-height: 8.25rem; }
+.admin-kpi::after {
+  content: '';
+  position: absolute;
+  right: .75rem;
+  bottom: .75rem;
+  width: 1.25rem;
+  height: 1px;
+  background: rgb(var(--arcane) / .58);
+}
+
+.admin-kpi-icon {
+  display: grid;
+  width: 2rem;
+  height: 2rem;
+  flex: none;
+  place-items: center;
+  border: 1px solid rgb(var(--arcane) / .24);
+  color: rgb(var(--arcane));
+  background: rgb(var(--arcane) / .07);
+}
+.admin-kpi-icon > svg { width: 1rem; height: 1rem; }
+
+.admin-faction-card { min-width: 0; padding: 1rem; background: rgb(var(--surface) / .96); }
+.admin-compact-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: .7rem;
+  border: 1px solid rgb(var(--edge) / .5);
+  background: rgb(var(--void) / .35);
+}
+
+.admin-player-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1.08fr) minmax(24rem, .92fr);
+  gap: 1rem;
+  align-items: start;
+}
+
+.admin-player-workspace { position: sticky; top: calc(var(--app-header-height) + 1rem); }
+.admin-roster-scroll { max-height: calc(100dvh - 18rem); min-height: 30rem; }
+.admin-roster-table { min-width: 46rem; font-size: .75rem; }
+.admin-roster-table th {
+  position: sticky;
+  z-index: 2;
+  top: 0;
+  padding: .65rem .75rem;
+  border-bottom: 1px solid rgb(var(--edge) / .72);
+  background: rgb(var(--raised) / .98);
+  color: rgb(var(--faint));
+  font-family: 'JetBrains Mono', ui-monospace, monospace;
+  font-size: .58rem;
+  font-weight: 400;
+  letter-spacing: .12em;
+  text-transform: uppercase;
+}
+.admin-roster-table td { padding: .65rem .75rem; border-bottom: 1px solid rgb(var(--edge) / .38); }
+.admin-roster-table tbody tr { cursor: pointer; background: rgb(var(--surface) / .34); transition: background 120ms ease; }
+.admin-roster-table tbody tr:hover { background: rgb(var(--raised) / .68); }
+.admin-roster-table tbody tr.is-selected { background: rgb(var(--arcane) / .12); box-shadow: 2px 0 0 rgb(var(--arcane)) inset; }
+
+.admin-filter {
+  min-height: 2rem;
+  padding: .35rem .6rem;
+  border: 1px solid rgb(var(--edge));
+  border-radius: 3px;
+  background: rgb(var(--raised));
+  color: rgb(var(--muted));
+  font-size: .7rem;
+}
+
+.admin-player-head {
+  position: relative;
+  overflow: hidden;
+  background:
+    linear-gradient(110deg, rgb(var(--element) / .13), transparent 58%),
+    rgb(var(--surface) / .94);
+}
+.admin-player-head::after {
+  content: '';
+  position: absolute;
+  top: -3rem;
+  right: -2rem;
+  width: 10rem;
+  height: 10rem;
+  border: 1px solid rgb(var(--element) / .13);
+  transform: rotate(45deg);
+}
+
+.admin-trend-chart { display: block; min-height: 10rem; max-height: 14rem; overflow: visible; }
+.admin-audit-list { max-height: 24rem; }
+.admin-audit-row { display: grid; grid-template-columns: .5rem minmax(0, 1fr); gap: .65rem; padding: .65rem; background: rgb(var(--void) / .32); }
+.admin-audit-mark { width: .5rem; height: .5rem; margin-top: .2rem; border: 1px solid rgb(var(--arcane) / .7); transform: rotate(45deg); }
+
+.admin-swarm-banner {
+  overflow: hidden;
+  background:
+    linear-gradient(112deg, rgb(var(--arcane) / .13), transparent 60%),
+    rgb(var(--surface) / .96);
+}
+
+.admin-swarm-banner::after {
+  content: '';
+  position: absolute;
+  top: -5rem;
+  right: -3rem;
+  width: 15rem;
+  height: 15rem;
+  border: 1px solid rgb(var(--arcane) / .12);
+  transform: rotate(45deg);
+}
+
+.admin-status-light.is-pulsing {
+  box-shadow: 0 0 0 0 rgb(var(--good) / .5);
+  animation: admin-swarm-pulse 1.8s ease-out infinite;
+}
+
+.admin-swarm-role-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: .5rem;
+}
+
+.admin-swarm-table { min-width: 58rem; }
+
+@keyframes admin-swarm-pulse {
+  70% { box-shadow: 0 0 0 .35rem rgb(var(--good) / 0); }
+  100% { box-shadow: 0 0 0 0 rgb(var(--good) / 0); }
+}
+
+@media (max-width: 1199px) {
+  .admin-kpi-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  .admin-player-layout { grid-template-columns: 1fr; }
+  .admin-player-workspace { position: static; }
+  .admin-roster-scroll { max-height: 34rem; }
+  .admin-swarm-role-grid { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+}
+
+@media (max-width: 639px) {
+  .admin-tabs { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .admin-tab { min-height: 3rem; padding: .6rem .7rem; }
+  .admin-kpi-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .admin-kpi { min-height: 7.5rem; }
+  .admin-process-line > div { align-items: flex-start; flex-direction: column; gap: .25rem; }
+  .admin-roster-scroll { min-height: 24rem; }
+  .admin-swarm-role-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+
+.altar-choice-title-mobile,
+.altar-choice-status-mobile { display: none; }
+
+.companion-layout > *,
+.customiser-workspace > *,
+.arena-lobby-grid > *,
+.battle-screen > * { min-width: 0; }
+
+@media (max-width: 1023px) {
+  /* lg is the desktop contract. Below it, navigation is always out of the
+     content flow and every game route reserves exactly the same amount. */
+  .game-main {
+    padding-bottom: calc(var(--mobile-tabbar-height) + env(safe-area-inset-bottom) + 1rem);
+  }
+
+  .app-tabbar {
+    padding-right: env(safe-area-inset-right);
+    padding-bottom: env(safe-area-inset-bottom);
+    padding-left: env(safe-area-inset-left);
+  }
+
+  .app-tabbar-inner { min-height: var(--mobile-tabbar-height); }
+  .app-tab { min-width: 0; }
+
+  .app-header a[aria-label='Rune Realm'] {
+    display: inline-flex;
+    min-width: 2.75rem;
+    min-height: 2.75rem;
+    align-items: center;
+    justify-content: center;
+  }
+
+  html[data-game-shell] .toast-viewport {
+    bottom: calc(var(--mobile-tabbar-height) + env(safe-area-inset-bottom));
+  }
+
+  html[data-game-shell] .loot-receipt {
+    bottom: calc(var(--mobile-tabbar-height) + env(safe-area-inset-bottom) + 1rem);
+  }
+
+  .landing-hero,
+  .landing-hero-content {
+    min-height: calc(100svh - 65px - env(safe-area-inset-top));
+  }
+
+  .altar-choice { width: clamp(7.5rem, 30vw, 9.5rem); }
+
+  .customiser-screen .dye-grid {
+    grid-template-rows: repeat(6, 2.75rem) !important;
+    min-height: 17.25rem;
+  }
+
+  .customiser-screen .dye-swatch { min-height: 2.75rem; }
+
+  /* Safari zooms a focused field below 16px. Controls remain visually dense
+     through their surrounding labels without making typing disorienting. */
+  input,
+  select,
+  textarea { font-size: 16px; }
+}
+
+@media (max-width: 639px) {
+  .dialog-panel {
+    max-height: calc(100dvh - env(safe-area-inset-top) - env(safe-area-inset-bottom) - 1rem);
+    padding: 1.25rem;
+  }
+
+  .dialog-backdrop { padding-bottom: env(safe-area-inset-bottom); }
+
+  .activity-row {
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr) auto;
+    align-items: center;
+  }
+
+  .activity-row > div {
+    grid-column: 2 / -1;
+    grid-row: 2;
+  }
+
+  .activity-row > button {
+    grid-column: 3;
+    grid-row: 1;
+  }
+
+  .customiser-screen .dye-grid {
+    grid-template-columns: repeat(13, 2.75rem) !important;
+    grid-template-rows: repeat(6, 2.75rem) !important;
+    min-height: 17.25rem;
+    overflow-x: auto;
+    overflow-y: hidden;
+    padding: 0.125rem;
+    scrollbar-width: thin;
+  }
+
+  .customiser-screen .dye-swatch {
+    min-height: 2.75rem;
+    min-width: 2.75rem;
+  }
+
+  .altar-choice {
+    width: min(4.75rem, 19vw);
+  }
+
+  .altar-choice-creature { width: 2.5rem; height: 2.5rem; }
+  .altar-choice-plaque { padding-inline: .25rem; }
+  .altar-choice-name { gap: .25rem; font-size: 10px; }
+  .altar-choice-detail { display: none; }
+  .altar-choice-title-full,
+  .altar-choice-status-full { display: none; }
+  .altar-choice-title-mobile,
+  .altar-choice-status-mobile { display: inline; }
+}
+
+@media (max-width: 420px) {
+  .altar-choice-name { font-size: 9px; }
+}
+
+@media (max-width: 1023px) {
+  .button-control,
+  .market-tab,
+  .filter-chip,
+  .sort-chip,
+  .difficulty-button,
+  .customiser-view-button,
+  .wardrobe-tab { min-height: 2.75rem; }
+
+  .roam-control {
+    width: 2.75rem;
+    height: 2.75rem;
+  }
+}
+
+/* Short landscape phones get more useful width without forcing rotation.
+   Menus remain portrait-friendly; battle and creation simply reflow when the
+   player turns the device. Tablets and desktop keep their existing layouts. */
+@media (max-width: 1023px) and (max-height: 600px) and (orientation: landscape) {
+  .app-header-inner {
+    padding-right: max(1.25rem, env(safe-area-inset-right));
+    padding-left: max(1.25rem, env(safe-area-inset-left));
+  }
+
+  .app-shell--game .app-tabbar {
+    top: calc(var(--app-header-height) + 1px + env(safe-area-inset-top));
+    right: auto;
+    bottom: 0;
+    left: 0;
+    width: var(--mobile-rail-width);
+    padding: 0 0 env(safe-area-inset-bottom) env(safe-area-inset-left);
+    border-top: 0;
+    border-right: 1px solid rgb(var(--edge) / .7);
+  }
+
+  .app-shell--game .app-tabbar-inner {
+    height: 100%;
+    min-height: 0;
+    max-width: none;
+    flex-direction: column;
+  }
+
+  .app-shell--game .app-tab {
+    width: 4.5rem;
+    min-height: 0;
+    padding: .4rem .25rem;
+    justify-content: center;
+  }
+
+  .app-shell--game .game-main {
+    width: calc(100% - var(--mobile-rail-width));
+    max-width: none;
+    margin-right: 0;
+    margin-left: var(--mobile-rail-width);
+    padding-right: max(1rem, env(safe-area-inset-right));
+    padding-bottom: max(1rem, env(safe-area-inset-bottom));
+    padding-left: 1rem;
+  }
+
+  .app-shell--game .full-bleed {
+    width: calc(100vw - var(--mobile-rail-width));
+    max-width: calc(100vw - var(--mobile-rail-width));
+  }
+
+  .app-shell--game .faction-hall-offset {
+    height: 100dvh !important;
+    min-height: 100dvh !important;
+  }
+
+  html[data-game-shell] .toast-viewport {
+    right: 0;
+    bottom: 0;
+    left: var(--mobile-rail-width);
+  }
+
+  html[data-game-shell] .loot-receipt {
+    right: max(1rem, env(safe-area-inset-right));
+    bottom: max(1rem, env(safe-area-inset-bottom));
+    left: calc(var(--mobile-rail-width) + 1rem);
+  }
+
+  .arena-lobby-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+
+  .battle-screen {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: .75rem;
+    align-items: start;
+  }
+
+  .battle-screen > * { margin-top: 0 !important; }
+  .battle-stage { grid-column: 1 / -1; }
+
+  .landing-hero-content {
+    min-height: calc(100svh - 65px - env(safe-area-inset-top));
+    align-items: center;
+    padding-top: 2rem;
+    padding-right: max(2rem, env(safe-area-inset-right));
+    padding-bottom: 2rem;
+    padding-left: max(2rem, env(safe-area-inset-left));
+  }
+
+  .hero-monolith {
+    top: 50%;
+    right: -2rem;
+    left: auto;
+    width: min(50vw, 27rem);
+    opacity: .7;
+    transform: translateY(-50%);
+  }
+
+  .hero-title { font-size: clamp(2.8rem, 9vw, 5rem); }
+  .landing-section { padding-block: 4rem; }
+  .landing-altar-hall { height: 28rem !important; min-height: 28rem !important; }
+  .landing-vault-stage { min-height: 25rem; }
+  .lore-page-hero { min-height: 28rem; }
+}
+
+/* Very narrow landscape phones keep the complex workspaces stacked. Once
+   there is enough width for two honest columns, rotation reveals both panes. */
+@media (min-width: 700px) and (max-width: 1023px) and (max-height: 600px) and (orientation: landscape) {
+  .companion-layout,
+  .customiser-workspace { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+
+  .customiser-screen .dye-grid {
+    grid-template-columns: repeat(13, 2.75rem) !important;
+    grid-template-rows: repeat(6, 2.75rem) !important;
+    min-height: 17.25rem;
+    overflow-x: auto;
+    overflow-y: hidden;
+    padding: 0.125rem;
+    scrollbar-width: thin;
+  }
+
+  .customiser-screen .dye-swatch {
+    min-height: 2.75rem;
+    min-width: 2.75rem;
+  }
+}
+
+/* The arena's bottom band: a fixed box that holds either the move grid and the
+   round chain, or the outcome that replaces them both. Fixed, because the two
+   states must SWAP rather than resize — an outcome that sets its own height
+   shrinks the arena above it at the exact moment the fight ends.
+
+   Measured, not estimated: the move grid wants 88px (two rows of 37px cells,
+   a 6px gap and 16px of panel padding) and the chain wants 60px, with 8px
+   between them. A first guess of 148 clipped the second row of moves. */
+.battle-screen { --battle-bottom: 156px; }

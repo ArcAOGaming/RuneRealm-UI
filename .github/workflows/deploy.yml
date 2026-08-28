@@ -1,41 +1,80 @@
-name: Arweave Deploy
+name: Deploy Rune Realm to Permaweb
 
+run-name: Permaweb release of ${{ github.sha }}
+
+# Phase two is deliberately manual. Contract redeployment rewrites the frontend
+# process graph first; an operator verifies and commits those ids before this
+# workflow publishes the site and updates ArNS.
 on:
-  push:
-    branches:
-      - main
+  workflow_dispatch:
+    inputs:
+      undername:
+        description: ANT undername to update
+        required: true
+        default: runerealm
+        type: string
+
+concurrency:
+  group: rune-realm-permaweb-production
+  cancel-in-progress: false
+
+permissions:
+  contents: read
 
 jobs:
-  Arweave-build-and-deploy:
+  deploy:
     runs-on: ubuntu-latest
-
+    timeout-minutes: 30
+    env:
+      DEPLOY_UNDERNAME: ${{ inputs.undername || vars.DEPLOY_UNDERNAME || 'premium' }}
+      DEPLOY_ARNS_NAME: ${{ vars.DEPLOY_ARNS_NAME }}
     steps:
-      - name: Checkout repository
-        uses: actions/checkout@v3
+      - uses: actions/checkout@v4
         with:
-          submodules: false  # Disable automatic submodule checkout
-          fetch-depth: 0
-          
-      - name: Initialize only required submodules
-        run: |
-          git submodule sync
-          git submodule update --init --force -- Reality  # Only initialize the Reality submodule
+          # The app art is vendored; submodules are not part of the site bundle.
+          # Reality is initialized selectively below only for its AOS.wasm test
+          # fixture, which drives the offline Lua suites.
+          submodules: false
 
-      - name: Install dependencies
-        run: |
-          npm ci
-          cd Reality && npm ci
+      - name: Fetch offline Lua test runtime
+        run: git submodule update --init --depth 1 Reality
 
-      - name: Setup Node.js environment
-        uses: actions/setup-node@v2
+      - uses: actions/setup-node@v4
         with:
-          node-version: "22"
+          node-version: '22'
+          cache: npm
 
-      - name: Run deployment script
+      - run: npm ci
+
+      - name: Verify native game process
+        run: npm run test:lua:local
+
+      - name: Verify Rune and marketplace processes
+        run: npm run test:marketplace:local
+
+      - name: Verify fifty-wallet swarm bundle
+        run: npm run test:swarm
+
+      # `npm run build` type-checks first and creates the one dist/ tree that is
+      # fingerprinted, uploaded and attached to the deployment receipt.
+      - run: npm run build
+
+      - name: Validate Permaweb release configuration
         env:
           DEPLOY_KEY: ${{ secrets.DEPLOY_KEY }}
-          DEPLOY_ANT_PROCESS: ${{ secrets.DEPLOY_ANT_PROCESS}}
-          ANT_PROCESS : ${{secrets.ANT_PROCESS }}
-        run: |
-          npm install
-          npm run deploy
+          DEPLOY_ANT_PROCESS: ${{ secrets.ANT_PROCESS || secrets.DEPLOY_ANT_PROCESS_ID }}
+        run: npm run deploy:site:check
+
+      - name: Upload bundle and update ArNS
+        env:
+          DEPLOY_KEY: ${{ secrets.DEPLOY_KEY }}
+          DEPLOY_ANT_PROCESS: ${{ secrets.ANT_PROCESS || secrets.DEPLOY_ANT_PROCESS_ID }}
+        run: npm run deploy:site
+
+      - name: Preserve deployment receipt
+        uses: actions/upload-artifact@v4
+        with:
+          name: permaweb-receipt-${{ github.sha }}
+          path: .deploy/site-deployment-state.json
+          if-no-files-found: error
+          retention-days: 90

@@ -1,0 +1,9687 @@
+{
+ "builtBy": "backend/native/build-legacy.mjs",
+ "from": {
+  "prempass": {
+   "checkpoint": "QnaPbkmGNRDIMZcHPnACz0Mms9oc-tI444QOOlHSlEo",
+   "nonce": 42005,
+   "at": "2026-02-12T19:30:20.996Z"
+  },
+  "berries": {
+   "fire_berry": [
+    "fire_berry",
+    "fire_berry_v1"
+   ],
+   "water_berry": [
+    "water_berry"
+   ],
+   "air_berry": [
+    "air_berry"
+   ],
+   "rock_berry": [
+    "rock_berry"
+   ]
+  }
+ },
+ "notes": [
+  "wins and losses are 0 for everyone: the old game never persisted them",
+  "moves are rebuilt from the names each player had, using current numbers",
+  "nobody is restored mid-activity or mid-battle",
+  "berries carried in full",
+  "every restored player starts with 25 Rune, held in game"
+ ],
+ "players": [
+  {
+   "address": "-RlCrWmyn9OaJ86tsr5qhmFRc0h5ovT5xjKQwySGZy0",
+   "unlocked": true,
+   "seeded": true,
+   "wins": 0,
+   "losses": 0,
+   "faction": "Aqua Guardians",
+   "monster": {
+    "name": "WaterDoge",
+    "image": "w_-mPdemSXZ1G-Q6fMEu6wTDJYFnJM9XePjGf_ZChgo",
+    "sprite": "p90BYY1O3BS3VVzdZETr-hG6jkA3kwo8l0h3aQ2UFoc",
+    "faction": "Aqua Guardians",
+    "elementType": "water",
+    "berryItem": "water_berry",
+    "attack": 23,
+    "defense": 14,
+    "speed": 9,
+    "health": 14,
+    "energy": 75,
+    "happiness": 0,
+    "level": 5,
+    "exp": 9,
+    "totalTimesFed": 128,
+    "totalTimesPlay": 34,
+    "totalTimesQuest": 28,
+    "moves": {
+     "Deep Current": {
+      "attack": 1,
+      "count": 1,
+      "damage": 3,
+      "defense": -1,
+      "health": -1,
+      "rarity": 3,
+      "speed": 3,
+      "type": "water"
+     },
+     "Guard Break": {
+      "attack": 2,
+      "count": 2,
+      "damage": 4,
+      "defense": -2,
+      "health": 1,
+      "rarity": 3,
+      "speed": -1,
+      "type": "normal"
+     },
+     "Healing Winds": {
+      "attack": 1,
+      "count": 1,
+      "damage": 0,
+      "defense": 0,
+      "health": 4,
+      "rarity": 3,
+      "speed": 3,
+      "type": "heal"
+     },
+     "Ice Spear": {
+      "attack": 2,
+      "count": 1,
+      "damage": 6,
+      "defense": -1,
+      "health": 0,
+      "rarity": 2,
+      "speed": 2,
+      "type": "water"
+     }
+    },
+    "status": {
+     "type": "Home",
+     "since": 1762581753674,
+     "until_time": 1762581753674
+    },
+    "bornAt": 1762581753674
+   },
+   "questsCompleted": 28,
+   "lootboxes": [
+    1
+   ],
+   "inventory": {
+    "fire_berry": 5,
+    "water_berry": 49,
+    "air_berry": 59,
+    "rock_berry": 41,
+    "rune": 25
+   },
+   "offerings": 27,
+   "joinedAt": 1762581753674
+  },
+  {
+   "address": "0cQJ5Hd4oCaL57CWP-Pqe5_e0D4_ZDWuxKBgR9ke1SI",
+   "unlocked": true,
+   "seeded": true,
+   "wins": 0,
+   "losses": 0,
+   "faction": "Inferno Blades",
+   "monster": {
+    "name": "FireFox",
+    "image": "lnYr9oTtkRHiheQFwH4ns50mrQE6AQR-8Bvl4VfXb0o",
+    "sprite": "wUo47CacsMRFFizJqUhSj75Rczg3f_MvHs4ytfPtCjQ",
+    "faction": "Inferno Blades",
+    "elementType": "fire",
+    "berryItem": "fire_berry",
+    "attack": 3,
+    "defense": 3,
+    "speed": 3,
+    "health": 1,
+    "energy": 25,
+    "happiness": 25,
+    "level": 0,
+    "exp": 0,
+    "totalTimesFed": 0,
+    "totalTimesPlay": 0,
+    "totalTimesQuest": 0,
+    "moves": {
+     "Flame Shield": {
+      "attack": -1,
+      "count": 2,
+      "damage": 2,
+      "defense": 4,
+      "health": 2,
+      "rarity": 3,
+      "speed": 0,
+      "type": "fire"
+     },
+     "Heavy Strike": {
+      "attack": 4,
+      "count": 1,
+      "damage": 6,
+      "defense": 2,
+      "health": 0,
+      "rarity": 2,
+      "speed": -2,
+      "type": "normal"
+     },
+     "Scorching Ash": {
+      "attack": 1,
+      "count": 2,
+      "damage": 3,
+      "defense": -2,
+      "health": 1,
+      "rarity": 3,
+      "speed": 1,
+      "type": "fire"
+     },
+     "Warrior's Resolve": {
+      "attack": 3,
+      "count": 2,
+      "damage": 0,
+      "defense": 0,
+      "health": -2,
+      "rarity": 3,
+      "speed": 2,
+      "type": "boost"
+     }
+    },
+    "status": {
+     "type": "Home",
+     "since": 1739822192283,
+     "until_time": 1739822192283
+    },
+    "bornAt": 1739822192283
+   },
+   "questsCompleted": 0,
+   "lootboxes": [],
+   "inventory": {
+    "air_berry": 18,
+    "rune": 25
+   },
+   "joinedAt": 1739822192283
+  },
+  {
+   "address": "0xbvOzY0vgX0uj1HgOSw3lvD3POnOF38d9Ij9lZ7Eq8",
+   "unlocked": true,
+   "seeded": true,
+   "wins": 0,
+   "losses": 0,
+   "faction": "Inferno Blades",
+   "monster": {
+    "name": "FireFox",
+    "image": "lnYr9oTtkRHiheQFwH4ns50mrQE6AQR-8Bvl4VfXb0o",
+    "sprite": "wUo47CacsMRFFizJqUhSj75Rczg3f_MvHs4ytfPtCjQ",
+    "faction": "Inferno Blades",
+    "elementType": "fire",
+    "berryItem": "fire_berry",
+    "attack": 18,
+    "defense": 11,
+    "speed": 18,
+    "health": 13,
+    "energy": 75,
+    "happiness": 0,
+    "level": 5,
+    "exp": 7,
+    "totalTimesFed": 101,
+    "totalTimesPlay": 27,
+    "totalTimesQuest": 16,
+    "moves": {
+     "Flame Shield": {
+      "attack": -1,
+      "count": 2,
+      "damage": 2,
+      "defense": 4,
+      "health": 2,
+      "rarity": 3,
+      "speed": 0,
+      "type": "fire"
+     },
+     "Guard Break": {
+      "attack": 2,
+      "count": 2,
+      "damage": 4,
+      "defense": -2,
+      "health": 1,
+      "rarity": 3,
+      "speed": -1,
+      "type": "normal"
+     },
+     "Life Surge": {
+      "attack": 1,
+      "count": 1,
+      "damage": 0,
+      "defense": 0,
+      "health": 8,
+      "rarity": 2,
+      "speed": 0,
+      "type": "heal"
+     },
+     "Swift Wind": {
+      "attack": 2,
+      "count": 2,
+      "damage": 0,
+      "defense": -1,
+      "health": -1,
+      "rarity": 2,
+      "speed": 5,
+      "type": "boost"
+     }
+    },
+    "status": {
+     "type": "Home",
+     "since": 1752357488972,
+     "until_time": 1752357488972
+    },
+    "bornAt": 1752357488972
+   },
+   "questsCompleted": 16,
+   "lootboxes": [],
+   "inventory": {
+    "fire_berry": 257,
+    "water_berry": 177,
+    "air_berry": 130,
+    "rock_berry": 113,
+    "rune": 25
+   },
+   "offerings": 23,
+   "joinedAt": 1752357488972
+  },
+  {
+   "address": "1WIZT9EL15vN4CoE9bEOHs0wlNR7VPS5h8EBxJOKEJE",
+   "unlocked": true,
+   "seeded": true,
+   "wins": 0,
+   "losses": 0,
+   "faction": "Inferno Blades",
+   "monster": {
+    "name": "FireFox",
+    "image": "lnYr9oTtkRHiheQFwH4ns50mrQE6AQR-8Bvl4VfXb0o",
+    "sprite": "wUo47CacsMRFFizJqUhSj75Rczg3f_MvHs4ytfPtCjQ",
+    "faction": "Inferno Blades",
+    "elementType": "fire",
+    "berryItem": "fire_berry",
+    "attack": 21,
+    "defense": 20,
+    "speed": 20,
+    "health": 19,
+    "energy": 20,
+    "happiness": 50,
+    "level": 7,
+    "exp": 9,
+    "totalTimesFed": 198,
+    "totalTimesPlay": 58,
+    "totalTimesQuest": 56,
+    "moves": {
+     "Healing Winds": {
+      "attack": 1,
+      "count": 1,
+      "damage": 0,
+      "defense": 0,
+      "health": 4,
+      "rarity": 3,
+      "speed": 3,
+      "type": "heal"
+     },
+     "Power Up": {
+      "attack": 5,
+      "count": 2,
+      "damage": 0,
+      "defense": -2,
+      "health": 0,
+      "rarity": 1,
+      "speed": 2,
+      "type": "boost"
+     },
+     "Quick Jab": {
+      "attack": 2,
+      "count": 3,
+      "damage": 3,
+      "defense": -1,
+      "health": 0,
+      "rarity": 2,
+      "speed": 4,
+      "type": "normal"
+     },
+     "Scorching Ash": {
+      "attack": 1,
+      "count": 2,
+      "damage": 3,
+      "defense": -2,
+      "health": 1,
+      "rarity": 3,
+      "speed": 1,
+      "type": "fire"
+     }
+    },
+    "status": {
+     "type": "Home",
+     "since": 1742343918834,
+     "until_time": 1742343918834
+    },
+    "bornAt": 1742343918834
+   },
+   "questsCompleted": 56,
+   "lootboxes": [],
+   "inventory": {
+    "fire_berry": 15,
+    "rock_berry": 4,
+    "rune": 25
+   },
+   "offerings": 45,
+   "joinedAt": 1742343918834
+  },
+  {
+   "address": "1wdb2k0RYBTisTdRvCLNpnReLgfq2H0XFjNhgxRmZo0",
+   "unlocked": true,
+   "seeded": true,
+   "wins": 0,
+   "losses": 0,
+   "faction": "Stone Titans",
+   "monster": {
+    "name": "Rockpup",
+    "image": "WhdcUkIGYZG4M5kq00TnUwaIt5OCGz3Q4u6_fZNktvQ",
+    "sprite": "Zt8LmHGVIziXhzjqBhEAWLuGetcDitFKbfaJROkyZks",
+    "faction": "Stone Titans",
+    "elementType": "rock",
+    "berryItem": "rock_berry",
+    "attack": 3,
+    "defense": 2,
+    "speed": 3,
+    "health": 2,
+    "energy": 50,
+    "happiness": 50,
+    "level": 0,
+    "exp": 0,
+    "totalTimesFed": 0,
+    "totalTimesPlay": 0,
+    "totalTimesQuest": 0,
+    "moves": {
+     "Adrenaline Surge": {
+      "attack": 6,
+      "count": 1,
+      "damage": 0,
+      "defense": 0,
+      "health": -3,
+      "rarity": 3,
+      "speed": -1,
+      "type": "boost"
+     },
+     "Earth Shield": {
+      "attack": 0,
+      "count": 2,
+      "damage": 2,
+      "defense": 5,
+      "health": 2,
+      "rarity": 3,
+      "speed": -1,
+      "type": "rock"
+     },
+     "Quick Jab": {
+      "attack": 2,
+      "count": 3,
+      "damage": 3,
+      "defense": -1,
+      "health": 0,
+      "rarity": 2,
+      "speed": 4,
+      "type": "normal"
+     },
+     "Vital Essence": {
+      "attack": 0,
+      "count": 2,
+      "damage": 0,
+      "defense": 4,
+      "health": 7,
+      "rarity": 3,
+      "speed": -2,
+      "type": "heal"
+     }
+    },
+    "status": {
+     "type": "Home",
+     "since": 1737998568534,
+     "until_time": 1737998568534
+    },
+    "bornAt": 1737998568534
+   },
+   "questsCompleted": 0,
+   "lootboxes": [],
+   "inventory": {
+    "rune": 25
+   },
+   "offerings": 1,
+   "joinedAt": 1737998568534
+  },
+  {
+   "address": "1y10SpE-VbBEfT8tIgk2qKrljQ8crnzsPTQwaKQ5VxY",
+   "unlocked": true,
+   "seeded": true,
+   "wins": 0,
+   "losses": 0,
+   "lootboxes": [],
+   "inventory": {
+    "rune": 25
+   },
+   "joinedAt": 1770924620996
+  },
+  {
+   "address": "1yI5WyBmavLgqMxBqtMYC2D4wnslYeg1xI2F03xhSpc",
+   "unlocked": true,
+   "seeded": true,
+   "wins": 0,
+   "losses": 0,
+   "lootboxes": [],
+   "inventory": {
+    "rune": 25
+   },
+   "joinedAt": 1770924620996
+  },
+  {
+   "address": "27bLe7eelGad6QxrfMovyNdxovQRTYJ_Qmic0_TsffQ",
+   "unlocked": true,
+   "seeded": true,
+   "wins": 0,
+   "losses": 0,
+   "faction": "Inferno Blades",
+   "monster": {
+    "name": "FireFox",
+    "image": "lnYr9oTtkRHiheQFwH4ns50mrQE6AQR-8Bvl4VfXb0o",
+    "sprite": "wUo47CacsMRFFizJqUhSj75Rczg3f_MvHs4ytfPtCjQ",
+    "faction": "Inferno Blades",
+    "elementType": "fire",
+    "berryItem": "fire_berry",
+    "attack": 3,
+    "defense": 3,
+    "speed": 1,
+    "health": 3,
+    "energy": 50,
+    "happiness": 50,
+    "level": 0,
+    "exp": 0,
+    "totalTimesFed": 0,
+    "totalTimesPlay": 0,
+    "totalTimesQuest": 0,
+    "moves": {
+     "Body Slam": {
+      "attack": 3,
+      "count": 2,
+      "damage": 5,
+      "defense": 1,
+      "health": 0,
+      "rarity": 1,
+      "speed": 0,
+      "type": "normal"
+     },
+     "Firenado": {
+      "attack": 0,
+      "count": 2,
+      "damage": 5,
+      "defense": -1,
+      "health": 0,
+      "rarity": 1,
+      "speed": 2,
+      "type": "fire"
+     },
+     "Life Surge": {
+      "attack": 1,
+      "count": 1,
+      "damage": 0,
+      "defense": 0,
+      "health": 8,
+      "rarity": 2,
+      "speed": 0,
+      "type": "heal"
+     },
+     "Power Up": {
+      "attack": 5,
+      "count": 2,
+      "damage": 0,
+      "defense": -2,
+      "health": 0,
+      "rarity": 1,
+      "speed": 2,
+      "type": "boost"
+     }
+    },
+    "status": {
+     "type": "Home",
+     "since": 1737659877879,
+     "until_time": 1737659877879
+    },
+    "bornAt": 1737659877879
+   },
+   "questsCompleted": 0,
+   "lootboxes": [],
+   "inventory": {
+    "rune": 25
+   },
+   "joinedAt": 1737659877879
+  },
+  {
+   "address": "27vY67xnvkJbrCh9_ebFZqqO7R-5DcbUDD8p565uVLI",
+   "unlocked": true,
+   "seeded": true,
+   "wins": 0,
+   "losses": 0,
+   "faction": "Sky Nomads",
+   "monster": {
+    "name": "Airbud",
+    "image": "XD4tSBeekM1ETZMflAANDfkW6pVWaQIXgSdSiwfwVqw",
+    "sprite": "0_gQ7rNpxD8S4wZBE_DZs3adWfZMsBIuo8fwvH3SwL0",
+    "faction": "Sky Nomads",
+    "elementType": "air",
+    "berryItem": "air_berry",
+    "attack": 16,
+    "defense": 14,
+    "speed": 16,
+    "health": 14,
+    "energy": 60,
+    "happiness": 0,
+    "level": 5,
+    "exp": 0,
+    "totalTimesFed": 69,
+    "totalTimesPlay": 18,
+    "totalTimesQuest": 19,
+    "moves": {
+     "Frenzy Blows": {
+      "attack": 3,
+      "count": 2,
+      "damage": 2,
+      "defense": -1,
+      "health": -1,
+      "rarity": 3,
+      "speed": 2,
+      "type": "normal"
+     },
+     "Heal": {
+      "attack": -1,
+      "count": 2,
+      "damage": 0,
+      "defense": 0,
+      "health": 6,
+      "rarity": 1,
+      "speed": 0,
+      "type": "heal"
+     },
+     "Iron Skin": {
+      "attack": -1,
+      "count": 2,
+      "damage": 0,
+      "defense": 5,
+      "health": 2,
+      "rarity": 2,
+      "speed": 0,
+      "type": "boost"
+     },
+     "Wind Slash": {
+      "attack": 2,
+      "count": 3,
+      "damage": 2,
+      "defense": -1,
+      "health": 0,
+      "rarity": 2,
+      "speed": 3,
+      "type": "air"
+     }
+    },
+    "status": {
+     "type": "Home",
+     "since": 1741483166463,
+     "until_time": 1741483166463
+    },
+    "bornAt": 1741483166463
+   },
+   "questsCompleted": 19,
+   "lootboxes": [],
+   "inventory": {
+    "rune": 25
+   },
+   "offerings": 20,
+   "joinedAt": 1741483166463
+  },
+  {
+   "address": "3-y5Td8hzGjPjOvkfCaLv4_kt334HZepIJUhr8o_qwc",
+   "unlocked": true,
+   "seeded": true,
+   "wins": 0,
+   "losses": 0,
+   "faction": "Inferno Blades",
+   "monster": {
+    "name": "FireFox",
+    "image": "lnYr9oTtkRHiheQFwH4ns50mrQE6AQR-8Bvl4VfXb0o",
+    "sprite": "wUo47CacsMRFFizJqUhSj75Rczg3f_MvHs4ytfPtCjQ",
+    "faction": "Inferno Blades",
+    "elementType": "fire",
+    "berryItem": "fire_berry",
+    "attack": 26,
+    "defense": 5,
+    "speed": 10,
+    "health": 19,
+    "energy": 10,
+    "happiness": 25,
+    "level": 5,
+    "exp": 19,
+    "totalTimesFed": 121,
+    "totalTimesPlay": 35,
+    "totalTimesQuest": 36,
+    "moves": {
+     "Body Slam": {
+      "attack": 3,
+      "count": 2,
+      "damage": 5,
+      "defense": 1,
+      "health": 0,
+      "rarity": 1,
+      "speed": 0,
+      "type": "normal"
+     },
+     "Inferno": {
+      "attack": 3,
+      "count": 1,
+      "damage": 6,
+      "defense": -2,
+      "health": 0,
+      "rarity": 2,
+      "speed": -1,
+      "type": "fire"
+     },
+     "Regenerate": {
+      "attack": -2,
+      "count": 3,
+      "damage": 0,
+      "defense": 2,
+      "health": 5,
+      "rarity": 2,
+      "speed": 0,
+      "type": "heal"
+     },
+     "Warrior's Resolve": {
+      "attack": 3,
+      "count": 2,
+      "damage": 0,
+      "defense": 0,
+      "health": -2,
+      "rarity": 3,
+      "speed": 2,
+      "type": "boost"
+     }
+    },
+    "status": {
+     "type": "Home",
+     "since": 1757336161036,
+     "until_time": 1757336161036
+    },
+    "bornAt": 1757336161036
+   },
+   "questsCompleted": 36,
+   "lootboxes": [
+    2,
+    2,
+    2,
+    2,
+    2
+   ],
+   "inventory": {
+    "fire_berry": 156,
+    "water_berry": 96,
+    "air_berry": 67,
+    "rock_berry": 67,
+    "rune": 25
+   },
+   "offerings": 103,
+   "joinedAt": 1757336161036
+  },
+  {
+   "address": "35H1BWdkxUF6qPS9o8CJjx4Tk_dONvAbwy7RceHcBdc",
+   "unlocked": true,
+   "seeded": true,
+   "wins": 0,
+   "losses": 0,
+   "faction": "Sky Nomads",
+   "monster": {
+    "name": "Airbud",
+    "image": "XD4tSBeekM1ETZMflAANDfkW6pVWaQIXgSdSiwfwVqw",
+    "sprite": "0_gQ7rNpxD8S4wZBE_DZs3adWfZMsBIuo8fwvH3SwL0",
+    "faction": "Sky Nomads",
+    "elementType": "air",
+    "berryItem": "air_berry",
+    "attack": 2,
+    "defense": 3,
+    "speed": 2,
+    "health": 3,
+    "energy": 50,
+    "happiness": 50,
+    "level": 0,
+    "exp": 0,
+    "totalTimesFed": 0,
+    "totalTimesPlay": 0,
+    "totalTimesQuest": 0,
+    "moves": {
+     "Breeze": {
+      "attack": -1,
+      "count": 2,
+      "damage": 0,
+      "defense": 2,
+      "health": 2,
+      "rarity": 3,
+      "speed": 4,
+      "type": "air"
+     },
+     "Power Up": {
+      "attack": 5,
+      "count": 2,
+      "damage": 0,
+      "defense": -2,
+      "health": 0,
+      "rarity": 1,
+      "speed": 2,
+      "type": "boost"
+     },
+     "Regenerate": {
+      "attack": -2,
+      "count": 3,
+      "damage": 0,
+      "defense": 2,
+      "health": 5,
+      "rarity": 2,
+      "speed": 0,
+      "type": "heal"
+     },
+     "Tornado": {
+      "attack": 1,
+      "count": 2,
+      "damage": 4,
+      "defense": -1,
+      "health": 0,
+      "rarity": 1,
+      "speed": 4,
+      "type": "air"
+     }
+    },
+    "status": {
+     "type": "Home",
+     "since": 1738857274876,
+     "until_time": 1738857274876
+    },
+    "bornAt": 1738857274876
+   },
+   "questsCompleted": 0,
+   "lootboxes": [],
+   "inventory": {
+    "rune": 25
+   },
+   "offerings": 47,
+   "joinedAt": 1738857274876
+  },
+  {
+   "address": "3dTBoAtr9RA0DhNihHvcbInbsMO9nKscXyXarQ82uEM",
+   "unlocked": true,
+   "seeded": true,
+   "wins": 0,
+   "losses": 0,
+   "faction": "Inferno Blades",
+   "monster": {
+    "name": "FireFox",
+    "image": "lnYr9oTtkRHiheQFwH4ns50mrQE6AQR-8Bvl4VfXb0o",
+    "sprite": "wUo47CacsMRFFizJqUhSj75Rczg3f_MvHs4ytfPtCjQ",
+    "faction": "Inferno Blades",
+    "elementType": "fire",
+    "berryItem": "fire_berry",
+    "attack": 30,
+    "defense": 20,
+    "speed": 20,
+    "health": 30,
+    "energy": 0,
+    "happiness": 0,
+    "level": 9,
+    "exp": 88,
+    "totalTimesFed": 893,
+    "totalTimesPlay": 255,
+    "totalTimesQuest": 227,
+    "moves": {
+     "Healing Winds": {
+      "attack": 1,
+      "count": 1,
+      "damage": 0,
+      "defense": 0,
+      "health": 4,
+      "rarity": 3,
+      "speed": 3,
+      "type": "heal"
+     },
+     "Inferno": {
+      "attack": 3,
+      "count": 1,
+      "damage": 6,
+      "defense": -2,
+      "health": 0,
+      "rarity": 2,
+      "speed": -1,
+      "type": "fire"
+     },
+     "Iron Skin": {
+      "attack": -1,
+      "count": 2,
+      "damage": 0,
+      "defense": 5,
+      "health": 2,
+      "rarity": 2,
+      "speed": 0,
+      "type": "boost"
+     },
+     "Momentum Shift": {
+      "attack": 0,
+      "count": 1,
+      "damage": 0,
+      "defense": -3,
+      "health": 3,
+      "rarity": 3,
+      "speed": 5,
+      "type": "normal"
+     }
+    },
+    "status": {
+     "type": "Home",
+     "since": 1770758017638,
+     "until_time": 1770758017638
+    },
+    "bornAt": 1770758017638
+   },
+   "questsCompleted": 227,
+   "lootboxes": [],
+   "inventory": {
+    "fire_berry": 379,
+    "water_berry": 943,
+    "air_berry": 891,
+    "rock_berry": 827,
+    "rune": 25
+   },
+   "offerings": 121,
+   "joinedAt": 1770758017638
+  },
+  {
+   "address": "3jlxOwsP38RL6jFhlljndDXj8xndZc-KzVd1P99AtCk",
+   "unlocked": true,
+   "seeded": true,
+   "wins": 0,
+   "losses": 0,
+   "lootboxes": [],
+   "inventory": {
+    "rune": 25
+   },
+   "joinedAt": 1770924620996
+  },
+  {
+   "address": "3wIO-CawjYirR6N4bIgqNm-rA4TmYObJK0VUoLhxzZQ",
+   "unlocked": true,
+   "seeded": true,
+   "wins": 0,
+   "losses": 0,
+   "faction": "Sky Nomads",
+   "monster": {
+    "name": "Airbud",
+    "image": "XD4tSBeekM1ETZMflAANDfkW6pVWaQIXgSdSiwfwVqw",
+    "sprite": "0_gQ7rNpxD8S4wZBE_DZs3adWfZMsBIuo8fwvH3SwL0",
+    "faction": "Sky Nomads",
+    "elementType": "air",
+    "berryItem": "air_berry",
+    "attack": 30,
+    "defense": 10,
+    "speed": 25,
+    "health": 5,
+    "energy": 0,
+    "happiness": 75,
+    "level": 6,
+    "exp": 19,
+    "totalTimesFed": 170,
+    "totalTimesPlay": 51,
+    "totalTimesQuest": 46,
+    "moves": {
+     "Battle Cry": {
+      "attack": 4,
+      "count": 2,
+      "damage": 0,
+      "defense": -2,
+      "health": -1,
+      "rarity": 3,
+      "speed": 3,
+      "type": "boost"
+     },
+     "Quick Jab": {
+      "attack": 2,
+      "count": 3,
+      "damage": 3,
+      "defense": -1,
+      "health": 0,
+      "rarity": 2,
+      "speed": 4,
+      "type": "normal"
+     },
+     "Regenerate": {
+      "attack": -2,
+      "count": 3,
+      "damage": 0,
+      "defense": 2,
+      "health": 5,
+      "rarity": 2,
+      "speed": 0,
+      "type": "heal"
+     },
+     "Storm Cloud": {
+      "attack": 2,
+      "count": 1,
+      "damage": 5,
+      "defense": -1,
+      "health": 0,
+      "rarity": 2,
+      "speed": 2,
+      "type": "air"
+     }
+    },
+    "status": {
+     "type": "Home",
+     "since": 1740223014702,
+     "until_time": 1740223014702
+    },
+    "bornAt": 1740223014702
+   },
+   "questsCompleted": 46,
+   "lootboxes": [],
+   "inventory": {
+    "fire_berry": 18,
+    "air_berry": 13,
+    "rune": 25
+   },
+   "offerings": 54,
+   "joinedAt": 1740223014702
+  },
+  {
+   "address": "4IvQcfhZV2wKQcTlkxKG0mdoUUGoOweDy5zLG8WnJGg",
+   "unlocked": true,
+   "seeded": true,
+   "wins": 0,
+   "losses": 0,
+   "faction": "Aqua Guardians",
+   "monster": {
+    "name": "WaterDoge",
+    "image": "w_-mPdemSXZ1G-Q6fMEu6wTDJYFnJM9XePjGf_ZChgo",
+    "sprite": "p90BYY1O3BS3VVzdZETr-hG6jkA3kwo8l0h3aQ2UFoc",
+    "faction": "Aqua Guardians",
+    "elementType": "water",
+    "berryItem": "water_berry",
+    "attack": 3,
+    "defense": 1,
+    "speed": 3,
+    "health": 3,
+    "energy": 50,
+    "happiness": 50,
+    "level": 0,
+    "exp": 0,
+    "totalTimesFed": 0,
+    "totalTimesPlay": 0,
+    "totalTimesQuest": 0,
+    "moves": {
+     "Adrenaline Surge": {
+      "attack": 6,
+      "count": 1,
+      "damage": 0,
+      "defense": 0,
+      "health": -3,
+      "rarity": 3,
+      "speed": -1,
+      "type": "boost"
+     },
+     "Deep Current": {
+      "attack": 1,
+      "count": 1,
+      "damage": 3,
+      "defense": -1,
+      "health": -1,
+      "rarity": 3,
+      "speed": 3,
+      "type": "water"
+     },
+     "Heavy Strike": {
+      "attack": 4,
+      "count": 1,
+      "damage": 6,
+      "defense": 2,
+      "health": 0,
+      "rarity": 2,
+      "speed": -2,
+      "type": "normal"
+     },
+     "Recovery": {
+      "attack": 0,
+      "count": 2,
+      "damage": 0,
+      "defense": 0,
+      "health": 5,
+      "rarity": 3,
+      "speed": 2,
+      "type": "heal"
+     }
+    },
+    "status": {
+     "type": "Home",
+     "since": 1738046812875,
+     "until_time": 1738046812875
+    },
+    "bornAt": 1738046812875
+   },
+   "questsCompleted": 0,
+   "lootboxes": [],
+   "inventory": {
+    "rune": 25
+   },
+   "offerings": 12,
+   "joinedAt": 1738046812875
+  },
+  {
+   "address": "4KcyhEoC96h9WQIorGog8QJvfzPBPjcMOAgpRqQQKL8",
+   "unlocked": true,
+   "seeded": true,
+   "wins": 0,
+   "losses": 0,
+   "faction": "Inferno Blades",
+   "monster": {
+    "name": "FireFox",
+    "image": "lnYr9oTtkRHiheQFwH4ns50mrQE6AQR-8Bvl4VfXb0o",
+    "sprite": "wUo47CacsMRFFizJqUhSj75Rczg3f_MvHs4ytfPtCjQ",
+    "faction": "Inferno Blades",
+    "elementType": "fire",
+    "berryItem": "fire_berry",
+    "attack": 5,
+    "defense": 7,
+    "speed": 5,
+    "health": 3,
+    "energy": 40,
+    "happiness": 0,
+    "level": 1,
+    "exp": 5,
+    "totalTimesFed": 18,
+    "totalTimesPlay": 4,
+    "totalTimesQuest": 6,
+    "moves": {
+     "Battle Cry": {
+      "attack": 4,
+      "count": 2,
+      "damage": 0,
+      "defense": -2,
+      "health": -1,
+      "rarity": 3,
+      "speed": 3,
+      "type": "boost"
+     },
+     "Campfire": {
+      "attack": 2,
+      "count": 3,
+      "damage": 0,
+      "defense": 3,
+      "health": 3,
+      "rarity": 2,
+      "speed": -1,
+      "type": "fire"
+     },
+     "Firenado": {
+      "attack": 0,
+      "count": 2,
+      "damage": 5,
+      "defense": -1,
+      "health": 0,
+      "rarity": 1,
+      "speed": 2,
+      "type": "fire"
+     },
+     "Vital Essence": {
+      "attack": 0,
+      "count": 2,
+      "damage": 0,
+      "defense": 4,
+      "health": 7,
+      "rarity": 3,
+      "speed": -2,
+      "type": "heal"
+     }
+    },
+    "status": {
+     "type": "Home",
+     "since": 1755172526031,
+     "until_time": 1755172526031
+    },
+    "bornAt": 1755172526031
+   },
+   "questsCompleted": 6,
+   "lootboxes": [
+    2,
+    2
+   ],
+   "inventory": {
+    "fire_berry": 50,
+    "water_berry": 13,
+    "air_berry": 10,
+    "rock_berry": 10,
+    "rune": 25
+   },
+   "offerings": 23,
+   "joinedAt": 1755172526031
+  },
+  {
+   "address": "4bEAeTXOqZJpoNndlBBm5D-vGKnnnqHiJIAYq5SfYzk",
+   "unlocked": true,
+   "seeded": true,
+   "wins": 0,
+   "losses": 0,
+   "lootboxes": [],
+   "inventory": {
+    "rune": 25
+   },
+   "joinedAt": 1770924620996
+  },
+  {
+   "address": "4dmIzPuG4N5AWPviK-tEziShLc5WTStNjKamgxk1Z30",
+   "unlocked": true,
+   "seeded": true,
+   "wins": 0,
+   "losses": 0,
+   "faction": "Stone Titans",
+   "monster": {
+    "name": "Rockpup",
+    "image": "WhdcUkIGYZG4M5kq00TnUwaIt5OCGz3Q4u6_fZNktvQ",
+    "sprite": "Zt8LmHGVIziXhzjqBhEAWLuGetcDitFKbfaJROkyZks",
+    "faction": "Stone Titans",
+    "elementType": "rock",
+    "berryItem": "rock_berry",
+    "attack": 2,
+    "defense": 2,
+    "speed": 3,
+    "health": 3,
+    "energy": 40,
+    "happiness": 0,
+    "level": 0,
+    "exp": 2,
+    "totalTimesFed": 5,
+    "totalTimesPlay": 0,
+    "totalTimesQuest": 2,
+    "moves": {
+     "Adrenaline Surge": {
+      "attack": 6,
+      "count": 1,
+      "damage": 0,
+      "defense": 0,
+      "health": -3,
+      "rarity": 3,
+      "speed": -1,
+      "type": "boost"
+     },
+     "Granite Barrier": {
+      "attack": 0,
+      "count": 1,
+      "damage": 1,
+      "defense": 6,
+      "health": 3,
+      "rarity": 3,
+      "speed": -2,
+      "type": "rock"
+     },
+     "Recovery": {
+      "attack": 0,
+      "count": 2,
+      "damage": 0,
+      "defense": 0,
+      "health": 5,
+      "rarity": 3,
+      "speed": 2,
+      "type": "heal"
+     },
+     "Seismic Slam": {
+      "attack": 3,
+      "count": 2,
+      "damage": 4,
+      "defense": -1,
+      "health": -1,
+      "rarity": 3,
+      "speed": 0,
+      "type": "rock"
+     }
+    },
+    "status": {
+     "type": "Home",
+     "since": 1754786768446,
+     "until_time": 1754786768446
+    },
+    "bornAt": 1754786768446
+   },
+   "questsCompleted": 2,
+   "lootboxes": [
+    2
+   ],
+   "inventory": {
+    "fire_berry": 12,
+    "water_berry": 13,
+    "air_berry": 20,
+    "rock_berry": 24,
+    "rune": 25
+   },
+   "offerings": 3,
+   "joinedAt": 1754786768446
+  },
+  {
+   "address": "4i_qBK2YUgFELXGcDhpq-zQyZOKxOcHiRVVnj3_OWBg",
+   "unlocked": true,
+   "seeded": true,
+   "wins": 0,
+   "losses": 0,
+   "faction": "Stone Titans",
+   "monster": {
+    "name": "Rockpup",
+    "image": "WhdcUkIGYZG4M5kq00TnUwaIt5OCGz3Q4u6_fZNktvQ",
+    "sprite": "Zt8LmHGVIziXhzjqBhEAWLuGetcDitFKbfaJROkyZks",
+    "faction": "Stone Titans",
+    "elementType": "rock",
+    "berryItem": "rock_berry",
+    "attack": 20,
+    "defense": 15,
+    "speed": 10,
+    "health": 15,
+    "energy": 100,
+    "happiness": 50,
+    "level": 5,
+    "exp": 0,
+    "totalTimesFed": 80,
+    "totalTimesPlay": 22,
+    "totalTimesQuest": 19,
+    "moves": {
+     "Granite Barrier": {
+      "attack": 0,
+      "count": 1,
+      "damage": 1,
+      "defense": 6,
+      "health": 3,
+      "rarity": 3,
+      "speed": -2,
+      "type": "rock"
+     },
+     "Momentum Shift": {
+      "attack": 0,
+      "count": 1,
+      "damage": 0,
+      "defense": -3,
+      "health": 3,
+      "rarity": 3,
+      "speed": 5,
+      "type": "normal"
+     },
+     "Recovery": {
+      "attack": 0,
+      "count": 2,
+      "damage": 0,
+      "defense": 0,
+      "health": 5,
+      "rarity": 3,
+      "speed": 2,
+      "type": "heal"
+     },
+     "Swift Wind": {
+      "attack": 2,
+      "count": 2,
+      "damage": 0,
+      "defense": -1,
+      "health": -1,
+      "rarity": 2,
+      "speed": 5,
+      "type": "boost"
+     }
+    },
+    "status": {
+     "type": "Home",
+     "since": 1740327641175,
+     "until_time": 1740327641175
+    },
+    "bornAt": 1740327641175
+   },
+   "questsCompleted": 19,
+   "lootboxes": [],
+   "inventory": {
+    "rock_berry": 122,
+    "rune": 25
+   },
+   "offerings": 28,
+   "joinedAt": 1740327641175
+  },
+  {
+   "address": "4wTrDqno0Wak1Y_qz_GURN7YtHEMhYWwTaN9KJ0eoxE",
+   "unlocked": true,
+   "seeded": true,
+   "wins": 0,
+   "losses": 0,
+   "faction": "Inferno Blades",
+   "monster": {
+    "name": "FireFox",
+    "image": "lnYr9oTtkRHiheQFwH4ns50mrQE6AQR-8Bvl4VfXb0o",
+    "sprite": "wUo47CacsMRFFizJqUhSj75Rczg3f_MvHs4ytfPtCjQ",
+    "faction": "Inferno Blades",
+    "elementType": "fire",
+    "berryItem": "fire_berry",
+    "attack": 3,
+    "defense": 3,
+    "speed": 1,
+    "health": 3,
+    "energy": 50,
+    "happiness": 50,
+    "level": 0,
+    "exp": 0,
+    "totalTimesFed": 0,
+    "totalTimesPlay": 0,
+    "totalTimesQuest": 0,
+    "moves": {
+     "Campfire": {
+      "attack": 2,
+      "count": 3,
+      "damage": 0,
+      "defense": 3,
+      "health": 3,
+      "rarity": 2,
+      "speed": -1,
+      "type": "fire"
+     },
+     "Momentum Shift": {
+      "attack": 0,
+      "count": 1,
+      "damage": 0,
+      "defense": -3,
+      "health": 3,
+      "rarity": 3,
+      "speed": 5,
+      "type": "normal"
+     },
+     "Scorching Ash": {
+      "attack": 1,
+      "count": 2,
+      "damage": 3,
+      "defense": -2,
+      "health": 1,
+      "rarity": 3,
+      "speed": 1,
+      "type": "fire"
+     },
+     "Vital Essence": {
+      "attack": 0,
+      "count": 2,
+      "damage": 0,
+      "defense": 4,
+      "health": 7,
+      "rarity": 3,
+      "speed": -2,
+      "type": "heal"
+     }
+    },
+    "status": {
+     "type": "Home",
+     "since": 1737683192710,
+     "until_time": 1737683192710
+    },
+    "bornAt": 1737683192710
+   },
+   "questsCompleted": 0,
+   "lootboxes": [],
+   "inventory": {
+    "rune": 25
+   },
+   "joinedAt": 1737683192710
+  },
+  {
+   "address": "5-NafxrUmiL9cAMRdPIJs83QrNPOfwU-5DOcR7I-J_Y",
+   "unlocked": true,
+   "seeded": true,
+   "wins": 0,
+   "losses": 0,
+   "faction": "Stone Titans",
+   "monster": {
+    "name": "Rockpup",
+    "image": "WhdcUkIGYZG4M5kq00TnUwaIt5OCGz3Q4u6_fZNktvQ",
+    "sprite": "Zt8LmHGVIziXhzjqBhEAWLuGetcDitFKbfaJROkyZks",
+    "faction": "Stone Titans",
+    "elementType": "rock",
+    "berryItem": "rock_berry",
+    "attack": 13,
+    "defense": 9,
+    "speed": 16,
+    "health": 22,
+    "energy": 50,
+    "happiness": 0,
+    "level": 5,
+    "exp": 16,
+    "totalTimesFed": 128,
+    "totalTimesPlay": 36,
+    "totalTimesQuest": 34,
+    "moves": {
+     "Battle Cry": {
+      "attack": 4,
+      "count": 2,
+      "damage": 0,
+      "defense": -2,
+      "health": -1,
+      "rarity": 3,
+      "speed": 3,
+      "type": "boost"
+     },
+     "Earth Shield": {
+      "attack": 0,
+      "count": 2,
+      "damage": 2,
+      "defense": 5,
+      "health": 2,
+      "rarity": 3,
+      "speed": -1,
+      "type": "rock"
+     },
+     "Frenzy Blows": {
+      "attack": 3,
+      "count": 2,
+      "damage": 2,
+      "defense": -1,
+      "health": -1,
+      "rarity": 3,
+      "speed": 2,
+      "type": "normal"
+     },
+     "Vital Essence": {
+      "attack": 0,
+      "count": 2,
+      "damage": 0,
+      "defense": 4,
+      "health": 7,
+      "rarity": 3,
+      "speed": -2,
+      "type": "heal"
+     }
+    },
+    "status": {
+     "type": "Home",
+     "since": 1757336165093,
+     "until_time": 1757336165093
+    },
+    "bornAt": 1757336165093
+   },
+   "questsCompleted": 34,
+   "lootboxes": [
+    2,
+    2
+   ],
+   "inventory": {
+    "fire_berry": 97,
+    "water_berry": 94,
+    "air_berry": 85,
+    "rock_berry": 17,
+    "rune": 25
+   },
+   "offerings": 101,
+   "joinedAt": 1757336165093
+  },
+  {
+   "address": "5VPys2doO8c-eX2wKu07u9Fh2d_K7PtZ6pThV_K1I6s",
+   "unlocked": true,
+   "seeded": true,
+   "wins": 0,
+   "losses": 0,
+   "lootboxes": [],
+   "inventory": {
+    "rune": 25
+   },
+   "joinedAt": 1770924620996
+  },
+  {
+   "address": "5_D_Nzsev1Se1e1S0Y32TAubpcUrZM9t8JEmZdketpE",
+   "unlocked": true,
+   "seeded": true,
+   "wins": 0,
+   "losses": 0,
+   "faction": "Stone Titans",
+   "monster": {
+    "name": "Rockpup",
+    "image": "WhdcUkIGYZG4M5kq00TnUwaIt5OCGz3Q4u6_fZNktvQ",
+    "sprite": "Zt8LmHGVIziXhzjqBhEAWLuGetcDitFKbfaJROkyZks",
+    "faction": "Stone Titans",
+    "elementType": "rock",
+    "berryItem": "rock_berry",
+    "attack": 3,
+    "defense": 4,
+    "speed": 2,
+    "health": 1,
+    "energy": 80,
+    "happiness": 25,
+    "level": 0,
+    "exp": 2,
+    "totalTimesFed": 10,
+    "totalTimesPlay": 1,
+    "totalTimesQuest": 2,
+    "moves": {
+     "Body Slam": {
+      "attack": 3,
+      "count": 2,
+      "damage": 5,
+      "defense": 1,
+      "health": 0,
+      "rarity": 1,
+      "speed": 0,
+      "type": "normal"
+     },
+     "Granite Barrier": {
+      "attack": 0,
+      "count": 1,
+      "damage": 1,
+      "defense": 6,
+      "health": 3,
+      "rarity": 3,
+      "speed": -2,
+      "type": "rock"
+     },
+     "Swift Wind": {
+      "attack": 2,
+      "count": 2,
+      "damage": 0,
+      "defense": -1,
+      "health": -1,
+      "rarity": 2,
+      "speed": 5,
+      "type": "boost"
+     },
+     "Vital Essence": {
+      "attack": 0,
+      "count": 2,
+      "damage": 0,
+      "defense": 4,
+      "health": 7,
+      "rarity": 3,
+      "speed": -2,
+      "type": "heal"
+     }
+    },
+    "status": {
+     "type": "Home",
+     "since": 1755177580271,
+     "until_time": 1755177580271
+    },
+    "bornAt": 1755177580271
+   },
+   "questsCompleted": 2,
+   "lootboxes": [
+    2,
+    2
+   ],
+   "inventory": {
+    "fire_berry": 18,
+    "water_berry": 15,
+    "air_berry": 9,
+    "rune": 25
+   },
+   "offerings": 4,
+   "joinedAt": 1755177580271
+  },
+  {
+   "address": "5waCcAi35PC_ptF2MiIhL34Cq55jDew_Gyh2oy2s298",
+   "unlocked": true,
+   "seeded": true,
+   "wins": 0,
+   "losses": 0,
+   "lootboxes": [],
+   "inventory": {
+    "air_berry": 23,
+    "rune": 25
+   },
+   "joinedAt": 1770924620996
+  },
+  {
+   "address": "7pZ31pDkI4TBa4FLNTicgj5WSjVhbXbRUgVLrBlRV9M",
+   "unlocked": true,
+   "seeded": true,
+   "wins": 0,
+   "losses": 0,
+   "faction": "Sky Nomads",
+   "monster": {
+    "name": "Airbud",
+    "image": "XD4tSBeekM1ETZMflAANDfkW6pVWaQIXgSdSiwfwVqw",
+    "sprite": "0_gQ7rNpxD8S4wZBE_DZs3adWfZMsBIuo8fwvH3SwL0",
+    "faction": "Sky Nomads",
+    "elementType": "air",
+    "berryItem": "air_berry",
+    "attack": 30,
+    "defense": 14,
+    "speed": 16,
+    "health": 10,
+    "energy": 35,
+    "happiness": 0,
+    "level": 6,
+    "exp": 0,
+    "totalTimesFed": 135,
+    "totalTimesPlay": 37,
+    "totalTimesQuest": 32,
+    "moves": {
+     "Body Slam": {
+      "attack": 3,
+      "count": 2,
+      "damage": 5,
+      "defense": 1,
+      "health": 0,
+      "rarity": 1,
+      "speed": 0,
+      "type": "normal"
+     },
+     "Healing Winds": {
+      "attack": 1,
+      "count": 1,
+      "damage": 0,
+      "defense": 0,
+      "health": 4,
+      "rarity": 3,
+      "speed": 3,
+      "type": "heal"
+     },
+     "Lightning Bolt": {
+      "attack": 2,
+      "count": 2,
+      "damage": 4,
+      "defense": 0,
+      "health": -2,
+      "rarity": 3,
+      "speed": -1,
+      "type": "air"
+     },
+     "Power Up": {
+      "attack": 5,
+      "count": 2,
+      "damage": 0,
+      "defense": -2,
+      "health": 0,
+      "rarity": 1,
+      "speed": 2,
+      "type": "boost"
+     }
+    },
+    "status": {
+     "type": "Home",
+     "since": 1762787898195,
+     "until_time": 1762787898195
+    },
+    "bornAt": 1762787898195
+   },
+   "questsCompleted": 32,
+   "lootboxes": [],
+   "inventory": {
+    "fire_berry": 185,
+    "water_berry": 216,
+    "air_berry": 23,
+    "rock_berry": 183,
+    "rune": 25
+   },
+   "offerings": 94,
+   "joinedAt": 1762787898195
+  },
+  {
+   "address": "8KJ4bsDsE8lWSCWlIBC9FF1t7l-21zQoU9ZIcofRek0",
+   "unlocked": true,
+   "seeded": true,
+   "wins": 0,
+   "losses": 0,
+   "faction": "Aqua Guardians",
+   "lootboxes": [],
+   "inventory": {
+    "rune": 25
+   },
+   "joinedAt": 1770924620996
+  },
+  {
+   "address": "8LrfiR9mKCsoNNM6cyOJNpQAZXFLUSUKCK4zy4vo2lg",
+   "unlocked": true,
+   "seeded": true,
+   "wins": 0,
+   "losses": 0,
+   "faction": "Inferno Blades",
+   "monster": {
+    "name": "FireFox",
+    "image": "lnYr9oTtkRHiheQFwH4ns50mrQE6AQR-8Bvl4VfXb0o",
+    "sprite": "wUo47CacsMRFFizJqUhSj75Rczg3f_MvHs4ytfPtCjQ",
+    "faction": "Inferno Blades",
+    "elementType": "fire",
+    "berryItem": "fire_berry",
+    "attack": 3,
+    "defense": 4,
+    "speed": 2,
+    "health": 1,
+    "energy": 30,
+    "happiness": 25,
+    "level": 0,
+    "exp": 5,
+    "totalTimesFed": 18,
+    "totalTimesPlay": 5,
+    "totalTimesQuest": 5,
+    "moves": {
+     "Campfire": {
+      "attack": 2,
+      "count": 3,
+      "damage": 0,
+      "defense": 3,
+      "health": 3,
+      "rarity": 2,
+      "speed": -1,
+      "type": "fire"
+     },
+     "Firenado": {
+      "attack": 0,
+      "count": 2,
+      "damage": 5,
+      "defense": -1,
+      "health": 0,
+      "rarity": 1,
+      "speed": 2,
+      "type": "fire"
+     },
+     "Heal": {
+      "attack": -1,
+      "count": 2,
+      "damage": 0,
+      "defense": 0,
+      "health": 6,
+      "rarity": 1,
+      "speed": 0,
+      "type": "heal"
+     },
+     "Swift Wind": {
+      "attack": 2,
+      "count": 2,
+      "damage": 0,
+      "defense": -1,
+      "health": -1,
+      "rarity": 2,
+      "speed": 5,
+      "type": "boost"
+     }
+    },
+    "status": {
+     "type": "Home",
+     "since": 1755172572818,
+     "until_time": 1755172572818
+    },
+    "bornAt": 1755172572818
+   },
+   "questsCompleted": 5,
+   "lootboxes": [
+    2,
+    2
+   ],
+   "inventory": {
+    "fire_berry": 54,
+    "water_berry": 10,
+    "air_berry": 10,
+    "rock_berry": 13,
+    "rune": 25
+   },
+   "offerings": 22,
+   "joinedAt": 1755172572818
+  },
+  {
+   "address": "8pQIvX_ZSZy7BCfKN6aGcj8U3tnML-aTamRz8-E82EE",
+   "unlocked": true,
+   "seeded": true,
+   "wins": 0,
+   "losses": 0,
+   "faction": "Aqua Guardians",
+   "monster": {
+    "name": "WaterDoge",
+    "image": "w_-mPdemSXZ1G-Q6fMEu6wTDJYFnJM9XePjGf_ZChgo",
+    "sprite": "p90BYY1O3BS3VVzdZETr-hG6jkA3kwo8l0h3aQ2UFoc",
+    "faction": "Aqua Guardians",
+    "elementType": "water",
+    "berryItem": "water_berry",
+    "attack": 2,
+    "defense": 4,
+    "speed": 1,
+    "health": 3,
+    "energy": 50,
+    "happiness": 50,
+    "level": 0,
+    "exp": 0,
+    "totalTimesFed": 0,
+    "totalTimesPlay": 0,
+    "totalTimesQuest": 0,
+    "moves": {
+     "Heal": {
+      "attack": -1,
+      "count": 2,
+      "damage": 0,
+      "defense": 0,
+      "health": 6,
+      "rarity": 1,
+      "speed": 0,
+      "type": "heal"
+     },
+     "Quick Jab": {
+      "attack": 2,
+      "count": 3,
+      "damage": 3,
+      "defense": -1,
+      "health": 0,
+      "rarity": 2,
+      "speed": 4,
+      "type": "normal"
+     },
+     "Swift Wind": {
+      "attack": 2,
+      "count": 2,
+      "damage": 0,
+      "defense": -1,
+      "health": -1,
+      "rarity": 2,
+      "speed": 5,
+      "type": "boost"
+     },
+     "Whirlpool": {
+      "attack": 0,
+      "count": 3,
+      "damage": 2,
+      "defense": 2,
+      "health": -2,
+      "rarity": 2,
+      "speed": 3,
+      "type": "water"
+     }
+    },
+    "status": {
+     "type": "Home",
+     "since": 1737663674855,
+     "until_time": 1737663674855
+    },
+    "bornAt": 1737663674855
+   },
+   "questsCompleted": 0,
+   "lootboxes": [],
+   "inventory": {
+    "water_berry": 3,
+    "rune": 25
+   },
+   "joinedAt": 1737663674855
+  },
+  {
+   "address": "92xDPClNW3M7pKULx0upJ2EUI1pBiOzYY_K2imUd_Bs",
+   "unlocked": true,
+   "seeded": true,
+   "wins": 0,
+   "losses": 0,
+   "lootboxes": [],
+   "inventory": {
+    "rune": 25
+   },
+   "joinedAt": 1770924620996
+  },
+  {
+   "address": "96tpY09SKzG8ksBvNsSOW0mc3I3y2rH4PeJai5Mlds0",
+   "unlocked": true,
+   "seeded": true,
+   "wins": 0,
+   "losses": 0,
+   "lootboxes": [],
+   "inventory": {
+    "rune": 25
+   },
+   "joinedAt": 1770924620996
+  },
+  {
+   "address": "9U_MDLfzf-sdww7d7ydaApDiQz3nyHJ4kTS2-9K4AGA",
+   "unlocked": true,
+   "seeded": true,
+   "wins": 0,
+   "losses": 0,
+   "faction": "Sky Nomads",
+   "monster": {
+    "name": "Airbud",
+    "image": "XD4tSBeekM1ETZMflAANDfkW6pVWaQIXgSdSiwfwVqw",
+    "sprite": "0_gQ7rNpxD8S4wZBE_DZs3adWfZMsBIuo8fwvH3SwL0",
+    "faction": "Sky Nomads",
+    "elementType": "air",
+    "berryItem": "air_berry",
+    "attack": 8,
+    "defense": 2,
+    "speed": 7,
+    "health": 3,
+    "energy": 15,
+    "happiness": 50,
+    "level": 1,
+    "exp": 0,
+    "totalTimesFed": 7,
+    "totalTimesPlay": 3,
+    "totalTimesQuest": 1,
+    "moves": {
+     "Lightning Bolt": {
+      "attack": 2,
+      "count": 2,
+      "damage": 4,
+      "defense": 0,
+      "health": -2,
+      "rarity": 3,
+      "speed": -1,
+      "type": "air"
+     },
+     "Momentum Shift": {
+      "attack": 0,
+      "count": 1,
+      "damage": 0,
+      "defense": -3,
+      "health": 3,
+      "rarity": 3,
+      "speed": 5,
+      "type": "normal"
+     },
+     "Power Up": {
+      "attack": 5,
+      "count": 2,
+      "damage": 0,
+      "defense": -2,
+      "health": 0,
+      "rarity": 1,
+      "speed": 2,
+      "type": "boost"
+     },
+     "Regenerate": {
+      "attack": -2,
+      "count": 3,
+      "damage": 0,
+      "defense": 2,
+      "health": 5,
+      "rarity": 2,
+      "speed": 0,
+      "type": "heal"
+     }
+    },
+    "status": {
+     "type": "Home",
+     "since": 1753560488584,
+     "until_time": 1753560488584
+    },
+    "bornAt": 1753560488584
+   },
+   "questsCompleted": 1,
+   "lootboxes": [
+    1,
+    1,
+    1,
+    1
+   ],
+   "inventory": {
+    "fire_berry": 35,
+    "water_berry": 7,
+    "air_berry": 32,
+    "rock_berry": 8,
+    "rune": 25
+   },
+   "offerings": 14,
+   "joinedAt": 1753560488584
+  },
+  {
+   "address": "9YcwODxcwVKMLM2_PtrMuTMOACbv3iq0vU4-z0Na9rg",
+   "unlocked": true,
+   "seeded": true,
+   "wins": 0,
+   "losses": 0,
+   "faction": "Sky Nomads",
+   "lootboxes": [],
+   "inventory": {
+    "fire_berry": 18,
+    "water_berry": 7,
+    "air_berry": 11,
+    "rune": 25
+   },
+   "offerings": 2,
+   "joinedAt": 1770924620996
+  },
+  {
+   "address": "A_9Hc-3xbzxGVjuotO14_2eqtW7QKMoSIHyAQBb6SVs",
+   "unlocked": true,
+   "seeded": true,
+   "wins": 0,
+   "losses": 0,
+   "faction": "Inferno Blades",
+   "monster": {
+    "name": "FireFox",
+    "image": "lnYr9oTtkRHiheQFwH4ns50mrQE6AQR-8Bvl4VfXb0o",
+    "sprite": "wUo47CacsMRFFizJqUhSj75Rczg3f_MvHs4ytfPtCjQ",
+    "faction": "Inferno Blades",
+    "elementType": "fire",
+    "berryItem": "fire_berry",
+    "attack": 2,
+    "defense": 4,
+    "speed": 2,
+    "health": 2,
+    "energy": 30,
+    "happiness": 25,
+    "level": 0,
+    "exp": 5,
+    "totalTimesFed": 25,
+    "totalTimesPlay": 7,
+    "totalTimesQuest": 5,
+    "moves": {
+     "Adrenaline Surge": {
+      "attack": 6,
+      "count": 1,
+      "damage": 0,
+      "defense": 0,
+      "health": -3,
+      "rarity": 3,
+      "speed": -1,
+      "type": "boost"
+     },
+     "Guard Break": {
+      "attack": 2,
+      "count": 2,
+      "damage": 4,
+      "defense": -2,
+      "health": 1,
+      "rarity": 3,
+      "speed": -1,
+      "type": "normal"
+     },
+     "Life Surge": {
+      "attack": 1,
+      "count": 1,
+      "damage": 0,
+      "defense": 0,
+      "health": 8,
+      "rarity": 2,
+      "speed": 0,
+      "type": "heal"
+     },
+     "Scorching Ash": {
+      "attack": 1,
+      "count": 2,
+      "damage": 3,
+      "defense": -2,
+      "health": 1,
+      "rarity": 3,
+      "speed": 1,
+      "type": "fire"
+     }
+    },
+    "status": {
+     "type": "Home",
+     "since": 1755172419734,
+     "until_time": 1755172419734
+    },
+    "bornAt": 1755172419734
+   },
+   "questsCompleted": 5,
+   "lootboxes": [
+    2,
+    2
+   ],
+   "inventory": {
+    "fire_berry": 115,
+    "water_berry": 30,
+    "air_berry": 31,
+    "rock_berry": 31,
+    "rune": 25
+   },
+   "offerings": 29,
+   "joinedAt": 1755172419734
+  },
+  {
+   "address": "BDnCGh-0Q10jecIG6bdjZsowhbvBqpQ6Oq_VVYpDumQ",
+   "unlocked": true,
+   "seeded": true,
+   "wins": 0,
+   "losses": 0,
+   "faction": "Inferno Blades",
+   "monster": {
+    "name": "FireFox",
+    "image": "lnYr9oTtkRHiheQFwH4ns50mrQE6AQR-8Bvl4VfXb0o",
+    "sprite": "wUo47CacsMRFFizJqUhSj75Rczg3f_MvHs4ytfPtCjQ",
+    "faction": "Inferno Blades",
+    "elementType": "fire",
+    "berryItem": "fire_berry",
+    "attack": 19,
+    "defense": 19,
+    "speed": 12,
+    "health": 10,
+    "energy": 75,
+    "happiness": 0,
+    "level": 5,
+    "exp": 8,
+    "totalTimesFed": 130,
+    "totalTimesPlay": 35,
+    "totalTimesQuest": 27,
+    "moves": {
+     "Campfire": {
+      "attack": 2,
+      "count": 3,
+      "damage": 0,
+      "defense": 3,
+      "health": 3,
+      "rarity": 2,
+      "speed": -1,
+      "type": "fire"
+     },
+     "Healing Winds": {
+      "attack": 1,
+      "count": 1,
+      "damage": 0,
+      "defense": 0,
+      "health": 4,
+      "rarity": 3,
+      "speed": 3,
+      "type": "heal"
+     },
+     "Quick Jab": {
+      "attack": 2,
+      "count": 3,
+      "damage": 3,
+      "defense": -1,
+      "health": 0,
+      "rarity": 2,
+      "speed": 4,
+      "type": "normal"
+     },
+     "Swift Wind": {
+      "attack": 2,
+      "count": 2,
+      "damage": 0,
+      "defense": -1,
+      "health": -1,
+      "rarity": 2,
+      "speed": 5,
+      "type": "boost"
+     }
+    },
+    "status": {
+     "type": "Home",
+     "since": 1758005613055,
+     "until_time": 1758005613055
+    },
+    "bornAt": 1758005613055
+   },
+   "questsCompleted": 27,
+   "lootboxes": [],
+   "inventory": {
+    "fire_berry": 79,
+    "water_berry": 242,
+    "air_berry": 291,
+    "rock_berry": 277,
+    "rune": 25
+   },
+   "offerings": 81,
+   "joinedAt": 1758005613055
+  },
+  {
+   "address": "BaNVhZoSVna0uE_wqV1_wnaO7dwEO9Br1f6Ccc5N_lM",
+   "unlocked": true,
+   "seeded": true,
+   "wins": 0,
+   "losses": 0,
+   "faction": "Aqua Guardians",
+   "monster": {
+    "name": "WaterDoge",
+    "image": "w_-mPdemSXZ1G-Q6fMEu6wTDJYFnJM9XePjGf_ZChgo",
+    "sprite": "p90BYY1O3BS3VVzdZETr-hG6jkA3kwo8l0h3aQ2UFoc",
+    "faction": "Aqua Guardians",
+    "elementType": "water",
+    "berryItem": "water_berry",
+    "attack": 10,
+    "defense": 22,
+    "speed": 10,
+    "health": 18,
+    "energy": 65,
+    "happiness": 0,
+    "level": 5,
+    "exp": 13,
+    "totalTimesFed": 116,
+    "totalTimesPlay": 34,
+    "totalTimesQuest": 32,
+    "moves": {
+     "Guard Break": {
+      "attack": 2,
+      "count": 2,
+      "damage": 4,
+      "defense": -2,
+      "health": 1,
+      "rarity": 3,
+      "speed": -1,
+      "type": "normal"
+     },
+     "Iron Skin": {
+      "attack": -1,
+      "count": 2,
+      "damage": 0,
+      "defense": 5,
+      "health": 2,
+      "rarity": 2,
+      "speed": 0,
+      "type": "boost"
+     },
+     "Recovery": {
+      "attack": 0,
+      "count": 2,
+      "damage": 0,
+      "defense": 0,
+      "health": 5,
+      "rarity": 3,
+      "speed": 2,
+      "type": "heal"
+     },
+     "Whirlpool": {
+      "attack": 0,
+      "count": 3,
+      "damage": 2,
+      "defense": 2,
+      "health": -2,
+      "rarity": 2,
+      "speed": 3,
+      "type": "water"
+     }
+    },
+    "status": {
+     "type": "Home",
+     "since": 1757292663989,
+     "until_time": 1757292663989
+    },
+    "bornAt": 1757292663989
+   },
+   "questsCompleted": 32,
+   "lootboxes": [
+    2
+   ],
+   "inventory": {
+    "fire_berry": 78,
+    "water_berry": 31,
+    "air_berry": 78,
+    "rock_berry": 78,
+    "rune": 25
+   },
+   "offerings": 99,
+   "joinedAt": 1757292663989
+  },
+  {
+   "address": "BfJCvBjP2MzWgo9ZaK_m2MUU0hcwGwhasirxtXRhckM",
+   "unlocked": true,
+   "seeded": true,
+   "wins": 0,
+   "losses": 0,
+   "faction": "Inferno Blades",
+   "monster": {
+    "name": "FireFox",
+    "image": "lnYr9oTtkRHiheQFwH4ns50mrQE6AQR-8Bvl4VfXb0o",
+    "sprite": "wUo47CacsMRFFizJqUhSj75Rczg3f_MvHs4ytfPtCjQ",
+    "faction": "Inferno Blades",
+    "elementType": "fire",
+    "berryItem": "fire_berry",
+    "attack": 4,
+    "defense": 1,
+    "speed": 1,
+    "health": 4,
+    "energy": 50,
+    "happiness": 50,
+    "level": 0,
+    "exp": 0,
+    "totalTimesFed": 0,
+    "totalTimesPlay": 0,
+    "totalTimesQuest": 0,
+    "moves": {
+     "Battle Cry": {
+      "attack": 4,
+      "count": 2,
+      "damage": 0,
+      "defense": -2,
+      "health": -1,
+      "rarity": 3,
+      "speed": 3,
+      "type": "boost"
+     },
+     "Campfire": {
+      "attack": 2,
+      "count": 3,
+      "damage": 0,
+      "defense": 3,
+      "health": 3,
+      "rarity": 2,
+      "speed": -1,
+      "type": "fire"
+     },
+     "Frenzy Blows": {
+      "attack": 3,
+      "count": 2,
+      "damage": 2,
+      "defense": -1,
+      "health": -1,
+      "rarity": 3,
+      "speed": 2,
+      "type": "normal"
+     },
+     "Healing Winds": {
+      "attack": 1,
+      "count": 1,
+      "damage": 0,
+      "defense": 0,
+      "health": 4,
+      "rarity": 3,
+      "speed": 3,
+      "type": "heal"
+     }
+    },
+    "status": {
+     "type": "Home",
+     "since": 1737998295128,
+     "until_time": 1737998295128
+    },
+    "bornAt": 1737998295128
+   },
+   "questsCompleted": 0,
+   "lootboxes": [],
+   "inventory": {
+    "rune": 25
+   },
+   "offerings": 1,
+   "joinedAt": 1737998295128
+  },
+  {
+   "address": "Bn0kIG1KVfWa_OpuVy-5OhhUXr_LefMcT2QVyKvjImI",
+   "unlocked": true,
+   "seeded": true,
+   "wins": 0,
+   "losses": 0,
+   "lootboxes": [],
+   "inventory": {
+    "rune": 25
+   },
+   "joinedAt": 1770924620996
+  },
+  {
+   "address": "CPkTc_4pEBXQ4jT4Npjc373tGDbb2U7zf-OGz9IPz2A",
+   "unlocked": true,
+   "seeded": true,
+   "wins": 0,
+   "losses": 0,
+   "faction": "Sky Nomads",
+   "monster": {
+    "name": "Airbud",
+    "image": "XD4tSBeekM1ETZMflAANDfkW6pVWaQIXgSdSiwfwVqw",
+    "sprite": "0_gQ7rNpxD8S4wZBE_DZs3adWfZMsBIuo8fwvH3SwL0",
+    "faction": "Sky Nomads",
+    "elementType": "air",
+    "berryItem": "air_berry",
+    "attack": 21,
+    "defense": 14,
+    "speed": 10,
+    "health": 5,
+    "energy": 35,
+    "happiness": 25,
+    "level": 4,
+    "exp": 20,
+    "totalTimesFed": 109,
+    "totalTimesPlay": 33,
+    "totalTimesQuest": 31,
+    "moves": {
+     "Body Slam": {
+      "attack": 3,
+      "count": 2,
+      "damage": 5,
+      "defense": 1,
+      "health": 0,
+      "rarity": 1,
+      "speed": 0,
+      "type": "normal"
+     },
+     "Vital Essence": {
+      "attack": 0,
+      "count": 2,
+      "damage": 0,
+      "defense": 4,
+      "health": 7,
+      "rarity": 3,
+      "speed": -2,
+      "type": "heal"
+     },
+     "Warrior's Resolve": {
+      "attack": 3,
+      "count": 2,
+      "damage": 0,
+      "defense": 0,
+      "health": -2,
+      "rarity": 3,
+      "speed": 2,
+      "type": "boost"
+     },
+     "Wind Slash": {
+      "attack": 2,
+      "count": 3,
+      "damage": 2,
+      "defense": -1,
+      "health": 0,
+      "rarity": 2,
+      "speed": 3,
+      "type": "air"
+     }
+    },
+    "status": {
+     "type": "Home",
+     "since": 1757292663418,
+     "until_time": 1757292663418
+    },
+    "bornAt": 1757292663418
+   },
+   "questsCompleted": 31,
+   "lootboxes": [
+    2,
+    2,
+    2,
+    2,
+    2
+   ],
+   "inventory": {
+    "fire_berry": 63,
+    "water_berry": 57,
+    "air_berry": 14,
+    "rock_berry": 54,
+    "rune": 25
+   },
+   "offerings": 97,
+   "joinedAt": 1757292663418
+  },
+  {
+   "address": "DZbalw2LOY5I1gQfYwv73RTuv-8igiu3KZUkSc3bEH0",
+   "unlocked": true,
+   "seeded": true,
+   "wins": 0,
+   "losses": 0,
+   "faction": "Aqua Guardians",
+   "lootboxes": [],
+   "inventory": {
+    "air_berry": 18,
+    "rock_berry": 20,
+    "rune": 25
+   },
+   "offerings": 1,
+   "joinedAt": 1770924620996
+  },
+  {
+   "address": "E-sf_jW398agCto6qOVaxe1vKF46_bO9a1MGFERxkbc",
+   "unlocked": true,
+   "seeded": true,
+   "wins": 0,
+   "losses": 0,
+   "lootboxes": [],
+   "inventory": {
+    "rune": 25
+   },
+   "joinedAt": 1770924620996
+  },
+  {
+   "address": "EInZjXtQ5-ivzBr2EOxyxXcumQCNPPu6e85a6FtQk7Y",
+   "unlocked": true,
+   "seeded": true,
+   "wins": 0,
+   "losses": 0,
+   "lootboxes": [],
+   "inventory": {
+    "fire_berry": 17,
+    "water_berry": 1,
+    "air_berry": 20,
+    "rock_berry": 9,
+    "rune": 25
+   },
+   "joinedAt": 1770924620996
+  },
+  {
+   "address": "F7s3HXjgB3GC_B98_LiGvlSyCJkyYZRGCfPnLi0s1X8",
+   "unlocked": true,
+   "seeded": true,
+   "wins": 0,
+   "losses": 0,
+   "faction": "Inferno Blades",
+   "lootboxes": [],
+   "inventory": {
+    "fire_berry": 28,
+    "water_berry": 22,
+    "air_berry": 28,
+    "rock_berry": 24,
+    "rune": 25
+   },
+   "offerings": 2,
+   "joinedAt": 1770924620996
+  },
+  {
+   "address": "G0ZHA4gJpqIydYvVq0B41Mpzo0W6ONgwtgpGNVo6Lsg",
+   "unlocked": true,
+   "seeded": true,
+   "wins": 0,
+   "losses": 0,
+   "faction": "Stone Titans",
+   "monster": {
+    "name": "Rockpup",
+    "image": "WhdcUkIGYZG4M5kq00TnUwaIt5OCGz3Q4u6_fZNktvQ",
+    "sprite": "Zt8LmHGVIziXhzjqBhEAWLuGetcDitFKbfaJROkyZks",
+    "faction": "Stone Titans",
+    "elementType": "rock",
+    "berryItem": "rock_berry",
+    "attack": 3,
+    "defense": 1,
+    "speed": 3,
+    "health": 3,
+    "energy": 50,
+    "happiness": 0,
+    "level": 0,
+    "exp": 2,
+    "totalTimesFed": 6,
+    "totalTimesPlay": 0,
+    "totalTimesQuest": 2,
+    "moves": {
+     "Battle Cry": {
+      "attack": 4,
+      "count": 2,
+      "damage": 0,
+      "defense": -2,
+      "health": -1,
+      "rarity": 3,
+      "speed": 3,
+      "type": "boost"
+     },
+     "Guard Break": {
+      "attack": 2,
+      "count": 2,
+      "damage": 4,
+      "defense": -2,
+      "health": 1,
+      "rarity": 3,
+      "speed": -1,
+      "type": "normal"
+     },
+     "Heal": {
+      "attack": -1,
+      "count": 2,
+      "damage": 0,
+      "defense": 0,
+      "health": 6,
+      "rarity": 1,
+      "speed": 0,
+      "type": "heal"
+     },
+     "Stone Wall": {
+      "attack": -1,
+      "count": 3,
+      "damage": 0,
+      "defense": 6,
+      "health": 2,
+      "rarity": 2,
+      "speed": -2,
+      "type": "rock"
+     }
+    },
+    "status": {
+     "type": "Home",
+     "since": 1754786743352,
+     "until_time": 1754786743352
+    },
+    "bornAt": 1754786743352
+   },
+   "questsCompleted": 2,
+   "lootboxes": [
+    2,
+    2
+   ],
+   "inventory": {
+    "fire_berry": 7,
+    "water_berry": 18,
+    "air_berry": 18,
+    "rock_berry": 6,
+    "rune": 25
+   },
+   "offerings": 3,
+   "joinedAt": 1754786743352
+  },
+  {
+   "address": "H-IldS90Uilwx0qb7A0VX-GELNcTIEz_HGryTNg0AV4",
+   "unlocked": true,
+   "seeded": true,
+   "wins": 0,
+   "losses": 0,
+   "faction": "Stone Titans",
+   "monster": {
+    "name": "Rockpup",
+    "image": "WhdcUkIGYZG4M5kq00TnUwaIt5OCGz3Q4u6_fZNktvQ",
+    "sprite": "Zt8LmHGVIziXhzjqBhEAWLuGetcDitFKbfaJROkyZks",
+    "faction": "Stone Titans",
+    "elementType": "rock",
+    "berryItem": "rock_berry",
+    "attack": 2,
+    "defense": 3,
+    "speed": 3,
+    "health": 2,
+    "energy": 35,
+    "happiness": 0,
+    "level": 0,
+    "exp": 2,
+    "totalTimesFed": 7,
+    "totalTimesPlay": 1,
+    "totalTimesQuest": 2,
+    "moves": {
+     "Battle Cry": {
+      "attack": 4,
+      "count": 2,
+      "damage": 0,
+      "defense": -2,
+      "health": -1,
+      "rarity": 3,
+      "speed": 3,
+      "type": "boost"
+     },
+     "Granite Barrier": {
+      "attack": 0,
+      "count": 1,
+      "damage": 1,
+      "defense": 6,
+      "health": 3,
+      "rarity": 3,
+      "speed": -2,
+      "type": "rock"
+     },
+     "Momentum Shift": {
+      "attack": 0,
+      "count": 1,
+      "damage": 0,
+      "defense": -3,
+      "health": 3,
+      "rarity": 3,
+      "speed": 5,
+      "type": "normal"
+     },
+     "Vital Essence": {
+      "attack": 0,
+      "count": 2,
+      "damage": 0,
+      "defense": 4,
+      "health": 7,
+      "rarity": 3,
+      "speed": -2,
+      "type": "heal"
+     }
+    },
+    "status": {
+     "type": "Home",
+     "since": 1755177610799,
+     "until_time": 1755177610799
+    },
+    "bornAt": 1755177610799
+   },
+   "questsCompleted": 2,
+   "lootboxes": [
+    2
+   ],
+   "inventory": {
+    "fire_berry": 20,
+    "water_berry": 9,
+    "air_berry": 10,
+    "rock_berry": 9,
+    "rune": 25
+   },
+   "offerings": 6,
+   "joinedAt": 1755177610799
+  },
+  {
+   "address": "HPYLYDh7G-PiQFfeHJ61Dn86HMRwP62t4DPf2Yl8RJA",
+   "unlocked": true,
+   "seeded": true,
+   "wins": 0,
+   "losses": 0,
+   "faction": "Inferno Blades",
+   "monster": {
+    "name": "FireFox",
+    "image": "lnYr9oTtkRHiheQFwH4ns50mrQE6AQR-8Bvl4VfXb0o",
+    "sprite": "wUo47CacsMRFFizJqUhSj75Rczg3f_MvHs4ytfPtCjQ",
+    "faction": "Inferno Blades",
+    "elementType": "fire",
+    "berryItem": "fire_berry",
+    "attack": 4,
+    "defense": 1,
+    "speed": 3,
+    "health": 2,
+    "energy": 30,
+    "happiness": 0,
+    "level": 0,
+    "exp": 6,
+    "totalTimesFed": 18,
+    "totalTimesPlay": 4,
+    "totalTimesQuest": 6,
+    "moves": {
+     "Battle Cry": {
+      "attack": 4,
+      "count": 2,
+      "damage": 0,
+      "defense": -2,
+      "health": -1,
+      "rarity": 3,
+      "speed": 3,
+      "type": "boost"
+     },
+     "Momentum Shift": {
+      "attack": 0,
+      "count": 1,
+      "damage": 0,
+      "defense": -3,
+      "health": 3,
+      "rarity": 3,
+      "speed": 5,
+      "type": "normal"
+     },
+     "Scorching Ash": {
+      "attack": 1,
+      "count": 2,
+      "damage": 3,
+      "defense": -2,
+      "health": 1,
+      "rarity": 3,
+      "speed": 1,
+      "type": "fire"
+     },
+     "Vital Essence": {
+      "attack": 0,
+      "count": 2,
+      "damage": 0,
+      "defense": 4,
+      "health": 7,
+      "rarity": 3,
+      "speed": -2,
+      "type": "heal"
+     }
+    },
+    "status": {
+     "type": "Home",
+     "since": 1755172473214,
+     "until_time": 1755172473214
+    },
+    "bornAt": 1755172473214
+   },
+   "questsCompleted": 6,
+   "lootboxes": [
+    2,
+    2,
+    2
+   ],
+   "inventory": {
+    "fire_berry": 48,
+    "water_berry": 18,
+    "air_berry": 15,
+    "rock_berry": 15,
+    "rune": 25
+   },
+   "offerings": 22,
+   "joinedAt": 1755172473214
+  },
+  {
+   "address": "Hq0haLNws78n6LdILJkTKPIKnJ1EyLPnf1wZK3STaZA",
+   "unlocked": true,
+   "seeded": true,
+   "wins": 0,
+   "losses": 0,
+   "faction": "Aqua Guardians",
+   "monster": {
+    "name": "WaterDoge",
+    "image": "w_-mPdemSXZ1G-Q6fMEu6wTDJYFnJM9XePjGf_ZChgo",
+    "sprite": "p90BYY1O3BS3VVzdZETr-hG6jkA3kwo8l0h3aQ2UFoc",
+    "faction": "Aqua Guardians",
+    "elementType": "water",
+    "berryItem": "water_berry",
+    "attack": 3,
+    "defense": 2,
+    "speed": 1,
+    "health": 4,
+    "energy": 70,
+    "happiness": 75,
+    "level": 0,
+    "exp": 0,
+    "totalTimesFed": 3,
+    "totalTimesPlay": 1,
+    "totalTimesQuest": 0,
+    "moves": {
+     "Frenzy Blows": {
+      "attack": 3,
+      "count": 2,
+      "damage": 2,
+      "defense": -1,
+      "health": -1,
+      "rarity": 3,
+      "speed": 2,
+      "type": "normal"
+     },
+     "Ocean Mist": {
+      "attack": 0,
+      "count": 2,
+      "damage": 0,
+      "defense": 4,
+      "health": 2,
+      "rarity": 3,
+      "speed": 2,
+      "type": "water"
+     },
+     "Regenerate": {
+      "attack": -2,
+      "count": 3,
+      "damage": 0,
+      "defense": 2,
+      "health": 5,
+      "rarity": 2,
+      "speed": 0,
+      "type": "heal"
+     },
+     "Whirlpool": {
+      "attack": 0,
+      "count": 3,
+      "damage": 2,
+      "defense": 2,
+      "health": -2,
+      "rarity": 2,
+      "speed": 3,
+      "type": "water"
+     }
+    },
+    "status": {
+     "type": "Home",
+     "since": 1739466506340,
+     "until_time": 1739466506340
+    },
+    "bornAt": 1739466506340
+   },
+   "questsCompleted": 0,
+   "lootboxes": [],
+   "inventory": {
+    "fire_berry": 16,
+    "water_berry": 21,
+    "air_berry": 3,
+    "rock_berry": 16,
+    "rune": 25
+   },
+   "offerings": 1,
+   "joinedAt": 1739466506340
+  },
+  {
+   "address": "IO_UeHQVpcRi636sRYP5GH7xFzekqsKB0PAATD5Gies",
+   "unlocked": true,
+   "seeded": true,
+   "wins": 0,
+   "losses": 0,
+   "lootboxes": [],
+   "inventory": {
+    "rune": 25
+   },
+   "joinedAt": 1770924620996
+  },
+  {
+   "address": "IuyxtOajv7t6COlbrPmRLLxkW1Z5NCAol-hn30xefaA",
+   "unlocked": true,
+   "seeded": true,
+   "wins": 0,
+   "losses": 0,
+   "faction": "Sky Nomads",
+   "lootboxes": [],
+   "inventory": {
+    "air_berry": 3,
+    "rune": 25
+   },
+   "joinedAt": 1770924620996
+  },
+  {
+   "address": "JYpttGaAMYSlNQuIT36shT03y4hNekbluy1aWGKbDi8",
+   "unlocked": true,
+   "seeded": true,
+   "wins": 0,
+   "losses": 0,
+   "faction": "Stone Titans",
+   "monster": {
+    "name": "Rockpup",
+    "image": "WhdcUkIGYZG4M5kq00TnUwaIt5OCGz3Q4u6_fZNktvQ",
+    "sprite": "Zt8LmHGVIziXhzjqBhEAWLuGetcDitFKbfaJROkyZks",
+    "faction": "Stone Titans",
+    "elementType": "rock",
+    "berryItem": "rock_berry",
+    "attack": 19,
+    "defense": 13,
+    "speed": 9,
+    "health": 19,
+    "energy": 40,
+    "happiness": 0,
+    "level": 5,
+    "exp": 9,
+    "totalTimesFed": 97,
+    "totalTimesPlay": 28,
+    "totalTimesQuest": 28,
+    "moves": {
+     "Boulder Crush": {
+      "attack": 3,
+      "count": 2,
+      "damage": 5,
+      "defense": 2,
+      "health": 0,
+      "rarity": 1,
+      "speed": -2,
+      "type": "rock"
+     },
+     "Stone Wall": {
+      "attack": -1,
+      "count": 3,
+      "damage": 0,
+      "defense": 6,
+      "health": 2,
+      "rarity": 2,
+      "speed": -2,
+      "type": "rock"
+     },
+     "Vital Essence": {
+      "attack": 0,
+      "count": 2,
+      "damage": 0,
+      "defense": 4,
+      "health": 7,
+      "rarity": 3,
+      "speed": -2,
+      "type": "heal"
+     },
+     "Warrior's Resolve": {
+      "attack": 3,
+      "count": 2,
+      "damage": 0,
+      "defense": 0,
+      "health": -2,
+      "rarity": 3,
+      "speed": 2,
+      "type": "boost"
+     }
+    },
+    "status": {
+     "type": "Home",
+     "since": 1757292662674,
+     "until_time": 1757292662674
+    },
+    "bornAt": 1757292662674
+   },
+   "questsCompleted": 28,
+   "lootboxes": [
+    2,
+    2
+   ],
+   "inventory": {
+    "fire_berry": 96,
+    "water_berry": 90,
+    "air_berry": 61,
+    "rock_berry": 28,
+    "rune": 25
+   },
+   "offerings": 98,
+   "joinedAt": 1757292662674
+  },
+  {
+   "address": "JZNmYFKqDPOG59qr03wP4lGhyrQQQyGXDslXb7qgWqI",
+   "unlocked": true,
+   "seeded": true,
+   "wins": 0,
+   "losses": 0,
+   "faction": "Aqua Guardians",
+   "monster": {
+    "name": "WaterDoge",
+    "image": "w_-mPdemSXZ1G-Q6fMEu6wTDJYFnJM9XePjGf_ZChgo",
+    "sprite": "p90BYY1O3BS3VVzdZETr-hG6jkA3kwo8l0h3aQ2UFoc",
+    "faction": "Aqua Guardians",
+    "elementType": "water",
+    "berryItem": "water_berry",
+    "attack": 4,
+    "defense": 2,
+    "speed": 1,
+    "health": 3,
+    "energy": 50,
+    "happiness": 50,
+    "level": 0,
+    "exp": 0,
+    "totalTimesFed": 0,
+    "totalTimesPlay": 0,
+    "totalTimesQuest": 0,
+    "moves": {
+     "Frostbite": {
+      "attack": -1,
+      "count": 2,
+      "damage": 3,
+      "defense": 2,
+      "health": 0,
+      "rarity": 3,
+      "speed": 1,
+      "type": "water"
+     },
+     "Healing Winds": {
+      "attack": 1,
+      "count": 1,
+      "damage": 0,
+      "defense": 0,
+      "health": 4,
+      "rarity": 3,
+      "speed": 3,
+      "type": "heal"
+     },
+     "Momentum Shift": {
+      "attack": 0,
+      "count": 1,
+      "damage": 0,
+      "defense": -3,
+      "health": 3,
+      "rarity": 3,
+      "speed": 5,
+      "type": "normal"
+     },
+     "Power Up": {
+      "attack": 5,
+      "count": 2,
+      "damage": 0,
+      "defense": -2,
+      "health": 0,
+      "rarity": 1,
+      "speed": 2,
+      "type": "boost"
+     }
+    },
+    "status": {
+     "type": "Home",
+     "since": 1739070014359,
+     "until_time": 1739070014359
+    },
+    "bornAt": 1739070014359
+   },
+   "questsCompleted": 0,
+   "lootboxes": [],
+   "inventory": {
+    "rune": 25
+   },
+   "offerings": 97,
+   "joinedAt": 1739070014359
+  },
+  {
+   "address": "JbNSwhrtcxrpy9NbzMBUYoQChFbRd0BsASf--yebQ5Y",
+   "unlocked": true,
+   "seeded": true,
+   "wins": 0,
+   "losses": 0,
+   "lootboxes": [],
+   "inventory": {
+    "rune": 25
+   },
+   "joinedAt": 1770924620996
+  },
+  {
+   "address": "JckL0gGb5prOKo7jOwBPAk7YJHC2plZeEGdVi-YsblU",
+   "unlocked": true,
+   "seeded": true,
+   "wins": 0,
+   "losses": 0,
+   "lootboxes": [],
+   "inventory": {
+    "rune": 25
+   },
+   "joinedAt": 1770924620996
+  },
+  {
+   "address": "K7VQkU6YWkzTXFM3ocAnVJGpg9olFIRyFYdhfzquNF4",
+   "unlocked": true,
+   "seeded": true,
+   "wins": 0,
+   "losses": 0,
+   "lootboxes": [],
+   "inventory": {
+    "rune": 25
+   },
+   "joinedAt": 1770924620996
+  },
+  {
+   "address": "KdhznWri1ouFfYr2ZsQwonFJFOwe_P6QQkJpOQmBaHM",
+   "unlocked": true,
+   "seeded": true,
+   "wins": 0,
+   "losses": 0,
+   "lootboxes": [],
+   "inventory": {
+    "rune": 25
+   },
+   "joinedAt": 1770924620996
+  },
+  {
+   "address": "KgsegjwDjIkQ7na0oXTLrHUzxC7ppcDH7hzuVzoH7sE",
+   "unlocked": true,
+   "seeded": true,
+   "wins": 0,
+   "losses": 0,
+   "lootboxes": [],
+   "inventory": {
+    "rune": 25
+   },
+   "joinedAt": 1770924620996
+  },
+  {
+   "address": "KlJUM2TsHgUI1Ih-OsorF-UpxND21amAEltukFvotTo",
+   "unlocked": true,
+   "seeded": true,
+   "wins": 0,
+   "losses": 0,
+   "faction": "Inferno Blades",
+   "monster": {
+    "name": "FireFox",
+    "image": "lnYr9oTtkRHiheQFwH4ns50mrQE6AQR-8Bvl4VfXb0o",
+    "sprite": "wUo47CacsMRFFizJqUhSj75Rczg3f_MvHs4ytfPtCjQ",
+    "faction": "Inferno Blades",
+    "elementType": "fire",
+    "berryItem": "fire_berry",
+    "attack": 4,
+    "defense": 2,
+    "speed": 3,
+    "health": 1,
+    "energy": 50,
+    "happiness": 50,
+    "level": 0,
+    "exp": 0,
+    "totalTimesFed": 0,
+    "totalTimesPlay": 0,
+    "totalTimesQuest": 0,
+    "moves": {
+     "Body Slam": {
+      "attack": 3,
+      "count": 2,
+      "damage": 5,
+      "defense": 1,
+      "health": 0,
+      "rarity": 1,
+      "speed": 0,
+      "type": "normal"
+     },
+     "Inferno": {
+      "attack": 3,
+      "count": 1,
+      "damage": 6,
+      "defense": -2,
+      "health": 0,
+      "rarity": 2,
+      "speed": -1,
+      "type": "fire"
+     },
+     "Power Up": {
+      "attack": 5,
+      "count": 2,
+      "damage": 0,
+      "defense": -2,
+      "health": 0,
+      "rarity": 1,
+      "speed": 2,
+      "type": "boost"
+     },
+     "Recovery": {
+      "attack": 0,
+      "count": 2,
+      "damage": 0,
+      "defense": 0,
+      "health": 5,
+      "rarity": 3,
+      "speed": 2,
+      "type": "heal"
+     }
+    },
+    "status": {
+     "type": "Home",
+     "since": 1737722926317,
+     "until_time": 1737722926317
+    },
+    "bornAt": 1737722926317
+   },
+   "questsCompleted": 0,
+   "lootboxes": [],
+   "inventory": {
+    "rune": 25
+   },
+   "joinedAt": 1737722926317
+  },
+  {
+   "address": "LTxNyUaVVm-lwR-Wa7Z4LXbz3TvW5btEm-qoD9VhGm4",
+   "unlocked": true,
+   "seeded": true,
+   "wins": 0,
+   "losses": 0,
+   "faction": "Inferno Blades",
+   "monster": {
+    "name": "FireFox",
+    "image": "lnYr9oTtkRHiheQFwH4ns50mrQE6AQR-8Bvl4VfXb0o",
+    "sprite": "wUo47CacsMRFFizJqUhSj75Rczg3f_MvHs4ytfPtCjQ",
+    "faction": "Inferno Blades",
+    "elementType": "fire",
+    "berryItem": "fire_berry",
+    "attack": 2,
+    "defense": 2,
+    "speed": 4,
+    "health": 2,
+    "energy": 0,
+    "happiness": 0,
+    "level": 0,
+    "exp": 0,
+    "totalTimesFed": 0,
+    "totalTimesPlay": 0,
+    "totalTimesQuest": 0,
+    "moves": {
+     "Healing Winds": {
+      "attack": 1,
+      "count": 1,
+      "damage": 0,
+      "defense": 0,
+      "health": 4,
+      "rarity": 3,
+      "speed": 3,
+      "type": "heal"
+     },
+     "Inferno": {
+      "attack": 3,
+      "count": 1,
+      "damage": 6,
+      "defense": -2,
+      "health": 0,
+      "rarity": 2,
+      "speed": -1,
+      "type": "fire"
+     },
+     "Iron Skin": {
+      "attack": -1,
+      "count": 2,
+      "damage": 0,
+      "defense": 5,
+      "health": 2,
+      "rarity": 2,
+      "speed": 0,
+      "type": "boost"
+     },
+     "Momentum Shift": {
+      "attack": 0,
+      "count": 1,
+      "damage": 0,
+      "defense": -3,
+      "health": 3,
+      "rarity": 3,
+      "speed": 5,
+      "type": "normal"
+     }
+    },
+    "status": {
+     "type": "Home",
+     "since": 1750551641171,
+     "until_time": 1750551641171
+    },
+    "bornAt": 1750551641171
+   },
+   "questsCompleted": 0,
+   "lootboxes": [],
+   "inventory": {
+    "fire_berry": 2,
+    "air_berry": 2,
+    "rock_berry": 5,
+    "rune": 25
+   },
+   "offerings": 4,
+   "joinedAt": 1750551641171
+  },
+  {
+   "address": "LXxeW7s2Z7ISWqSSDiz_QOOr7cLyYQup0nOYyVYk0jU",
+   "unlocked": true,
+   "seeded": true,
+   "wins": 0,
+   "losses": 0,
+   "faction": "Inferno Blades",
+   "monster": {
+    "name": "FireFox",
+    "image": "lnYr9oTtkRHiheQFwH4ns50mrQE6AQR-8Bvl4VfXb0o",
+    "sprite": "wUo47CacsMRFFizJqUhSj75Rczg3f_MvHs4ytfPtCjQ",
+    "faction": "Inferno Blades",
+    "elementType": "fire",
+    "berryItem": "fire_berry",
+    "attack": 18,
+    "defense": 14,
+    "speed": 15,
+    "health": 13,
+    "energy": 30,
+    "happiness": 0,
+    "level": 5,
+    "exp": 0,
+    "totalTimesFed": 68,
+    "totalTimesPlay": 20,
+    "totalTimesQuest": 17,
+    "moves": {
+     "Campfire": {
+      "attack": 2,
+      "count": 3,
+      "damage": 0,
+      "defense": 3,
+      "health": 3,
+      "rarity": 2,
+      "speed": -1,
+      "type": "fire"
+     },
+     "Guard Break": {
+      "attack": 2,
+      "count": 2,
+      "damage": 4,
+      "defense": -2,
+      "health": 1,
+      "rarity": 3,
+      "speed": -1,
+      "type": "normal"
+     },
+     "Life Surge": {
+      "attack": 1,
+      "count": 1,
+      "damage": 0,
+      "defense": 0,
+      "health": 8,
+      "rarity": 2,
+      "speed": 0,
+      "type": "heal"
+     },
+     "Warrior's Resolve": {
+      "attack": 3,
+      "count": 2,
+      "damage": 0,
+      "defense": 0,
+      "health": -2,
+      "rarity": 3,
+      "speed": 2,
+      "type": "boost"
+     }
+    },
+    "status": {
+     "type": "Home",
+     "since": 1741002486323,
+     "until_time": 1741002486323
+    },
+    "bornAt": 1741002486323
+   },
+   "questsCompleted": 17,
+   "lootboxes": [],
+   "inventory": {
+    "fire_berry": 30,
+    "water_berry": 19,
+    "air_berry": 25,
+    "rock_berry": 22,
+    "rune": 25
+   },
+   "offerings": 33,
+   "joinedAt": 1741002486323
+  },
+  {
+   "address": "LYVsmlFESEHL1m2nW0VRLIw9bc7EtJnVjCzgpIOu_2A",
+   "unlocked": true,
+   "seeded": true,
+   "wins": 0,
+   "losses": 0,
+   "lootboxes": [],
+   "inventory": {
+    "rune": 25
+   },
+   "joinedAt": 1770924620996
+  },
+  {
+   "address": "LeL57Lkx1bKzwmiiFvkVDtkTQ5Wh9d5xyQICj4cSajk",
+   "unlocked": true,
+   "seeded": true,
+   "wins": 0,
+   "losses": 0,
+   "faction": "Inferno Blades",
+   "monster": {
+    "name": "FireFox",
+    "image": "lnYr9oTtkRHiheQFwH4ns50mrQE6AQR-8Bvl4VfXb0o",
+    "sprite": "wUo47CacsMRFFizJqUhSj75Rczg3f_MvHs4ytfPtCjQ",
+    "faction": "Inferno Blades",
+    "elementType": "fire",
+    "berryItem": "fire_berry",
+    "attack": 39,
+    "defense": 17,
+    "speed": 3,
+    "health": 21,
+    "energy": 15,
+    "happiness": 0,
+    "level": 7,
+    "exp": 19,
+    "totalTimesFed": 258,
+    "totalTimesPlay": 73,
+    "totalTimesQuest": 72,
+    "moves": {
+     "Inferno": {
+      "attack": 3,
+      "count": 1,
+      "damage": 6,
+      "defense": -2,
+      "health": 0,
+      "rarity": 2,
+      "speed": -1,
+      "type": "fire"
+     },
+     "Phoenix Burst": {
+      "attack": 0,
+      "count": 1,
+      "damage": 4,
+      "defense": 0,
+      "health": -2,
+      "rarity": 3,
+      "speed": 2,
+      "type": "fire"
+     },
+     "Quick Jab": {
+      "attack": 2,
+      "count": 3,
+      "damage": 3,
+      "defense": -1,
+      "health": 0,
+      "rarity": 2,
+      "speed": 4,
+      "type": "normal"
+     },
+     "Warrior's Resolve": {
+      "attack": 3,
+      "count": 2,
+      "damage": 0,
+      "defense": 0,
+      "health": -2,
+      "rarity": 3,
+      "speed": 2,
+      "type": "boost"
+     }
+    },
+    "status": {
+     "type": "Home",
+     "since": 1760549694251,
+     "until_time": 1760549694251
+    },
+    "bornAt": 1760549694251
+   },
+   "questsCompleted": 72,
+   "lootboxes": [
+    2
+   ],
+   "inventory": {
+    "fire_berry": 111,
+    "water_berry": 596,
+    "air_berry": 487,
+    "rock_berry": 518,
+    "rune": 25
+   },
+   "offerings": 67,
+   "joinedAt": 1760549694251
+  },
+  {
+   "address": "LpjjcKnWS0H4LNxTcmanrcG0k0iqHCFW8mOW7hO0yuI",
+   "unlocked": true,
+   "seeded": true,
+   "wins": 0,
+   "losses": 0,
+   "faction": "Inferno Blades",
+   "monster": {
+    "name": "FireFox",
+    "image": "lnYr9oTtkRHiheQFwH4ns50mrQE6AQR-8Bvl4VfXb0o",
+    "sprite": "wUo47CacsMRFFizJqUhSj75Rczg3f_MvHs4ytfPtCjQ",
+    "faction": "Inferno Blades",
+    "elementType": "fire",
+    "berryItem": "fire_berry",
+    "attack": 2,
+    "defense": 4,
+    "speed": 1,
+    "health": 3,
+    "energy": 50,
+    "happiness": 50,
+    "level": 0,
+    "exp": 0,
+    "totalTimesFed": 0,
+    "totalTimesPlay": 0,
+    "totalTimesQuest": 0,
+    "moves": {
+     "Body Slam": {
+      "attack": 3,
+      "count": 2,
+      "damage": 5,
+      "defense": 1,
+      "health": 0,
+      "rarity": 1,
+      "speed": 0,
+      "type": "normal"
+     },
+     "Firenado": {
+      "attack": 0,
+      "count": 2,
+      "damage": 5,
+      "defense": -1,
+      "health": 0,
+      "rarity": 1,
+      "speed": 2,
+      "type": "fire"
+     },
+     "Heal": {
+      "attack": -1,
+      "count": 2,
+      "damage": 0,
+      "defense": 0,
+      "health": 6,
+      "rarity": 1,
+      "speed": 0,
+      "type": "heal"
+     },
+     "Warrior's Resolve": {
+      "attack": 3,
+      "count": 2,
+      "damage": 0,
+      "defense": 0,
+      "health": -2,
+      "rarity": 3,
+      "speed": 2,
+      "type": "boost"
+     }
+    },
+    "status": {
+     "type": "Home",
+     "since": 1740409212360,
+     "until_time": 1740409212360
+    },
+    "bornAt": 1740409212360
+   },
+   "questsCompleted": 0,
+   "lootboxes": [],
+   "inventory": {
+    "air_berry": 19,
+    "rune": 25
+   },
+   "offerings": 4,
+   "joinedAt": 1740409212360
+  },
+  {
+   "address": "Lz-bry6sG9p9EGcotPOt7JeKjDhe-P91RVddc03McCA",
+   "unlocked": true,
+   "seeded": true,
+   "wins": 0,
+   "losses": 0,
+   "lootboxes": [],
+   "inventory": {
+    "rune": 25
+   },
+   "joinedAt": 1770924620996
+  },
+  {
+   "address": "M9DBgQmRZXWu7YRR4kmd1CJPFhFTwjP7G3DQBWJVYhs",
+   "unlocked": true,
+   "seeded": true,
+   "wins": 0,
+   "losses": 0,
+   "faction": "Aqua Guardians",
+   "monster": {
+    "name": "WaterDoge",
+    "image": "w_-mPdemSXZ1G-Q6fMEu6wTDJYFnJM9XePjGf_ZChgo",
+    "sprite": "p90BYY1O3BS3VVzdZETr-hG6jkA3kwo8l0h3aQ2UFoc",
+    "faction": "Aqua Guardians",
+    "elementType": "water",
+    "berryItem": "water_berry",
+    "attack": 3,
+    "defense": 2,
+    "speed": 4,
+    "health": 1,
+    "energy": 50,
+    "happiness": 50,
+    "level": 0,
+    "exp": 0,
+    "totalTimesFed": 0,
+    "totalTimesPlay": 0,
+    "totalTimesQuest": 0,
+    "moves": {
+     "Healing Winds": {
+      "attack": 1,
+      "count": 1,
+      "damage": 0,
+      "defense": 0,
+      "health": 4,
+      "rarity": 3,
+      "speed": 3,
+      "type": "heal"
+     },
+     "Iron Skin": {
+      "attack": -1,
+      "count": 2,
+      "damage": 0,
+      "defense": 5,
+      "health": 2,
+      "rarity": 2,
+      "speed": 0,
+      "type": "boost"
+     },
+     "Quick Jab": {
+      "attack": 2,
+      "count": 3,
+      "damage": 3,
+      "defense": -1,
+      "health": 0,
+      "rarity": 2,
+      "speed": 4,
+      "type": "normal"
+     },
+     "Tidal Wave": {
+      "attack": 2,
+      "count": 2,
+      "damage": 4,
+      "defense": -1,
+      "health": 0,
+      "rarity": 1,
+      "speed": 1,
+      "type": "water"
+     }
+    },
+    "status": {
+     "type": "Home",
+     "since": 1739841281162,
+     "until_time": 1739841281162
+    },
+    "bornAt": 1739841281162
+   },
+   "questsCompleted": 0,
+   "lootboxes": [],
+   "inventory": {
+    "rune": 25
+   },
+   "joinedAt": 1739841281162
+  },
+  {
+   "address": "ME3UsUZ8oVTfwPj59-V7BhcSSrzX-1fhIBnNhtKRFWE",
+   "unlocked": true,
+   "seeded": true,
+   "wins": 0,
+   "losses": 0,
+   "faction": "Inferno Blades",
+   "monster": {
+    "name": "FireFox",
+    "image": "lnYr9oTtkRHiheQFwH4ns50mrQE6AQR-8Bvl4VfXb0o",
+    "sprite": "wUo47CacsMRFFizJqUhSj75Rczg3f_MvHs4ytfPtCjQ",
+    "faction": "Inferno Blades",
+    "elementType": "fire",
+    "berryItem": "fire_berry",
+    "attack": 2,
+    "defense": 2,
+    "speed": 4,
+    "health": 2,
+    "energy": 50,
+    "happiness": 50,
+    "level": 0,
+    "exp": 0,
+    "totalTimesFed": 0,
+    "totalTimesPlay": 0,
+    "totalTimesQuest": 0,
+    "moves": {
+     "Battle Cry": {
+      "attack": 4,
+      "count": 2,
+      "damage": 0,
+      "defense": -2,
+      "health": -1,
+      "rarity": 3,
+      "speed": 3,
+      "type": "boost"
+     },
+     "Flame Shield": {
+      "attack": -1,
+      "count": 2,
+      "damage": 2,
+      "defense": 4,
+      "health": 2,
+      "rarity": 3,
+      "speed": 0,
+      "type": "fire"
+     },
+     "Heal": {
+      "attack": -1,
+      "count": 2,
+      "damage": 0,
+      "defense": 0,
+      "health": 6,
+      "rarity": 1,
+      "speed": 0,
+      "type": "heal"
+     },
+     "Heavy Strike": {
+      "attack": 4,
+      "count": 1,
+      "damage": 6,
+      "defense": 2,
+      "health": 0,
+      "rarity": 2,
+      "speed": -2,
+      "type": "normal"
+     }
+    },
+    "status": {
+     "type": "Home",
+     "since": 1737852006473,
+     "until_time": 1737852006473
+    },
+    "bornAt": 1737852006473
+   },
+   "questsCompleted": 0,
+   "lootboxes": [],
+   "inventory": {
+    "rune": 25
+   },
+   "joinedAt": 1737852006473
+  },
+  {
+   "address": "MVP42uMYkF-kK2Nxd3PF13NKMp-G8cpNa454ORJg5us",
+   "unlocked": true,
+   "seeded": true,
+   "wins": 0,
+   "losses": 0,
+   "faction": "Aqua Guardians",
+   "lootboxes": [],
+   "inventory": {
+    "rune": 25
+   },
+   "joinedAt": 1770924620996
+  },
+  {
+   "address": "Mp-Jk-qtNr3XwA_o-n237JkxJupffJhCWtfe42UX3Qs",
+   "unlocked": true,
+   "seeded": true,
+   "wins": 0,
+   "losses": 0,
+   "lootboxes": [],
+   "inventory": {
+    "rune": 25
+   },
+   "joinedAt": 1770924620996
+  },
+  {
+   "address": "MutMHd24HmwBFqqCQ4sF5UDj-6Rn6ETMFQ1_bb7Rmtc",
+   "unlocked": true,
+   "seeded": true,
+   "wins": 0,
+   "losses": 0,
+   "lootboxes": [],
+   "inventory": {
+    "rune": 25
+   },
+   "joinedAt": 1770924620996
+  },
+  {
+   "address": "N90q65iT59dCo01-gtZRUlLMX0w6_ylFHv2uHaSUFNk",
+   "unlocked": true,
+   "seeded": true,
+   "wins": 0,
+   "losses": 0,
+   "faction": "Inferno Blades",
+   "monster": {
+    "name": "FireFox",
+    "image": "lnYr9oTtkRHiheQFwH4ns50mrQE6AQR-8Bvl4VfXb0o",
+    "sprite": "wUo47CacsMRFFizJqUhSj75Rczg3f_MvHs4ytfPtCjQ",
+    "faction": "Inferno Blades",
+    "elementType": "fire",
+    "berryItem": "fire_berry",
+    "attack": 8,
+    "defense": 38,
+    "speed": 1,
+    "health": 33,
+    "energy": 50,
+    "happiness": 0,
+    "level": 7,
+    "exp": 1953,
+    "totalTimesFed": 18,
+    "totalTimesPlay": 5,
+    "totalTimesQuest": 6,
+    "moves": {
+     "Firenado": {
+      "attack": 0,
+      "count": 2,
+      "damage": 5,
+      "defense": -1,
+      "health": 0,
+      "rarity": 1,
+      "speed": 2,
+      "type": "fire"
+     },
+     "Phoenix Burst": {
+      "attack": 0,
+      "count": 1,
+      "damage": 4,
+      "defense": 0,
+      "health": -2,
+      "rarity": 3,
+      "speed": 2,
+      "type": "fire"
+     },
+     "Recovery": {
+      "attack": 0,
+      "count": 2,
+      "damage": 0,
+      "defense": 0,
+      "health": 5,
+      "rarity": 3,
+      "speed": 2,
+      "type": "heal"
+     },
+     "Warrior's Resolve": {
+      "attack": 3,
+      "count": 2,
+      "damage": 0,
+      "defense": 0,
+      "health": -2,
+      "rarity": 3,
+      "speed": 2,
+      "type": "boost"
+     }
+    },
+    "status": {
+     "type": "Home",
+     "since": 1756494945300,
+     "until_time": 1756494945300
+    },
+    "bornAt": 1756494945300
+   },
+   "questsCompleted": 6,
+   "lootboxes": [
+    2,
+    2
+   ],
+   "inventory": {
+    "fire_berry": 49,
+    "water_berry": 452,
+    "air_berry": 302,
+    "rock_berry": 60,
+    "rune": 25
+   },
+   "offerings": 31,
+   "joinedAt": 1756494945300
+  },
+  {
+   "address": "NG_ugGn1fwmO9r_bWVxcmdTL0d9BozaBHsW_7iv-Wkw",
+   "unlocked": true,
+   "seeded": true,
+   "wins": 0,
+   "losses": 0,
+   "faction": "Inferno Blades",
+   "monster": {
+    "name": "FireFox",
+    "image": "lnYr9oTtkRHiheQFwH4ns50mrQE6AQR-8Bvl4VfXb0o",
+    "sprite": "wUo47CacsMRFFizJqUhSj75Rczg3f_MvHs4ytfPtCjQ",
+    "faction": "Inferno Blades",
+    "elementType": "fire",
+    "berryItem": "fire_berry",
+    "attack": 2,
+    "defense": 3,
+    "speed": 3,
+    "health": 2,
+    "energy": 50,
+    "happiness": 50,
+    "level": 0,
+    "exp": 0,
+    "totalTimesFed": 0,
+    "totalTimesPlay": 0,
+    "totalTimesQuest": 0,
+    "moves": {
+     "Guard Break": {
+      "attack": 2,
+      "count": 2,
+      "damage": 4,
+      "defense": -2,
+      "health": 1,
+      "rarity": 3,
+      "speed": -1,
+      "type": "normal"
+     },
+     "Heal": {
+      "attack": -1,
+      "count": 2,
+      "damage": 0,
+      "defense": 0,
+      "health": 6,
+      "rarity": 1,
+      "speed": 0,
+      "type": "heal"
+     },
+     "Power Up": {
+      "attack": 5,
+      "count": 2,
+      "damage": 0,
+      "defense": -2,
+      "health": 0,
+      "rarity": 1,
+      "speed": 2,
+      "type": "boost"
+     },
+     "Scorching Ash": {
+      "attack": 1,
+      "count": 2,
+      "damage": 3,
+      "defense": -2,
+      "health": 1,
+      "rarity": 3,
+      "speed": 1,
+      "type": "fire"
+     }
+    },
+    "status": {
+     "type": "Home",
+     "since": 1737664826535,
+     "until_time": 1737664826535
+    },
+    "bornAt": 1737664826535
+   },
+   "questsCompleted": 0,
+   "lootboxes": [],
+   "inventory": {
+    "rune": 25
+   },
+   "joinedAt": 1737664826535
+  },
+  {
+   "address": "NObz9Xt-7yBnn-11Uo7VuVt7nxEcmxvAZAq1pbIF_38",
+   "unlocked": true,
+   "seeded": true,
+   "wins": 0,
+   "losses": 0,
+   "lootboxes": [],
+   "inventory": {
+    "rune": 25
+   },
+   "joinedAt": 1770924620996
+  },
+  {
+   "address": "O94QpUJ4oZ8gXlAJMV_xcigO9VyD3Kgf_wI7hTo6SGM",
+   "unlocked": true,
+   "seeded": true,
+   "wins": 0,
+   "losses": 0,
+   "faction": "Stone Titans",
+   "lootboxes": [],
+   "inventory": {
+    "rune": 25
+   },
+   "offerings": 1,
+   "joinedAt": 1770924620996
+  },
+  {
+   "address": "OdQHR5bwUJHaFpC2VUx321urTW8hd97-3TdB7oPW4iA",
+   "unlocked": true,
+   "seeded": true,
+   "wins": 0,
+   "losses": 0,
+   "faction": "Inferno Blades",
+   "monster": {
+    "name": "FireFox",
+    "image": "lnYr9oTtkRHiheQFwH4ns50mrQE6AQR-8Bvl4VfXb0o",
+    "sprite": "wUo47CacsMRFFizJqUhSj75Rczg3f_MvHs4ytfPtCjQ",
+    "faction": "Inferno Blades",
+    "elementType": "fire",
+    "berryItem": "fire_berry",
+    "attack": 3,
+    "defense": 3,
+    "speed": 2,
+    "health": 2,
+    "energy": 50,
+    "happiness": 50,
+    "level": 0,
+    "exp": 0,
+    "totalTimesFed": 0,
+    "totalTimesPlay": 0,
+    "totalTimesQuest": 0,
+    "moves": {
+     "Campfire": {
+      "attack": 2,
+      "count": 3,
+      "damage": 0,
+      "defense": 3,
+      "health": 3,
+      "rarity": 2,
+      "speed": -1,
+      "type": "fire"
+     },
+     "Heal": {
+      "attack": -1,
+      "count": 2,
+      "damage": 0,
+      "defense": 0,
+      "health": 6,
+      "rarity": 1,
+      "speed": 0,
+      "type": "heal"
+     },
+     "Heavy Strike": {
+      "attack": 4,
+      "count": 1,
+      "damage": 6,
+      "defense": 2,
+      "health": 0,
+      "rarity": 2,
+      "speed": -2,
+      "type": "normal"
+     },
+     "Iron Skin": {
+      "attack": -1,
+      "count": 2,
+      "damage": 0,
+      "defense": 5,
+      "health": 2,
+      "rarity": 2,
+      "speed": 0,
+      "type": "boost"
+     }
+    },
+    "status": {
+     "type": "Home",
+     "since": 1740230555245,
+     "until_time": 1740230555245
+    },
+    "bornAt": 1740230555245
+   },
+   "questsCompleted": 0,
+   "lootboxes": [],
+   "inventory": {
+    "rune": 25
+   },
+   "offerings": 2,
+   "joinedAt": 1740230555245
+  },
+  {
+   "address": "PAKVfzNyODAEMsVBRtCWYibThVPr7OLv-R-h5AA6eGM",
+   "unlocked": true,
+   "seeded": true,
+   "wins": 0,
+   "losses": 0,
+   "lootboxes": [],
+   "inventory": {
+    "rune": 25
+   },
+   "joinedAt": 1770924620996
+  },
+  {
+   "address": "PEnx-heEuwsuDtJW3CFDIhgO30zYeJyeCPm7TUNovLI",
+   "unlocked": true,
+   "seeded": true,
+   "wins": 0,
+   "losses": 0,
+   "lootboxes": [],
+   "inventory": {
+    "rune": 25
+   },
+   "joinedAt": 1770924620996
+  },
+  {
+   "address": "PKLNYHbnlcnYkFATv5k3IyZCFgC0aVSX6Ay1CYCsiTw",
+   "unlocked": true,
+   "seeded": true,
+   "wins": 0,
+   "losses": 0,
+   "faction": "Inferno Blades",
+   "monster": {
+    "name": "FireFox",
+    "image": "lnYr9oTtkRHiheQFwH4ns50mrQE6AQR-8Bvl4VfXb0o",
+    "sprite": "wUo47CacsMRFFizJqUhSj75Rczg3f_MvHs4ytfPtCjQ",
+    "faction": "Inferno Blades",
+    "elementType": "fire",
+    "berryItem": "fire_berry",
+    "attack": 3,
+    "defense": 3,
+    "speed": 1,
+    "health": 3,
+    "energy": 100,
+    "happiness": 100,
+    "level": 0,
+    "exp": 0,
+    "totalTimesFed": 28,
+    "totalTimesPlay": 23,
+    "totalTimesQuest": 0,
+    "moves": {
+     "Healing Winds": {
+      "attack": 1,
+      "count": 1,
+      "damage": 0,
+      "defense": 0,
+      "health": 4,
+      "rarity": 3,
+      "speed": 3,
+      "type": "heal"
+     },
+     "Iron Skin": {
+      "attack": -1,
+      "count": 2,
+      "damage": 0,
+      "defense": 5,
+      "health": 2,
+      "rarity": 2,
+      "speed": 0,
+      "type": "boost"
+     },
+     "Momentum Shift": {
+      "attack": 0,
+      "count": 1,
+      "damage": 0,
+      "defense": -3,
+      "health": 3,
+      "rarity": 3,
+      "speed": 5,
+      "type": "normal"
+     },
+     "Scorching Ash": {
+      "attack": 1,
+      "count": 2,
+      "damage": 3,
+      "defense": -2,
+      "health": 1,
+      "rarity": 3,
+      "speed": 1,
+      "type": "fire"
+     }
+    },
+    "status": {
+     "type": "Home",
+     "since": 1754059952163,
+     "until_time": 1754059952163
+    },
+    "bornAt": 1754059952163
+   },
+   "questsCompleted": 0,
+   "lootboxes": [
+    3,
+    5
+   ],
+   "inventory": {
+    "fire_berry": 193,
+    "water_berry": 262,
+    "air_berry": 238,
+    "rock_berry": 300,
+    "rune": 25
+   },
+   "offerings": 3,
+   "joinedAt": 1754059952163
+  },
+  {
+   "address": "R0dcdDCD5ETuKf1N6FIHAOq6qHHK_3YvBzvZfiZ1xa0",
+   "unlocked": true,
+   "seeded": true,
+   "wins": 0,
+   "losses": 0,
+   "lootboxes": [],
+   "inventory": {
+    "rune": 25
+   },
+   "joinedAt": 1770924620996
+  },
+  {
+   "address": "RTNoP5CkbQqjVEuuC9p08WnIsa1nKJH2lYvxOZj5MSU",
+   "unlocked": true,
+   "seeded": true,
+   "wins": 0,
+   "losses": 0,
+   "faction": "Inferno Blades",
+   "monster": {
+    "name": "FireFox",
+    "image": "lnYr9oTtkRHiheQFwH4ns50mrQE6AQR-8Bvl4VfXb0o",
+    "sprite": "wUo47CacsMRFFizJqUhSj75Rczg3f_MvHs4ytfPtCjQ",
+    "faction": "Inferno Blades",
+    "elementType": "fire",
+    "berryItem": "fire_berry",
+    "attack": 6,
+    "defense": 5,
+    "speed": 7,
+    "health": 2,
+    "energy": 0,
+    "happiness": 0,
+    "level": 1,
+    "exp": 1,
+    "totalTimesFed": 0,
+    "totalTimesPlay": 0,
+    "totalTimesQuest": 2,
+    "moves": {
+     "Battle Cry": {
+      "attack": 4,
+      "count": 2,
+      "damage": 0,
+      "defense": -2,
+      "health": -1,
+      "rarity": 3,
+      "speed": 3,
+      "type": "boost"
+     },
+     "Guard Break": {
+      "attack": 2,
+      "count": 2,
+      "damage": 4,
+      "defense": -2,
+      "health": 1,
+      "rarity": 3,
+      "speed": -1,
+      "type": "normal"
+     },
+     "Healing Winds": {
+      "attack": 1,
+      "count": 1,
+      "damage": 0,
+      "defense": 0,
+      "health": 4,
+      "rarity": 3,
+      "speed": 3,
+      "type": "heal"
+     },
+     "Scorching Ash": {
+      "attack": 1,
+      "count": 2,
+      "damage": 3,
+      "defense": -2,
+      "health": 1,
+      "rarity": 3,
+      "speed": 1,
+      "type": "fire"
+     }
+    },
+    "status": {
+     "type": "Home",
+     "since": 1739058957386,
+     "until_time": 1739058957386
+    },
+    "bornAt": 1739058957386
+   },
+   "questsCompleted": 2,
+   "lootboxes": [],
+   "inventory": {
+    "rune": 25
+   },
+   "offerings": 50,
+   "joinedAt": 1739058957386
+  },
+  {
+   "address": "S0htFhYW3M-oXc_Thb94MQhPBVBFmI4LSxeFgLiVDQE",
+   "unlocked": true,
+   "seeded": true,
+   "wins": 0,
+   "losses": 0,
+   "lootboxes": [],
+   "inventory": {
+    "rune": 25
+   },
+   "joinedAt": 1770924620996
+  },
+  {
+   "address": "SJppYWZeJpEGQ5s7oQrHCI9RbS7yCYxGxamd6VPUMjk",
+   "unlocked": true,
+   "seeded": true,
+   "wins": 0,
+   "losses": 0,
+   "lootboxes": [],
+   "inventory": {
+    "rune": 25
+   },
+   "joinedAt": 1770924620996
+  },
+  {
+   "address": "SZO5P5L0Eq1zErSk2O3Zxbt8Oamcj7bCaexunDissEg",
+   "unlocked": true,
+   "seeded": true,
+   "wins": 0,
+   "losses": 0,
+   "faction": "Sky Nomads",
+   "monster": {
+    "name": "Airbud",
+    "image": "XD4tSBeekM1ETZMflAANDfkW6pVWaQIXgSdSiwfwVqw",
+    "sprite": "0_gQ7rNpxD8S4wZBE_DZs3adWfZMsBIuo8fwvH3SwL0",
+    "faction": "Sky Nomads",
+    "elementType": "air",
+    "berryItem": "air_berry",
+    "attack": 16,
+    "defense": 21,
+    "speed": 15,
+    "health": 18,
+    "energy": 5,
+    "happiness": 25,
+    "level": 6,
+    "exp": 17,
+    "totalTimesFed": 180,
+    "totalTimesPlay": 51,
+    "totalTimesQuest": 49,
+    "moves": {
+     "Breeze": {
+      "attack": -1,
+      "count": 2,
+      "damage": 0,
+      "defense": 2,
+      "health": 2,
+      "rarity": 3,
+      "speed": 4,
+      "type": "air"
+     },
+     "Gale Force": {
+      "attack": 0,
+      "count": 1,
+      "damage": 3,
+      "defense": -2,
+      "health": 0,
+      "rarity": 3,
+      "speed": 5,
+      "type": "air"
+     },
+     "Quick Jab": {
+      "attack": 2,
+      "count": 3,
+      "damage": 3,
+      "defense": -1,
+      "health": 0,
+      "rarity": 2,
+      "speed": 4,
+      "type": "normal"
+     },
+     "Vital Essence": {
+      "attack": 0,
+      "count": 2,
+      "damage": 0,
+      "defense": 4,
+      "health": 7,
+      "rarity": 3,
+      "speed": -2,
+      "type": "heal"
+     }
+    },
+    "status": {
+     "type": "Home",
+     "since": 1742308542822,
+     "until_time": 1742308542822
+    },
+    "bornAt": 1742308542822
+   },
+   "questsCompleted": 49,
+   "lootboxes": [],
+   "inventory": {
+    "fire_berry": 45,
+    "water_berry": 28,
+    "air_berry": 1,
+    "rock_berry": 5,
+    "rune": 25
+   },
+   "offerings": 36,
+   "joinedAt": 1742308542822
+  },
+  {
+   "address": "ScEtph9-vfY7lgqlUWwUwOmm99ySeZGQhOX0MFAyFEs",
+   "unlocked": true,
+   "seeded": true,
+   "wins": 0,
+   "losses": 0,
+   "faction": "Inferno Blades",
+   "monster": {
+    "name": "FireFox",
+    "image": "lnYr9oTtkRHiheQFwH4ns50mrQE6AQR-8Bvl4VfXb0o",
+    "sprite": "wUo47CacsMRFFizJqUhSj75Rczg3f_MvHs4ytfPtCjQ",
+    "faction": "Inferno Blades",
+    "elementType": "fire",
+    "berryItem": "fire_berry",
+    "attack": 15,
+    "defense": 17,
+    "speed": 8,
+    "health": 10,
+    "energy": 65,
+    "happiness": 50,
+    "level": 4,
+    "exp": 2,
+    "totalTimesFed": 82,
+    "totalTimesPlay": 21,
+    "totalTimesQuest": 13,
+    "moves": {
+     "Flame Shield": {
+      "attack": -1,
+      "count": 2,
+      "damage": 2,
+      "defense": 4,
+      "health": 2,
+      "rarity": 3,
+      "speed": 0,
+      "type": "fire"
+     },
+     "Iron Skin": {
+      "attack": -1,
+      "count": 2,
+      "damage": 0,
+      "defense": 5,
+      "health": 2,
+      "rarity": 2,
+      "speed": 0,
+      "type": "boost"
+     },
+     "Life Surge": {
+      "attack": 1,
+      "count": 1,
+      "damage": 0,
+      "defense": 0,
+      "health": 8,
+      "rarity": 2,
+      "speed": 0,
+      "type": "heal"
+     },
+     "Quick Jab": {
+      "attack": 2,
+      "count": 3,
+      "damage": 3,
+      "defense": -1,
+      "health": 0,
+      "rarity": 2,
+      "speed": 4,
+      "type": "normal"
+     }
+    },
+    "status": {
+     "type": "Home",
+     "since": 1764951528352,
+     "until_time": 1764951528352
+    },
+    "bornAt": 1764951528352
+   },
+   "questsCompleted": 13,
+   "lootboxes": [],
+   "inventory": {
+    "fire_berry": 73,
+    "water_berry": 100,
+    "air_berry": 146,
+    "rock_berry": 100,
+    "rune": 25
+   },
+   "offerings": 79,
+   "joinedAt": 1764951528352
+  },
+  {
+   "address": "SiIO6u2gow2AXXNNe9ZltI2AnOF75ywKW8GtVzvr3V0",
+   "unlocked": true,
+   "seeded": true,
+   "wins": 0,
+   "losses": 0,
+   "faction": "Inferno Blades",
+   "monster": {
+    "name": "FireFox",
+    "image": "lnYr9oTtkRHiheQFwH4ns50mrQE6AQR-8Bvl4VfXb0o",
+    "sprite": "wUo47CacsMRFFizJqUhSj75Rczg3f_MvHs4ytfPtCjQ",
+    "faction": "Inferno Blades",
+    "elementType": "fire",
+    "berryItem": "fire_berry",
+    "attack": 2,
+    "defense": 4,
+    "speed": 3,
+    "health": 1,
+    "energy": 50,
+    "happiness": 50,
+    "level": 0,
+    "exp": 0,
+    "totalTimesFed": 1,
+    "totalTimesPlay": 0,
+    "totalTimesQuest": 0,
+    "moves": {
+     "Guard Break": {
+      "attack": 2,
+      "count": 2,
+      "damage": 4,
+      "defense": -2,
+      "health": 1,
+      "rarity": 3,
+      "speed": -1,
+      "type": "normal"
+     },
+     "Heal": {
+      "attack": -1,
+      "count": 2,
+      "damage": 0,
+      "defense": 0,
+      "health": 6,
+      "rarity": 1,
+      "speed": 0,
+      "type": "heal"
+     },
+     "Iron Skin": {
+      "attack": -1,
+      "count": 2,
+      "damage": 0,
+      "defense": 5,
+      "health": 2,
+      "rarity": 2,
+      "speed": 0,
+      "type": "boost"
+     },
+     "Scorching Ash": {
+      "attack": 1,
+      "count": 2,
+      "damage": 3,
+      "defense": -2,
+      "health": 1,
+      "rarity": 3,
+      "speed": 1,
+      "type": "fire"
+     }
+    },
+    "status": {
+     "type": "Home",
+     "since": 1739133050710,
+     "until_time": 1739133050710
+    },
+    "bornAt": 1739133050710
+   },
+   "questsCompleted": 0,
+   "lootboxes": [],
+   "inventory": {
+    "fire_berry": 5,
+    "rune": 25
+   },
+   "offerings": 4,
+   "joinedAt": 1739133050710
+  },
+  {
+   "address": "Tb5xrQGyvNZd87nC2h0E0sEYN9iJX_pZJUtsFm4EN8w",
+   "unlocked": true,
+   "seeded": true,
+   "wins": 0,
+   "losses": 0,
+   "faction": "Inferno Blades",
+   "lootboxes": [],
+   "inventory": {
+    "rune": 25
+   },
+   "offerings": 5,
+   "joinedAt": 1770924620996
+  },
+  {
+   "address": "Tj9-KlNBnHc3bJ0qokGFguvHzt_gK2I3Qx2jGbxGqtA",
+   "unlocked": true,
+   "seeded": true,
+   "wins": 0,
+   "losses": 0,
+   "lootboxes": [],
+   "inventory": {
+    "rune": 25
+   },
+   "joinedAt": 1770924620996
+  },
+  {
+   "address": "U9i_nNyJMb_K_GbC_2YssrihKggCRWS4lVEPyLiHNws",
+   "unlocked": true,
+   "seeded": true,
+   "wins": 0,
+   "losses": 0,
+   "faction": "Inferno Blades",
+   "monster": {
+    "name": "FireFox",
+    "image": "lnYr9oTtkRHiheQFwH4ns50mrQE6AQR-8Bvl4VfXb0o",
+    "sprite": "wUo47CacsMRFFizJqUhSj75Rczg3f_MvHs4ytfPtCjQ",
+    "faction": "Inferno Blades",
+    "elementType": "fire",
+    "berryItem": "fire_berry",
+    "attack": 42,
+    "defense": 14,
+    "speed": 5,
+    "health": 29,
+    "energy": 35,
+    "happiness": 50,
+    "level": 8,
+    "exp": 28,
+    "totalTimesFed": 410,
+    "totalTimesPlay": 117,
+    "totalTimesQuest": 115,
+    "moves": {
+     "Flame Shield": {
+      "attack": -1,
+      "count": 2,
+      "damage": 2,
+      "defense": 4,
+      "health": 2,
+      "rarity": 3,
+      "speed": 0,
+      "type": "fire"
+     },
+     "Momentum Shift": {
+      "attack": 0,
+      "count": 1,
+      "damage": 0,
+      "defense": -3,
+      "health": 3,
+      "rarity": 3,
+      "speed": 5,
+      "type": "normal"
+     },
+     "Power Up": {
+      "attack": 5,
+      "count": 2,
+      "damage": 0,
+      "defense": -2,
+      "health": 0,
+      "rarity": 1,
+      "speed": 2,
+      "type": "boost"
+     },
+     "Vital Essence": {
+      "attack": 0,
+      "count": 2,
+      "damage": 0,
+      "defense": 4,
+      "health": 7,
+      "rarity": 3,
+      "speed": -2,
+      "type": "heal"
+     }
+    },
+    "status": {
+     "type": "Home",
+     "since": 1760522860361,
+     "until_time": 1760522860361
+    },
+    "bornAt": 1760522860361
+   },
+   "questsCompleted": 115,
+   "lootboxes": [],
+   "inventory": {
+    "fire_berry": 73,
+    "water_berry": 467,
+    "air_berry": 457,
+    "rock_berry": 487,
+    "rune": 25
+   },
+   "offerings": 114,
+   "joinedAt": 1760522860361
+  },
+  {
+   "address": "UI0mQ-TBKw_qwKmEN8ktiN8Snohsv0Kqfh5qLmLyXmQ",
+   "unlocked": true,
+   "seeded": true,
+   "wins": 0,
+   "losses": 0,
+   "faction": "Inferno Blades",
+   "monster": {
+    "name": "FireFox",
+    "image": "lnYr9oTtkRHiheQFwH4ns50mrQE6AQR-8Bvl4VfXb0o",
+    "sprite": "wUo47CacsMRFFizJqUhSj75Rczg3f_MvHs4ytfPtCjQ",
+    "faction": "Inferno Blades",
+    "elementType": "fire",
+    "berryItem": "fire_berry",
+    "attack": 2,
+    "defense": 7,
+    "speed": 6,
+    "health": 5,
+    "energy": 0,
+    "happiness": 0,
+    "level": 1,
+    "exp": 0,
+    "totalTimesFed": 0,
+    "totalTimesPlay": 0,
+    "totalTimesQuest": 1,
+    "moves": {
+     "Campfire": {
+      "attack": 2,
+      "count": 3,
+      "damage": 0,
+      "defense": 3,
+      "health": 3,
+      "rarity": 2,
+      "speed": -1,
+      "type": "fire"
+     },
+     "Healing Winds": {
+      "attack": 1,
+      "count": 1,
+      "damage": 0,
+      "defense": 0,
+      "health": 4,
+      "rarity": 3,
+      "speed": 3,
+      "type": "heal"
+     },
+     "Iron Skin": {
+      "attack": -1,
+      "count": 2,
+      "damage": 0,
+      "defense": 5,
+      "health": 2,
+      "rarity": 2,
+      "speed": 0,
+      "type": "boost"
+     },
+     "Inferno": {
+      "attack": 3,
+      "count": 1,
+      "damage": 6,
+      "defense": -2,
+      "health": 0,
+      "rarity": 2,
+      "speed": -1,
+      "type": "fire"
+     }
+    },
+    "status": {
+     "type": "Home",
+     "since": 1762958385764,
+     "until_time": 1762958385764
+    },
+    "bornAt": 1762958385764
+   },
+   "questsCompleted": 1,
+   "lootboxes": [],
+   "inventory": {
+    "fire_berry": 107,
+    "water_berry": 124,
+    "rock_berry": 19,
+    "rune": 25
+   },
+   "offerings": 28,
+   "joinedAt": 1762958385764
+  },
+  {
+   "address": "U_s6T6C12ojAvrzF-P-tHR5NxGtu3I6bPxe0HFOe-HY",
+   "unlocked": true,
+   "seeded": true,
+   "wins": 0,
+   "losses": 0,
+   "lootboxes": [],
+   "inventory": {
+    "rune": 25
+   },
+   "joinedAt": 1770924620996
+  },
+  {
+   "address": "V4XAxkILMSopedTbzS9aG7PUBESljte11vebh45Ccyo",
+   "unlocked": true,
+   "seeded": true,
+   "wins": 0,
+   "losses": 0,
+   "faction": "Inferno Blades",
+   "monster": {
+    "name": "FireFox",
+    "image": "lnYr9oTtkRHiheQFwH4ns50mrQE6AQR-8Bvl4VfXb0o",
+    "sprite": "wUo47CacsMRFFizJqUhSj75Rczg3f_MvHs4ytfPtCjQ",
+    "faction": "Inferno Blades",
+    "elementType": "fire",
+    "berryItem": "fire_berry",
+    "attack": 42,
+    "defense": 13,
+    "speed": 1,
+    "health": 14,
+    "energy": 65,
+    "happiness": 75,
+    "level": 6,
+    "exp": 101,
+    "totalTimesFed": 114,
+    "totalTimesPlay": 56,
+    "totalTimesQuest": 23,
+    "moves": {
+     "Life Surge": {
+      "attack": 1,
+      "count": 1,
+      "damage": 0,
+      "defense": 0,
+      "health": 8,
+      "rarity": 2,
+      "speed": 0,
+      "type": "heal"
+     },
+     "Momentum Shift": {
+      "attack": 0,
+      "count": 1,
+      "damage": 0,
+      "defense": -3,
+      "health": 3,
+      "rarity": 3,
+      "speed": 5,
+      "type": "normal"
+     },
+     "Phoenix Burst": {
+      "attack": 0,
+      "count": 1,
+      "damage": 4,
+      "defense": 0,
+      "health": -2,
+      "rarity": 3,
+      "speed": 2,
+      "type": "fire"
+     },
+     "Power Up": {
+      "attack": 5,
+      "count": 2,
+      "damage": 0,
+      "defense": -2,
+      "health": 0,
+      "rarity": 1,
+      "speed": 2,
+      "type": "boost"
+     }
+    },
+    "status": {
+     "type": "Home",
+     "since": 1756830252187,
+     "until_time": 1756830252187
+    },
+    "bornAt": 1756830252187
+   },
+   "questsCompleted": 23,
+   "lootboxes": [
+    3,
+    3,
+    3,
+    3,
+    3,
+    4,
+    4,
+    4,
+    4,
+    4,
+    4,
+    4,
+    4,
+    5,
+    5,
+    5,
+    5,
+    5,
+    5,
+    5,
+    2,
+    2,
+    2,
+    2,
+    2,
+    3,
+    3,
+    3,
+    3,
+    3,
+    3,
+    3,
+    3,
+    3,
+    3,
+    4,
+    4,
+    4,
+    4,
+    4,
+    4,
+    4,
+    4,
+    4,
+    4,
+    5,
+    5,
+    5,
+    5,
+    5,
+    5,
+    5,
+    5,
+    5,
+    5,
+    1
+   ],
+   "inventory": {
+    "fire_berry": 527,
+    "water_berry": 629,
+    "air_berry": 651,
+    "rock_berry": 698,
+    "rune": 25
+   },
+   "offerings": 71,
+   "joinedAt": 1756830252187
+  },
+  {
+   "address": "Va9PVPy3MxAvQfPVWr0mc5X93uqkAwifoEf4IXODrVM",
+   "unlocked": true,
+   "seeded": true,
+   "wins": 0,
+   "losses": 0,
+   "lootboxes": [],
+   "inventory": {
+    "rune": 25
+   },
+   "joinedAt": 1770924620996
+  },
+  {
+   "address": "Vrw7RTsqc8uHsLxfSvn4UI6HyM7gypnkiHjcjG8Mhew",
+   "unlocked": true,
+   "seeded": true,
+   "wins": 0,
+   "losses": 0,
+   "lootboxes": [],
+   "inventory": {
+    "rune": 25
+   },
+   "joinedAt": 1770924620996
+  },
+  {
+   "address": "VvsIIcBODuMByebigUGC6Han_CUNR7VztgGCq76YmIQ",
+   "unlocked": true,
+   "seeded": true,
+   "wins": 0,
+   "losses": 0,
+   "faction": "Aqua Guardians",
+   "monster": {
+    "name": "WaterDoge",
+    "image": "w_-mPdemSXZ1G-Q6fMEu6wTDJYFnJM9XePjGf_ZChgo",
+    "sprite": "p90BYY1O3BS3VVzdZETr-hG6jkA3kwo8l0h3aQ2UFoc",
+    "faction": "Aqua Guardians",
+    "elementType": "water",
+    "berryItem": "water_berry",
+    "attack": 2,
+    "defense": 4,
+    "speed": 1,
+    "health": 3,
+    "energy": 50,
+    "happiness": 50,
+    "level": 0,
+    "exp": 0,
+    "totalTimesFed": 0,
+    "totalTimesPlay": 0,
+    "totalTimesQuest": 0,
+    "moves": {
+     "Heal": {
+      "attack": -1,
+      "count": 2,
+      "damage": 0,
+      "defense": 0,
+      "health": 6,
+      "rarity": 1,
+      "speed": 0,
+      "type": "heal"
+     },
+     "Swift Wind": {
+      "attack": 2,
+      "count": 2,
+      "damage": 0,
+      "defense": -1,
+      "health": -1,
+      "rarity": 2,
+      "speed": 5,
+      "type": "boost"
+     },
+     "Tidal Wave": {
+      "attack": 2,
+      "count": 2,
+      "damage": 4,
+      "defense": -1,
+      "health": 0,
+      "rarity": 1,
+      "speed": 1,
+      "type": "water"
+     },
+     "Whirlpool": {
+      "attack": 0,
+      "count": 3,
+      "damage": 2,
+      "defense": 2,
+      "health": -2,
+      "rarity": 2,
+      "speed": 3,
+      "type": "water"
+     }
+    },
+    "status": {
+     "type": "Home",
+     "since": 1755642128223,
+     "until_time": 1755642128223
+    },
+    "bornAt": 1755642128223
+   },
+   "questsCompleted": 0,
+   "lootboxes": [
+    1,
+    1,
+    1,
+    1,
+    1,
+    1,
+    1,
+    1,
+    1
+   ],
+   "inventory": {
+    "rune": 25
+   },
+   "offerings": 2,
+   "joinedAt": 1755642128223
+  },
+  {
+   "address": "WWRshZYp-kQqbfTWsE3JyPDWJ4tX58hRZ2NOYEYlpok",
+   "unlocked": true,
+   "seeded": true,
+   "wins": 0,
+   "losses": 0,
+   "faction": "Sky Nomads",
+   "monster": {
+    "name": "Airbud",
+    "image": "XD4tSBeekM1ETZMflAANDfkW6pVWaQIXgSdSiwfwVqw",
+    "sprite": "0_gQ7rNpxD8S4wZBE_DZs3adWfZMsBIuo8fwvH3SwL0",
+    "faction": "Sky Nomads",
+    "elementType": "air",
+    "berryItem": "air_berry",
+    "attack": 36,
+    "defense": 20,
+    "speed": 22,
+    "health": 22,
+    "energy": 5,
+    "happiness": 50,
+    "level": 9,
+    "exp": 42,
+    "totalTimesFed": 629,
+    "totalTimesPlay": 186,
+    "totalTimesQuest": 171,
+    "moves": {
+     "Body Slam": {
+      "attack": 3,
+      "count": 2,
+      "damage": 5,
+      "defense": 1,
+      "health": 0,
+      "rarity": 1,
+      "speed": 0,
+      "type": "normal"
+     },
+     "Storm Cloud": {
+      "attack": 2,
+      "count": 1,
+      "damage": 5,
+      "defense": -1,
+      "health": 0,
+      "rarity": 2,
+      "speed": 2,
+      "type": "air"
+     },
+     "Tornado": {
+      "attack": 1,
+      "count": 2,
+      "damage": 4,
+      "defense": -1,
+      "health": 0,
+      "rarity": 1,
+      "speed": 4,
+      "type": "air"
+     },
+     "Warrior's Resolve": {
+      "attack": 3,
+      "count": 2,
+      "damage": 0,
+      "defense": 0,
+      "health": -2,
+      "rarity": 3,
+      "speed": 2,
+      "type": "boost"
+     }
+    },
+    "status": {
+     "type": "Home",
+     "since": 1741641690623,
+     "until_time": 1741641690623
+    },
+    "bornAt": 1741641690623
+   },
+   "questsCompleted": 171,
+   "lootboxes": [],
+   "inventory": {
+    "fire_berry": 49,
+    "water_berry": 45,
+    "rock_berry": 29,
+    "rune": 25
+   },
+   "offerings": 54,
+   "joinedAt": 1741641690623
+  },
+  {
+   "address": "WXkrmgVl4TxARXf-DyEcVWLnvZRToGXda4SGHlhvu2I",
+   "unlocked": true,
+   "seeded": true,
+   "wins": 0,
+   "losses": 0,
+   "lootboxes": [],
+   "inventory": {
+    "rune": 25
+   },
+   "joinedAt": 1770924620996
+  },
+  {
+   "address": "WvGQmZYSYU77gv8qFPZIQsPnzkmsjaRoQ8S1x8fTh4M",
+   "unlocked": true,
+   "seeded": true,
+   "wins": 0,
+   "losses": 0,
+   "lootboxes": [],
+   "inventory": {
+    "rune": 25
+   },
+   "joinedAt": 1770924620996
+  },
+  {
+   "address": "XC6zWTdCbqw61EFDuCiOnb-vktZiVhzsgbazuW-laxA",
+   "unlocked": true,
+   "seeded": true,
+   "wins": 0,
+   "losses": 0,
+   "lootboxes": [],
+   "inventory": {
+    "air_berry": 29,
+    "rune": 25
+   },
+   "joinedAt": 1770924620996
+  },
+  {
+   "address": "XezqlWDceGXTTcdtS7B0J__UqDWhYKXo1xVftEywuSE",
+   "unlocked": true,
+   "seeded": true,
+   "wins": 0,
+   "losses": 0,
+   "faction": "Aqua Guardians",
+   "monster": {
+    "name": "WaterDoge",
+    "image": "w_-mPdemSXZ1G-Q6fMEu6wTDJYFnJM9XePjGf_ZChgo",
+    "sprite": "p90BYY1O3BS3VVzdZETr-hG6jkA3kwo8l0h3aQ2UFoc",
+    "faction": "Aqua Guardians",
+    "elementType": "water",
+    "berryItem": "water_berry",
+    "attack": 22,
+    "defense": 9,
+    "speed": 17,
+    "health": 12,
+    "energy": 25,
+    "happiness": 0,
+    "level": 5,
+    "exp": 12,
+    "totalTimesFed": 112,
+    "totalTimesPlay": 31,
+    "totalTimesQuest": 31,
+    "moves": {
+     "Body Slam": {
+      "attack": 3,
+      "count": 2,
+      "damage": 5,
+      "defense": 1,
+      "health": 0,
+      "rarity": 1,
+      "speed": 0,
+      "type": "normal"
+     },
+     "Power Up": {
+      "attack": 5,
+      "count": 2,
+      "damage": 0,
+      "defense": -2,
+      "health": 0,
+      "rarity": 1,
+      "speed": 2,
+      "type": "boost"
+     },
+     "Recovery": {
+      "attack": 0,
+      "count": 2,
+      "damage": 0,
+      "defense": 0,
+      "health": 5,
+      "rarity": 3,
+      "speed": 2,
+      "type": "heal"
+     },
+     "Whirlpool": {
+      "attack": 0,
+      "count": 3,
+      "damage": 2,
+      "defense": 2,
+      "health": -2,
+      "rarity": 2,
+      "speed": 3,
+      "type": "water"
+     }
+    },
+    "status": {
+     "type": "Home",
+     "since": 1757336206058,
+     "until_time": 1757336206058
+    },
+    "bornAt": 1757336206058
+   },
+   "questsCompleted": 31,
+   "lootboxes": [
+    2,
+    2,
+    2
+   ],
+   "inventory": {
+    "fire_berry": 96,
+    "water_berry": 39,
+    "air_berry": 80,
+    "rock_berry": 83,
+    "rune": 25
+   },
+   "offerings": 100,
+   "joinedAt": 1757336206058
+  },
+  {
+   "address": "XwO2tGSO_NLvTaUHycLAeTb-wbO0s1T6eKsLkxGeZkA",
+   "unlocked": true,
+   "seeded": true,
+   "wins": 0,
+   "losses": 0,
+   "faction": "Inferno Blades",
+   "monster": {
+    "name": "FireFox",
+    "image": "lnYr9oTtkRHiheQFwH4ns50mrQE6AQR-8Bvl4VfXb0o",
+    "sprite": "wUo47CacsMRFFizJqUhSj75Rczg3f_MvHs4ytfPtCjQ",
+    "faction": "Inferno Blades",
+    "elementType": "fire",
+    "berryItem": "fire_berry",
+    "attack": 1,
+    "defense": 2,
+    "speed": 4,
+    "health": 3,
+    "energy": 50,
+    "happiness": 50,
+    "level": 0,
+    "exp": 0,
+    "totalTimesFed": 0,
+    "totalTimesPlay": 0,
+    "totalTimesQuest": 0,
+    "moves": {
+     "Battle Cry": {
+      "attack": 4,
+      "count": 2,
+      "damage": 0,
+      "defense": -2,
+      "health": -1,
+      "rarity": 3,
+      "speed": 3,
+      "type": "boost"
+     },
+     "Flame Shield": {
+      "attack": -1,
+      "count": 2,
+      "damage": 2,
+      "defense": 4,
+      "health": 2,
+      "rarity": 3,
+      "speed": 0,
+      "type": "fire"
+     },
+     "Heavy Strike": {
+      "attack": 4,
+      "count": 1,
+      "damage": 6,
+      "defense": 2,
+      "health": 0,
+      "rarity": 2,
+      "speed": -2,
+      "type": "normal"
+     },
+     "Scorching Ash": {
+      "attack": 1,
+      "count": 2,
+      "damage": 3,
+      "defense": -2,
+      "health": 1,
+      "rarity": 3,
+      "speed": 1,
+      "type": "fire"
+     }
+    },
+    "status": {
+     "type": "Home",
+     "since": 1740742408311,
+     "until_time": 1740742408311
+    },
+    "bornAt": 1740742408311
+   },
+   "questsCompleted": 0,
+   "lootboxes": [],
+   "inventory": {
+    "rune": 25
+   },
+   "offerings": 2,
+   "joinedAt": 1740742408311
+  },
+  {
+   "address": "Y6OiqyTH-KogzEyG3eO44UXvrifjmYbbs-14mJQLqto",
+   "unlocked": true,
+   "seeded": true,
+   "wins": 0,
+   "losses": 0,
+   "faction": "Sky Nomads",
+   "monster": {
+    "name": "Airbud",
+    "image": "XD4tSBeekM1ETZMflAANDfkW6pVWaQIXgSdSiwfwVqw",
+    "sprite": "0_gQ7rNpxD8S4wZBE_DZs3adWfZMsBIuo8fwvH3SwL0",
+    "faction": "Sky Nomads",
+    "elementType": "air",
+    "berryItem": "air_berry",
+    "attack": 19,
+    "defense": 6,
+    "speed": 12,
+    "health": 3,
+    "energy": 15,
+    "happiness": 50,
+    "level": 3,
+    "exp": 0,
+    "totalTimesFed": 15,
+    "totalTimesPlay": 6,
+    "totalTimesQuest": 4,
+    "moves": {
+     "Body Slam": {
+      "attack": 3,
+      "count": 2,
+      "damage": 5,
+      "defense": 1,
+      "health": 0,
+      "rarity": 1,
+      "speed": 0,
+      "type": "normal"
+     },
+     "Gale Force": {
+      "attack": 0,
+      "count": 1,
+      "damage": 3,
+      "defense": -2,
+      "health": 0,
+      "rarity": 3,
+      "speed": 5,
+      "type": "air"
+     },
+     "Life Surge": {
+      "attack": 1,
+      "count": 1,
+      "damage": 0,
+      "defense": 0,
+      "health": 8,
+      "rarity": 2,
+      "speed": 0,
+      "type": "heal"
+     },
+     "Power Up": {
+      "attack": 5,
+      "count": 2,
+      "damage": 0,
+      "defense": -2,
+      "health": 0,
+      "rarity": 1,
+      "speed": 2,
+      "type": "boost"
+     }
+    },
+    "status": {
+     "type": "Home",
+     "since": 1741585697173,
+     "until_time": 1741585697173
+    },
+    "bornAt": 1741585697173
+   },
+   "questsCompleted": 4,
+   "lootboxes": [
+    1
+   ],
+   "inventory": {
+    "fire_berry": 129,
+    "water_berry": 19,
+    "rock_berry": 4,
+    "rune": 25
+   },
+   "offerings": 4,
+   "joinedAt": 1741585697173
+  },
+  {
+   "address": "YMMU4U8YGp7T8bBwB97OYK5AXs_2LzaLaI4O-i69Fbc",
+   "unlocked": true,
+   "seeded": true,
+   "wins": 0,
+   "losses": 0,
+   "faction": "Inferno Blades",
+   "lootboxes": [],
+   "inventory": {
+    "rune": 25
+   },
+   "joinedAt": 1770924620996
+  },
+  {
+   "address": "Ya-QT0DI-LyYQCwyAryJiHnTO99iKR5Tw7SxJ9RtNkI",
+   "unlocked": true,
+   "seeded": true,
+   "wins": 0,
+   "losses": 0,
+   "faction": "Sky Nomads",
+   "monster": {
+    "name": "Airbud",
+    "image": "XD4tSBeekM1ETZMflAANDfkW6pVWaQIXgSdSiwfwVqw",
+    "sprite": "0_gQ7rNpxD8S4wZBE_DZs3adWfZMsBIuo8fwvH3SwL0",
+    "faction": "Sky Nomads",
+    "elementType": "air",
+    "berryItem": "air_berry",
+    "attack": 1,
+    "defense": 4,
+    "speed": 3,
+    "health": 2,
+    "energy": 50,
+    "happiness": 50,
+    "level": 0,
+    "exp": 0,
+    "totalTimesFed": 0,
+    "totalTimesPlay": 0,
+    "totalTimesQuest": 0,
+    "moves": {
+     "Heal": {
+      "attack": -1,
+      "count": 2,
+      "damage": 0,
+      "defense": 0,
+      "health": 6,
+      "rarity": 1,
+      "speed": 0,
+      "type": "heal"
+     },
+     "Momentum Shift": {
+      "attack": 0,
+      "count": 1,
+      "damage": 0,
+      "defense": -3,
+      "health": 3,
+      "rarity": 3,
+      "speed": 5,
+      "type": "normal"
+     },
+     "Tornado": {
+      "attack": 1,
+      "count": 2,
+      "damage": 4,
+      "defense": -1,
+      "health": 0,
+      "rarity": 1,
+      "speed": 4,
+      "type": "air"
+     },
+     "Wind Slash": {
+      "attack": 2,
+      "count": 3,
+      "damage": 2,
+      "defense": -1,
+      "health": 0,
+      "rarity": 2,
+      "speed": 3,
+      "type": "air"
+     }
+    },
+    "status": {
+     "type": "Home",
+     "since": 1737970676807,
+     "until_time": 1737970676807
+    },
+    "bornAt": 1737970676807
+   },
+   "questsCompleted": 0,
+   "lootboxes": [],
+   "inventory": {
+    "rune": 25
+   },
+   "offerings": 32,
+   "joinedAt": 1737970676807
+  },
+  {
+   "address": "YlprxxUDtRCP2Ewfn5qEOQ0j1w_qLc9R6V6TnZ9HNSU",
+   "unlocked": true,
+   "seeded": true,
+   "wins": 0,
+   "losses": 0,
+   "faction": "Sky Nomads",
+   "monster": {
+    "name": "Airbud",
+    "image": "XD4tSBeekM1ETZMflAANDfkW6pVWaQIXgSdSiwfwVqw",
+    "sprite": "0_gQ7rNpxD8S4wZBE_DZs3adWfZMsBIuo8fwvH3SwL0",
+    "faction": "Sky Nomads",
+    "elementType": "air",
+    "berryItem": "air_berry",
+    "attack": 5,
+    "defense": 5,
+    "speed": 5,
+    "health": 5,
+    "energy": 0,
+    "happiness": 0,
+    "level": 1,
+    "exp": 0,
+    "totalTimesFed": 0,
+    "totalTimesPlay": 0,
+    "totalTimesQuest": 1,
+    "moves": {
+     "Breeze": {
+      "attack": -1,
+      "count": 2,
+      "damage": 0,
+      "defense": 2,
+      "health": 2,
+      "rarity": 3,
+      "speed": 4,
+      "type": "air"
+     },
+     "Gale Force": {
+      "attack": 0,
+      "count": 1,
+      "damage": 3,
+      "defense": -2,
+      "health": 0,
+      "rarity": 3,
+      "speed": 5,
+      "type": "air"
+     },
+     "Heavy Strike": {
+      "attack": 4,
+      "count": 1,
+      "damage": 6,
+      "defense": 2,
+      "health": 0,
+      "rarity": 2,
+      "speed": -2,
+      "type": "normal"
+     },
+     "Recovery": {
+      "attack": 0,
+      "count": 2,
+      "damage": 0,
+      "defense": 0,
+      "health": 5,
+      "rarity": 3,
+      "speed": 2,
+      "type": "heal"
+     }
+    },
+    "status": {
+     "type": "Home",
+     "since": 1740496295606,
+     "until_time": 1740496295606
+    },
+    "bornAt": 1740496295606
+   },
+   "questsCompleted": 1,
+   "lootboxes": [],
+   "inventory": {
+    "rune": 25
+   },
+   "offerings": 14,
+   "joinedAt": 1740496295606
+  },
+  {
+   "address": "ZEJr2SQX0HRCagAZFMR1wSAFiFLsjIRFDqy0LTZIpBM",
+   "unlocked": true,
+   "seeded": true,
+   "wins": 0,
+   "losses": 0,
+   "faction": "Inferno Blades",
+   "monster": {
+    "name": "FireFox",
+    "image": "lnYr9oTtkRHiheQFwH4ns50mrQE6AQR-8Bvl4VfXb0o",
+    "sprite": "wUo47CacsMRFFizJqUhSj75Rczg3f_MvHs4ytfPtCjQ",
+    "faction": "Inferno Blades",
+    "elementType": "fire",
+    "berryItem": "fire_berry",
+    "attack": 21,
+    "defense": 14,
+    "speed": 18,
+    "health": 17,
+    "energy": 100,
+    "happiness": 0,
+    "level": 6,
+    "exp": 4,
+    "totalTimesFed": 133,
+    "totalTimesPlay": 35,
+    "totalTimesQuest": 36,
+    "moves": {
+     "Battle Cry": {
+      "attack": 4,
+      "count": 2,
+      "damage": 0,
+      "defense": -2,
+      "health": -1,
+      "rarity": 3,
+      "speed": 3,
+      "type": "boost"
+     },
+     "Campfire": {
+      "attack": 2,
+      "count": 3,
+      "damage": 0,
+      "defense": 3,
+      "health": 3,
+      "rarity": 2,
+      "speed": -1,
+      "type": "fire"
+     },
+     "Momentum Shift": {
+      "attack": 0,
+      "count": 1,
+      "damage": 0,
+      "defense": -3,
+      "health": 3,
+      "rarity": 3,
+      "speed": 5,
+      "type": "normal"
+     },
+     "Flame Shield": {
+      "attack": -1,
+      "count": 2,
+      "damage": 2,
+      "defense": 4,
+      "health": 2,
+      "rarity": 3,
+      "speed": 0,
+      "type": "fire"
+     }
+    },
+    "status": {
+     "type": "Home",
+     "since": 1739286015221,
+     "until_time": 1739286015221
+    },
+    "bornAt": 1739286015221
+   },
+   "questsCompleted": 36,
+   "lootboxes": [],
+   "inventory": {
+    "fire_berry": 213,
+    "water_berry": 7,
+    "air_berry": 18,
+    "rock_berry": 4,
+    "rune": 25
+   },
+   "offerings": 5,
+   "joinedAt": 1739286015221
+  },
+  {
+   "address": "ZbbJIHw5aTw_tRk53Ky8bwKrQ3CJvKPv7PtEN1lTCAA",
+   "unlocked": true,
+   "seeded": true,
+   "wins": 0,
+   "losses": 0,
+   "faction": "Stone Titans",
+   "monster": {
+    "name": "Rockpup",
+    "image": "WhdcUkIGYZG4M5kq00TnUwaIt5OCGz3Q4u6_fZNktvQ",
+    "sprite": "Zt8LmHGVIziXhzjqBhEAWLuGetcDitFKbfaJROkyZks",
+    "faction": "Stone Titans",
+    "elementType": "rock",
+    "berryItem": "rock_berry",
+    "attack": 30,
+    "defense": 23,
+    "speed": 22,
+    "health": 25,
+    "energy": 75,
+    "happiness": 0,
+    "level": 9,
+    "exp": 77,
+    "totalTimesFed": 821,
+    "totalTimesPlay": 229,
+    "totalTimesQuest": 219,
+    "moves": {
+     "Battle Cry": {
+      "attack": 4,
+      "count": 2,
+      "damage": 0,
+      "defense": -2,
+      "health": -1,
+      "rarity": 3,
+      "speed": 3,
+      "type": "boost"
+     },
+     "Guard Break": {
+      "attack": 2,
+      "count": 2,
+      "damage": 4,
+      "defense": -2,
+      "health": 1,
+      "rarity": 3,
+      "speed": -1,
+      "type": "normal"
+     },
+     "Stone Wall": {
+      "attack": -1,
+      "count": 3,
+      "damage": 0,
+      "defense": 6,
+      "health": 2,
+      "rarity": 2,
+      "speed": -2,
+      "type": "rock"
+     },
+     "Vital Essence": {
+      "attack": 0,
+      "count": 2,
+      "damage": 0,
+      "defense": 4,
+      "health": 7,
+      "rarity": 3,
+      "speed": -2,
+      "type": "heal"
+     }
+    },
+    "status": {
+     "type": "Home",
+     "since": 1764183236424,
+     "until_time": 1764183236424
+    },
+    "bornAt": 1764183236424
+   },
+   "questsCompleted": 219,
+   "lootboxes": [],
+   "inventory": {
+    "fire_berry": 137,
+    "water_berry": 184,
+    "air_berry": 243,
+    "rock_berry": 665,
+    "rune": 25
+   },
+   "offerings": 143,
+   "joinedAt": 1764183236424
+  },
+  {
+   "address": "Zwh1vYmwfbESP9-rXVXiNS8Ix0MEsUw5GSiObwkVEDE",
+   "unlocked": true,
+   "seeded": true,
+   "wins": 0,
+   "losses": 0,
+   "faction": "Sky Nomads",
+   "monster": {
+    "name": "Airbud",
+    "image": "XD4tSBeekM1ETZMflAANDfkW6pVWaQIXgSdSiwfwVqw",
+    "sprite": "0_gQ7rNpxD8S4wZBE_DZs3adWfZMsBIuo8fwvH3SwL0",
+    "faction": "Sky Nomads",
+    "elementType": "air",
+    "berryItem": "air_berry",
+    "attack": 8,
+    "defense": 9,
+    "speed": 18,
+    "health": 15,
+    "energy": 50,
+    "happiness": 0,
+    "level": 4,
+    "exp": 8,
+    "totalTimesFed": 68,
+    "totalTimesPlay": 18,
+    "totalTimesQuest": 19,
+    "moves": {
+     "Adrenaline Surge": {
+      "attack": 6,
+      "count": 1,
+      "damage": 0,
+      "defense": 0,
+      "health": -3,
+      "rarity": 3,
+      "speed": -1,
+      "type": "boost"
+     },
+     "Guard Break": {
+      "attack": 2,
+      "count": 2,
+      "damage": 4,
+      "defense": -2,
+      "health": 1,
+      "rarity": 3,
+      "speed": -1,
+      "type": "normal"
+     },
+     "Recovery": {
+      "attack": 0,
+      "count": 2,
+      "damage": 0,
+      "defense": 0,
+      "health": 5,
+      "rarity": 3,
+      "speed": 2,
+      "type": "heal"
+     },
+     "Wind Slash": {
+      "attack": 2,
+      "count": 3,
+      "damage": 2,
+      "defense": -1,
+      "health": 0,
+      "rarity": 2,
+      "speed": 3,
+      "type": "air"
+     }
+    },
+    "status": {
+     "type": "Home",
+     "since": 1741112579325,
+     "until_time": 1741112579325
+    },
+    "bornAt": 1741112579325
+   },
+   "questsCompleted": 19,
+   "lootboxes": [],
+   "inventory": {
+    "fire_berry": 18,
+    "air_berry": 47,
+    "rock_berry": 20,
+    "rune": 25
+   },
+   "offerings": 18,
+   "joinedAt": 1741112579325
+  },
+  {
+   "address": "_izWq_r55uJyHnWi-GZJUnU6BZBf3UHBnwWt26ReLzM",
+   "unlocked": true,
+   "seeded": true,
+   "wins": 0,
+   "losses": 0,
+   "lootboxes": [],
+   "inventory": {
+    "rune": 25
+   },
+   "joinedAt": 1770924620996
+  },
+  {
+   "address": "_qG9k0ZXzEkxseihL2uq02ZgQaqwtiKjcYiyyVA45uA",
+   "unlocked": true,
+   "seeded": true,
+   "wins": 0,
+   "losses": 0,
+   "lootboxes": [],
+   "inventory": {
+    "rune": 25
+   },
+   "joinedAt": 1770924620996
+  },
+  {
+   "address": "_riC-PcEMW7iywAkLNch5S0SrVru5YqBbqnHq2prMmQ",
+   "unlocked": true,
+   "seeded": true,
+   "wins": 0,
+   "losses": 0,
+   "faction": "Stone Titans",
+   "monster": {
+    "name": "Rockpup",
+    "image": "WhdcUkIGYZG4M5kq00TnUwaIt5OCGz3Q4u6_fZNktvQ",
+    "sprite": "Zt8LmHGVIziXhzjqBhEAWLuGetcDitFKbfaJROkyZks",
+    "faction": "Stone Titans",
+    "elementType": "rock",
+    "berryItem": "rock_berry",
+    "attack": 3,
+    "defense": 3,
+    "speed": 2,
+    "health": 2,
+    "energy": 50,
+    "happiness": 25,
+    "level": 0,
+    "exp": 2,
+    "totalTimesFed": 6,
+    "totalTimesPlay": 1,
+    "totalTimesQuest": 2,
+    "moves": {
+     "Boulder Crush": {
+      "attack": 3,
+      "count": 2,
+      "damage": 5,
+      "defense": 2,
+      "health": 0,
+      "rarity": 1,
+      "speed": -2,
+      "type": "rock"
+     },
+     "Momentum Shift": {
+      "attack": 0,
+      "count": 1,
+      "damage": 0,
+      "defense": -3,
+      "health": 3,
+      "rarity": 3,
+      "speed": 5,
+      "type": "normal"
+     },
+     "Regenerate": {
+      "attack": -2,
+      "count": 3,
+      "damage": 0,
+      "defense": 2,
+      "health": 5,
+      "rarity": 2,
+      "speed": 0,
+      "type": "heal"
+     },
+     "Stone Wall": {
+      "attack": -1,
+      "count": 3,
+      "damage": 0,
+      "defense": 6,
+      "health": 2,
+      "rarity": 2,
+      "speed": -2,
+      "type": "rock"
+     }
+    },
+    "status": {
+     "type": "Home",
+     "since": 1755177588640,
+     "until_time": 1755177588640
+    },
+    "bornAt": 1755177588640
+   },
+   "questsCompleted": 2,
+   "lootboxes": [
+    1,
+    2,
+    2
+   ],
+   "inventory": {
+    "fire_berry": 16,
+    "water_berry": 2,
+    "air_berry": 2,
+    "rock_berry": 7,
+    "rune": 25
+   },
+   "offerings": 4,
+   "joinedAt": 1755177588640
+  },
+  {
+   "address": "_s0OHX6K7XAA1lKuZkNp6rrm-wHpWY6da4swILL69a8",
+   "unlocked": true,
+   "seeded": true,
+   "wins": 0,
+   "losses": 0,
+   "faction": "Inferno Blades",
+   "monster": {
+    "name": "FireFox",
+    "image": "lnYr9oTtkRHiheQFwH4ns50mrQE6AQR-8Bvl4VfXb0o",
+    "sprite": "wUo47CacsMRFFizJqUhSj75Rczg3f_MvHs4ytfPtCjQ",
+    "faction": "Inferno Blades",
+    "elementType": "fire",
+    "berryItem": "fire_berry",
+    "attack": 30,
+    "defense": 13,
+    "speed": 20,
+    "health": 17,
+    "energy": 10,
+    "happiness": 25,
+    "level": 7,
+    "exp": 34,
+    "totalTimesFed": 302,
+    "totalTimesPlay": 88,
+    "totalTimesQuest": 86,
+    "moves": {
+     "Healing Winds": {
+      "attack": 1,
+      "count": 1,
+      "damage": 0,
+      "defense": 0,
+      "health": 4,
+      "rarity": 3,
+      "speed": 3,
+      "type": "heal"
+     },
+     "Phoenix Burst": {
+      "attack": 0,
+      "count": 1,
+      "damage": 4,
+      "defense": 0,
+      "health": -2,
+      "rarity": 3,
+      "speed": 2,
+      "type": "fire"
+     },
+     "Scorching Ash": {
+      "attack": 1,
+      "count": 2,
+      "damage": 3,
+      "defense": -2,
+      "health": 1,
+      "rarity": 3,
+      "speed": 1,
+      "type": "fire"
+     },
+     "Warrior's Resolve": {
+      "attack": 3,
+      "count": 2,
+      "damage": 0,
+      "defense": 0,
+      "health": -2,
+      "rarity": 3,
+      "speed": 2,
+      "type": "boost"
+     }
+    },
+    "status": {
+     "type": "Home",
+     "since": 1741215074512,
+     "until_time": 1741215074512
+    },
+    "bornAt": 1741215074512
+   },
+   "questsCompleted": 86,
+   "lootboxes": [],
+   "inventory": {
+    "fire_berry": 54,
+    "water_berry": 42,
+    "air_berry": 26,
+    "rock_berry": 21,
+    "rune": 25
+   },
+   "offerings": 26,
+   "joinedAt": 1741215074512
+  },
+  {
+   "address": "aeCoT9AtnlJJFMZKDH4RT3lk_K30Y_h5UHVAbfFLYR8",
+   "unlocked": true,
+   "seeded": true,
+   "wins": 0,
+   "losses": 0,
+   "lootboxes": [],
+   "inventory": {
+    "rune": 25
+   },
+   "joinedAt": 1770924620996
+  },
+  {
+   "address": "atkI1E32mchuz_nl9kgcDntECH0BOuHJ1FBgCvlcH5E",
+   "unlocked": true,
+   "seeded": true,
+   "wins": 0,
+   "losses": 0,
+   "faction": "Sky Nomads",
+   "monster": {
+    "name": "Airbud",
+    "image": "XD4tSBeekM1ETZMflAANDfkW6pVWaQIXgSdSiwfwVqw",
+    "sprite": "0_gQ7rNpxD8S4wZBE_DZs3adWfZMsBIuo8fwvH3SwL0",
+    "faction": "Sky Nomads",
+    "elementType": "air",
+    "berryItem": "air_berry",
+    "attack": 5,
+    "defense": 5,
+    "speed": 5,
+    "health": 5,
+    "energy": 0,
+    "happiness": 0,
+    "level": 1,
+    "exp": 1,
+    "totalTimesFed": 0,
+    "totalTimesPlay": 0,
+    "totalTimesQuest": 1,
+    "moves": {
+     "Adrenaline Surge": {
+      "attack": 6,
+      "count": 1,
+      "damage": 0,
+      "defense": 0,
+      "health": -3,
+      "rarity": 3,
+      "speed": -1,
+      "type": "boost"
+     },
+     "Breeze": {
+      "attack": -1,
+      "count": 2,
+      "damage": 0,
+      "defense": 2,
+      "health": 2,
+      "rarity": 3,
+      "speed": 4,
+      "type": "air"
+     },
+     "Frenzy Blows": {
+      "attack": 3,
+      "count": 2,
+      "damage": 2,
+      "defense": -1,
+      "health": -1,
+      "rarity": 3,
+      "speed": 2,
+      "type": "normal"
+     },
+     "Regenerate": {
+      "attack": -2,
+      "count": 3,
+      "damage": 0,
+      "defense": 2,
+      "health": 5,
+      "rarity": 2,
+      "speed": 0,
+      "type": "heal"
+     }
+    },
+    "status": {
+     "type": "Home",
+     "since": 1738855665058,
+     "until_time": 1738855665058
+    },
+    "bornAt": 1738855665058
+   },
+   "questsCompleted": 1,
+   "lootboxes": [],
+   "inventory": {
+    "rune": 25
+   },
+   "offerings": 1,
+   "joinedAt": 1738855665058
+  },
+  {
+   "address": "bC2rCZdlm_oA7M75H7_G4yyL1u92884CP_HVZBMos_8",
+   "unlocked": true,
+   "seeded": true,
+   "wins": 0,
+   "losses": 0,
+   "faction": "Inferno Blades",
+   "monster": {
+    "name": "FireFox",
+    "image": "lnYr9oTtkRHiheQFwH4ns50mrQE6AQR-8Bvl4VfXb0o",
+    "sprite": "wUo47CacsMRFFizJqUhSj75Rczg3f_MvHs4ytfPtCjQ",
+    "faction": "Inferno Blades",
+    "elementType": "fire",
+    "berryItem": "fire_berry",
+    "attack": 4,
+    "defense": 3,
+    "speed": 1,
+    "health": 2,
+    "energy": 50,
+    "happiness": 50,
+    "level": 0,
+    "exp": 0,
+    "totalTimesFed": 0,
+    "totalTimesPlay": 0,
+    "totalTimesQuest": 0,
+    "moves": {
+     "Adrenaline Surge": {
+      "attack": 6,
+      "count": 1,
+      "damage": 0,
+      "defense": 0,
+      "health": -3,
+      "rarity": 3,
+      "speed": -1,
+      "type": "boost"
+     },
+     "Guard Break": {
+      "attack": 2,
+      "count": 2,
+      "damage": 4,
+      "defense": -2,
+      "health": 1,
+      "rarity": 3,
+      "speed": -1,
+      "type": "normal"
+     },
+     "Healing Winds": {
+      "attack": 1,
+      "count": 1,
+      "damage": 0,
+      "defense": 0,
+      "health": 4,
+      "rarity": 3,
+      "speed": 3,
+      "type": "heal"
+     },
+     "Inferno": {
+      "attack": 3,
+      "count": 1,
+      "damage": 6,
+      "defense": -2,
+      "health": 0,
+      "rarity": 2,
+      "speed": -1,
+      "type": "fire"
+     }
+    },
+    "status": {
+     "type": "Home",
+     "since": 1740148956676,
+     "until_time": 1740148956676
+    },
+    "bornAt": 1740148956676
+   },
+   "questsCompleted": 0,
+   "lootboxes": [],
+   "inventory": {
+    "water_berry": 4,
+    "air_berry": 6,
+    "rock_berry": 4,
+    "rune": 25
+   },
+   "offerings": 1,
+   "joinedAt": 1740148956676
+  },
+  {
+   "address": "bMTcip2RHyssuP5jTkM3u-qUqWsJdaWfvk_BJqOTW5I",
+   "unlocked": true,
+   "seeded": true,
+   "wins": 0,
+   "losses": 0,
+   "lootboxes": [],
+   "inventory": {
+    "rune": 25
+   },
+   "joinedAt": 1770924620996
+  },
+  {
+   "address": "bNO3z9QeMHGr6KS1R-uJ100U4jHQjTeoePwbr7MAyMA",
+   "unlocked": true,
+   "seeded": true,
+   "wins": 0,
+   "losses": 0,
+   "lootboxes": [],
+   "inventory": {
+    "rune": 25
+   },
+   "joinedAt": 1770924620996
+  },
+  {
+   "address": "bTMpUcWbZ5veIo8vRFbLug3dFW0YIxJichZ_Epr5K5g",
+   "unlocked": true,
+   "seeded": true,
+   "wins": 0,
+   "losses": 0,
+   "faction": "Inferno Blades",
+   "monster": {
+    "name": "FireFox",
+    "image": "lnYr9oTtkRHiheQFwH4ns50mrQE6AQR-8Bvl4VfXb0o",
+    "sprite": "wUo47CacsMRFFizJqUhSj75Rczg3f_MvHs4ytfPtCjQ",
+    "faction": "Inferno Blades",
+    "elementType": "fire",
+    "berryItem": "fire_berry",
+    "attack": 6,
+    "defense": 9,
+    "speed": 2,
+    "health": 3,
+    "energy": 55,
+    "happiness": 25,
+    "level": 1,
+    "exp": 4,
+    "totalTimesFed": 17,
+    "totalTimesPlay": 4,
+    "totalTimesQuest": 5,
+    "moves": {
+     "Inferno": {
+      "attack": 3,
+      "count": 1,
+      "damage": 6,
+      "defense": -2,
+      "health": 0,
+      "rarity": 2,
+      "speed": -1,
+      "type": "fire"
+     },
+     "Momentum Shift": {
+      "attack": 0,
+      "count": 1,
+      "damage": 0,
+      "defense": -3,
+      "health": 3,
+      "rarity": 3,
+      "speed": 5,
+      "type": "normal"
+     },
+     "Regenerate": {
+      "attack": -2,
+      "count": 3,
+      "damage": 0,
+      "defense": 2,
+      "health": 5,
+      "rarity": 2,
+      "speed": 0,
+      "type": "heal"
+     },
+     "Swift Wind": {
+      "attack": 2,
+      "count": 2,
+      "damage": 0,
+      "defense": -1,
+      "health": -1,
+      "rarity": 2,
+      "speed": 5,
+      "type": "boost"
+     }
+    },
+    "status": {
+     "type": "Home",
+     "since": 1755177533285,
+     "until_time": 1755177533285
+    },
+    "bornAt": 1755177533285
+   },
+   "questsCompleted": 5,
+   "lootboxes": [
+    2,
+    2,
+    2
+   ],
+   "inventory": {
+    "fire_berry": 34,
+    "water_berry": 8,
+    "air_berry": 2,
+    "rock_berry": 2,
+    "rune": 25
+   },
+   "offerings": 21,
+   "joinedAt": 1755177533285
+  },
+  {
+   "address": "cDa2e30IqCsM9nzFtwKcj1pMq0nIqKWWsAQlA6JSSf0",
+   "unlocked": true,
+   "seeded": true,
+   "wins": 0,
+   "losses": 0,
+   "lootboxes": [],
+   "inventory": {
+    "rune": 25
+   },
+   "joinedAt": 1770924620996
+  },
+  {
+   "address": "cF0H0SKdnaDTqWKY9iJKBktTpdEWgb3GnlndE7ABv0Q",
+   "unlocked": true,
+   "seeded": true,
+   "wins": 0,
+   "losses": 0,
+   "lootboxes": [],
+   "inventory": {
+    "rune": 25
+   },
+   "joinedAt": 1770924620996
+  },
+  {
+   "address": "dBRMGwLFzqr7V6CSNU6ZwcrDfDI20Y1vdZfpBQINbNU",
+   "unlocked": true,
+   "seeded": true,
+   "wins": 0,
+   "losses": 0,
+   "lootboxes": [],
+   "inventory": {
+    "water_berry": 14,
+    "air_berry": 18,
+    "rock_berry": 41,
+    "rune": 25
+   },
+   "joinedAt": 1770924620996
+  },
+  {
+   "address": "dCuh9nEInM0vrdGCjVC2bFngVYL-vqqakciXSQotR34",
+   "unlocked": true,
+   "seeded": true,
+   "wins": 0,
+   "losses": 0,
+   "lootboxes": [],
+   "inventory": {
+    "rock_berry": 5,
+    "rune": 25
+   },
+   "joinedAt": 1770924620996
+  },
+  {
+   "address": "dDBv2vd6GJmi47ma4jOV37IfuvvxsXihuyLvm2e6gsE",
+   "unlocked": true,
+   "seeded": true,
+   "wins": 0,
+   "losses": 0,
+   "faction": "Inferno Blades",
+   "monster": {
+    "name": "FireFox",
+    "image": "lnYr9oTtkRHiheQFwH4ns50mrQE6AQR-8Bvl4VfXb0o",
+    "sprite": "wUo47CacsMRFFizJqUhSj75Rczg3f_MvHs4ytfPtCjQ",
+    "faction": "Inferno Blades",
+    "elementType": "fire",
+    "berryItem": "fire_berry",
+    "attack": 4,
+    "defense": 2,
+    "speed": 3,
+    "health": 1,
+    "energy": 50,
+    "happiness": 100,
+    "level": 0,
+    "exp": 0,
+    "totalTimesFed": 7,
+    "totalTimesPlay": 7,
+    "totalTimesQuest": 0,
+    "moves": {
+     "Heal": {
+      "attack": -1,
+      "count": 2,
+      "damage": 0,
+      "defense": 0,
+      "health": 6,
+      "rarity": 1,
+      "speed": 0,
+      "type": "heal"
+     },
+     "Inferno": {
+      "attack": 3,
+      "count": 1,
+      "damage": 6,
+      "defense": -2,
+      "health": 0,
+      "rarity": 2,
+      "speed": -1,
+      "type": "fire"
+     },
+     "Power Up": {
+      "attack": 5,
+      "count": 2,
+      "damage": 0,
+      "defense": -2,
+      "health": 0,
+      "rarity": 1,
+      "speed": 2,
+      "type": "boost"
+     },
+     "Quick Jab": {
+      "attack": 2,
+      "count": 3,
+      "damage": 3,
+      "defense": -1,
+      "health": 0,
+      "rarity": 2,
+      "speed": 4,
+      "type": "normal"
+     }
+    },
+    "status": {
+     "type": "Home",
+     "since": 1741414385774,
+     "until_time": 1741414385774
+    },
+    "bornAt": 1741414385774
+   },
+   "questsCompleted": 0,
+   "lootboxes": [],
+   "inventory": {
+    "fire_berry": 1,
+    "rune": 25
+   },
+   "offerings": 10,
+   "joinedAt": 1741414385774
+  },
+  {
+   "address": "dIWQqm-suNsvOv33vhyKGWGoecK_jSPx6DVGVF8i4xo",
+   "unlocked": true,
+   "seeded": true,
+   "wins": 0,
+   "losses": 0,
+   "faction": "Sky Nomads",
+   "lootboxes": [],
+   "inventory": {
+    "rune": 25
+   },
+   "joinedAt": 1770924620996
+  },
+  {
+   "address": "dUqCbSIdkxxSuIhq8ohcQMwI-oq-CPX1Ey6qUnam0jc",
+   "unlocked": true,
+   "seeded": true,
+   "wins": 0,
+   "losses": 0,
+   "faction": "Aqua Guardians",
+   "monster": {
+    "name": "WaterDoge",
+    "image": "w_-mPdemSXZ1G-Q6fMEu6wTDJYFnJM9XePjGf_ZChgo",
+    "sprite": "p90BYY1O3BS3VVzdZETr-hG6jkA3kwo8l0h3aQ2UFoc",
+    "faction": "Aqua Guardians",
+    "elementType": "water",
+    "berryItem": "water_berry",
+    "attack": 9,
+    "defense": 7,
+    "speed": 7,
+    "health": 7,
+    "energy": 100,
+    "happiness": 40,
+    "level": 2,
+    "exp": 9,
+    "totalTimesFed": 1,
+    "totalTimesPlay": 0,
+    "totalTimesQuest": 0,
+    "moves": {
+     "Guard Break": {
+      "attack": 2,
+      "count": 2,
+      "damage": 4,
+      "defense": -2,
+      "health": 1,
+      "rarity": 3,
+      "speed": -1,
+      "type": "normal"
+     },
+     "Ocean Mist": {
+      "attack": 0,
+      "count": 2,
+      "damage": 0,
+      "defense": 4,
+      "health": 2,
+      "rarity": 3,
+      "speed": 2,
+      "type": "water"
+     },
+     "Recovery": {
+      "attack": 0,
+      "count": 2,
+      "damage": 0,
+      "defense": 0,
+      "health": 5,
+      "rarity": 3,
+      "speed": 2,
+      "type": "heal"
+     },
+     "Swift Wind": {
+      "attack": 2,
+      "count": 2,
+      "damage": 0,
+      "defense": -1,
+      "health": -1,
+      "rarity": 2,
+      "speed": 5,
+      "type": "boost"
+     }
+    },
+    "status": {
+     "type": "Home",
+     "since": 1737945718384,
+     "until_time": 1737945718384
+    },
+    "bornAt": 1737945718384
+   },
+   "questsCompleted": 0,
+   "lootboxes": [],
+   "inventory": {
+    "fire_berry": 20,
+    "rock_berry": 1,
+    "rune": 25
+   },
+   "offerings": 13,
+   "joinedAt": 1737945718384
+  },
+  {
+   "address": "e8KzxfVKibmgE8Odz5H0PP3ONPavc2Jt8WE7kX3_YcQ",
+   "unlocked": true,
+   "seeded": true,
+   "wins": 0,
+   "losses": 0,
+   "lootboxes": [],
+   "inventory": {
+    "fire_berry": 21,
+    "water_berry": 94,
+    "air_berry": 85,
+    "rock_berry": 18,
+    "rune": 25
+   },
+   "joinedAt": 1770924620996
+  },
+  {
+   "address": "ePxTeygYHCMaflPAPUh34plQMxRvcJwEKcZ4t5X4_04",
+   "unlocked": true,
+   "seeded": true,
+   "wins": 0,
+   "losses": 0,
+   "lootboxes": [],
+   "inventory": {
+    "rune": 25
+   },
+   "joinedAt": 1770924620996
+  },
+  {
+   "address": "eSRbMNB_wkZiiVeu2Axw5OC9AnRV-zU-vj_WDPbX-JY",
+   "unlocked": true,
+   "seeded": true,
+   "wins": 0,
+   "losses": 0,
+   "faction": "Sky Nomads",
+   "monster": {
+    "name": "Airbud",
+    "image": "XD4tSBeekM1ETZMflAANDfkW6pVWaQIXgSdSiwfwVqw",
+    "sprite": "0_gQ7rNpxD8S4wZBE_DZs3adWfZMsBIuo8fwvH3SwL0",
+    "faction": "Sky Nomads",
+    "elementType": "air",
+    "berryItem": "air_berry",
+    "attack": 24,
+    "defense": 18,
+    "speed": 19,
+    "health": 19,
+    "energy": 90,
+    "happiness": 75,
+    "level": 7,
+    "exp": 26,
+    "totalTimesFed": 305,
+    "totalTimesPlay": 87,
+    "totalTimesQuest": 79,
+    "moves": {
+     "Iron Skin": {
+      "attack": -1,
+      "count": 2,
+      "damage": 0,
+      "defense": 5,
+      "health": 2,
+      "rarity": 2,
+      "speed": 0,
+      "type": "boost"
+     },
+     "Life Surge": {
+      "attack": 1,
+      "count": 1,
+      "damage": 0,
+      "defense": 0,
+      "health": 8,
+      "rarity": 2,
+      "speed": 0,
+      "type": "heal"
+     },
+     "Quick Jab": {
+      "attack": 2,
+      "count": 3,
+      "damage": 3,
+      "defense": -1,
+      "health": 0,
+      "rarity": 2,
+      "speed": 4,
+      "type": "normal"
+     },
+     "Tornado": {
+      "attack": 1,
+      "count": 2,
+      "damage": 4,
+      "defense": -1,
+      "health": 0,
+      "rarity": 1,
+      "speed": 4,
+      "type": "air"
+     }
+    },
+    "status": {
+     "type": "Home",
+     "since": 1741731760542,
+     "until_time": 1741731760542
+    },
+    "bornAt": 1741731760542
+   },
+   "questsCompleted": 79,
+   "lootboxes": [],
+   "inventory": {
+    "fire_berry": 16,
+    "air_berry": 201,
+    "rune": 25
+   },
+   "offerings": 18,
+   "joinedAt": 1741731760542
+  },
+  {
+   "address": "eaHYC1BDClNB6jN9QCRVEjSyQ9OEZKmLSqS9fhfd4lw",
+   "unlocked": true,
+   "seeded": true,
+   "wins": 0,
+   "losses": 0,
+   "lootboxes": [],
+   "inventory": {
+    "rune": 25
+   },
+   "joinedAt": 1770924620996
+  },
+  {
+   "address": "ebdMi9ECe0EB4TBBuFH7VF0-d9AjLE9hyTw5HMMZfcA",
+   "unlocked": true,
+   "seeded": true,
+   "wins": 0,
+   "losses": 0,
+   "lootboxes": [],
+   "inventory": {
+    "rune": 25
+   },
+   "joinedAt": 1770924620996
+  },
+  {
+   "address": "ec-TRJdOlLN3DC7GzybRyjZKqa7L7YE6DyZXcLLyHuU",
+   "unlocked": true,
+   "seeded": true,
+   "wins": 0,
+   "losses": 0,
+   "lootboxes": [],
+   "inventory": {
+    "rune": 25
+   },
+   "joinedAt": 1770924620996
+  },
+  {
+   "address": "fr24DFR_Lg6Ff5ue0NFLOqtUH1gGrrPGkKRKxbeuSK8",
+   "unlocked": true,
+   "seeded": true,
+   "wins": 0,
+   "losses": 0,
+   "faction": "Inferno Blades",
+   "monster": {
+    "name": "FireFox",
+    "image": "lnYr9oTtkRHiheQFwH4ns50mrQE6AQR-8Bvl4VfXb0o",
+    "sprite": "wUo47CacsMRFFizJqUhSj75Rczg3f_MvHs4ytfPtCjQ",
+    "faction": "Inferno Blades",
+    "elementType": "fire",
+    "berryItem": "fire_berry",
+    "attack": 6,
+    "defense": 4,
+    "speed": 3,
+    "health": 7,
+    "energy": 35,
+    "happiness": 75,
+    "level": 1,
+    "exp": 3,
+    "totalTimesFed": 14,
+    "totalTimesPlay": 5,
+    "totalTimesQuest": 4,
+    "moves": {
+     "Battle Cry": {
+      "attack": 4,
+      "count": 2,
+      "damage": 0,
+      "defense": -2,
+      "health": -1,
+      "rarity": 3,
+      "speed": 3,
+      "type": "boost"
+     },
+     "Firenado": {
+      "attack": 0,
+      "count": 2,
+      "damage": 5,
+      "defense": -1,
+      "health": 0,
+      "rarity": 1,
+      "speed": 2,
+      "type": "fire"
+     },
+     "Guard Break": {
+      "attack": 2,
+      "count": 2,
+      "damage": 4,
+      "defense": -2,
+      "health": 1,
+      "rarity": 3,
+      "speed": -1,
+      "type": "normal"
+     },
+     "Vital Essence": {
+      "attack": 0,
+      "count": 2,
+      "damage": 0,
+      "defense": 4,
+      "health": 7,
+      "rarity": 3,
+      "speed": -2,
+      "type": "heal"
+     }
+    },
+    "status": {
+     "type": "Home",
+     "since": 1755008068326,
+     "until_time": 1755008068326
+    },
+    "bornAt": 1755008068326
+   },
+   "questsCompleted": 4,
+   "lootboxes": [
+    2,
+    2,
+    2
+   ],
+   "inventory": {
+    "fire_berry": 41,
+    "water_berry": 8,
+    "air_berry": 5,
+    "rock_berry": 5,
+    "rune": 25
+   },
+   "offerings": 28,
+   "joinedAt": 1755008068326
+  },
+  {
+   "address": "hIWyqevBhAbRw02-yBKvHRW731e6__jL2e4mWY65baw",
+   "unlocked": true,
+   "seeded": true,
+   "wins": 0,
+   "losses": 0,
+   "faction": "Inferno Blades",
+   "monster": {
+    "name": "FireFox",
+    "image": "lnYr9oTtkRHiheQFwH4ns50mrQE6AQR-8Bvl4VfXb0o",
+    "sprite": "wUo47CacsMRFFizJqUhSj75Rczg3f_MvHs4ytfPtCjQ",
+    "faction": "Inferno Blades",
+    "elementType": "fire",
+    "berryItem": "fire_berry",
+    "attack": 3,
+    "defense": 2,
+    "speed": 1,
+    "health": 4,
+    "energy": 50,
+    "happiness": 50,
+    "level": 0,
+    "exp": 0,
+    "totalTimesFed": 0,
+    "totalTimesPlay": 0,
+    "totalTimesQuest": 0,
+    "moves": {
+     "Body Slam": {
+      "attack": 3,
+      "count": 2,
+      "damage": 5,
+      "defense": 1,
+      "health": 0,
+      "rarity": 1,
+      "speed": 0,
+      "type": "normal"
+     },
+     "Firenado": {
+      "attack": 0,
+      "count": 2,
+      "damage": 5,
+      "defense": -1,
+      "health": 0,
+      "rarity": 1,
+      "speed": 2,
+      "type": "fire"
+     },
+     "Iron Skin": {
+      "attack": -1,
+      "count": 2,
+      "damage": 0,
+      "defense": 5,
+      "health": 2,
+      "rarity": 2,
+      "speed": 0,
+      "type": "boost"
+     },
+     "Life Surge": {
+      "attack": 1,
+      "count": 1,
+      "damage": 0,
+      "defense": 0,
+      "health": 8,
+      "rarity": 2,
+      "speed": 0,
+      "type": "heal"
+     }
+    },
+    "status": {
+     "type": "Home",
+     "since": 1738131378582,
+     "until_time": 1738131378582
+    },
+    "bornAt": 1738131378582
+   },
+   "questsCompleted": 0,
+   "lootboxes": [],
+   "inventory": {
+    "rune": 25
+   },
+   "offerings": 1,
+   "joinedAt": 1738131378582
+  },
+  {
+   "address": "i--ddrLayaMYzC3GYVEBLBJdc06fuG6Su2463jJS6Rs",
+   "unlocked": true,
+   "seeded": true,
+   "wins": 0,
+   "losses": 0,
+   "lootboxes": [],
+   "inventory": {
+    "rune": 25
+   },
+   "joinedAt": 1770924620996
+  },
+  {
+   "address": "iQuZaChdbWyqpuUUodkMuwOunuqldCAsh4Nbq6txQCk",
+   "unlocked": true,
+   "seeded": true,
+   "wins": 0,
+   "losses": 0,
+   "faction": "Stone Titans",
+   "monster": {
+    "name": "Rockpup",
+    "image": "WhdcUkIGYZG4M5kq00TnUwaIt5OCGz3Q4u6_fZNktvQ",
+    "sprite": "Zt8LmHGVIziXhzjqBhEAWLuGetcDitFKbfaJROkyZks",
+    "faction": "Stone Titans",
+    "elementType": "rock",
+    "berryItem": "rock_berry",
+    "attack": 32,
+    "defense": 31,
+    "speed": 24,
+    "health": 23,
+    "energy": 70,
+    "happiness": 50,
+    "level": 10,
+    "exp": 19,
+    "totalTimesFed": 932,
+    "totalTimesPlay": 266,
+    "totalTimesQuest": 250,
+    "moves": {
+     "Earth Shield": {
+      "attack": 0,
+      "count": 2,
+      "damage": 2,
+      "defense": 5,
+      "health": 2,
+      "rarity": 3,
+      "speed": -1,
+      "type": "rock"
+     },
+     "Life Surge": {
+      "attack": 1,
+      "count": 1,
+      "damage": 0,
+      "defense": 0,
+      "health": 8,
+      "rarity": 2,
+      "speed": 0,
+      "type": "heal"
+     },
+     "Quick Jab": {
+      "attack": 2,
+      "count": 3,
+      "damage": 3,
+      "defense": -1,
+      "health": 0,
+      "rarity": 2,
+      "speed": 4,
+      "type": "normal"
+     },
+     "Warrior's Resolve": {
+      "attack": 3,
+      "count": 2,
+      "damage": 0,
+      "defense": 0,
+      "health": -2,
+      "rarity": 3,
+      "speed": 2,
+      "type": "boost"
+     }
+    },
+    "status": {
+     "type": "Home",
+     "since": 1757704030168,
+     "until_time": 1757704030168
+    },
+    "bornAt": 1757704030168
+   },
+   "questsCompleted": 250,
+   "lootboxes": [],
+   "inventory": {
+    "fire_berry": 407,
+    "water_berry": 515,
+    "air_berry": 360,
+    "rock_berry": 96,
+    "rune": 25
+   },
+   "offerings": 75,
+   "joinedAt": 1757704030168
+  },
+  {
+   "address": "iWpkCWDKVpvhWTi_iXlRdgnwEMs_l3rcQy7rWrGnhXA",
+   "unlocked": true,
+   "seeded": true,
+   "wins": 0,
+   "losses": 0,
+   "faction": "Inferno Blades",
+   "monster": {
+    "name": "FireFox",
+    "image": "lnYr9oTtkRHiheQFwH4ns50mrQE6AQR-8Bvl4VfXb0o",
+    "sprite": "wUo47CacsMRFFizJqUhSj75Rczg3f_MvHs4ytfPtCjQ",
+    "faction": "Inferno Blades",
+    "elementType": "fire",
+    "berryItem": "fire_berry",
+    "attack": 19,
+    "defense": 24,
+    "speed": 14,
+    "health": 23,
+    "energy": 50,
+    "happiness": 25,
+    "level": 7,
+    "exp": 10,
+    "totalTimesFed": 225,
+    "totalTimesPlay": 63,
+    "totalTimesQuest": 63,
+    "moves": {
+     "Battle Cry": {
+      "attack": 4,
+      "count": 2,
+      "damage": 0,
+      "defense": -2,
+      "health": -1,
+      "rarity": 3,
+      "speed": 3,
+      "type": "boost"
+     },
+     "Body Slam": {
+      "attack": 3,
+      "count": 2,
+      "damage": 5,
+      "defense": 1,
+      "health": 0,
+      "rarity": 1,
+      "speed": 0,
+      "type": "normal"
+     },
+     "Healing Winds": {
+      "attack": 1,
+      "count": 1,
+      "damage": 0,
+      "defense": 0,
+      "health": 4,
+      "rarity": 3,
+      "speed": 3,
+      "type": "heal"
+     },
+     "Scorching Ash": {
+      "attack": 1,
+      "count": 2,
+      "damage": 3,
+      "defense": -2,
+      "health": 1,
+      "rarity": 3,
+      "speed": 1,
+      "type": "fire"
+     }
+    },
+    "status": {
+     "type": "Home",
+     "since": 1762238666731,
+     "until_time": 1762238666731
+    },
+    "bornAt": 1762238666731
+   },
+   "questsCompleted": 63,
+   "lootboxes": [],
+   "inventory": {
+    "fire_berry": 524,
+    "water_berry": 236,
+    "air_berry": 248,
+    "rock_berry": 153,
+    "rune": 25
+   },
+   "offerings": 96,
+   "joinedAt": 1762238666731
+  },
+  {
+   "address": "imBDcFoKtFqzNk5adStZQsnxo5yHuLFcgDBTeYZai34",
+   "unlocked": true,
+   "seeded": true,
+   "wins": 0,
+   "losses": 0,
+   "faction": "Inferno Blades",
+   "monster": {
+    "name": "FireFox",
+    "image": "lnYr9oTtkRHiheQFwH4ns50mrQE6AQR-8Bvl4VfXb0o",
+    "sprite": "wUo47CacsMRFFizJqUhSj75Rczg3f_MvHs4ytfPtCjQ",
+    "faction": "Inferno Blades",
+    "elementType": "fire",
+    "berryItem": "fire_berry",
+    "attack": 2,
+    "defense": 2,
+    "speed": 4,
+    "health": 2,
+    "energy": 50,
+    "happiness": 50,
+    "level": 0,
+    "exp": 0,
+    "totalTimesFed": 0,
+    "totalTimesPlay": 0,
+    "totalTimesQuest": 0,
+    "moves": {
+     "Inferno": {
+      "attack": 3,
+      "count": 1,
+      "damage": 6,
+      "defense": -2,
+      "health": 0,
+      "rarity": 2,
+      "speed": -1,
+      "type": "fire"
+     },
+     "Phoenix Burst": {
+      "attack": 0,
+      "count": 1,
+      "damage": 4,
+      "defense": 0,
+      "health": -2,
+      "rarity": 3,
+      "speed": 2,
+      "type": "fire"
+     },
+     "Quick Jab": {
+      "attack": 2,
+      "count": 3,
+      "damage": 3,
+      "defense": -1,
+      "health": 0,
+      "rarity": 2,
+      "speed": 4,
+      "type": "normal"
+     },
+     "Regenerate": {
+      "attack": -2,
+      "count": 3,
+      "damage": 0,
+      "defense": 2,
+      "health": 5,
+      "rarity": 2,
+      "speed": 0,
+      "type": "heal"
+     }
+    },
+    "status": {
+     "type": "Home",
+     "since": 1739180163683,
+     "until_time": 1739180163683
+    },
+    "bornAt": 1739180163683
+   },
+   "questsCompleted": 0,
+   "lootboxes": [],
+   "inventory": {
+    "rune": 25
+   },
+   "offerings": 5,
+   "joinedAt": 1739180163683
+  },
+  {
+   "address": "j36ZMY1DPYMZk-O7qHeUTAGK8DYpFBKKMf_5XA-XCEU",
+   "unlocked": true,
+   "seeded": true,
+   "wins": 0,
+   "losses": 0,
+   "faction": "Aqua Guardians",
+   "monster": {
+    "name": "WaterDoge",
+    "image": "w_-mPdemSXZ1G-Q6fMEu6wTDJYFnJM9XePjGf_ZChgo",
+    "sprite": "p90BYY1O3BS3VVzdZETr-hG6jkA3kwo8l0h3aQ2UFoc",
+    "faction": "Aqua Guardians",
+    "elementType": "water",
+    "berryItem": "water_berry",
+    "attack": 10,
+    "defense": 17,
+    "speed": 20,
+    "health": 13,
+    "energy": 30,
+    "happiness": 0,
+    "level": 5,
+    "exp": 11,
+    "totalTimesFed": 105,
+    "totalTimesPlay": 29,
+    "totalTimesQuest": 30,
+    "moves": {
+     "Frostbite": {
+      "attack": -1,
+      "count": 2,
+      "damage": 3,
+      "defense": 2,
+      "health": 0,
+      "rarity": 3,
+      "speed": 1,
+      "type": "water"
+     },
+     "Healing Winds": {
+      "attack": 1,
+      "count": 1,
+      "damage": 0,
+      "defense": 0,
+      "health": 4,
+      "rarity": 3,
+      "speed": 3,
+      "type": "heal"
+     },
+     "Swift Wind": {
+      "attack": 2,
+      "count": 2,
+      "damage": 0,
+      "defense": -1,
+      "health": -1,
+      "rarity": 2,
+      "speed": 5,
+      "type": "boost"
+     },
+     "Whirlpool": {
+      "attack": 0,
+      "count": 3,
+      "damage": 2,
+      "defense": 2,
+      "health": -2,
+      "rarity": 2,
+      "speed": 3,
+      "type": "water"
+     }
+    },
+    "status": {
+     "type": "Home",
+     "since": 1757292630032,
+     "until_time": 1757292630032
+    },
+    "bornAt": 1757292630032
+   },
+   "questsCompleted": 30,
+   "lootboxes": [
+    2,
+    2,
+    2,
+    2,
+    2,
+    2,
+    2
+   ],
+   "inventory": {
+    "fire_berry": 40,
+    "water_berry": 2,
+    "air_berry": 50,
+    "rock_berry": 40,
+    "rune": 25
+   },
+   "offerings": 96,
+   "joinedAt": 1757292630032
+  },
+  {
+   "address": "jsj4RhU2OEpyenNTxdZdr7n9i25ct11CBP5BMZc8Ovs",
+   "unlocked": true,
+   "seeded": true,
+   "wins": 0,
+   "losses": 0,
+   "faction": "Aqua Guardians",
+   "monster": {
+    "name": "WaterDoge",
+    "image": "w_-mPdemSXZ1G-Q6fMEu6wTDJYFnJM9XePjGf_ZChgo",
+    "sprite": "p90BYY1O3BS3VVzdZETr-hG6jkA3kwo8l0h3aQ2UFoc",
+    "faction": "Aqua Guardians",
+    "elementType": "water",
+    "berryItem": "water_berry",
+    "attack": 21,
+    "defense": 20,
+    "speed": 10,
+    "health": 9,
+    "energy": 40,
+    "happiness": 0,
+    "level": 5,
+    "exp": 15,
+    "totalTimesFed": 122,
+    "totalTimesPlay": 33,
+    "totalTimesQuest": 33,
+    "moves": {
+     "Adrenaline Surge": {
+      "attack": 6,
+      "count": 1,
+      "damage": 0,
+      "defense": 0,
+      "health": -3,
+      "rarity": 3,
+      "speed": -1,
+      "type": "boost"
+     },
+     "Frenzy Blows": {
+      "attack": 3,
+      "count": 2,
+      "damage": 2,
+      "defense": -1,
+      "health": -1,
+      "rarity": 3,
+      "speed": 2,
+      "type": "normal"
+     },
+     "Healing Winds": {
+      "attack": 1,
+      "count": 1,
+      "damage": 0,
+      "defense": 0,
+      "health": 4,
+      "rarity": 3,
+      "speed": 3,
+      "type": "heal"
+     },
+     "Whirlpool": {
+      "attack": 0,
+      "count": 3,
+      "damage": 2,
+      "defense": 2,
+      "health": -2,
+      "rarity": 2,
+      "speed": 3,
+      "type": "water"
+     }
+    },
+    "status": {
+     "type": "Home",
+     "since": 1757292664076,
+     "until_time": 1757292664076
+    },
+    "bornAt": 1757292664076
+   },
+   "questsCompleted": 33,
+   "lootboxes": [
+    2,
+    2,
+    2,
+    2,
+    2
+   ],
+   "inventory": {
+    "fire_berry": 46,
+    "water_berry": 1,
+    "air_berry": 49,
+    "rock_berry": 52,
+    "rune": 25
+   },
+   "offerings": 99,
+   "joinedAt": 1757292664076
+  },
+  {
+   "address": "kc6JoLCTm6egZvBTbhdaEcLVB6wZZFtbRbrpleeKvEg",
+   "unlocked": true,
+   "seeded": true,
+   "wins": 0,
+   "losses": 0,
+   "lootboxes": [],
+   "inventory": {
+    "rune": 25
+   },
+   "joinedAt": 1770924620996
+  },
+  {
+   "address": "kyKvqAVtJH_DNGItB-sHh340xrwqZN3AWYp06pkU3hk",
+   "unlocked": true,
+   "seeded": true,
+   "wins": 0,
+   "losses": 0,
+   "faction": "Aqua Guardians",
+   "monster": {
+    "name": "WaterDoge",
+    "image": "w_-mPdemSXZ1G-Q6fMEu6wTDJYFnJM9XePjGf_ZChgo",
+    "sprite": "p90BYY1O3BS3VVzdZETr-hG6jkA3kwo8l0h3aQ2UFoc",
+    "faction": "Aqua Guardians",
+    "elementType": "water",
+    "berryItem": "water_berry",
+    "attack": 26,
+    "defense": 25,
+    "speed": 26,
+    "health": 23,
+    "energy": 25,
+    "happiness": 25,
+    "level": 9,
+    "exp": 84,
+    "totalTimesFed": 778,
+    "totalTimesPlay": 224,
+    "totalTimesQuest": 220,
+    "moves": {
+     "Ocean Mist": {
+      "attack": 0,
+      "count": 2,
+      "damage": 0,
+      "defense": 4,
+      "health": 2,
+      "rarity": 3,
+      "speed": 2,
+      "type": "water"
+     },
+     "Power Up": {
+      "attack": 5,
+      "count": 2,
+      "damage": 0,
+      "defense": -2,
+      "health": 0,
+      "rarity": 1,
+      "speed": 2,
+      "type": "boost"
+     },
+     "Regenerate": {
+      "attack": -2,
+      "count": 3,
+      "damage": 0,
+      "defense": 2,
+      "health": 5,
+      "rarity": 2,
+      "speed": 0,
+      "type": "heal"
+     },
+     "Tidal Wave": {
+      "attack": 2,
+      "count": 2,
+      "damage": 4,
+      "defense": -1,
+      "health": 0,
+      "rarity": 1,
+      "speed": 1,
+      "type": "water"
+     }
+    },
+    "status": {
+     "type": "Home",
+     "since": 1765160966083,
+     "until_time": 1765160966083
+    },
+    "bornAt": 1765160966083
+   },
+   "questsCompleted": 220,
+   "lootboxes": [],
+   "inventory": {
+    "fire_berry": 847,
+    "water_berry": 96,
+    "air_berry": 728,
+    "rock_berry": 699,
+    "rune": 25
+   },
+   "offerings": 122,
+   "joinedAt": 1765160966083
+  },
+  {
+   "address": "l3kqa6OyTZUwzVLTRYFx2NLALjqjEtHCn5sMEAsNB9I",
+   "unlocked": true,
+   "seeded": true,
+   "wins": 0,
+   "losses": 0,
+   "faction": "Inferno Blades",
+   "lootboxes": [],
+   "inventory": {
+    "water_berry": 1,
+    "air_berry": 6,
+    "rock_berry": 2,
+    "rune": 25
+   },
+   "offerings": 4,
+   "joinedAt": 1770924620996
+  },
+  {
+   "address": "mb7ZAIdT8Qvj93-998D0CB6NGjB7W1K1swWyu9T3eCg",
+   "unlocked": true,
+   "seeded": true,
+   "wins": 0,
+   "losses": 0,
+   "faction": "Stone Titans",
+   "monster": {
+    "name": "Rockpup",
+    "image": "WhdcUkIGYZG4M5kq00TnUwaIt5OCGz3Q4u6_fZNktvQ",
+    "sprite": "Zt8LmHGVIziXhzjqBhEAWLuGetcDitFKbfaJROkyZks",
+    "faction": "Stone Titans",
+    "elementType": "rock",
+    "berryItem": "rock_berry",
+    "attack": 4,
+    "defense": 11,
+    "speed": 1,
+    "health": 14,
+    "energy": 100,
+    "happiness": 100,
+    "level": 2,
+    "exp": 0,
+    "totalTimesFed": 8,
+    "totalTimesPlay": 6,
+    "totalTimesQuest": 0,
+    "moves": {
+     "Battle Cry": {
+      "attack": 4,
+      "count": 2,
+      "damage": 0,
+      "defense": -2,
+      "health": -1,
+      "rarity": 3,
+      "speed": 3,
+      "type": "boost"
+     },
+     "Boulder Crush": {
+      "attack": 3,
+      "count": 2,
+      "damage": 5,
+      "defense": 2,
+      "health": 0,
+      "rarity": 1,
+      "speed": -2,
+      "type": "rock"
+     },
+     "Earth Shield": {
+      "attack": 0,
+      "count": 2,
+      "damage": 2,
+      "defense": 5,
+      "health": 2,
+      "rarity": 3,
+      "speed": -1,
+      "type": "rock"
+     },
+     "Heal": {
+      "attack": -1,
+      "count": 2,
+      "damage": 0,
+      "defense": 0,
+      "health": 6,
+      "rarity": 1,
+      "speed": 0,
+      "type": "heal"
+     }
+    },
+    "status": {
+     "type": "Home",
+     "since": 1741279277189,
+     "until_time": 1741279277189
+    },
+    "bornAt": 1741279277189
+   },
+   "questsCompleted": 0,
+   "lootboxes": [],
+   "inventory": {
+    "fire_berry": 281,
+    "water_berry": 59,
+    "rock_berry": 72,
+    "rune": 25
+   },
+   "offerings": 12,
+   "joinedAt": 1741279277189
+  },
+  {
+   "address": "n6iggmgLb5kaIPxEQNCPnzer9qG9e0U7fgcAOfF55zk",
+   "unlocked": true,
+   "seeded": true,
+   "wins": 0,
+   "losses": 0,
+   "faction": "Inferno Blades",
+   "lootboxes": [],
+   "inventory": {
+    "rune": 25
+   },
+   "joinedAt": 1770924620996
+  },
+  {
+   "address": "n8Rr5t13j6jtDRsjTPe41GIVxG6eg1VCQOSj6vSdLWM",
+   "unlocked": true,
+   "seeded": true,
+   "wins": 0,
+   "losses": 0,
+   "lootboxes": [],
+   "inventory": {
+    "rune": 25
+   },
+   "joinedAt": 1770924620996
+  },
+  {
+   "address": "nH0c-gDj_Q01Y7NOgJ5SD8RkTpAMLeWCt-O5a6K0Cv0",
+   "unlocked": true,
+   "seeded": true,
+   "wins": 0,
+   "losses": 0,
+   "faction": "Inferno Blades",
+   "monster": {
+    "name": "FireFox",
+    "image": "lnYr9oTtkRHiheQFwH4ns50mrQE6AQR-8Bvl4VfXb0o",
+    "sprite": "wUo47CacsMRFFizJqUhSj75Rczg3f_MvHs4ytfPtCjQ",
+    "faction": "Inferno Blades",
+    "elementType": "fire",
+    "berryItem": "fire_berry",
+    "attack": 39,
+    "defense": 26,
+    "speed": 22,
+    "health": 23,
+    "energy": 75,
+    "happiness": 75,
+    "level": 10,
+    "exp": 92,
+    "totalTimesFed": 1174,
+    "totalTimesPlay": 334,
+    "totalTimesQuest": 323,
+    "moves": {
+     "Heavy Strike": {
+      "attack": 4,
+      "count": 1,
+      "damage": 6,
+      "defense": 2,
+      "health": 0,
+      "rarity": 2,
+      "speed": -2,
+      "type": "normal"
+     },
+     "Iron Skin": {
+      "attack": -1,
+      "count": 2,
+      "damage": 0,
+      "defense": 5,
+      "health": 2,
+      "rarity": 2,
+      "speed": 0,
+      "type": "boost"
+     },
+     "Phoenix Burst": {
+      "attack": 0,
+      "count": 1,
+      "damage": 4,
+      "defense": 0,
+      "health": -2,
+      "rarity": 3,
+      "speed": 2,
+      "type": "fire"
+     },
+     "Regenerate": {
+      "attack": -2,
+      "count": 3,
+      "damage": 0,
+      "defense": 2,
+      "health": 5,
+      "rarity": 2,
+      "speed": 0,
+      "type": "heal"
+     }
+    },
+    "status": {
+     "type": "Home",
+     "since": 1770902736173,
+     "until_time": 1770902736173
+    },
+    "bornAt": 1770902736173
+   },
+   "questsCompleted": 323,
+   "lootboxes": [
+    2,
+    2,
+    2,
+    2,
+    2,
+    2,
+    2,
+    2
+   ],
+   "inventory": {
+    "fire_berry": 252,
+    "water_berry": 614,
+    "air_berry": 534,
+    "rock_berry": 593,
+    "rune": 25
+   },
+   "offerings": 132,
+   "joinedAt": 1770902736173
+  },
+  {
+   "address": "nV_65ULcw5vtyNEfERI5n8NVJIdp4pB5GEn-n2JQFak",
+   "unlocked": true,
+   "seeded": true,
+   "wins": 0,
+   "losses": 0,
+   "faction": "Stone Titans",
+   "monster": {
+    "name": "Rockpup",
+    "image": "WhdcUkIGYZG4M5kq00TnUwaIt5OCGz3Q4u6_fZNktvQ",
+    "sprite": "Zt8LmHGVIziXhzjqBhEAWLuGetcDitFKbfaJROkyZks",
+    "faction": "Stone Titans",
+    "elementType": "rock",
+    "berryItem": "rock_berry",
+    "attack": 4,
+    "defense": 1,
+    "speed": 1,
+    "health": 4,
+    "energy": 30,
+    "happiness": 0,
+    "level": 0,
+    "exp": 2,
+    "totalTimesFed": 4,
+    "totalTimesPlay": 0,
+    "totalTimesQuest": 2,
+    "moves": {
+     "Battle Cry": {
+      "attack": 4,
+      "count": 2,
+      "damage": 0,
+      "defense": -2,
+      "health": -1,
+      "rarity": 3,
+      "speed": 3,
+      "type": "boost"
+     },
+     "Granite Barrier": {
+      "attack": 0,
+      "count": 1,
+      "damage": 1,
+      "defense": 6,
+      "health": 3,
+      "rarity": 3,
+      "speed": -2,
+      "type": "rock"
+     },
+     "Healing Winds": {
+      "attack": 1,
+      "count": 1,
+      "damage": 0,
+      "defense": 0,
+      "health": 4,
+      "rarity": 3,
+      "speed": 3,
+      "type": "heal"
+     },
+     "Quick Jab": {
+      "attack": 2,
+      "count": 3,
+      "damage": 3,
+      "defense": -1,
+      "health": 0,
+      "rarity": 2,
+      "speed": 4,
+      "type": "normal"
+     }
+    },
+    "status": {
+     "type": "Home",
+     "since": 1754786724811,
+     "until_time": 1754786724811
+    },
+    "bornAt": 1754786724811
+   },
+   "questsCompleted": 2,
+   "lootboxes": [
+    2,
+    2
+   ],
+   "inventory": {
+    "fire_berry": 9,
+    "water_berry": 15,
+    "air_berry": 15,
+    "rock_berry": 11,
+    "rune": 25
+   },
+   "offerings": 4,
+   "joinedAt": 1754786724811
+  },
+  {
+   "address": "owtIzn4iCZe2Gzh2qY5hybs5DIo_qKV0KKyL9Y3o-44",
+   "unlocked": true,
+   "seeded": true,
+   "wins": 0,
+   "losses": 0,
+   "faction": "Sky Nomads",
+   "monster": {
+    "name": "Airbud",
+    "image": "XD4tSBeekM1ETZMflAANDfkW6pVWaQIXgSdSiwfwVqw",
+    "sprite": "0_gQ7rNpxD8S4wZBE_DZs3adWfZMsBIuo8fwvH3SwL0",
+    "faction": "Sky Nomads",
+    "elementType": "air",
+    "berryItem": "air_berry",
+    "attack": 3,
+    "defense": 2,
+    "speed": 2,
+    "health": 3,
+    "energy": 50,
+    "happiness": 50,
+    "level": 0,
+    "exp": 0,
+    "totalTimesFed": 0,
+    "totalTimesPlay": 0,
+    "totalTimesQuest": 0,
+    "moves": {
+     "Lightning Bolt": {
+      "attack": 2,
+      "count": 2,
+      "damage": 4,
+      "defense": 0,
+      "health": -2,
+      "rarity": 3,
+      "speed": -1,
+      "type": "air"
+     },
+     "Momentum Shift": {
+      "attack": 0,
+      "count": 1,
+      "damage": 0,
+      "defense": -3,
+      "health": 3,
+      "rarity": 3,
+      "speed": 5,
+      "type": "normal"
+     },
+     "Power Up": {
+      "attack": 5,
+      "count": 2,
+      "damage": 0,
+      "defense": -2,
+      "health": 0,
+      "rarity": 1,
+      "speed": 2,
+      "type": "boost"
+     },
+     "Regenerate": {
+      "attack": -2,
+      "count": 3,
+      "damage": 0,
+      "defense": 2,
+      "health": 5,
+      "rarity": 2,
+      "speed": 0,
+      "type": "heal"
+     }
+    },
+    "status": {
+     "type": "Home",
+     "since": 1738323133999,
+     "until_time": 1738323133999
+    },
+    "bornAt": 1738323133999
+   },
+   "questsCompleted": 0,
+   "lootboxes": [],
+   "inventory": {
+    "rune": 25
+   },
+   "offerings": 40,
+   "joinedAt": 1738323133999
+  },
+  {
+   "address": "oys9hS8ku0nGf6juKCj4XaDbs-WjoJM9JkbCwg05k0g",
+   "unlocked": true,
+   "seeded": true,
+   "wins": 0,
+   "losses": 0,
+   "faction": "Aqua Guardians",
+   "monster": {
+    "name": "WaterDoge",
+    "image": "w_-mPdemSXZ1G-Q6fMEu6wTDJYFnJM9XePjGf_ZChgo",
+    "sprite": "p90BYY1O3BS3VVzdZETr-hG6jkA3kwo8l0h3aQ2UFoc",
+    "faction": "Aqua Guardians",
+    "elementType": "water",
+    "berryItem": "water_berry",
+    "attack": 20,
+    "defense": 20,
+    "speed": 20,
+    "health": 20,
+    "energy": 15,
+    "happiness": 0,
+    "level": 7,
+    "exp": 12,
+    "totalTimesFed": 226,
+    "totalTimesPlay": 64,
+    "totalTimesQuest": 59,
+    "moves": {
+     "Iron Skin": {
+      "attack": -1,
+      "count": 2,
+      "damage": 0,
+      "defense": 5,
+      "health": 2,
+      "rarity": 2,
+      "speed": 0,
+      "type": "boost"
+     },
+     "Ocean Mist": {
+      "attack": 0,
+      "count": 2,
+      "damage": 0,
+      "defense": 4,
+      "health": 2,
+      "rarity": 3,
+      "speed": 2,
+      "type": "water"
+     },
+     "Regenerate": {
+      "attack": -2,
+      "count": 3,
+      "damage": 0,
+      "defense": 2,
+      "health": 5,
+      "rarity": 2,
+      "speed": 0,
+      "type": "heal"
+     },
+     "Tidal Wave": {
+      "attack": 2,
+      "count": 2,
+      "damage": 4,
+      "defense": -1,
+      "health": 0,
+      "rarity": 1,
+      "speed": 1,
+      "type": "water"
+     }
+    },
+    "status": {
+     "type": "Home",
+     "since": 1741374008173,
+     "until_time": 1741374008173
+    },
+    "bornAt": 1741374008173
+   },
+   "questsCompleted": 59,
+   "lootboxes": [],
+   "inventory": {
+    "fire_berry": 25,
+    "water_berry": 73,
+    "rune": 25
+   },
+   "offerings": 39,
+   "joinedAt": 1741374008173
+  },
+  {
+   "address": "p-5qokt5zCED2mhVlpls_FNMs_Dvbf2E5CKCkHoO2pE",
+   "unlocked": true,
+   "seeded": true,
+   "wins": 0,
+   "losses": 0,
+   "lootboxes": [],
+   "inventory": {
+    "rune": 25
+   },
+   "joinedAt": 1770924620996
+  },
+  {
+   "address": "pABO-x-pCj3n_TZBNCYHrbQQpkxMbTQg1MSpqnTaqus",
+   "unlocked": true,
+   "seeded": true,
+   "wins": 0,
+   "losses": 0,
+   "faction": "Stone Titans",
+   "monster": {
+    "name": "Rockpup",
+    "image": "WhdcUkIGYZG4M5kq00TnUwaIt5OCGz3Q4u6_fZNktvQ",
+    "sprite": "Zt8LmHGVIziXhzjqBhEAWLuGetcDitFKbfaJROkyZks",
+    "faction": "Stone Titans",
+    "elementType": "rock",
+    "berryItem": "rock_berry",
+    "attack": 4,
+    "defense": 2,
+    "speed": 3,
+    "health": 1,
+    "energy": 30,
+    "happiness": 0,
+    "level": 0,
+    "exp": 3,
+    "totalTimesFed": 11,
+    "totalTimesPlay": 2,
+    "totalTimesQuest": 3,
+    "moves": {
+     "Adrenaline Surge": {
+      "attack": 6,
+      "count": 1,
+      "damage": 0,
+      "defense": 0,
+      "health": -3,
+      "rarity": 3,
+      "speed": -1,
+      "type": "boost"
+     },
+     "Heavy Strike": {
+      "attack": 4,
+      "count": 1,
+      "damage": 6,
+      "defense": 2,
+      "health": 0,
+      "rarity": 2,
+      "speed": -2,
+      "type": "normal"
+     },
+     "Recovery": {
+      "attack": 0,
+      "count": 2,
+      "damage": 0,
+      "defense": 0,
+      "health": 5,
+      "rarity": 3,
+      "speed": 2,
+      "type": "heal"
+     },
+     "Stone Wall": {
+      "attack": -1,
+      "count": 3,
+      "damage": 0,
+      "defense": 6,
+      "health": 2,
+      "rarity": 2,
+      "speed": -2,
+      "type": "rock"
+     }
+    },
+    "status": {
+     "type": "Home",
+     "since": 1755177560519,
+     "until_time": 1755177560519
+    },
+    "bornAt": 1755177560519
+   },
+   "questsCompleted": 3,
+   "lootboxes": [
+    1,
+    2,
+    2
+   ],
+   "inventory": {
+    "fire_berry": 10,
+    "water_berry": 15,
+    "air_berry": 37,
+    "rock_berry": 10,
+    "rune": 25
+   },
+   "offerings": 7,
+   "joinedAt": 1755177560519
+  },
+  {
+   "address": "pQV-MRGDsyi39lCkOSfz3IeWgEZ9mfxZhYqmI5GqAQE",
+   "unlocked": true,
+   "seeded": true,
+   "wins": 0,
+   "losses": 0,
+   "faction": "Stone Titans",
+   "monster": {
+    "name": "Rockpup",
+    "image": "WhdcUkIGYZG4M5kq00TnUwaIt5OCGz3Q4u6_fZNktvQ",
+    "sprite": "Zt8LmHGVIziXhzjqBhEAWLuGetcDitFKbfaJROkyZks",
+    "faction": "Stone Titans",
+    "elementType": "rock",
+    "berryItem": "rock_berry",
+    "attack": 23,
+    "defense": 12,
+    "speed": 3,
+    "health": 22,
+    "energy": 50,
+    "happiness": 0,
+    "level": 5,
+    "exp": 17,
+    "totalTimesFed": 123,
+    "totalTimesPlay": 37,
+    "totalTimesQuest": 33,
+    "moves": {
+     "Frenzy Blows": {
+      "attack": 3,
+      "count": 2,
+      "damage": 2,
+      "defense": -1,
+      "health": -1,
+      "rarity": 3,
+      "speed": 2,
+      "type": "normal"
+     },
+     "Iron Skin": {
+      "attack": -1,
+      "count": 2,
+      "damage": 0,
+      "defense": 5,
+      "health": 2,
+      "rarity": 2,
+      "speed": 0,
+      "type": "boost"
+     },
+     "Seismic Slam": {
+      "attack": 3,
+      "count": 2,
+      "damage": 4,
+      "defense": -1,
+      "health": -1,
+      "rarity": 3,
+      "speed": 0,
+      "type": "rock"
+     },
+     "Vital Essence": {
+      "attack": 0,
+      "count": 2,
+      "damage": 0,
+      "defense": 4,
+      "health": 7,
+      "rarity": 3,
+      "speed": -2,
+      "type": "heal"
+     }
+    },
+    "status": {
+     "type": "Home",
+     "since": 1757336162019,
+     "until_time": 1757336162019
+    },
+    "bornAt": 1757336162019
+   },
+   "questsCompleted": 33,
+   "lootboxes": [
+    2,
+    2,
+    2,
+    2,
+    2
+   ],
+   "inventory": {
+    "fire_berry": 75,
+    "water_berry": 57,
+    "air_berry": 63,
+    "rock_berry": 85,
+    "rune": 25
+   },
+   "offerings": 99,
+   "joinedAt": 1757336162019
+  },
+  {
+   "address": "pWobDn83FZmTX-eVbRZkKGXXrF936gKNsKuW2zR0y8o",
+   "unlocked": true,
+   "seeded": true,
+   "wins": 0,
+   "losses": 0,
+   "faction": "Sky Nomads",
+   "monster": {
+    "name": "Airbud",
+    "image": "XD4tSBeekM1ETZMflAANDfkW6pVWaQIXgSdSiwfwVqw",
+    "sprite": "0_gQ7rNpxD8S4wZBE_DZs3adWfZMsBIuo8fwvH3SwL0",
+    "faction": "Sky Nomads",
+    "elementType": "air",
+    "berryItem": "air_berry",
+    "attack": 6,
+    "defense": 6,
+    "speed": 4,
+    "health": 4,
+    "energy": 40,
+    "happiness": 75,
+    "level": 1,
+    "exp": 0,
+    "totalTimesFed": 7,
+    "totalTimesPlay": 3,
+    "totalTimesQuest": 1,
+    "moves": {
+     "Battle Cry": {
+      "attack": 4,
+      "count": 2,
+      "damage": 0,
+      "defense": -2,
+      "health": -1,
+      "rarity": 3,
+      "speed": 3,
+      "type": "boost"
+     },
+     "Heal": {
+      "attack": -1,
+      "count": 2,
+      "damage": 0,
+      "defense": 0,
+      "health": 6,
+      "rarity": 1,
+      "speed": 0,
+      "type": "heal"
+     },
+     "Lightning Bolt": {
+      "attack": 2,
+      "count": 2,
+      "damage": 4,
+      "defense": 0,
+      "health": -2,
+      "rarity": 3,
+      "speed": -1,
+      "type": "air"
+     },
+     "Tornado": {
+      "attack": 1,
+      "count": 2,
+      "damage": 4,
+      "defense": -1,
+      "health": 0,
+      "rarity": 1,
+      "speed": 4,
+      "type": "air"
+     }
+    },
+    "status": {
+     "type": "Home",
+     "since": 1745253441876,
+     "until_time": 1745253441876
+    },
+    "bornAt": 1745253441876
+   },
+   "questsCompleted": 1,
+   "lootboxes": [],
+   "inventory": {
+    "fire_berry": 3,
+    "water_berry": 4,
+    "air_berry": 13,
+    "rock_berry": 1,
+    "rune": 25
+   },
+   "offerings": 17,
+   "joinedAt": 1745253441876
+  },
+  {
+   "address": "pYh2YVJdqptUwOS4KGHeFYNKZrYUOVNCGrcAJ8XXCtw",
+   "unlocked": true,
+   "seeded": true,
+   "wins": 0,
+   "losses": 0,
+   "faction": "Stone Titans",
+   "monster": {
+    "name": "Rockpup",
+    "image": "WhdcUkIGYZG4M5kq00TnUwaIt5OCGz3Q4u6_fZNktvQ",
+    "sprite": "Zt8LmHGVIziXhzjqBhEAWLuGetcDitFKbfaJROkyZks",
+    "faction": "Stone Titans",
+    "elementType": "rock",
+    "berryItem": "rock_berry",
+    "attack": 11,
+    "defense": 21,
+    "speed": 13,
+    "health": 5,
+    "energy": 60,
+    "happiness": 0,
+    "level": 4,
+    "exp": 17,
+    "totalTimesFed": 98,
+    "totalTimesPlay": 26,
+    "totalTimesQuest": 28,
+    "moves": {
+     "Frenzy Blows": {
+      "attack": 3,
+      "count": 2,
+      "damage": 2,
+      "defense": -1,
+      "health": -1,
+      "rarity": 3,
+      "speed": 2,
+      "type": "normal"
+     },
+     "Recovery": {
+      "attack": 0,
+      "count": 2,
+      "damage": 0,
+      "defense": 0,
+      "health": 5,
+      "rarity": 3,
+      "speed": 2,
+      "type": "heal"
+     },
+     "Stone Wall": {
+      "attack": -1,
+      "count": 3,
+      "damage": 0,
+      "defense": 6,
+      "health": 2,
+      "rarity": 2,
+      "speed": -2,
+      "type": "rock"
+     },
+     "Warrior's Resolve": {
+      "attack": 3,
+      "count": 2,
+      "damage": 0,
+      "defense": 0,
+      "health": -2,
+      "rarity": 3,
+      "speed": 2,
+      "type": "boost"
+     }
+    },
+    "status": {
+     "type": "Home",
+     "since": 1757336193265,
+     "until_time": 1757336193265
+    },
+    "bornAt": 1757336193265
+   },
+   "questsCompleted": 28,
+   "lootboxes": [
+    2
+   ],
+   "inventory": {
+    "fire_berry": 80,
+    "water_berry": 78,
+    "air_berry": 71,
+    "rock_berry": 12,
+    "rune": 25
+   },
+   "offerings": 96,
+   "joinedAt": 1757336193265
+  },
+  {
+   "address": "pm-gkC607yGg5L-ip8ZPApfntJhUg6K8rqfxyL-x32M",
+   "unlocked": true,
+   "seeded": true,
+   "wins": 0,
+   "losses": 0,
+   "faction": "Sky Nomads",
+   "lootboxes": [],
+   "inventory": {
+    "rune": 25
+   },
+   "joinedAt": 1770924620996
+  },
+  {
+   "address": "qD5VLaMYyIHlT6vH59TgYIs6g3EFlVjlPqljo6kqVxk",
+   "unlocked": true,
+   "seeded": true,
+   "wins": 0,
+   "losses": 0,
+   "lootboxes": [],
+   "inventory": {
+    "rune": 25
+   },
+   "joinedAt": 1770924620996
+  },
+  {
+   "address": "qGjMngUJsOOVVlYBdU2ZugwUIq6ELURSJ_2L2pmqCEU",
+   "unlocked": true,
+   "seeded": true,
+   "wins": 0,
+   "losses": 0,
+   "lootboxes": [],
+   "inventory": {
+    "rune": 25
+   },
+   "joinedAt": 1770924620996
+  },
+  {
+   "address": "r4ZNusobR7P-mhUJDQjNw2xJxbXLqh-jiRX3qzTDE9M",
+   "unlocked": true,
+   "seeded": true,
+   "wins": 0,
+   "losses": 0,
+   "lootboxes": [],
+   "inventory": {
+    "rune": 25
+   },
+   "joinedAt": 1770924620996
+  },
+  {
+   "address": "r9p1UKv3uzfH8KEYABgKXJFvgdS2oFgdxdt8rIFDw7o",
+   "unlocked": true,
+   "seeded": true,
+   "wins": 0,
+   "losses": 0,
+   "faction": "Sky Nomads",
+   "monster": {
+    "name": "Airbud",
+    "image": "XD4tSBeekM1ETZMflAANDfkW6pVWaQIXgSdSiwfwVqw",
+    "sprite": "0_gQ7rNpxD8S4wZBE_DZs3adWfZMsBIuo8fwvH3SwL0",
+    "faction": "Sky Nomads",
+    "elementType": "air",
+    "berryItem": "air_berry",
+    "attack": 4,
+    "defense": 3,
+    "speed": 2,
+    "health": 1,
+    "energy": 90,
+    "happiness": 100,
+    "level": 0,
+    "exp": 0,
+    "totalTimesFed": 53,
+    "totalTimesPlay": 48,
+    "totalTimesQuest": 0,
+    "moves": {
+     "Frenzy Blows": {
+      "attack": 3,
+      "count": 2,
+      "damage": 2,
+      "defense": -1,
+      "health": -1,
+      "rarity": 3,
+      "speed": 2,
+      "type": "normal"
+     },
+     "Gale Force": {
+      "attack": 0,
+      "count": 1,
+      "damage": 3,
+      "defense": -2,
+      "health": 0,
+      "rarity": 3,
+      "speed": 5,
+      "type": "air"
+     },
+     "Healing Winds": {
+      "attack": 1,
+      "count": 1,
+      "damage": 0,
+      "defense": 0,
+      "health": 4,
+      "rarity": 3,
+      "speed": 3,
+      "type": "heal"
+     },
+     "Power Up": {
+      "attack": 5,
+      "count": 2,
+      "damage": 0,
+      "defense": -2,
+      "health": 0,
+      "rarity": 1,
+      "speed": 2,
+      "type": "boost"
+     }
+    },
+    "status": {
+     "type": "Home",
+     "since": 1755694458062,
+     "until_time": 1755694458062
+    },
+    "bornAt": 1755694458062
+   },
+   "questsCompleted": 0,
+   "lootboxes": [],
+   "inventory": {
+    "fire_berry": 94,
+    "water_berry": 23,
+    "air_berry": 63,
+    "rock_berry": 93,
+    "rune": 25
+   },
+   "offerings": 55,
+   "joinedAt": 1755694458062
+  },
+  {
+   "address": "rH69dRyuzKqkMnV9F0ywIA8JrU33oHl3c7ANqVgUEcc",
+   "unlocked": true,
+   "seeded": true,
+   "wins": 0,
+   "losses": 0,
+   "faction": "Stone Titans",
+   "monster": {
+    "name": "Rockpup",
+    "image": "WhdcUkIGYZG4M5kq00TnUwaIt5OCGz3Q4u6_fZNktvQ",
+    "sprite": "Zt8LmHGVIziXhzjqBhEAWLuGetcDitFKbfaJROkyZks",
+    "faction": "Stone Titans",
+    "elementType": "rock",
+    "berryItem": "rock_berry",
+    "attack": 3,
+    "defense": 2,
+    "speed": 2,
+    "health": 3,
+    "energy": 50,
+    "happiness": 50,
+    "level": 0,
+    "exp": 0,
+    "totalTimesFed": 0,
+    "totalTimesPlay": 0,
+    "totalTimesQuest": 0,
+    "moves": {
+     "Body Slam": {
+      "attack": 3,
+      "count": 2,
+      "damage": 5,
+      "defense": 1,
+      "health": 0,
+      "rarity": 1,
+      "speed": 0,
+      "type": "normal"
+     },
+     "Earth Shield": {
+      "attack": 0,
+      "count": 2,
+      "damage": 2,
+      "defense": 5,
+      "health": 2,
+      "rarity": 3,
+      "speed": -1,
+      "type": "rock"
+     },
+     "Swift Wind": {
+      "attack": 2,
+      "count": 2,
+      "damage": 0,
+      "defense": -1,
+      "health": -1,
+      "rarity": 2,
+      "speed": 5,
+      "type": "boost"
+     },
+     "Vital Essence": {
+      "attack": 0,
+      "count": 2,
+      "damage": 0,
+      "defense": 4,
+      "health": 7,
+      "rarity": 3,
+      "speed": -2,
+      "type": "heal"
+     }
+    },
+    "status": {
+     "type": "Home",
+     "since": 1738026563477,
+     "until_time": 1738026563477
+    },
+    "bornAt": 1738026563477
+   },
+   "questsCompleted": 0,
+   "lootboxes": [],
+   "inventory": {
+    "rune": 25
+   },
+   "offerings": 28,
+   "joinedAt": 1738026563477
+  },
+  {
+   "address": "rZFGt-lp4CqKCzZ1pluR5PqLBw5-tgellSJHjcae1Lc",
+   "unlocked": true,
+   "seeded": true,
+   "wins": 0,
+   "losses": 0,
+   "faction": "Sky Nomads",
+   "lootboxes": [],
+   "inventory": {
+    "rune": 25
+   },
+   "joinedAt": 1770924620996
+  },
+  {
+   "address": "sPYYr8R92ihxuxV7DqEfsIV2NGAAEw4VLHwQ5UkDrdQ",
+   "unlocked": true,
+   "seeded": true,
+   "wins": 0,
+   "losses": 0,
+   "lootboxes": [],
+   "inventory": {
+    "rune": 25
+   },
+   "joinedAt": 1770924620996
+  },
+  {
+   "address": "sTN6iUHCG98SrRW13g0HOj6LRPKDHKqPiHNn2A67CX0",
+   "unlocked": true,
+   "seeded": true,
+   "wins": 0,
+   "losses": 0,
+   "faction": "Stone Titans",
+   "monster": {
+    "name": "Rockpup",
+    "image": "WhdcUkIGYZG4M5kq00TnUwaIt5OCGz3Q4u6_fZNktvQ",
+    "sprite": "Zt8LmHGVIziXhzjqBhEAWLuGetcDitFKbfaJROkyZks",
+    "faction": "Stone Titans",
+    "elementType": "rock",
+    "berryItem": "rock_berry",
+    "attack": 2,
+    "defense": 3,
+    "speed": 2,
+    "health": 3,
+    "energy": 35,
+    "happiness": 25,
+    "level": 0,
+    "exp": 2,
+    "totalTimesFed": 8,
+    "totalTimesPlay": 2,
+    "totalTimesQuest": 2,
+    "moves": {
+     "Body Slam": {
+      "attack": 3,
+      "count": 2,
+      "damage": 5,
+      "defense": 1,
+      "health": 0,
+      "rarity": 1,
+      "speed": 0,
+      "type": "normal"
+     },
+     "Earth Shield": {
+      "attack": 0,
+      "count": 2,
+      "damage": 2,
+      "defense": 5,
+      "health": 2,
+      "rarity": 3,
+      "speed": -1,
+      "type": "rock"
+     },
+     "Heal": {
+      "attack": -1,
+      "count": 2,
+      "damage": 0,
+      "defense": 0,
+      "health": 6,
+      "rarity": 1,
+      "speed": 0,
+      "type": "heal"
+     },
+     "Power Up": {
+      "attack": 5,
+      "count": 2,
+      "damage": 0,
+      "defense": -2,
+      "health": 0,
+      "rarity": 1,
+      "speed": 2,
+      "type": "boost"
+     }
+    },
+    "status": {
+     "type": "Home",
+     "since": 1754928997235,
+     "until_time": 1754928997235
+    },
+    "bornAt": 1754928997235
+   },
+   "questsCompleted": 2,
+   "lootboxes": [
+    2
+   ],
+   "inventory": {
+    "fire_berry": 23,
+    "water_berry": 18,
+    "air_berry": 8,
+    "rock_berry": 45,
+    "rune": 25
+   },
+   "offerings": 4,
+   "joinedAt": 1754928997235
+  },
+  {
+   "address": "tHgWgF13yNHJGdaNidiaqkcLFCE-lpSuxz_3lUxKRHI",
+   "unlocked": true,
+   "seeded": true,
+   "wins": 0,
+   "losses": 0,
+   "lootboxes": [],
+   "inventory": {
+    "rune": 25
+   },
+   "joinedAt": 1770924620996
+  },
+  {
+   "address": "twC5ykYK68fbfCjT9qWYpZX3_ev6XsQ0kCtnIhsItfo",
+   "unlocked": true,
+   "seeded": true,
+   "wins": 0,
+   "losses": 0,
+   "faction": "Sky Nomads",
+   "monster": {
+    "name": "Airbud",
+    "image": "XD4tSBeekM1ETZMflAANDfkW6pVWaQIXgSdSiwfwVqw",
+    "sprite": "0_gQ7rNpxD8S4wZBE_DZs3adWfZMsBIuo8fwvH3SwL0",
+    "faction": "Sky Nomads",
+    "elementType": "air",
+    "berryItem": "air_berry",
+    "attack": 5,
+    "defense": 5,
+    "speed": 6,
+    "health": 4,
+    "energy": 10,
+    "happiness": 25,
+    "level": 1,
+    "exp": 1,
+    "totalTimesFed": 2,
+    "totalTimesPlay": 0,
+    "totalTimesQuest": 2,
+    "moves": {
+     "Gale Force": {
+      "attack": 0,
+      "count": 1,
+      "damage": 3,
+      "defense": -2,
+      "health": 0,
+      "rarity": 3,
+      "speed": 5,
+      "type": "air"
+     },
+     "Healing Winds": {
+      "attack": 1,
+      "count": 1,
+      "damage": 0,
+      "defense": 0,
+      "health": 4,
+      "rarity": 3,
+      "speed": 3,
+      "type": "heal"
+     },
+     "Iron Skin": {
+      "attack": -1,
+      "count": 2,
+      "damage": 0,
+      "defense": 5,
+      "health": 2,
+      "rarity": 2,
+      "speed": 0,
+      "type": "boost"
+     },
+     "Quick Jab": {
+      "attack": 2,
+      "count": 3,
+      "damage": 3,
+      "defense": -1,
+      "health": 0,
+      "rarity": 2,
+      "speed": 4,
+      "type": "normal"
+     }
+    },
+    "status": {
+     "type": "Home",
+     "since": 1738604403998,
+     "until_time": 1738604403998
+    },
+    "bornAt": 1738604403998
+   },
+   "questsCompleted": 2,
+   "lootboxes": [],
+   "inventory": {
+    "fire_berry": 36,
+    "water_berry": 17,
+    "air_berry": 41,
+    "rock_berry": 32,
+    "rune": 25
+   },
+   "offerings": 3,
+   "joinedAt": 1738604403998
+  },
+  {
+   "address": "ty5YtynhdixPERscueTiOl1KA4Y69HNrAaJ2H_2sBh8",
+   "unlocked": true,
+   "seeded": true,
+   "wins": 0,
+   "losses": 0,
+   "lootboxes": [],
+   "inventory": {
+    "rune": 25
+   },
+   "joinedAt": 1770924620996
+  },
+  {
+   "address": "ul1DUSv7nJ7m5bqXfYS_JK-AwrsNNY3mVzXykuQ9ASQ",
+   "unlocked": true,
+   "seeded": true,
+   "wins": 0,
+   "losses": 0,
+   "faction": "Sky Nomads",
+   "lootboxes": [],
+   "inventory": {
+    "rune": 25
+   },
+   "joinedAt": 1770924620996
+  },
+  {
+   "address": "vO-uObAX-AniXMUqrJuQ50M8USnRoEp1PQQbAQBJ-kg",
+   "unlocked": true,
+   "seeded": true,
+   "wins": 0,
+   "losses": 0,
+   "lootboxes": [],
+   "inventory": {
+    "rock_berry": 5,
+    "rune": 25
+   },
+   "joinedAt": 1770924620996
+  },
+  {
+   "address": "vOYSBRYMv2S5l1Zv50Z3_Yv-zTIaNzZgXx9WkgP-Rh4",
+   "unlocked": true,
+   "seeded": true,
+   "wins": 0,
+   "losses": 0,
+   "faction": "Inferno Blades",
+   "monster": {
+    "name": "FireFox",
+    "image": "lnYr9oTtkRHiheQFwH4ns50mrQE6AQR-8Bvl4VfXb0o",
+    "sprite": "wUo47CacsMRFFizJqUhSj75Rczg3f_MvHs4ytfPtCjQ",
+    "faction": "Inferno Blades",
+    "elementType": "fire",
+    "berryItem": "fire_berry",
+    "attack": 7,
+    "defense": 4,
+    "speed": 6,
+    "health": 3,
+    "energy": 35,
+    "happiness": 50,
+    "level": 1,
+    "exp": 0,
+    "totalTimesFed": 9,
+    "totalTimesPlay": 3,
+    "totalTimesQuest": 1,
+    "moves": {
+     "Guard Break": {
+      "attack": 2,
+      "count": 2,
+      "damage": 4,
+      "defense": -2,
+      "health": 1,
+      "rarity": 3,
+      "speed": -1,
+      "type": "normal"
+     },
+     "Inferno": {
+      "attack": 3,
+      "count": 1,
+      "damage": 6,
+      "defense": -2,
+      "health": 0,
+      "rarity": 2,
+      "speed": -1,
+      "type": "fire"
+     },
+     "Power Up": {
+      "attack": 5,
+      "count": 2,
+      "damage": 0,
+      "defense": -2,
+      "health": 0,
+      "rarity": 1,
+      "speed": 2,
+      "type": "boost"
+     },
+     "Vital Essence": {
+      "attack": 0,
+      "count": 2,
+      "damage": 0,
+      "defense": 4,
+      "health": 7,
+      "rarity": 3,
+      "speed": -2,
+      "type": "heal"
+     }
+    },
+    "status": {
+     "type": "Home",
+     "since": 1755762871787,
+     "until_time": 1755762871787
+    },
+    "bornAt": 1755762871787
+   },
+   "questsCompleted": 1,
+   "lootboxes": [],
+   "inventory": {
+    "fire_berry": 4,
+    "water_berry": 14,
+    "air_berry": 17,
+    "rock_berry": 33,
+    "rune": 25
+   },
+   "offerings": 83,
+   "joinedAt": 1755762871787
+  },
+  {
+   "address": "waswj7EEzSHq52LEi4_euE3LBB-T3qZvHI9qmUIkg4c",
+   "unlocked": true,
+   "seeded": true,
+   "wins": 0,
+   "losses": 0,
+   "lootboxes": [],
+   "inventory": {
+    "rune": 25
+   },
+   "joinedAt": 1770924620996
+  },
+  {
+   "address": "yEW0-7QtnJJJtOUOtyboU5H9gR0Q02pIQMiENhz5BOs",
+   "unlocked": true,
+   "seeded": true,
+   "wins": 0,
+   "losses": 0,
+   "faction": "Aqua Guardians",
+   "monster": {
+    "name": "WaterDoge",
+    "image": "w_-mPdemSXZ1G-Q6fMEu6wTDJYFnJM9XePjGf_ZChgo",
+    "sprite": "p90BYY1O3BS3VVzdZETr-hG6jkA3kwo8l0h3aQ2UFoc",
+    "faction": "Aqua Guardians",
+    "elementType": "water",
+    "berryItem": "water_berry",
+    "attack": 3,
+    "defense": 3,
+    "speed": 2,
+    "health": 2,
+    "energy": 50,
+    "happiness": 50,
+    "level": 0,
+    "exp": 0,
+    "totalTimesFed": 0,
+    "totalTimesPlay": 0,
+    "totalTimesQuest": 0,
+    "moves": {
+     "Frostbite": {
+      "attack": -1,
+      "count": 2,
+      "damage": 3,
+      "defense": 2,
+      "health": 0,
+      "rarity": 3,
+      "speed": 1,
+      "type": "water"
+     },
+     "Guard Break": {
+      "attack": 2,
+      "count": 2,
+      "damage": 4,
+      "defense": -2,
+      "health": 1,
+      "rarity": 3,
+      "speed": -1,
+      "type": "normal"
+     },
+     "Regenerate": {
+      "attack": -2,
+      "count": 3,
+      "damage": 0,
+      "defense": 2,
+      "health": 5,
+      "rarity": 2,
+      "speed": 0,
+      "type": "heal"
+     },
+     "Warrior's Resolve": {
+      "attack": 3,
+      "count": 2,
+      "damage": 0,
+      "defense": 0,
+      "health": -2,
+      "rarity": 3,
+      "speed": 2,
+      "type": "boost"
+     }
+    },
+    "status": {
+     "type": "Home",
+     "since": 1737994537309,
+     "until_time": 1737994537309
+    },
+    "bornAt": 1737994537309
+   },
+   "questsCompleted": 0,
+   "lootboxes": [],
+   "inventory": {
+    "rune": 25
+   },
+   "offerings": 1,
+   "joinedAt": 1737994537309
+  },
+  {
+   "address": "z7bBs7YKX86ZOVznLAvP9sfgwRnrjgy5HqlLzLISKww",
+   "unlocked": true,
+   "seeded": true,
+   "wins": 0,
+   "losses": 0,
+   "faction": "Stone Titans",
+   "monster": {
+    "name": "Rockpup",
+    "image": "WhdcUkIGYZG4M5kq00TnUwaIt5OCGz3Q4u6_fZNktvQ",
+    "sprite": "Zt8LmHGVIziXhzjqBhEAWLuGetcDitFKbfaJROkyZks",
+    "faction": "Stone Titans",
+    "elementType": "rock",
+    "berryItem": "rock_berry",
+    "attack": 30,
+    "defense": 25,
+    "speed": 25,
+    "health": 30,
+    "energy": 20,
+    "happiness": 0,
+    "level": 10,
+    "exp": 15,
+    "totalTimesFed": 900,
+    "totalTimesPlay": 256,
+    "totalTimesQuest": 246,
+    "moves": {
+     "Body Slam": {
+      "attack": 3,
+      "count": 2,
+      "damage": 5,
+      "defense": 1,
+      "health": 0,
+      "rarity": 1,
+      "speed": 0,
+      "type": "normal"
+     },
+     "Granite Barrier": {
+      "attack": 0,
+      "count": 1,
+      "damage": 1,
+      "defense": 6,
+      "health": 3,
+      "rarity": 3,
+      "speed": -2,
+      "type": "rock"
+     },
+     "Healing Winds": {
+      "attack": 1,
+      "count": 1,
+      "damage": 0,
+      "defense": 0,
+      "health": 4,
+      "rarity": 3,
+      "speed": 3,
+      "type": "heal"
+     },
+     "Warrior's Resolve": {
+      "attack": 3,
+      "count": 2,
+      "damage": 0,
+      "defense": 0,
+      "health": -2,
+      "rarity": 3,
+      "speed": 2,
+      "type": "boost"
+     }
+    },
+    "status": {
+     "type": "Home",
+     "since": 1762731103980,
+     "until_time": 1762731103980
+    },
+    "bornAt": 1762731103980
+   },
+   "questsCompleted": 246,
+   "lootboxes": [],
+   "inventory": {
+    "fire_berry": 224,
+    "water_berry": 288,
+    "air_berry": 235,
+    "rock_berry": 304,
+    "rune": 25
+   },
+   "offerings": 69,
+   "joinedAt": 1762731103980
+  }
+ ],
+ "offerings": {
+  "Aqua Guardians": 709,
+  "Inferno Blades": 1381,
+  "Sky Nomads": 620,
+  "Stone Titans": 786
+ },
+ "checkins": {
+  "20211": {
+   "High": 3,
+   "Low": 4,
+   "Medium": 0
+  },
+  "20212": {
+   "High": 3,
+   "Low": 5,
+   "Medium": 0
+  },
+  "20213": {
+   "High": 3,
+   "Low": 6,
+   "Medium": 0
+  },
+  "20214": {
+   "High": 3,
+   "Low": 6,
+   "Medium": 0
+  },
+  "20215": {
+   "High": 3,
+   "Low": 3,
+   "Medium": 3
+  },
+  "20216": {
+   "High": 3,
+   "Low": 3,
+   "Medium": 3
+  },
+  "20217": {
+   "High": 3,
+   "Low": 2,
+   "Medium": 3
+  },
+  "20218": {
+   "High": 3,
+   "Low": 5,
+   "Medium": 0
+  },
+  "20219": {
+   "High": 3,
+   "Low": 3,
+   "Medium": 0
+  },
+  "20220": {
+   "High": 3,
+   "Low": 7,
+   "Medium": 0
+  },
+  "20221": {
+   "High": 3,
+   "Low": 7,
+   "Medium": 0
+  },
+  "20222": {
+   "High": 3,
+   "Low": 7,
+   "Medium": 0
+  },
+  "20223": {
+   "High": 3,
+   "Low": 7,
+   "Medium": 0
+  },
+  "20224": {
+   "High": 3,
+   "Low": 8,
+   "Medium": 0
+  },
+  "20225": {
+   "High": 3,
+   "Low": 10,
+   "Medium": 0
+  },
+  "20226": {
+   "High": 3,
+   "Low": 11,
+   "Medium": 0
+  },
+  "20227": {
+   "High": 3,
+   "Low": 11,
+   "Medium": 0
+  },
+  "20228": {
+   "High": 3,
+   "Low": 1,
+   "Medium": 10
+  },
+  "20229": {
+   "High": 3,
+   "Low": 5,
+   "Medium": 10
+  },
+  "20230": {
+   "High": 3,
+   "Low": 0,
+   "Medium": 11
+  },
+  "20231": {
+   "High": 3,
+   "Low": 0,
+   "Medium": 0
+  },
+  "20235": {
+   "High": 0,
+   "Low": 10,
+   "Medium": 0
+  },
+  "20236": {
+   "High": 0,
+   "Low": 13,
+   "Medium": 0
+  },
+  "20237": {
+   "High": 0,
+   "Low": 4,
+   "Medium": 8
+  },
+  "20238": {
+   "High": 0,
+   "Low": 4,
+   "Medium": 8
+  },
+  "20239": {
+   "High": 0,
+   "Low": 2,
+   "Medium": 1
+  },
+  "20240": {
+   "High": 0,
+   "Low": 20,
+   "Medium": 1
+  },
+  "20241": {
+   "High": 0,
+   "Low": 18,
+   "Medium": 2
+  },
+  "20242": {
+   "High": 0,
+   "Low": 1,
+   "Medium": 9
+  },
+  "20243": {
+   "High": 0,
+   "Low": 5,
+   "Medium": 9
+  },
+  "20244": {
+   "High": 0,
+   "Low": 3,
+   "Medium": 9
+  },
+  "20245": {
+   "High": 0,
+   "Low": 0,
+   "Medium": 10
+  },
+  "20246": {
+   "High": 0,
+   "Low": 0,
+   "Medium": 10
+  },
+  "20247": {
+   "High": 0,
+   "Low": 3,
+   "Medium": 10
+  },
+  "20248": {
+   "High": 0,
+   "Low": 3,
+   "Medium": 10
+  },
+  "20249": {
+   "High": 8,
+   "Low": 11,
+   "Medium": 2
+  },
+  "20250": {
+   "High": 0,
+   "Low": 4,
+   "Medium": 1
+  },
+  "20251": {
+   "High": 0,
+   "Low": 12,
+   "Medium": 1
+  },
+  "20252": {
+   "High": 0,
+   "Low": 12,
+   "Medium": 1
+  },
+  "20253": {
+   "High": 0,
+   "Low": 14,
+   "Medium": 3
+  },
+  "20254": {
+   "High": 0,
+   "Low": 12,
+   "Medium": 4
+  },
+  "20255": {
+   "High": 0,
+   "Low": 6,
+   "Medium": 10
+  },
+  "20256": {
+   "High": 0,
+   "Low": 12,
+   "Medium": 9
+  },
+  "20257": {
+   "High": 0,
+   "Low": 3,
+   "Medium": 7
+  },
+  "20258": {
+   "High": 0,
+   "Low": 11,
+   "Medium": 7
+  },
+  "20259": {
+   "High": 0,
+   "Low": 11,
+   "Medium": 9
+  },
+  "20260": {
+   "High": 0,
+   "Low": 5,
+   "Medium": 16
+  },
+  "20261": {
+   "High": 1,
+   "Low": 8,
+   "Medium": 14
+  },
+  "20262": {
+   "High": 3,
+   "Low": 9,
+   "Medium": 15
+  },
+  "20263": {
+   "High": 4,
+   "Low": 5,
+   "Medium": 14
+  },
+  "20264": {
+   "High": 4,
+   "Low": 1,
+   "Medium": 4
+  },
+  "20265": {
+   "High": 4,
+   "Low": 14,
+   "Medium": 3
+  },
+  "20266": {
+   "High": 4,
+   "Low": 4,
+   "Medium": 3
+  },
+  "20267": {
+   "High": 4,
+   "Low": 4,
+   "Medium": 5
+  },
+  "20268": {
+   "High": 4,
+   "Low": 2,
+   "Medium": 5
+  },
+  "20269": {
+   "High": 4,
+   "Low": 4,
+   "Medium": 5
+  },
+  "20270": {
+   "High": 5,
+   "Low": 4,
+   "Medium": 3
+  },
+  "20271": {
+   "High": 5,
+   "Low": 2,
+   "Medium": 4
+  },
+  "20272": {
+   "High": 5,
+   "Low": 1,
+   "Medium": 2
+  },
+  "20273": {
+   "High": 5,
+   "Low": 2,
+   "Medium": 3
+  },
+  "20274": {
+   "High": 5,
+   "Low": 1,
+   "Medium": 2
+  },
+  "20275": {
+   "High": 3,
+   "Low": 2,
+   "Medium": 2
+  },
+  "20276": {
+   "High": 3,
+   "Low": 4,
+   "Medium": 1
+  },
+  "20277": {
+   "High": 3,
+   "Low": 7,
+   "Medium": 1
+  },
+  "20278": {
+   "High": 3,
+   "Low": 2,
+   "Medium": 4
+  },
+  "20279": {
+   "High": 3,
+   "Low": 3,
+   "Medium": 6
+  },
+  "20280": {
+   "High": 3,
+   "Low": 1,
+   "Medium": 6
+  },
+  "20281": {
+   "High": 3,
+   "Low": 1,
+   "Medium": 6
+  },
+  "20282": {
+   "High": 4,
+   "Low": 0,
+   "Medium": 5
+  },
+  "20283": {
+   "High": 4,
+   "Low": 1,
+   "Medium": 4
+  },
+  "20284": {
+   "High": 4,
+   "Low": 1,
+   "Medium": 4
+  },
+  "20285": {
+   "High": 6,
+   "Low": 3,
+   "Medium": 2
+  },
+  "20286": {
+   "High": 7,
+   "Low": 10,
+   "Medium": 2
+  },
+  "20287": {
+   "High": 7,
+   "Low": 11,
+   "Medium": 3
+  },
+  "20288": {
+   "High": 6,
+   "Low": 2,
+   "Medium": 1
+  },
+  "20289": {
+   "High": 6,
+   "Low": 12,
+   "Medium": 2
+  },
+  "20290": {
+   "High": 6,
+   "Low": 15,
+   "Medium": 1
+  },
+  "20291": {
+   "High": 4,
+   "Low": 4,
+   "Medium": 12
+  },
+  "20292": {
+   "High": 3,
+   "Low": 2,
+   "Medium": 5
+  },
+  "20293": {
+   "High": 4,
+   "Low": 14,
+   "Medium": 4
+  },
+  "20294": {
+   "High": 4,
+   "Low": 8,
+   "Medium": 5
+  },
+  "20295": {
+   "High": 3,
+   "Low": 12,
+   "Medium": 12
+  },
+  "20296": {
+   "High": 3,
+   "Low": 11,
+   "Medium": 12
+  },
+  "20297": {
+   "High": 3,
+   "Low": 3,
+   "Medium": 18
+  },
+  "20298": {
+   "High": 6,
+   "Low": 6,
+   "Medium": 16
+  },
+  "20299": {
+   "High": 6,
+   "Low": 3,
+   "Medium": 16
+  },
+  "20300": {
+   "High": 6,
+   "Low": 2,
+   "Medium": 11
+  },
+  "20301": {
+   "High": 6,
+   "Low": 4,
+   "Medium": 9
+  },
+  "20302": {
+   "High": 12,
+   "Low": 3,
+   "Medium": 3
+  },
+  "20303": {
+   "High": 11,
+   "Low": 11,
+   "Medium": 4
+  },
+  "20304": {
+   "High": 12,
+   "Low": 9,
+   "Medium": 5
+  },
+  "20305": {
+   "High": 13,
+   "Low": 3,
+   "Medium": 11
+  },
+  "20306": {
+   "High": 13,
+   "Low": 9,
+   "Medium": 10
+  },
+  "20307": {
+   "High": 13,
+   "Low": 3,
+   "Medium": 10
+  },
+  "20308": {
+   "High": 12,
+   "Low": 6,
+   "Medium": 10
+  },
+  "20309": {
+   "High": 13,
+   "Low": 13,
+   "Medium": 11
+  },
+  "20310": {
+   "High": 14,
+   "Low": 10,
+   "Medium": 12
+  },
+  "20311": {
+   "High": 15,
+   "Low": 2,
+   "Medium": 7
+  },
+  "20312": {
+   "High": 10,
+   "Low": 8,
+   "Medium": 5
+  },
+  "20313": {
+   "High": 5,
+   "Low": 7,
+   "Medium": 2
+  },
+  "20314": {
+   "High": 5,
+   "Low": 25,
+   "Medium": 3
+  },
+  "20315": {
+   "High": 5,
+   "Low": 4,
+   "Medium": 4
+  },
+  "20316": {
+   "High": 5,
+   "Low": 11,
+   "Medium": 6
+  },
+  "20317": {
+   "High": 5,
+   "Low": 3,
+   "Medium": 2
+  },
+  "20318": {
+   "High": 5,
+   "Low": 8,
+   "Medium": 1
+  },
+  "20319": {
+   "High": 5,
+   "Low": 8,
+   "Medium": 2
+  },
+  "20320": {
+   "High": 3,
+   "Low": 5,
+   "Medium": 5
+  },
+  "20321": {
+   "High": 3,
+   "Low": 10,
+   "Medium": 6
+  },
+  "20322": {
+   "High": 3,
+   "Low": 5,
+   "Medium": 7
+  },
+  "20323": {
+   "High": 3,
+   "Low": 4,
+   "Medium": 8
+  },
+  "20324": {
+   "High": 3,
+   "Low": 4,
+   "Medium": 8
+  },
+  "20325": {
+   "High": 3,
+   "Low": 2,
+   "Medium": 6
+  },
+  "20326": {
+   "High": 4,
+   "Low": 9,
+   "Medium": 4
+  },
+  "20327": {
+   "High": 6,
+   "Low": 3,
+   "Medium": 2
+  },
+  "20328": {
+   "High": 0,
+   "Low": 0,
+   "Medium": 1
+  },
+  "20329": {
+   "High": 0,
+   "Low": 6,
+   "Medium": 0
+  },
+  "20330": {
+   "High": 0,
+   "Low": 12,
+   "Medium": 0
+  },
+  "20331": {
+   "High": 0,
+   "Low": 7,
+   "Medium": 3
+  },
+  "20332": {
+   "High": 0,
+   "Low": 2,
+   "Medium": 8
+  },
+  "20333": {
+   "High": 0,
+   "Low": 3,
+   "Medium": 9
+  },
+  "20334": {
+   "High": 0,
+   "Low": 4,
+   "Medium": 9
+  },
+  "20335": {
+   "High": 0,
+   "Low": 0,
+   "Medium": 8
+  },
+  "20336": {
+   "High": 0,
+   "Low": 4,
+   "Medium": 8
+  },
+  "20337": {
+   "High": 0,
+   "Low": 3,
+   "Medium": 7
+  },
+  "20338": {
+   "High": 2,
+   "Low": 11,
+   "Medium": 8
+  },
+  "20339": {
+   "High": 6,
+   "Low": 10,
+   "Medium": 3
+  },
+  "20340": {
+   "High": 6,
+   "Low": 3,
+   "Medium": 0
+  },
+  "20341": {
+   "High": 6,
+   "Low": 4,
+   "Medium": 0
+  },
+  "20342": {
+   "High": 6,
+   "Low": 1,
+   "Medium": 1
+  },
+  "20343": {
+   "High": 6,
+   "Low": 4,
+   "Medium": 1
+  },
+  "20344": {
+   "High": 6,
+   "Low": 1,
+   "Medium": 0
+  }
+ }
+}

@@ -1,0 +1,159 @@
+{
+ "recoveredAt": "2026-08-27T14:36:27.102Z",
+ "processes": [
+  {
+   "name": "prempass",
+   "process": "j7NcraZUL6GZlgdPEoph12Q5rk_dydvQDecLNxYi8rI",
+   "label": "PremPass / SkinChanger — access, factions, companions",
+   "checkpoint": "QnaPbkmGNRDIMZcHPnACz0Mms9oc-tI444QOOlHSlEo",
+   "nonce": 42005,
+   "checkpointedAt": "2026-02-12T19:30:20.996Z",
+   "recoveredVia": "Eval",
+   "counts": {
+    "AirPool": 6,
+    "AvailableFactions": 4,
+    "AvalibleFactions": 4,
+    "BaseSpriteHitbox": 4,
+    "BaseSpriteInfo": 5,
+    "BoostPool": 6,
+    "EffectivenessChart": 4,
+    "FACTION_BERRY_TYPES": 4,
+    "FirePool": 6,
+    "HealPool": 6,
+    "HomePosition": 2,
+    "NormalPool": 6,
+    "PurchaseTokens": 4,
+    "RockPool": 6,
+    "SUPPORTED_BERRIES": 4,
+    "Unlocked": 168,
+    "UserFactions": 108,
+    "UserLootBoxes": 47,
+    "UserMonsters": 93,
+    "UserSkins": 85,
+    "WaterPool": 6,
+    "baseSpriteHitbox": 4,
+    "monstersMAP": 4
+   }
+  },
+  {
+   "name": "multibattle",
+   "process": "3ZN5im7LNLjr8cMTXO2buhTPOfw6zz00CZqNyMWeJvs",
+   "label": "MultiBattle — combat",
+   "checkpoint": "B9DRXDznCrMiDm8HlAM0rAmMhfohx4dsTPnypmJIm8s",
+   "nonce": 2006,
+   "checkpointedAt": "2025-08-05T22:39:47.266Z",
+   "recoveredVia": "Eval",
+   "counts": {
+    "AirPool": 6,
+    "AvailableFactions": 4,
+    "BaseSpriteHitbox": 4,
+    "BoostPool": 6,
+    "EffectivenessChart": 4,
+    "FACTION_BERRY_TYPES": 4,
+    "FirePool": 6,
+    "HealPool": 6,
+    "NormalPool": 6,
+    "PurchaseTokens": 3,
+    "RockPool": 6,
+    "SUPPORTED_BERRIES": 4,
+    "UserMonsters": 7,
+    "WaterPool": 6,
+    "activeBattles": 2,
+    "battleLogs": 389,
+    "battles": 4,
+    "monstersMAP": 4,
+    "openChallenges": 7,
+    "pendingBattles": 1
+   }
+  },
+  {
+   "name": "alter",
+   "process": "GhNl98tr7ZQxIJHx4YcVdGh7WkT9dD7X4kmQOipvePQ",
+   "label": "Alter — offerings and streaks",
+   "checkpoint": "6l2PDUdBV9O3JkQ_3QO-aOs89y8Zi19UEZGX5BzbyMY",
+   "nonce": 13626,
+   "checkpointedAt": "2025-09-13T22:47:04.933Z",
+   "counts": {
+    "CheckinHistory": 131,
+    "IndividualOfferings": 91,
+    "LastOffering": 91,
+    "Streak": 80,
+    "TotalOfferings": 4
+   }
+  },
+  {
+   "name": "fire_berry_v1",
+   "process": "30cPTQXrHN76YZ3bLfNAePIEYDb5Xo1XnbQ-xmLMOM0",
+   "label": "Fire Berry token (referenced by companions)",
+   "checkpoint": "AP0Jnu-pojejGl9DXCnBdP0PfnzDE8P6otFtpRekGo0",
+   "nonce": 16076,
+   "checkpointedAt": "2026-02-22T11:57:01.675Z",
+   "counts": {
+    "Balances": 122,
+    "GrantWhitelist": 49
+   }
+  },
+  {
+   "name": "fire_berry",
+   "process": "j_CKoyoHKgWjDU-sy6Fp86ykks2tNyQbhDVd0tHX_RE",
+   "label": "Fire Berry token (SUPPORTED_BERRIES)",
+   "checkpoint": "F0mIT1XrLszKemHNC8DVE5hOOEJH0rzPuO7REa4OE7w",
+   "nonce": 7219,
+   "checkpointedAt": "2025-09-14T20:15:56.421Z",
+   "counts": {
+    "Balances": 186,
+    "GrantWhitelist": 10,
+    "env": 1
+   }
+  },
+  {
+   "name": "air_berry",
+   "process": "XJjSdWaorbQ2q0YkaQSmylmuADWH1fh2PvgfdLmXlzA",
+   "label": "Air Berry token",
+   "checkpoint": "VdbfC5EN8ENXND_zV8jZNSK57h1ZiYcWUobx7ZpTxDQ",
+   "nonce": 23285,
+   "checkpointedAt": "2025-10-29T00:46:23.197Z",
+   "counts": {
+    "Balances": 407,
+    "GrantWhitelist": 49,
+    "env": 1
+   }
+  },
+  {
+   "name": "rock_berry",
+   "process": "2NoNsZNyHMWOzTqeQUJW9Xvcga3iTonocFIsgkWIiPM",
+   "label": "Rock Berry token",
+   "checkpoint": "3W6NIBfnwB55oiRToYgFzTx9OfGCcK-ypySatPuu-AY",
+   "nonce": 22206,
+   "checkpointedAt": "2025-10-13T14:43:34.983Z",
+   "counts": {
+    "Balances": 365,
+    "GrantWhitelist": 49,
+    "env": 1
+   }
+  },
+  {
+   "name": "water_berry",
+   "process": "twFZ4HTvL_0XAIOMPizxs_S3YH5J5yGvJ8zKiMReWF0",
+   "label": "Water Berry token",
+   "checkpoint": "yVqYNhu9wzUyLAjNqm0pfxzi6nd8esn4Avo8FQowXow",
+   "nonce": 16761,
+   "checkpointedAt": "2025-11-25T17:21:30.416Z",
+   "counts": {
+    "Balances": 293,
+    "GrantWhitelist": 49
+   }
+  },
+  {
+   "name": "trunk",
+   "process": "wOrb8b_V8QixWyXZub48Ki5B6OIDyf_p1ngoonsaRpQ",
+   "label": "TRUNK — the old fuel token",
+   "checkpoint": "MqIFjZBeuaotB_AOroo-7AKADJr3q5vyGr7exOD5yq4",
+   "nonce": 574899,
+   "checkpointedAt": "2026-02-24T12:46:27.275Z",
+   "counts": {
+    "Balances": 2479
+   }
+  }
+ ]
+}
