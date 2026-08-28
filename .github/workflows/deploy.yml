@@ -62,13 +62,13 @@ jobs:
       - name: Validate Permaweb release configuration
         env:
           DEPLOY_KEY: ${{ secrets.DEPLOY_KEY }}
-          DEPLOY_ANT_PROCESS: ${{ secrets.ANT_PROCESS || secrets.DEPLOY_ANT_PROCESS_ID }}
+          DEPLOY_ANT_PROCESS: ${{ secrets.DEPLOY_ANT_PROCESS_ID || secrets.ANT_PROCESS }}
         run: npm run deploy:site:check
 
       - name: Upload bundle and update ArNS
         env:
           DEPLOY_KEY: ${{ secrets.DEPLOY_KEY }}
-          DEPLOY_ANT_PROCESS: ${{ secrets.ANT_PROCESS || secrets.DEPLOY_ANT_PROCESS_ID }}
+          DEPLOY_ANT_PROCESS: ${{ secrets.DEPLOY_ANT_PROCESS_ID || secrets.ANT_PROCESS }}
         run: npm run deploy:site
 
       - name: Preserve deployment receipt
