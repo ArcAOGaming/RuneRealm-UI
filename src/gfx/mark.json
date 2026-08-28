@@ -1,0 +1,62 @@
+{
+  "$comment": "The Realm Seal and the carved alphabet the wordmark is set in. Single source of truth for the mark's geometry — src/ui/Mark.tsx renders it as SVG, tools/gen-icons.py rasterises the favicons and the social card from these same numbers. Change it here and everything follows. All coordinates are y-down.",
+
+  "box": 100,
+
+  "bezel": {
+    "$comment": "A carved tablet, chamfered top-right and bottom-left — the same notch the .panel component cuts, so the mark and every surface it sits on are the same object.",
+    "points": [[5, 5], [79, 5], [95, 21], [95, 95], [21, 95], [5, 79]],
+    "weight": 3.2
+  },
+
+  "rune": {
+    "$comment": "A stave piercing a bound gate. Deliberately SYMMETRICAL, which is the one place in the system that is: a player's sigil is struck asymmetrically off its stave because it is theirs and imperfect, and the seal is the rune those are measured against.",
+    "strokes": [
+      [50, 16, 50, 84],
+      [50, 25, 28, 41],
+      [50, 25, 72, 41],
+      [28, 41, 28, 59],
+      [72, 41, 72, 59],
+      [50, 75, 28, 59],
+      [50, 75, 72, 59]
+    ],
+    "weight": 7.0
+  },
+
+  "bind": {
+    "$comment": "The one stroke in the mark that carries chroma. Everything else is bone-gold chrome; the bind bar takes the element, so the logo states which faction you are in for exactly the same reason every other surface does.",
+    "strokes": [[16, 50, 84, 50]],
+    "weight": 7.0
+  },
+
+  "alphabet": {
+    "$comment": "The wordmark is not set in a font. It is carved from the same vocabulary as the rune — straight strokes, mitred joins, chamfers instead of curves, and not one arc anywhere. Only the letters the name needs exist; adding one means drawing it. Glyph box is 60 wide, cap height runs y=8 to y=92.",
+    "capTop": 8,
+    "capBottom": 92,
+    "weight": 9,
+    "advance": 78,
+    "space": 44,
+    "glyphs": {
+      "R": [[8,8,8,92],[8,8,44,8],[44,8,52,16],[52,16,52,36],[52,36,44,44],[44,44,8,44],[28,44,52,92]],
+      "U": [[8,8,8,78],[8,78,20,92],[20,92,40,92],[40,92,52,78],[52,78,52,8]],
+      "N": [[8,8,8,92],[8,8,52,92],[52,8,52,92]],
+      "E": [[8,8,8,92],[8,8,50,8],[8,50,42,50],[8,92,50,92]],
+      "A": [[8,92,30,8],[30,8,52,92],[15,64,45,64]],
+      "L": [[8,8,8,92],[8,92,50,92]],
+      "M": [[8,92,8,8],[8,8,30,56],[30,56,52,8],[52,8,52,92]]
+    }
+  },
+
+  "colors": {
+    "$comment": "Mirrors the tokens in src/index.css. The raster generator has no CSS, so the values live here rather than being duplicated in a script.",
+    "void": [7, 9, 16],
+    "surface": [13, 16, 27],
+    "edge": [46, 53, 78],
+    "rune": [214, 200, 162],
+    "arcane": [150, 122, 255],
+    "ember": [255, 122, 67],
+    "tide": [74, 176, 255],
+    "gale": [126, 226, 200],
+    "stone": [201, 162, 93]
+  }
+}

@@ -1,3 +1,33 @@
 node_modules
 wallet.json
 dist
+# Arweave keyfiles - never commit
+*wallet*.json
+arweave-wallet-*.json
+*.jwk
+
+# Test artefacts
+.burners/
+.e2e/
+.swarm/
+.deploy/
+__pycache__/
+*.py[cod]
+backend/native/.checkpoint-cache/
+live-process.txt
+
+# Local env (may hold API keys) — .env.example is the tracked template
+.env
+.env.local
+.env.*.local
+
+# The mint ledger is per-machine: it records transaction ids between signing
+# and reporting, and sharing one between machines would let two workers each
+# think the other's job is done. mint-collection.json is NOT ignored -- it is
+# the only record of which collection this deployment owns.
+backend/native/mint-ledger.json
+.cards/
+
+# Contact sheets from tools/gen-icons.py --sheet. Eyeballing only; the real
+# icons land in public/.
+.icons/

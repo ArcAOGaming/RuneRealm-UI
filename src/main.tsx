@@ -1,137 +1,70 @@
-import React, { useEffect } from "react";
-import ReactDOM from "react-dom/client";
-import {
-  BrowserRouter as Router,
-  Routes,
-  Route,
-  useLocation,
-} from "react-router-dom";
-import SpriteCustomizer from "./pages/managment/SpriteCustomizer";
-import PurchaseInfo from "./pages/PurchaseInfo";
-import { MonsterManagement } from "./pages/managment/MonsterManagement";
-import { WalletProvider } from "./contexts/WalletContext";
-import { TokenProvider } from "./contexts/TokenContext";
-import { BattleProvider } from "./contexts/BattleContext";
-import { useWallet } from "./contexts/WalletContext";
-import { WalletStatus } from "./utils/interefaces";
-import "./index.css";
-import { handleReferralLink } from "./utils/aoHelpers";
-import { BotBattlePage } from "./pages/battle/BotBattlePage";
-import { RankedBattlePage } from "./pages/battle/RankedBattlePage";
-import Inventory from "./components/ui/Inventory";
-import { MonsterProvider } from "./contexts/MonsterContext";
-import { FactionProvider } from "./contexts/FactionContext";
-import DebugPage from "./pages/debug/DebugPage";
-import StartPage from "./pages/StartPage";
-import ActiveBattlePage from "./pages/battle/ActiveBattlePage";
-import Admin from "./pages/admin/Admin";
-import BattlePage from "./pages/battle/BattleMain";
-import { Analytics } from "./components/Analytics";
-import { FactionPage } from "./pages/faction/FactionPage";
-import { FactionDetailPage } from "./pages/faction/FactionDetailPage";
+import React from 'react';
+import ReactDOM from 'react-dom/client';
+import { BrowserRouter, Navigate, Route, Routes } from 'react-router-dom';
 
-interface AppContentProps {
-  wallet?: { address: string };
-  walletStatus?: WalletStatus;
+import { GameProvider } from './state/GameProvider';
+import { ToastProvider } from './ui/Toast';
+import { ErrorBoundary } from './ui/ErrorBoundary';
+import { AetherProvider } from './ui/Aether';
+import { Shell } from './ui/Shell';
+import Landing from './screens/Landing';
+import Lore from './screens/Lore';
+import Factions from './screens/Factions';
+import Companion from './screens/Companion';
+import Arena from './screens/Arena';
+import Admin from './screens/Admin';
+import Customiser from './screens/Customiser';
+import Marketplace from './screens/Marketplace';
+import { registerPwa } from './pwa';
+import { PwaInstallProvider } from './ui/PwaInstall';
+import './index.css';
+
+registerPwa();
+
+/**
+ * Routes.
+ *
+ * The open world (`/reality`, `/world`) and the sprite customiser
+ * (`/customize`) are deliberately absent. They are not deleted — the source is
+ * parked under `src/_hidden/` with a note on bringing it back — but the open
+ * world runs on the legacynet Reality process and the customiser uploads to a
+ * legacynet skin process, so neither can work until they are ported too.
+ * Anything that still links to them lands on the front door rather than a blank
+ * iframe.
+ */
+function App() {
+  return (
+    <BrowserRouter future={{ v7_startTransition: true, v7_relativeSplatPath: true }}>
+      <ErrorBoundary>
+        <AetherProvider>
+          <ToastProvider>
+            <PwaInstallProvider>
+              <GameProvider>
+                <Shell>
+                  <Routes>
+                    <Route path="/" element={<Landing />} />
+                    <Route path="/lore" element={<Lore />} />
+                    <Route path="/factions" element={<Factions />} />
+                    <Route path="/companion" element={<Companion />} />
+                    <Route path="/arena" element={<Arena />} />
+                    <Route path="/ranks" element={<Navigate to="/factions#ranks" replace />} />
+                    <Route path="/character" element={<Customiser />} />
+                    <Route path="/market" element={<Marketplace />} />
+                    <Route path="/admin" element={<Admin />} />
+                    <Route path="*" element={<Navigate to="/" replace />} />
+                  </Routes>
+                </Shell>
+              </GameProvider>
+            </PwaInstallProvider>
+          </ToastProvider>
+        </AetherProvider>
+      </ErrorBoundary>
+    </BrowserRouter>
+  );
 }
 
-const AppContent = () => {
-  const { wallet, walletStatus } = useWallet() as {
-    wallet?: { address: string };
-    walletStatus?: WalletStatus;
-  };
-
-  useEffect(() => {
-    // Handle referral link parameters when the app loads
-    handleReferralLink();
-  }, []);
-
-  useEffect(() => {
-    // Set initial rotation preference
-    const rotateScreen = localStorage.getItem("rotateScreen") !== "false";
-    document.body.setAttribute("data-rotate", rotateScreen.toString());
-
-    // Listen for storage changes
-    const handleStorageChange = (e: StorageEvent) => {
-      if (e.key === "rotateScreen") {
-        const newRotateScreen = e.newValue !== "false";
-        document.body.setAttribute("data-rotate", newRotateScreen.toString());
-      }
-    };
-
-    window.addEventListener("storage", handleStorageChange);
-    return () => window.removeEventListener("storage", handleStorageChange);
-  }, []);
-
-  const location = useLocation();
-  const showInventory = [ "/monsters", "/reality"].includes(
-    location.pathname
-  );
-
-  return (
-    <div className="app-container">
-      {wallet?.address && walletStatus?.isUnlocked && showInventory && (
-        <Inventory />
-      )}
-      <Analytics>
-        <Routes>
-
-          <Route path="/" element={<StartPage />} />
-          <Route path="/purchase" element={<PurchaseInfo />} />
-          <Route path="/customize" element={<SpriteCustomizer />} />
-          <Route path="/factions" element={<FactionPage />} />
-          <Route path="/factions/:factionId" element={<FactionDetailPage />} />
-          <Route path="/monsters" element={<MonsterManagement />} />
-          <Route path="/admin" element={<Admin />} />
-          <Route path="/battle" element={<BattlePage />} />
-          <Route path="/battle/bot" element={<BotBattlePage />} />
-          <Route path="/battle/ranked" element={<RankedBattlePage />} />
-          <Route path="/battle/active" element={<ActiveBattlePage />} />
-          <Route path="/debug" element={<DebugPage />} />
-          <Route
-            path="/reality/*"
-            element={
-              <iframe
-                src="/reality/index.html"
-                style={{ width: "100%", height: "100vh", border: "none" }}
-                title="Reality"
-              />
-            }
-          />
-          <Route
-            path="/world/*"
-            element={
-              <iframe
-                src="/reality/index.html"
-                style={{ width: "100%", height: "100vh", border: "none" }}
-                title="Reality"
-              />
-            }
-          />
-        </Routes>
-      </Analytics>
-    </div>
-  );
-};
-
-const App = () => (
-  <Router>
-    <WalletProvider>
-      <TokenProvider>
-        <MonsterProvider>
-          <FactionProvider>
-            <BattleProvider>
-              <AppContent />
-            </BattleProvider>
-          </FactionProvider>
-        </MonsterProvider>
-      </TokenProvider>
-    </WalletProvider>
-  </Router>
-);
-
-ReactDOM.createRoot(document.getElementById("root")!).render(
+ReactDOM.createRoot(document.getElementById('root')!).render(
   <React.StrictMode>
     <App />
-  </React.StrictMode>
+  </React.StrictMode>,
 );
