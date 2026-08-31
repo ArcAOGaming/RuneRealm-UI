@@ -109,8 +109,17 @@ local function run(base, req)
 
   r = send(ALICE, { Action = "Faction.Join", Faction = "Inferno Blades" })
   ok("alice joins Inferno Blades", r and r.faction == "Inferno Blades", errOf(r))
-  ok("joining seeds a starter inventory", r and (r.inventory.rune or 0) >= 3, r and json.encode(r.inventory))
-  ok("joining seeds starter loot boxes", r and #r.lootboxes == 3, r and #r.lootboxes)
+  ok("joining does not create per-wallet Rune", r and (r.inventory.rune or 0) == 0,
+     r and json.encode(r.inventory))
+  -- Three for the starter satchel and three for the companion, because
+  -- swearing does both in the one turn.
+  ok("joining seeds starter loot boxes", r and #r.lootboxes == 6, r and #r.lootboxes)
+  ok("and hands over the companion in the same turn",
+     r and r.monster ~= nil and r.adopted == true, errOf(r))
+  -- The local suite runs the process in its explicit pre-launch testing mode.
+  -- Fund the long scenario through an audited admin issuance instead of hiding
+  -- a globally multiplying Rune faucet in Faction.Join.
+  send(OWNER, { Action = "Admin.Grant", PlayerId = ALICE, Item = "rune", Amount = "50" })
 
   r = send(ALICE, { Action = "Faction.Join", Faction = "Sky Nomads" })
   ok("cannot switch faction", errOf(r) ~= nil, r)
@@ -120,18 +129,24 @@ local function run(base, req)
   r = send(BOB, { Action = "Monster.Adopt" })
   ok("cannot adopt without a faction", errOf(r) ~= nil, r)
 
-  r = send(ALICE, { Action = "Monster.Adopt" })
-  ok("alice adopts", r and r.monster ~= nil, errOf(r))
+  -- Swearing IS adopting, in one turn. ALICE already swore above, so she is
+  -- holding her starter and there is no window in which an account belongs to a
+  -- faction and owns nothing.
+  r = send(ALICE, { Action = "User.Login" })
+  ok("swearing already produced a companion", r and r.monster ~= nil, errOf(r))
   ok("companion matches faction element", r and r.monster.elementType == "fire", r and r.monster.elementType)
   ok("companion starts at home", r and r.monster.status.type == "Home", r and r.monster.status.type)
-  ok("adoption grants loot boxes", r and #r.lootboxes == 6, r and #r.lootboxes)
+  ok("swearing grants loot boxes", r and #r.lootboxes == 6, r and #r.lootboxes)
+  ok("and it is in the roster, not loose", r and r.activeId
+     and r.monsters and r.monsters[r.activeId] ~= nil, r and r.activeId)
+  ok("and the oath is recorded as spent", r and r.adopted == true, r and tostring(r.adopted))
 
   local moveCount = 0
   for _ in pairs(r.monster.moves) do moveCount = moveCount + 1 end
   ok("companion has 4 moves", moveCount == 4, moveCount)
 
   r = send(ALICE, { Action = "Monster.Adopt" })
-  ok("cannot adopt twice", errOf(r) ~= nil, r)
+  ok("cannot adopt after swearing", errOf(r) ~= nil, r)
 
   -- Feeding -----------------------------------------------------------------
 
@@ -227,6 +242,55 @@ local function run(base, req)
   r = send(ALICE, { Action = "Monster.LevelUp",
                     AttackPoints = "9", DefensePoints = "1" })
   ok("more than 5 points into one stat is rejected", errOf(r) ~= nil, r)
+
+  -- Levelling costs Rune ----------------------------------------------------
+  --
+  -- One quarter of the level being ENTERED, rounded up. These assert the
+  -- boundaries of each band rather than a single value, because an off-by-one
+  -- in the rounding is the whole risk: `ceil(level/4)` and `level//4` agree
+  -- everywhere except exactly the multiples of four.
+
+  ok("levelling to 1 through 4 costs 1 rune",
+     C.levelUpCost(1) == 1 and C.levelUpCost(4) == 1, C.levelUpCost(4))
+  ok("levelling to 5 through 8 costs 2 rune",
+     C.levelUpCost(5) == 2 and C.levelUpCost(8) == 2, C.levelUpCost(8))
+  ok("levelling to 9 through 12 costs 3 rune",
+     C.levelUpCost(9) == 3 and C.levelUpCost(12) == 3, C.levelUpCost(12))
+  ok("the cost is an integer, not a float",
+     math.type(C.levelUpCost(5)) == "integer", math.type(C.levelUpCost(5)))
+
+  -- A player who cannot pay is refused, and the refusal costs them NOTHING.
+  -- The exp is the thing to watch: it is spent in the same handler, so a
+  -- charge ordered after the deduction would burn the level and hand back an
+  -- error.
+  do
+    local broke = "LVLbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+    send(OWNER, { Action = "Admin.Unlock", Addresses = broke })
+    send(broke, { Action = "Faction.Join", Faction = "Inferno Blades" })
+    -- Enough exp to level, and deliberately no Rune to pay for it.
+    -- `Admin.SetStats` patches from a JSON body, not from tags.
+    send(OWNER, { Action = "Admin.SetStats", PlayerId = broke },
+         json.encode({ exp = 50 }))
+    send(OWNER, { Action = "Admin.AdjustInventory", PlayerId = broke,
+                  Item = "rune", Delta = "-999" })
+    local before = send(broke, { Action = "User.Info" })
+    ok("the broke test player exists and has a companion",
+       before ~= nil and before.monster ~= nil, before and errOf(before))
+    if before and before.monster then
+      local r2 = send(broke, { Action = "Monster.LevelUp",
+                               AttackPoints = "4", DefensePoints = "2",
+                               SpeedPoints = "2", HealthPoints = "2" })
+      ok("levelling with no rune is refused",
+         errOf(r2) ~= nil and string.find(errOf(r2) or "", "Rune") ~= nil, r2)
+      local after = send(broke, { Action = "User.Info" })
+      ok("a refused level-up spends no exp",
+         after.monster.exp == before.monster.exp, after.monster.exp)
+      ok("a refused level-up does not advance the level",
+         after.monster.level == before.monster.level, after.monster.level)
+      ok("a refused level-up applies no stat points",
+         after.monster.attack == before.monster.attack, after.monster.attack)
+    end
+  end
 
   -- Loot boxes --------------------------------------------------------------
 
@@ -507,7 +571,11 @@ local function run(base, req)
       { Action = "Admin.RemoveUser", PlayerId = ALICE },
       { Action = "Admin.Load" },
     }
-    for _, tags in ipairs(admins) do
+    -- Numeric, not ipairs: `compute` ends with a collect, and Luerl takes the
+    -- whole VM down if one runs while an ipairs iterator is open on the stack.
+    -- The note at the end of `compute` in game.lua has the detail.
+    for ai = 1, #admins do
+      local tags = admins[ai]
       local r = send(BOB, tags, (tags.Action == "Admin.SetStats" or tags.Action == "Admin.UpdatePlayer")
         and json.encode({ level = 99 }) or nil)
       ok(tags.Action .. " refuses a non-owner", errOf(r) == "Not authorised", json.encode(r))
@@ -526,8 +594,11 @@ local function run(base, req)
     send(OWNER, { Action = "Admin.Lock", PlayerId = victim })
     -- Admin.Lock used to set a flag that only Faction.Join and Monster.Adopt
     -- ever read, so a revoked wallet carried on questing and fighting.
-    for _, action in ipairs({ "Monster.Feed", "Monster.Play", "Monster.Quest",
-                             "Lootbox.Open", "Battle.Begin", "Daily.Claim" }) do
+    -- Numeric, not ipairs -- see the note above.
+    local revoked = { "Monster.Feed", "Monster.Play", "Monster.Quest",
+                      "Lootbox.Open", "Battle.Begin", "Daily.Claim" }
+    for ri = 1, #revoked do
+      local action = revoked[ri]
       local r = send(victim, { Action = action })
       ok(action .. " is refused after revocation", errOf(r) ~= nil, json.encode(r))
     end
@@ -723,7 +794,8 @@ local function run(base, req)
     local before = send(ALICE, { Action = "User.Info" })
     local runes = before.inventory.rune or 0
     local claimed = send(ALICE, { Action = "Daily.Claim" })
-    ok("the daily can be claimed", (claimed.inventory.rune or 0) > runes,
+    ok("the daily can be claimed while global Rune rewards are paused",
+       claimed.dailyClaimed and (claimed.inventory.rune or 0) == runes,
        errOf(claimed) or claimed.inventory.rune)
     local twice = send(ALICE, { Action = "Daily.Claim" })
     ok("but not twice in a day", errOf(twice) ~= nil, json.encode(twice))
@@ -804,9 +876,15 @@ local function run(base, req)
 
     -- Wipe and restore.
     local before = send(ALICE, { Action = "User.Info" })
-    send(OWNER, { Action = "Admin.RemoveUser", PlayerId = ALICE })
+    local confiscation = send(OWNER, { Action = "Admin.RemoveUser", PlayerId = ALICE })
+    ok("an admin cannot remove an account that holds economic state",
+       errOf(confiscation) ~= nil, json.encode(confiscation))
+    -- Model the empty state of a brand-new process directly. Admin.Load is the
+    -- migration door; Admin.RemoveUser is deliberately no longer a way to burn
+    -- a real player's inventory, Gold, boxes, pass, and companions.
+    Players[ALICE] = nil
     local gone = send(ALICE, { Action = "User.Info" })
-    ok("the player can be removed", gone.exists == false, tostring(gone.exists))
+    ok("the migration target starts without the player", gone.exists == false, tostring(gone.exists))
 
     send(OWNER, { Action = "Admin.Load" }, json.encode({ players = { sample } }))
     local back = send(ALICE, { Action = "User.Info" })
@@ -1018,7 +1096,13 @@ local function run(base, req)
     local mint = res.results.outbox and res.results.outbox["mint"]
     ok("a mint is asked for", mint ~= nil, mint and json.encode(mint))
     ok("aimed at the token", mint and mint.target == TOKEN, mint and mint.target)
-    ok("in the shape token@1.0 reads", mint and mint.action == "mint"
+    -- The action must be the name the TOKEN declares, which is `Mint`. This
+    -- assertion used to demand `mint`, and that is exactly how the bug shipped:
+    -- the suite was green while a live withdrawal deducted the player's runes
+    -- and died at the token with "unknown action 'mint'". A test that pins the
+    -- wrong spelling is worse than no test, because it defends the defect.
+    ok("aimed at the token's own handler name",
+       mint and mint.action == "Mint"
        and mint.recipient == WREN and mint.quantity == "10",
        mint and json.encode(mint))
     ok("carrying the withdrawal id, so a repeat is recognisable",
@@ -1039,7 +1123,204 @@ local function run(base, req)
     r = send(WREN, { Action = "Admin.SettleWithdrawal", WithdrawalId = wid })
     ok("a player cannot settle their own withdrawal", errOf(r) == "Not authorised", json.encode(r))
 
-    r = send(OWNER, { Action = "Admin.SettleWithdrawal", WithdrawalId = wid, Outcome = "refund" })
+    -- The token closing a withdrawal by itself ------------------------------
+    --
+    -- The reason a withdrawal used to sit at `pending` for good: this process
+    -- deducts and asks, and cannot see whether the mint landed. The token now
+    -- says so, and only the token may — an attested delivery, meaning our own
+    -- scheduler vouched for the origin. Anyone able to forge this could mark a
+    -- withdrawal settled that never paid out.
+    do
+      local SCHED = "SCHEDULERssssssssssssssssssssssssssssssssss"
+      local TOKEN = "TOKENtttttttttttttttttttttttttttttttttttttt"
+
+      --- A delivery as a live node presents one: signed by our scheduler, with
+      --- the origin attested in `from-process`, and the process state naming
+      --- that scheduler so this process can tell it is ours.
+      local function delivered(committer, fromProcess, tags)
+        T = T + 1000
+        local body = {
+          commitments = { sig1 = { committer = committer, alg = "rsa-pss-sha512" } },
+          ["from-process"] = fromProcess,
+        }
+        for k, v in pairs(tags) do body[k] = v end
+        local res = compute(
+          { process = PROCESS, ["scheduler-location"] = SCHED },
+          { body = body, timestamp = T }, {}
+        )
+        return json.decode(res.results.output.data)
+      end
+
+      local forged = delivered(WREN, TOKEN,
+        { Action = "Rune.Minted", Reference = wid, Quantity = "10" })
+      ok("a wallet cannot forge the token's confirmation",
+         errOf(forged) == "Not authorised", json.encode(forged))
+
+      local impostor = delivered(SCHED, WREN,
+        { Action = "Rune.Minted", Reference = wid, Quantity = "10" })
+      ok("nor can a different process, even attested",
+         errOf(impostor) == "Not authorised", json.encode(impostor))
+
+      local mismatched = delivered(SCHED, TOKEN,
+        { Action = "Rune.Minted", Reference = wid, Quantity = "9" })
+      ok("a confirmation that disagrees on the amount is refused",
+         errOf(mismatched) ~= nil, json.encode(mismatched))
+
+      local settled = delivered(SCHED, TOKEN,
+        { Action = "Rune.Minted", Reference = wid, Quantity = "10" })
+      ok("the token settles its own withdrawal",
+         settled and settled.withdrawal and settled.withdrawal.status == "minted",
+         json.encode(settled))
+
+      -- Deliveries repeat. The reference exists so the second is recognised.
+      local again = delivered(SCHED, TOKEN,
+        { Action = "Rune.Minted", Reference = wid, Quantity = "10" })
+      ok("and a repeated confirmation changes nothing",
+         again and again.unchanged == true, json.encode(again))
+
+      -- Settled is settled: the owner's refund must not undo a real payout.
+      local late = send(OWNER, { Action = "Admin.SettleWithdrawal",
+                                 WithdrawalId = wid, Outcome = "refund" })
+      ok("and a refund cannot claw back a minted withdrawal",
+         late and late.withdrawal and late.withdrawal.status == "minted",
+         json.encode(late))
+
+      -- Coming back the other way: a DEPOSIT ---------------------------------
+      --
+      -- The asymmetry is the point. Going out, this process moves first and a
+      -- failure leaves the player short with a `pending` row saying so. Coming
+      -- back, the TOKEN moves first: the supply is destroyed before this
+      -- message exists, so the credit here is the only thing that returns the
+      -- value and there is no second source to reconcile against. Not
+      -- crediting loses the player's Rune; crediting twice mints Rune nobody
+      -- burned. Both directions are checked.
+      --
+      -- The token emitted this notice from the beginning and there was no
+      -- handler for it at all: the process answered "unknown action" and the
+      -- burned Rune simply stopped existing.
+      do
+        -- Its own wallet. Crediting DEPO here would move a balance that later
+        -- assertions about the refund path are written against.
+        local DEPO = "DEPOSITOR" .. string.rep("d", 34)
+        send(OWNER, { Action = "Admin.Unlock", Addresses = DEPO })
+        send(DEPO, { Action = "Faction.Join", Faction = "Aqua Guardians" })
+        local held = function(who)
+          local v = send(who, { Action = "User.Info" })
+          return (v.inventory or {}).rune or 0
+        end
+        local before = held(DEPO)
+
+        local forgedBurn = delivered(DEPO, TOKEN,
+          { Action = "Burn-Notice", Account = DEPO, Quantity = "5", Reference = "b1" })
+        ok("a wallet cannot forge a burn notice",
+           errOf(forgedBurn) == "Not authorised", json.encode(forgedBurn))
+        ok("and forging one credits nothing", held(DEPO) == before, held(DEPO))
+
+        local otherProcess = delivered(SCHED, DEPO,
+          { Action = "Burn-Notice", Account = DEPO, Quantity = "5", Reference = "b1" })
+        ok("nor may a process that is not the token",
+           errOf(otherProcess) == "Not authorised", json.encode(otherProcess))
+
+        -- No reference means no way to recognise a repeat, so it is refused
+        -- rather than paid: an unpayable deposit stays visible, a double
+        -- payment does not.
+        local anonymous = delivered(SCHED, TOKEN,
+          { Action = "Burn-Notice", Account = DEPO, Quantity = "5" })
+        ok("a burn notice with no reference is refused",
+           errOf(anonymous) ~= nil, json.encode(anonymous))
+        ok("and it credits nothing", held(DEPO) == before, held(DEPO))
+
+        local nobody = delivered(SCHED, TOKEN,
+          { Action = "Burn-Notice", Account = "nope", Quantity = "5", Reference = "b9" })
+        ok("a burn notice naming no real account is refused",
+           errOf(nobody) ~= nil, json.encode(nobody))
+
+        local zero = delivered(SCHED, TOKEN,
+          { Action = "Burn-Notice", Account = DEPO, Quantity = "0", Reference = "b8" })
+        ok("a burn notice for nothing is refused", errOf(zero) ~= nil, json.encode(zero))
+
+        local credited = delivered(SCHED, TOKEN,
+          { Action = "Burn-Notice", Account = DEPO, Quantity = "5", Reference = "b1" })
+        ok("the token's burn notice credits the player",
+           credited and credited.deposit and credited.deposit.amount == 5,
+           json.encode(credited))
+        ok("and the Rune actually arrives", held(DEPO) == before + 5, held(DEPO))
+
+        -- The half that matters most. Delivery is not exactly-once.
+        local twice = delivered(SCHED, TOKEN,
+          { Action = "Burn-Notice", Account = DEPO, Quantity = "5", Reference = "b1" })
+        ok("a repeated burn notice is recognised", twice and twice.unchanged == true,
+           json.encode(twice))
+        ok("and does not pay twice", held(DEPO) == before + 5, held(DEPO))
+
+        -- A different burn is a different deposit, same account.
+        local second = delivered(SCHED, TOKEN,
+          { Action = "Burn-Notice", Account = DEPO, Quantity = "3", Reference = "b2" })
+        ok("a second burn is credited on its own reference",
+           second and second.deposit and second.deposit.amount == 3, json.encode(second))
+        ok("and the total is right", held(DEPO) == before + 8, held(DEPO))
+
+        -- The depositor did not sign this; the scheduler delivered it. Without
+        -- a republish they would poll their own key and see nothing arrive.
+        do
+          T = T + 1000
+          local res = compute(
+            { process = PROCESS, ["scheduler-location"] = SCHED },
+            { body = {
+                commitments = { sig1 = { committer = SCHED, alg = "rsa-pss-sha512" } },
+                ["from-process"] = TOKEN,
+                -- Mixed case exercises the same delivery shape a foreign
+                -- process may emit. Dispatch, telemetry and dirty publication
+                -- must all agree on the resolved canonical handler.
+                Action = "bUrN-NoTiCe", Account = DEPO, Quantity = "2", Reference = "b3",
+              }, timestamp = T }, {}
+          )
+          local key = res["player-" .. DEPO]
+          ok("a deposit republishes the depositor's own record",
+             type(key) == "string", type(key))
+          local view = key and json.decode(key)
+          ok("and they can see the Rune without signing anything",
+             view and ((view.inventory or {}).rune or 0) == before + 10,
+             view and (view.inventory or {}).rune)
+
+          -- Both ledgers are published, or "did my withdrawal settle" has no
+          -- answer anything outside this process can read.
+          local ledger = res.runedeposits and json.decode(res.runedeposits)
+          local found = false
+          for _, d in ipairs(ledger or {}) do if d.id == "b3" then found = true end end
+          ok("the deposit ledger is published", found, res.runedeposits)
+          local outgoing = res.runewithdrawals and json.decode(res.runewithdrawals)
+          local settledRow = false
+          for _, w in ipairs(outgoing or {}) do
+            if w.id == wid and w.status == "minted" then settledRow = true end
+          end
+          ok("and so is the withdrawal ledger, with its status",
+             settledRow, res.runewithdrawals)
+          local metric = res.metrics and json.decode(res.metrics)
+          local day = metric and metric.daily
+            and metric.daily[tostring(T // 86400000)]
+          ok("a mixed-case burn notice republishes canonical telemetry",
+             day and day.depositsCredited >= 1
+               and metric.totals["Burn-Notice"] >= 1,
+             metric and json.encode(metric))
+          ok("the deposit's indirect Rune credit is included in telemetry",
+             day and day.runeAdded >= 2, day and day.runeAdded)
+        end
+      end
+    end
+
+    -- A second withdrawal, to exercise the owner's refund on one that really
+    -- did not mint. The first is settled now and must stay that way.
+    send(OWNER, { Action = "Admin.Grant", PlayerId = WREN, Item = "rune", Amount = "10" })
+    send(WREN, { Action = "Rune.Withdraw", Amount = "10" })
+    local queue2 = send(WREN, { Action = "Rune.Withdrawals" })
+    local pendingId = nil
+    for _, w in ipairs(queue2.withdrawals or {}) do
+      if w.status == "pending" then pendingId = w.id end
+    end
+    ok("a second withdrawal is pending", pendingId ~= nil, json.encode(queue2))
+
+    r = send(OWNER, { Action = "Admin.SettleWithdrawal", WithdrawalId = pendingId, Outcome = "refund" })
     ok("the owner can refund one that never minted",
        r and r.withdrawal and r.withdrawal.status == "refunded", json.encode(r))
     local refunded = send(WREN, { Action = "User.Info" })
@@ -1061,6 +1342,13 @@ local function run(base, req)
   -- a player get a companion out, or back, without the other half agreeing?
 
   do
+    -- Minting to Arweave ships PAUSED (C.MINT.enabled). The pipeline is still
+    -- expected to work the moment it is switched on, so this block switches it
+    -- on for itself rather than being deleted -- and switches it back, so the
+    -- refusal is what the rest of the suite and a deployed process see.
+    local mintWasEnabled = C.MINT.enabled
+    C.MINT.enabled = true
+
     local MINA = "MINAmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmm"
     -- Built with string.rep rather than typed out: the handlers check for an
     -- Arweave id by LENGTH, and a hand-written 42-character constant is a test
@@ -1134,7 +1422,14 @@ local function run(base, req)
 
     -- Reporting the same job twice must not take a second companion: the queue
     -- entry was consumed, so there is nothing left to report.
-    send(MINA, { Action = "Monster.Adopt" })
+    --
+    -- The replacement is GRANTED rather than adopted. Adoption is once per
+    -- account ever, and minting a companion out of the game does not give the
+    -- account its adoption back -- if it did, the mint path would be a way to
+    -- draw an unlimited number of new companions, which is the same hole
+    -- transferring one away used to open.
+    send(OWNER, { Action = "Admin.CreateMonster", PlayerId = MINA,
+                  Faction = "Sky Nomads", Into = "roster" })
     r = send(OWNER, { Action = "Admin.Minted", Seq = seq, AssetId = ASSET, PlayerId = MINA })
     ok("a replayed report is refused", errOf(r) ~= nil, json.encode(r))
     ok("and the replacement companion survives it",
@@ -1190,6 +1485,12 @@ local function run(base, req)
        errOf(send(MINA, { Action = "Admin.SetVault", Vault = ASSET })) == "Not authorised")
     local _, res3 = send(OWNER, { Action = "Admin.SetVault", Vault = ASSET })
     ok("the vault is published", res3.mintvault == ASSET, res3.mintvault)
+
+    C.MINT.enabled = false
+    ok("with minting paused the request is refused",
+       errOf(send(MINA, { Action = "Monster.Mint" })) == "Minting to Arweave is paused",
+       json.encode(send(MINA, { Action = "Monster.Mint" })))
+    C.MINT.enabled = mintWasEnabled
   end
 
   -- The Alter: the streak is the mechanic ---------------------------------------
@@ -1200,7 +1501,9 @@ local function run(base, req)
 
     local r = send(PILGRIM, { Action = "Daily.Claim" })
     ok("a first claim is a streak of one", r.dailyClaimed.streak == 1, json.encode(r.dailyClaimed))
-    ok("and pays the base rate", r.dailyClaimed.runes == 1, r.dailyClaimed.runes)
+    ok("and does not revive the per-wallet Rune faucet",
+       r.dailyClaimed.runes == 0 and r.dailyClaimed.runeRewardReason ~= nil,
+       r.dailyClaimed.runes)
     ok("and counts as an offering", r.dailyClaimed.offerings == 1, r.dailyClaimed.offerings)
     ok("and is tallied to the faction", r.dailyClaimed.factionOfferings >= 1,
        r.dailyClaimed.factionOfferings)
@@ -1218,8 +1521,10 @@ local function run(base, req)
       local d = json.decode(res.results.output.data)
       paid[day] = d.dailyClaimed
     end
-    ok("a streak of 3 pays double", paid[3].runes == 2, paid[3] and paid[3].runes)
-    ok("a streak of 10 pays triple", paid[10].runes == 3, paid[10] and paid[10].runes)
+    ok("a streak of 3 does not multiply global emission", paid[3].runes == 0,
+       paid[3] and paid[3].runes)
+    ok("a streak of 10 does not multiply global emission", paid[10].runes == 0,
+       paid[10] and paid[10].runes)
     ok("the streak keeps counting", paid[11].streak == 11, paid[11] and paid[11].streak)
     ok("offerings accumulate", paid[11].offerings == 11, paid[11] and paid[11].offerings)
 
@@ -1246,7 +1551,8 @@ local function run(base, req)
     }, timestamp = T }, {}).results.output.data)
     ok("a restored streak carries on instead of resetting",
        back.dailyClaimed.streak == 16, back.dailyClaimed.streak)
-    ok("and pays at its tier", back.dailyClaimed.runes == 3, back.dailyClaimed.runes)
+    ok("and remains subject to the paused global budget",
+       back.dailyClaimed.runes == 0, back.dailyClaimed.runes)
     ok("and keeps the lifetime offerings", back.dailyClaimed.offerings == 201,
        back.dailyClaimed.offerings)
 
@@ -1293,37 +1599,81 @@ local function run(base, req)
     ok("a reroll gives a legal roster", n == 4 and damaging, n .. " moves")
   end
 
-  -- The character creator's sprite --------------------------------------------
+  -- The character creator's outfit --------------------------------------------
   do
     local SPRITE = "SPRITEsssssssssssssssssssssssssssssssssssss"
     local ATLAS = "ATLASaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
-    local r = send(ALICE, { Action = "Sprite.Update", TxId = SPRITE, AtlasTxId = ATLAS })
-    ok("a player sets their own sprite", r.spriteTxId == SPRITE, json.encode(r.spriteTxId))
+    local OUTFIT = {
+      Hair = { style = "Long", color = "#6B4A2F" },
+      Hat = { style = "None", color = "#3f4d80" },
+      Shirt = { style = "T-shirt", color = "#4a6c8c" },
+      Pants = { style = "Shorts", color = "#4a4f5e" },
+      Gloves = { style = "None", color = "#6b5a46" },
+      Shoes = { style = "Shoes", color = "#5c3a30" },
+    }
+    local parked = send(ALICE, { Action = "Sprite.Update" }, json.encode(OUTFIT))
+    ok("the character creator is parked on normal deployments",
+       errOf(parked) ~= nil, json.encode(parked))
+    -- Keep the parked source executable and covered without exposing it in the
+    -- deployed contract configuration.
+    C.CHARACTER_CUSTOMISER_ENABLED = true
+    local r = send(ALICE, { Action = "Sprite.Update" }, json.encode(OUTFIT))
+    ok("a player saves their character recipe",
+       r.outfit.Hair.style == "Long" and r.outfit.Shirt.style == "T-shirt",
+       json.encode(r.outfit))
+    ok("character colours are normalised", r.outfit.Hair.color == "#6b4a2f",
+       json.encode(r.outfit.Hair))
+
+    local badOutfit = json.decode(json.encode(OUTFIT))
+    badOutfit.Hat.color = "orange"
+    r = send(ALICE, { Action = "Sprite.Update" }, json.encode(badOutfit))
+    ok("a malformed character colour is refused", errOf(r) ~= nil, json.encode(r))
+
+    badOutfit = json.decode(json.encode(OUTFIT))
+    badOutfit.Shoes = nil
+    r = send(ALICE, { Action = "Sprite.Update" }, json.encode(badOutfit))
+    ok("an incomplete character recipe is refused", errOf(r) ~= nil, json.encode(r))
+
+    local still = send(ALICE, { Action = "User.Info" })
+    ok("a refused outfit leaves the saved one alone", still.outfit.Hair.style == "Long",
+       json.encode(still.outfit))
+
+    -- Legacy uploads are still accepted, so the recovered characters that
+    -- already use them remain editable/readable during the transition.
+    r = send(ALICE, { Action = "Sprite.Update", TxId = SPRITE, AtlasTxId = ATLAS })
+    ok("a legacy player can retain their uploaded sprite", r.spriteTxId == SPRITE,
+       json.encode(r.spriteTxId))
     ok("and the atlas that describes it", r.spriteAtlasTxId == ATLAS, json.encode(r.spriteAtlasTxId))
 
     r = send(ALICE, { Action = "Sprite.Update", TxId = SPRITE, AtlasTxId = "nope" })
     ok("a malformed atlas id is refused", errOf(r) ~= nil, json.encode(r))
 
-    for _, bad in ipairs({ "short", "", "not a tx id at all!!!" }) do
+    -- Numeric, not ipairs -- see the note by the admin loop above.
+    local badIds = { "short", "", "not a tx id at all!!!" }
+    for bi = 1, #badIds do
+      local bad = badIds[bi]
       r = send(ALICE, { Action = "Sprite.Update", TxId = bad })
       ok("a sprite id that is not a transaction is refused ('" .. bad .. "')",
          errOf(r) ~= nil, json.encode(r))
     end
-    local still = send(ALICE, { Action = "User.Info" })
+    still = send(ALICE, { Action = "User.Info" })
     ok("and a refused update leaves the old one alone",
        still.spriteTxId == SPRITE, still.spriteTxId)
 
-    r = send("LOCKEDlllllllllllllllllllllllllllllllllllll", { Action = "Sprite.Update", TxId = SPRITE })
-    ok("a locked wallet cannot set one", errOf(r) ~= nil, json.encode(r))
+    r = send("LOCKEDlllllllllllllllllllllllllllllllllllll",
+      { Action = "Sprite.Update" }, json.encode(OUTFIT))
+    ok("a locked wallet cannot save a character", errOf(r) ~= nil, json.encode(r))
 
-    -- Recovered from the old process and restored with everything else.
+    -- Both recipe and old upload ids survive process recovery.
     local RETURNING = "RETURNINGrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrr"
     send(OWNER, { Action = "Admin.Load" }, json.encode({ players = { {
-      address = RETURNING, unlocked = true, spriteTxId = SPRITE,
+      address = RETURNING, unlocked = true, outfit = OUTFIT, spriteTxId = SPRITE,
     } } }))
     local back = send(RETURNING, { Action = "User.Info" })
-    ok("a recovered sprite comes back with the player", back.spriteTxId == SPRITE,
-       back.spriteTxId)
+    ok("a recovered outfit comes back with the player", back.outfit.Shoes.style == "Shoes",
+       json.encode(back.outfit))
+    ok("a recovered legacy sprite also comes back", back.spriteTxId == SPRITE, back.spriteTxId)
+    C.CHARACTER_CUSTOMISER_ENABLED = false
   end
 
   -- Daily worship history, the one engagement series the game has ------------
@@ -1445,10 +1795,79 @@ local function run(base, req)
        json.encode({ factions = #snapshot.factions, audit = #snapshot.audit }))
   end
 
-  -- Shield regeneration must never outrun the damage floor, or the above is
-  -- unreachable rather than merely slow.
-  ok("shield regen cannot exceed a bare struggle",
-     math.max(0, Battle.TUNING.struggleDamage * (Battle.TUNING.attackBase + 1) - 1) >= 1)
+  -- Shield regeneration ------------------------------------------------------
+  --
+  -- A shield recovers a share of its cap at the end of a round, but ONLY for a
+  -- fighter that came through it untouched. Both halves are load-bearing: the
+  -- regen is what makes defence worth buying, and the condition is the only
+  -- thing standing between two defensive companions and a fight that cannot be
+  -- won by either of them. An earlier version gave the regen to everybody and
+  -- had to be capped below a struggle's damage to stay finishable.
+  do
+    local function fighters()
+      local a = Battle.combatant(
+        { name = "A", elementType = "rock", attack = 4, defense = 5, speed = 9,
+          health = 8, moves = {} }, "challenger", "AAA")
+      local b = Battle.combatant(
+        { name = "B", elementType = "rock", attack = 4, defense = 5, speed = 1,
+          health = 8, moves = {} }, "accepter", "BBB")
+      return { id = "regen", kind = "bot", status = "battling", round = 0,
+               turns = {}, challenger = a, accepter = b }, a, b
+    end
+
+    local hits = { name = "Hit", type = "normal", rarity = 0,
+                   count = math.maxinteger, damage = 5,
+                   attack = 0, speed = 0, defense = 0, health = 0 }
+    local nothing = { name = "Wait", type = "normal", rarity = 0,
+                      count = math.maxinteger, damage = 0,
+                      attack = 0, speed = 0, defense = 0, health = 0 }
+
+    local share = Battle.TUNING.shieldRegenShare
+    ok("shield regen is a share of the cap, not a flat trickle",
+       share > 0 and share < 1, tostring(share))
+
+    -- One side swings and connects; the other does nothing at all.
+    local battle, a, b = fighters()
+    local expected = math.ceil(a.maxShield * share)
+    a.shield = a.maxShield - expected
+    b.shield = b.maxShield - expected
+    -- A seed that lands the blow rather than missing it.
+    Battle.seedDeterministic(7)
+    local entries
+    for _ = 1, 40 do
+      battle, a, b = fighters()
+      a.shield = a.maxShield - expected
+      b.shield = b.maxShield - expected
+      entries = Battle.resolveRound(battle, hits, nothing)
+      if entries[1] and not entries[1].missed
+         and (entries[1].shieldDamage + entries[1].healthDamage) > 0 then
+        break
+      end
+    end
+
+    ok("a fighter that was hit recovers no shield that round",
+       b.shield == b.maxShield - expected - entries[1].shieldDamage,
+       string.format("%d of %d", b.shield, b.maxShield))
+    ok("a fighter that was not hit recovers its share",
+       a.shield == a.maxShield,
+       string.format("%d of %d", a.shield, a.maxShield))
+
+    -- Neither side deals anything: both are untouched, both recover.
+    local quiet, qa, qb = fighters()
+    qa.shield = 0
+    qb.shield = 0
+    Battle.resolveRound(quiet, nothing, nothing)
+    local step = math.ceil(qa.maxShield * share)
+    ok("a round in which nothing lands restores both shields",
+       qa.shield == step and qb.shield == step,
+       string.format("%d / %d, expected %d", qa.shield, qb.shield, step))
+
+    -- And it never overfills.
+    local full, fa = fighters()
+    Battle.resolveRound(full, nothing, nothing)
+    ok("regen never exceeds the cap", fa.shield == fa.maxShield,
+       string.format("%d of %d", fa.shield, fa.maxShield))
+  end
 
   -- Public deployment mode --------------------------------------------------
   -- Toggle only after every closed-access assertion above has run. The same
@@ -1468,16 +1887,1585 @@ local function run(base, req)
     C.PUBLIC_ACCESS = false
   end
 
+  -- Roster, collection and the marketplace ----------------------------------
+  --
+  -- The whole point of the model is that a companion is one self-contained
+  -- record that MOVES: roster to collection, collection to a listing, listing
+  -- to a buyer. So every case below checks both ends -- that it arrived, and
+  -- that it is no longer where it was. A companion in two places at once is
+  -- the only bug in here that would mint value out of nothing.
+  do
+    local KEEP = "KEEPERkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkk"
+    local BUYER = "BUYERbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+    send(OWNER, { Action = "Admin.Unlock", Addresses = KEEP .. "," .. BUYER })
+    send(BUYER, { Action = "Faction.Join", Faction = "Sky Nomads" })
+    -- Swearing adopts, so this one message is the whole arrival.
+    local keeper = send(KEEP, { Action = "Faction.Join", Faction = "Stone Titans" })
+
+    ok("an adopted companion lands in the roster",
+       keeper and keeper.monsters and keeper.activeId
+         and keeper.monsters[keeper.activeId] ~= nil, keeper and keeper.activeId)
+    ok("and is the active one",
+       keeper and keeper.monster and keeper.monster.id == keeper.activeId,
+       keeper and keeper.monster and keeper.monster.id)
+    ok("a companion carries its own appearance",
+       keeper and keeper.monster and keeper.monster.holographic == true
+         and keeper.monster.background ~= nil and keeper.monster.border ~= nil,
+       keeper and keeper.monster and json.encode({
+         holo = keeper.monster.holographic,
+         bg = keeper.monster.background,
+         border = keeper.monster.border,
+       }))
+    ok("the active companion cap is published", keeper and keeper.rosterMax == 1,
+       keeper and keeper.rosterMax)
+
+    local mid = keeper and keeper.activeId
+    local runesBefore = keeper and keeper.inventory and keeper.inventory.rune or 0
+
+    -- Storing --------------------------------------------------------------
+    send(OWNER, { Action = "Admin.AdjustInventory", PlayerId = KEEP,
+                  Item = "rune", Amount = "10" })
+    local busy = send(KEEP, { Action = "Monster.Quest" })
+    local r2 = send(KEEP, { Action = "Monster.Store", MonsterId = mid })
+    ok("a busy companion cannot be stored", errOf(r2) ~= nil, r2)
+    send(OWNER, { Action = "Admin.UpdatePlayer", PlayerId = KEEP,
+                  Data = json.encode({ monster = { status = { type = "Home" } } }) })
+
+    local before = send(KEEP, { Action = "User.Login" })
+    local runes = before and before.inventory and before.inventory.rune or 0
+    local stored = send(KEEP, { Action = "Monster.Store", MonsterId = mid })
+    ok("storing moves it out of the roster",
+       stored and stored.monsters and stored.monsters[mid] == nil, stored and errOf(stored))
+    ok("and into the collection",
+       stored and stored.collection and stored.collection[mid] ~= nil, stored and errOf(stored))
+    ok("and charges a rune",
+       stored and stored.inventory and (stored.inventory.rune or 0) == runes - 1,
+       stored and stored.inventory and stored.inventory.rune)
+    ok("a player with an empty roster has no active companion",
+       stored and stored.monster == nil, stored and json.encode(stored.monster))
+
+    -- Adoption must not be a way to duplicate a stored companion.
+    local again = send(KEEP, { Action = "Monster.Adopt" })
+    ok("adopting again is refused while one is in the collection",
+       errOf(again) ~= nil, again)
+
+    -- Listing ---------------------------------------------------------------
+    local listed, lstate = send(KEEP, { Action = "Market.List",
+                                        MonsterId = mid, Price = "25" })
+    ok("listing takes it out of the collection",
+       listed and listed.collection and listed.collection[mid] == nil, errOf(listed))
+    local market = lstate and json.decode(lstate.market)
+    local listingId = listed and listed.listing and listed.listing.id
+    ok("and the listing is published with the whole companion",
+       market and listingId and market[listingId]
+         and market[listingId].monster ~= nil
+         and market[listingId].price == 25,
+       lstate and lstate.market)
+
+    local badPrice = send(KEEP, { Action = "Market.List", MonsterId = mid, Price = "0" })
+    ok("a listing below the floor is refused", errOf(badPrice) ~= nil, badPrice)
+
+    local selfBuy = send(KEEP, { Action = "Market.Buy", ListingId = listingId })
+    ok("you cannot buy your own listing", errOf(selfBuy) ~= nil, selfBuy)
+
+    -- Buying ----------------------------------------------------------------
+    local poor = send(BUYER, { Action = "Market.Buy", ListingId = listingId })
+    ok("a buyer without the runes is refused", errOf(poor) ~= nil, poor)
+
+    send(OWNER, { Action = "Admin.AdjustInventory", PlayerId = BUYER,
+                  Item = "rune", Amount = "40" })
+    local sellerBefore = send(KEEP, { Action = "User.Login" })
+    local sellerRunes = sellerBefore and sellerBefore.inventory
+      and sellerBefore.inventory.rune or 0
+    local buyerBefore = send(BUYER, { Action = "User.Login" })
+    local buyerRunes = buyerBefore and buyerBefore.inventory
+      and buyerBefore.inventory.rune or 0
+
+    local bought, bstate = send(BUYER, { Action = "Market.Buy", ListingId = listingId })
+    ok("buying debits the buyer",
+       bought and bought.inventory and (bought.inventory.rune or 0) == buyerRunes - 25,
+       bought and bought.inventory and bought.inventory.rune)
+    local sellerAfter = send(KEEP, { Action = "User.Login" })
+    ok("and credits the seller",
+       sellerAfter and sellerAfter.inventory
+         and (sellerAfter.inventory.rune or 0) == sellerRunes + 25,
+       sellerAfter and sellerAfter.inventory and sellerAfter.inventory.rune)
+
+    local ownedCount = 0
+    local ownedId = nil
+    for id in pairs(bought and bought.collection or {}) do
+      ownedCount = ownedCount + 1
+      ownedId = id
+    end
+    ok("the companion is in the buyer's collection", ownedCount == 1, ownedCount)
+    ok("the seller no longer has it",
+       sellerAfter and next(sellerAfter.collection or {}) == nil,
+       sellerAfter and json.encode(sellerAfter.collection))
+    local afterMarket = bstate and json.decode(bstate.market)
+    ok("and the listing is gone",
+       afterMarket and afterMarket[listingId] == nil, bstate and bstate.market)
+    local history = bstate and json.decode(bstate.markethistory)
+    ok("the sale is recorded",
+       history and history[1] and history[1].price == 25
+         and history[1].buyer == BUYER and history[1].seller == KEEP,
+       bstate and bstate.markethistory)
+
+    local gone = send(BUYER, { Action = "Market.Buy", ListingId = listingId })
+    ok("a sold listing cannot be bought twice", errOf(gone) ~= nil, gone)
+
+    -- Switching --------------------------------------------------------------
+    local previousActive = buyerBefore and buyerBefore.activeId
+    local pulled = send(BUYER, { Action = "Monster.SetActive", MonsterId = ownedId })
+    ok("switching chooses the collection companion",
+       pulled and pulled.activeId == ownedId and pulled.monster.id == ownedId, errOf(pulled))
+    ok("and returns the previous companion to the collection",
+       pulled and pulled.collection and pulled.collection[previousActive] ~= nil,
+       pulled and json.encode(pulled.collection))
+    ok("and costs nothing",
+       pulled and pulled.inventory
+         and (pulled.inventory.rune or 0) == (buyerRunes - 25),
+       pulled and pulled.inventory and pulled.inventory.rune)
+    ok("and the chosen companion is Home",
+       pulled and pulled.monster and pulled.monster.status
+         and pulled.monster.status.type == "Home",
+       pulled and pulled.monster and pulled.monster.status
+         and pulled.monster.status.type)
+
+    -- Transferring ------------------------------------------------------------
+    local rosterId = pulled and pulled.activeId
+    local wrongPlace = send(BUYER, { Action = "Monster.Transfer",
+                                     MonsterId = rosterId, Recipient = KEEP })
+    ok("a roster companion cannot be transferred", errOf(wrongPlace) ~= nil, wrongPlace)
+
+    send(OWNER, { Action = "Admin.AdjustInventory", PlayerId = BUYER,
+                  Item = "rune", Amount = "5" })
+    send(BUYER, { Action = "Monster.Store", MonsterId = rosterId })
+    local sent = send(BUYER, { Action = "Monster.Transfer",
+                               MonsterId = rosterId, Recipient = KEEP })
+    ok("transferring removes that companion from the sender's collection",
+       sent and (sent.collection or {})[rosterId] == nil, errOf(sent))
+    local received = send(KEEP, { Action = "User.Login" })
+    ok("and the recipient has it",
+       received and next(received.collection or {}) ~= nil,
+       received and json.encode(received.collection))
+    local selfSend = send(KEEP, { Action = "Monster.Transfer",
+                                  MonsterId = next(received.collection),
+                                  Recipient = KEEP })
+    ok("you cannot transfer to yourself", errOf(selfSend) ~= nil, selfSend)
+  end
+
+  -- One active companion and session charms --------------------------------
+  do
+    local PARTY = "PARTY" .. string.rep("p", 38)
+    send(OWNER, { Action = "Admin.Unlock", Addresses = PARTY })
+    send(PARTY, { Action = "Faction.Join", Faction = "Inferno Blades" })
+    local partySecond = send(OWNER, { Action = "Admin.CreateMonster", PlayerId = PARTY,
+                  Faction = "Inferno Blades", Into = "roster", Name = "Cinder Two" })
+    local partyThird = send(OWNER, { Action = "Admin.CreateMonster", PlayerId = PARTY,
+                  Faction = "Inferno Blades", Into = "roster", Name = "Cinder Three" })
+    send(OWNER, { Action = "Admin.AdjustInventory", PlayerId = PARTY,
+                  Item = "fire_berry", Amount = "20" })
+    send(OWNER, { Action = "Admin.AdjustInventory", PlayerId = PARTY,
+                  Item = "rune", Amount = "20" })
+
+    local ready = send(PARTY, { Action = "User.Login" })
+    local ids = { ready.activeId }
+    local storedIds = {}
+    for id in pairs(ready.collection or {}) do storedIds[#storedIds + 1] = id end
+    table.sort(storedIds)
+    ids[2], ids[3] = storedIds[1], storedIds[2]
+    ok("a keeper has one active companion and two in collection",
+       ready.rosterMax == 1 and ids[1] and ids[2] and ids[3],
+       json.encode({ active = ready.activeId, collection = storedIds,
+         second = partySecond and partySecond.error, third = partyThird and partyThird.error }))
+
+    local firstEnergy = ready.monsters[ids[1]].energy
+    local fed = send(PARTY, { Action = "Monster.Feed", MonsterId = ids[1] })
+    ok("care targets the active companion",
+       fed and fed.monsters[ids[1]].energy > firstEnergy,
+       fed and fed.monsters[ids[1]].energy)
+
+    local played = send(PARTY, { Action = "Monster.Play", MonsterId = ids[1] })
+    ok("play targets the one active companion",
+       played and played.monster and played.monster.status.type == "Play", errOf(played))
+    local doublePlay = send(PARTY, { Action = "Monster.SetActive", MonsterId = ids[2] })
+    ok("the keeper cannot switch companions during play",
+       errOf(doublePlay) ~= nil, json.encode(doublePlay))
+    local quested = send(PARTY, { Action = "Monster.Quest", MonsterId = ids[1] })
+    ok("a quest cannot overlap the active companion's play",
+       errOf(quested) ~= nil, json.encode(quested))
+
+    -- The lock is symmetric: once the play is home a quest may begin, and
+    -- that quest then blocks switching to another companion. Collection adds
+    -- choices, never parallel activity slots.
+    Players[PARTY].monsters[ids[1]].status = {
+      type = "Home", since = T, until_time = T,
+    }
+    local lead = send(PARTY, { Action = "Monster.SetActive", MonsterId = ids[2] })
+    ok("a home collection companion can become active atomically",
+       lead and lead.activeId == ids[2] and lead.monster.id == ids[2], errOf(lead))
+    quested = send(PARTY, { Action = "Monster.Quest", MonsterId = ids[2] })
+    ok("a quest begins once the account activity slot is free",
+       quested and quested.monsters[ids[2]].status.type == "Quest", errOf(quested))
+    local playDuringQuest = send(PARTY, { Action = "Monster.SetActive", MonsterId = ids[3] })
+    ok("an open quest locks collection switching",
+       errOf(playDuringQuest) ~= nil, json.encode(playDuringQuest))
+    local distracted = send(PARTY, { Action = "Battle.Begin" })
+    ok("the arena waits until the current activity is done",
+       errOf(distracted) ~= nil, json.encode(distracted))
+
+    -- Put the companion home without advancing the suite clock by an hour.
+    for _, monster in pairs(Players[PARTY].monsters) do
+      monster.status = { type = "Home", since = T, until_time = T }
+    end
+    lead = send(PARTY, { Action = "Monster.SetActive", MonsterId = ids[3] })
+    ok("another home collection companion can become active",
+       lead and lead.activeId == ids[3] and lead.monster.id == ids[3], errOf(lead))
+
+    send(OWNER, { Action = "Admin.AdjustInventory", PlayerId = PARTY,
+                  Item = "fire_berry", Amount = "6" })
+    local retired = send(OWNER, { Action = "Admin.AdjustInventory", PlayerId = PARTY,
+                                  Item = "diamond", Amount = "1" })
+    ok("retired gems are outside the active catalog", errOf(retired) ~= nil,
+       json.encode(retired))
+    local beforeBerry = send(PARTY, { Action = "User.Login" })
+    local baseAttack = beforeBerry.monster.attack
+    local entered = send(PARTY, { Action = "Battle.Begin", Item = "fire_berry" })
+    ok("berry maxing consumes exactly three berries",
+       entered and entered.inventory.fire_berry == beforeBerry.inventory.fire_berry - 3,
+       entered and entered.inventory.fire_berry)
+    ok("the chosen berry boost is recorded for the arena session",
+       entered and entered.arenaBoost and entered.arenaBoost.item == "fire_berry"
+         and entered.arenaBoost.cost == 3,
+       entered and json.encode(entered.arenaBoost))
+    local switch = send(PARTY, { Action = "Monster.SetActive", MonsterId = ids[1] })
+    ok("the active companion is locked for the whole arena session", errOf(switch) ~= nil,
+       json.encode(switch))
+
+    local fight = send(PARTY, { Action = "Battle.Start" })
+    ok("berry maxing boosts the temporary combatant",
+       fight and fight.battle and fight.battle.challenger.attack == baseAttack + 5,
+       fight and fight.battle and fight.battle.challenger.attack)
+    ok("and never mutates the permanent companion stat",
+       fight and fight.monster and fight.monster.attack == baseAttack,
+       fight and fight.monster and fight.monster.attack)
+    local left = send(PARTY, { Action = "Battle.Leave" })
+    ok("leaving the arena clears the session berry boost",
+       left and left.arenaBoost == nil, left and json.encode(left.arenaBoost))
+
+    -- The refusals around the berry, and the ordering that makes them safe.
+    --
+    -- `Battle.Begin` checks the berry BEFORE it spends the Rune. If that order
+    -- were reversed, a player who asked for a boost they could not afford
+    -- would be charged the session fee and handed an error — paying for an
+    -- arena they never entered.
+    local badItem = send(PARTY, { Action = "Battle.Begin", Item = "scroll" })
+    ok("an item that is not a battle berry is refused",
+       errOf(badItem) ~= nil and string.find(errOf(badItem) or "", "battle berry") ~= nil,
+       json.encode(badItem))
+
+    local beforeBroke = send(PARTY, { Action = "User.Login" })
+    local runesBefore = beforeBroke.inventory.rune or 0
+    -- Strip the water berries so the boost is unaffordable, leaving the Rune.
+    send(OWNER, { Action = "Admin.AdjustInventory", PlayerId = PARTY,
+                  Item = "water_berry", Delta = "-999" })
+    local poorBerry = send(PARTY, { Action = "Battle.Begin", Item = "water_berry" })
+    ok("a boost you cannot afford is refused", errOf(poorBerry) ~= nil,
+       json.encode(poorBerry))
+    local afterBroke = send(PARTY, { Action = "User.Login" })
+    ok("and the refused boost costs no Rune",
+       (afterBroke.inventory.rune or 0) == runesBefore,
+       afterBroke.inventory.rune)
+    ok("and leaves the companion at home",
+       afterBroke.monster.status.type == "Home", afterBroke.monster.status.type)
+  end
+
+  -- Hunting -----------------------------------------------------------------
+  --
+  -- The authority side only. A real run needs a Hunt worker process, so what is
+  -- asserted here is what this process decides on its own: that hunting is shut
+  -- until configured, that only the owner may configure it, that a begin takes
+  -- the companion and holds it, that a repeated begin is a delivery retry
+  -- rather than a second lock, and that a worker cannot act on a run it was not
+  -- assigned.
+
+  do
+    local HUNTER = "HUNTER" .. string.rep("h", 37)
+    local HUNTPROC = "HUNTPROC" .. string.rep("q", 35)
+    local OTHERPROC = "OTHERPROC" .. string.rep("z", 34)
+    local SCHED2 = "SCHEDULERssssssssssssssssssssssssssssssssss"
+
+    send(OWNER, { Action = "Admin.Unlock", Addresses = HUNTER })
+    send(HUNTER, { Action = "Faction.Join", Faction = "Sky Nomads" })
+
+    local shut = send(HUNTER, { Action = "Hunt.Begin" })
+    ok("hunting is refused until a hunt process is configured",
+       errOf(shut) ~= nil and string.find(errOf(shut) or "", "not configured") ~= nil,
+       json.encode(shut))
+
+    local steal = send(HUNTER, { Action = "Admin.SetHuntProcess", ProcessId = HUNTPROC })
+    ok("a player cannot configure the hunt process",
+       errOf(steal) == "Not authorised", json.encode(steal))
+
+    send(OWNER, { Action = "Admin.SetHuntProcess", ProcessId = HUNTPROC })
+
+    local opened = send(HUNTER, { Action = "Hunt.Begin" })
+    ok("a configured hunt opens a route", opened and opened.hunt ~= nil
+       and opened.hunt.runId ~= nil, json.encode(opened and opened.hunt))
+    ok("the hunt route names the assigned process",
+       opened and opened.hunt and opened.hunt.processId == HUNTPROC,
+       opened and opened.hunt and opened.hunt.processId)
+    ok("beginning a hunt takes the companion",
+       opened and opened.monster and opened.monster.status.type == "Hunt",
+       opened and opened.monster and opened.monster.status.type)
+
+    local firstRun = opened and opened.hunt and opened.hunt.runId
+    local again = send(HUNTER, { Action = "Hunt.Begin" })
+    ok("repeating the begin is a retry, not a second hunt",
+       again and again.hunt and again.hunt.runId == firstRun,
+       again and again.hunt and again.hunt.runId)
+
+    -- The one that matters. Every hunt worker is a separate public process, so
+    -- "a member of the fleet" is not the same question as "the worker this run
+    -- was handed to". Without the per-run check, worker 2 could settle worker
+    -- 1's run and hand out a capture the player never earned.
+    local function fromProcess(proc, tags, body)
+      T = T + 1000
+      local envelope = {
+        commitments = { sig1 = { committer = SCHED2, alg = "rsa-pss-sha512" } },
+        ["from-process"] = proc,
+      }
+      for k, v in pairs(tags) do envelope[k] = v end
+      if body then envelope.Data = body end
+      local res = compute({ process = PROCESS, ["scheduler-location"] = SCHED2 },
+                          { body = envelope, timestamp = T }, {})
+      return json.decode(res.results.output.data)
+    end
+
+    -- OTHERPROC must be a REAL FLEET MEMBER for this to test anything. A
+    -- stranger process is rejected by the coarse membership check in
+    -- `huntNotice` and never reaches `huntRunFor` at all — which is how the
+    -- first version of this test passed while asserting nothing, answering
+    -- "Untrusted Hunt process" instead of the per-run refusal. Enrol it, so the
+    -- only thing left to stop it is the guard actually under test.
+    send(OWNER, { Action = "Admin.SetHuntProcess", ProcessId = HUNTPROC },
+         json.encode({ { processId = HUNTPROC }, { processId = OTHERPROC } }))
+    -- A settlement complete enough to get past the identity and roll checks,
+    -- so the ONLY thing left that can refuse it is the assignment guard.
+    local foreign = fromProcess(OTHERPROC, { Action = "Hunt.Settle" },
+      json.encode({
+        protocol = "runerealm-hunt/1", runId = firstRun, playerId = HUNTER,
+        settlementId = "s-foreign-1", runeBid = 1, chance = 50, roll = 40,
+        success = true,
+      }))
+    ok("a hunt worker in the fleet cannot settle a run it was not assigned",
+       errOf(foreign) ~= nil
+         and string.find(errOf(foreign) or "", "not assigned") ~= nil,
+       json.encode(foreign))
+
+    -- Put the fixture back so later tests are not handed a hunting companion.
+    send(OWNER, { Action = "Admin.SetHuntProcess", ProcessId = "" })
+  end
+
+  -- The other side of a trade can see it happen ------------------------------
+  --
+  -- Everything above checks the REPLY, which only the signer ever gets. A sale
+  -- and a gift both change an account that did not sign, and that account has
+  -- exactly one way to look at itself without signing: the published
+  -- `player-<address>` key. If that is not rewritten, being paid and being
+  -- given a companion are both invisible from the receiving end until the
+  -- player happens to send an unrelated message -- so these assert the key,
+  -- not the reply.
+  do
+    local VEND = "VENDOR" .. string.rep("v", 37)
+    local CUST = "CUSTOM" .. string.rep("c", 37)
+    local WATCH = "WATCHER" .. string.rep("w", 36)
+    send(OWNER, { Action = "Admin.Unlock",
+                  Addresses = VEND .. "," .. CUST .. "," .. WATCH })
+    send(VEND, { Action = "Faction.Join", Faction = "Inferno Blades" })
+    send(CUST, { Action = "Faction.Join", Faction = "Sky Nomads" })
+    send(WATCH, { Action = "Faction.Join", Faction = "Stone Titans" })
+    send(VEND, { Action = "Monster.Adopt" })
+    send(OWNER, { Action = "Admin.AdjustInventory", PlayerId = VEND,
+                  Item = "rune", Amount = "10" })
+    send(OWNER, { Action = "Admin.AdjustInventory", PlayerId = CUST,
+                  Item = "rune", Amount = "60" })
+
+    local before = send(VEND, { Action = "User.Login" })
+    local sellerRunes = before.inventory.rune or 0
+    local mid = before.activeId
+    send(VEND, { Action = "Monster.Store", MonsterId = mid })
+    local listed = send(VEND, { Action = "Market.List", MonsterId = mid, Price = "30" })
+    local listingId = listed.listing.id
+
+    -- The buyer signs. The seller is not here.
+    local _, res = send(CUST, { Action = "Market.Buy", ListingId = listingId })
+    local sellerKey = res["player-" .. VEND]
+    ok("a sale republishes the seller's own record", type(sellerKey) == "string",
+       type(sellerKey))
+    local sellerView = sellerKey and json.decode(sellerKey)
+    ok("and the seller can see they were paid, without signing anything",
+       sellerView and (sellerView.inventory.rune or 0) == sellerRunes - 1 + 30,
+       sellerView and sellerView.inventory.rune)
+
+    -- Not everybody, though. Republishing the whole table on a player action
+    -- would make every trade cost what an admin write costs.
+    ok("and a bystander is not republished for somebody else's trade",
+       res["player-" .. WATCH] == nil, res["player-" .. WATCH])
+
+    -- The same from the receiving end of a gift.
+    local held = send(CUST, { Action = "User.Login" })
+    local gift = next(held.collection)
+    local _, res2 = send(CUST, { Action = "Monster.Transfer",
+                                 MonsterId = gift, Recipient = WATCH })
+    local watcherKey = res2["player-" .. WATCH]
+    ok("a transfer republishes the recipient", type(watcherKey) == "string",
+       type(watcherKey))
+    local watcherView = watcherKey and json.decode(watcherKey)
+    ok("and the companion is there when they look",
+       watcherView and next(watcherView.collection or {}) ~= nil,
+       watcherView and json.encode(watcherView.collection))
+
+    -- The list is per message. A later, unrelated action must not keep
+    -- republishing the people an earlier one touched.
+    local _, res3 = send(CUST, { Action = "User.Login" })
+    ok("and the next message does not republish them again",
+       res3["player-" .. WATCH] == nil, res3["player-" .. WATCH])
+  end
+
+  -- Adoption is once per account, EVER --------------------------------------
+  --
+  -- The rule used to be "you may adopt when you hold nothing", and emptiness is
+  -- a state anyone can return to on purpose. Two wallets passing one creature
+  -- back and forth drew a brand new one out of the process every round, for the
+  -- price of the storage rune -- an unbounded free supply of the only thing the
+  -- game is about. So the test is not "adopting twice in a row is refused"; it
+  -- is "adopting is refused by an account that has given everything away".
+  do
+    local GIVER = "GIVER" .. string.rep("g", 38)
+    local TAKER = "TAKER" .. string.rep("t", 38)
+    send(OWNER, { Action = "Admin.Unlock", Addresses = GIVER .. "," .. TAKER })
+    local first = send(GIVER, { Action = "Faction.Join", Faction = "Sky Nomads" })
+    send(TAKER, { Action = "Faction.Join", Faction = "Stone Titans" })
+
+    ok("swearing is the one adoption", first and first.monster ~= nil, errOf(first))
+    ok("and the account records that it has", first and first.adopted == true,
+       first and tostring(first.adopted))
+
+    send(OWNER, { Action = "Admin.AdjustInventory", PlayerId = GIVER,
+                  Item = "rune", Amount = "5" })
+    local mid = first.activeId
+    send(GIVER, { Action = "Monster.Store", MonsterId = mid })
+    local given = send(GIVER, { Action = "Monster.Transfer",
+                                MonsterId = mid, Recipient = TAKER })
+    ok("the giver ends up holding nothing",
+       given and given.monster == nil and next(given.collection or {}) == nil,
+       given and errOf(given))
+
+    local refill = send(GIVER, { Action = "Monster.Adopt" })
+    ok("an emptied account cannot adopt again", errOf(refill) ~= nil, json.encode(refill))
+    local after = send(GIVER, { Action = "User.Login" })
+    ok("and still holds nothing",
+       after and after.monster == nil and next(after.collection or {}) == nil,
+       after and json.encode(after.collection))
+
+    -- The taker swore, so its oath is spent too. What it gained is the GIFT,
+    -- on top of its own starter -- a wallet can end up holding two without
+    -- either of them being a second adoption.
+    local taker = send(TAKER, { Action = "User.Login" })
+    local held = 0
+    for _ in pairs(taker.monsters or {}) do held = held + 1 end
+    for _ in pairs(taker.collection or {}) do held = held + 1 end
+    ok("the taker holds its starter and the gift", held == 2, held)
+    ok("and its oath is still recorded as spent", taker.adopted == true,
+       tostring(taker.adopted))
+    ok("so it cannot adopt a third",
+       errOf(send(TAKER, { Action = "Monster.Adopt" })) ~= nil)
+  end
+
+  -- A migration carries the whole holding, and the market ---------------------
+  --
+  -- `Admin.Export` into `Admin.Load` is how a redeploy moves everyone onto a new
+  -- process, and it used to carry `monster` and nothing else -- so a redeploy
+  -- restored every player with one companion and destroyed the rest of their
+  -- roster, all of their collection, and every creature sitting in escrow,
+  -- which lives in `Market` and nowhere else.
+  do
+    local MIGA = "MIGRANT" .. string.rep("m", 36)
+    send(OWNER, { Action = "Admin.Unlock", Addresses = MIGA })
+    send(MIGA, { Action = "Faction.Join", Faction = "Aqua Guardians" })
+    send(MIGA, { Action = "Monster.Adopt" })
+    send(OWNER, { Action = "Admin.CreateMonster", PlayerId = MIGA,
+                  Faction = "Aqua Guardians", Into = "roster" })
+    send(OWNER, { Action = "Admin.CreateMonster", PlayerId = MIGA,
+                  Faction = "Inferno Blades", Into = "collection" })
+    send(OWNER, { Action = "Admin.CreateMonster", PlayerId = MIGA,
+                  Faction = "Stone Titans", Into = "collection" })
+    send(OWNER, { Action = "Admin.AdjustInventory", PlayerId = MIGA,
+                  Item = "rune", Amount = "20" })
+
+    local before = send(MIGA, { Action = "User.Login" })
+    local sellable = next(before.collection)
+    local listed = send(MIGA, { Action = "Market.List",
+                                MonsterId = sellable, Price = "17" })
+    local listingId = listed and listed.listing and listed.listing.id
+    ok("a companion is in escrow before the export", listingId ~= nil, errOf(listed))
+
+    local held = send(MIGA, { Action = "User.Login" })
+    local rosterCount, collectionCount = 0, 0
+    for _ in pairs(held.monsters or {}) do rosterCount = rosterCount + 1 end
+    for _ in pairs(held.collection or {}) do collectionCount = collectionCount + 1 end
+    ok("the account holds one active and two stored",
+       rosterCount == 1 and collectionCount == 2,
+       rosterCount .. "/" .. collectionCount)
+
+    -- Find the row however the export happens to page.
+    local row = nil
+    for offset = 0, 400, 25 do
+      local page = send(OWNER, { Action = "Admin.Export",
+                                 Offset = tostring(offset), Limit = "25" })
+      for _, candidate in ipairs(page.players or {}) do
+        if candidate.address == MIGA then row = candidate end
+      end
+      if page.done or #(page.players or {}) == 0 then break end
+    end
+    ok("the account is in the export", row ~= nil)
+
+    local exportedRoster, exportedCollection = 0, 0
+    for _ in pairs((row or {}).monsters or {}) do exportedRoster = exportedRoster + 1 end
+    for _ in pairs((row or {}).collection or {}) do exportedCollection = exportedCollection + 1 end
+    ok("the export carries the active companion", exportedRoster == 1, exportedRoster)
+    ok("and the whole collection", exportedCollection == 2, exportedCollection)
+    ok("and whether the account has adopted", row and row.adopted == true,
+       row and tostring(row.adopted))
+    ok("and the id counter behind them", row and int(row.monsterSeq, 0) >= 4,
+       row and row.monsterSeq)
+
+    local marketPage = send(OWNER, { Action = "Admin.Export", Section = "market" })
+    local carriedListing = nil
+    for _, entry in ipairs(marketPage.market or {}) do
+      if entry.id == listingId then carriedListing = entry end
+    end
+    ok("the market exports as its own section", carriedListing ~= nil,
+       json.encode(marketPage.market))
+    ok("and a listing carries the whole companion",
+       carriedListing and carriedListing.monster ~= nil
+         and carriedListing.price == 17,
+       carriedListing and json.encode(carriedListing.price))
+
+    -- Emulate a row from the short-lived multi-active build. Loading it must
+    -- keep every companion while folding the extra active record back into the
+    -- collection.
+    local oldExtraId, oldExtra = next(row.collection)
+    row.collection[oldExtraId] = nil
+    row.monsters[oldExtraId] = oldExtra
+    send(OWNER, { Action = "Admin.Load" }, json.encode({
+      players = { row },
+      market = marketPage.market,
+      marketSeq = marketPage.marketSeq,
+    }))
+
+    local restored = send(MIGA, { Action = "User.Login" })
+    local backRoster, backCollection = 0, 0
+    for _ in pairs(restored.monsters or {}) do backRoster = backRoster + 1 end
+    for _ in pairs(restored.collection or {}) do backCollection = backCollection + 1 end
+    ok("a reload folds an old multi-active roster down to one", backRoster == 1, backRoster)
+    ok("and moves the extra companion into collection", backCollection == 2, backCollection)
+    ok("and does not hand back the adoption", restored.adopted == true,
+       tostring(restored.adopted))
+    ok("and a reload cannot make the account adopt again",
+       errOf(send(MIGA, { Action = "Monster.Adopt" })) ~= nil)
+
+    -- The mirror. `monster` is meant to BE `monsters[activeId]`, not a copy of
+    -- it, and every verb in the game mutates through the mirror. A load that
+    -- assigned `p.monster` directly left two tables with the same id: the ids
+    -- agreed, so nothing looked wrong until the companion was fed and only one
+    -- of them gained the energy.
+    ok("the active companion is a roster entry",
+       restored.activeId ~= nil and restored.monsters[restored.activeId] ~= nil,
+       restored.activeId)
+    send(OWNER, { Action = "Admin.AdjustInventory", PlayerId = MIGA,
+                  Item = "water_berry", Amount = "5" })
+    local fed = send(MIGA, { Action = "Monster.Feed" })
+    ok("and feeding after a reload moves the roster entry too",
+       fed and fed.monster and fed.monsters[fed.activeId]
+         and fed.monster.energy == fed.monsters[fed.activeId].energy,
+       fed and fed.monster and (tostring(fed.monster.energy) .. " vs "
+         .. tostring(fed.monsters[fed.activeId] and fed.monsters[fed.activeId].energy)))
+
+    -- An empty row is a real export shape: `Admin.Unlock` mints one for every
+    -- address on a paid list. Loading one on top of a real player used to erase
+    -- their loot boxes, and would now erase their companions.
+    send(OWNER, { Action = "Admin.Load" }, json.encode({
+      players = { { address = MIGA, monsters = {}, collection = {} } },
+    }))
+    local survived = send(MIGA, { Action = "User.Login" })
+    local finalRoster = 0
+    for _ in pairs(survived.monsters or {}) do finalRoster = finalRoster + 1 end
+    ok("an empty row does not empty a real account", finalRoster == 1, finalRoster)
+  end
+
+  -- Stored thin, served whole ------------------------------------------------
+  --
+  -- A move is nine fields and eight of them are a verbatim copy of the entry in
+  -- `C.MOVE_POOLS`; only the uses remaining ever differ. Companions used to
+  -- carry all nine, so half of every companion record was a duplicate of a
+  -- constant sitting in the heap the node photographs every slot.
+  --
+  -- These pin BOTH halves of the trade. Storing less is only correct if every
+  -- door that hands a companion outwards puts the definition back, and a client
+  -- draws the card and the move list straight off those fields -- so a missed
+  -- door is a blank card, not an error anybody would notice in a reply.
+  do
+    local MOVER = "MOVER" .. string.rep("m", 38)
+    send(OWNER, { Action = "Admin.Unlock", Addresses = MOVER })
+    send(MOVER, { Action = "Faction.Join", Faction = "Inferno Blades" })
+    send(MOVER, { Action = "Monster.Adopt" })
+
+    local stored = Players[MOVER] and Players[MOVER].monster
+    ok("the companion exists", stored ~= nil and stored.moves ~= nil, stored ~= nil)
+
+    local storedName, storedMove = next(stored.moves)
+    local extra = {}
+    for k in pairs(storedMove) do
+      if k ~= "count" then extra[#extra + 1] = k end
+    end
+    table.sort(extra)
+    ok("a STORED move keeps only the uses remaining", #extra == 0,
+       json.encode(extra) .. " on " .. tostring(storedName))
+    ok("and the uses are a real number", type(storedMove.count) == "number",
+       json.encode(storedMove))
+
+    -- Everything below is what a client actually reads.
+    local function fullMove(moves, where)
+      if type(moves) ~= "table" then return false, where .. ": no moves" end
+      local name, mv = next(moves)
+      if type(mv) ~= "table" then return false, where .. ": empty move" end
+      local missing = {}
+      for _, field in ipairs({ "name", "type", "rarity", "count",
+                               "damage", "attack", "speed", "defense", "health" }) do
+        if mv[field] == nil then missing[#missing + 1] = field end
+      end
+      return #missing == 0, where .. " " .. tostring(name) .. " missing " .. json.encode(missing)
+    end
+
+    local mine = send(MOVER, { Action = "User.Info" })
+    local okActive, whyActive = fullMove(mine.monster and mine.monster.moves, "active companion")
+    ok("the ACTIVE companion is served with whole moves", okActive, whyActive)
+    local rosterEntry = mine.monsters and select(2, next(mine.monsters))
+    local okRoster, whyRoster = fullMove(rosterEntry and rosterEntry.moves, "roster entry")
+    ok("and so is the roster entry behind it", okRoster, whyRoster)
+
+    -- The same record read the way a wallet reads it: an unsigned GET.
+    local _, res = send(MOVER, { Action = "User.Info" })
+    local published = json.decode(res["player-" .. MOVER])
+    local okPub, whyPub = fullMove(published.monster and published.monster.moves, "published")
+    ok("and the published per-address record too", okPub, whyPub)
+
+    -- A stored companion, which is the shape a collection is drawn from.
+    send(OWNER, { Action = "Admin.CreateMonster", PlayerId = MOVER,
+                  Faction = "Aqua Guardians", Into = "collection" })
+    local held = send(MOVER, { Action = "User.Info" })
+    local kept = held.collection and select(2, next(held.collection))
+    local okKept, whyKept = fullMove(kept and kept.moves, "collection entry")
+    ok("a stored companion is served whole as well", okKept, whyKept)
+
+    -- The leaderboard carries the whole companion for the card it draws.
+    local board = send(OWNER, { Action = "Leaderboard" })
+    local okBoard, whyBoard = fullMove(board[1] and board[1].monster and board[1].monster.moves,
+                                       "leaderboard row")
+    ok("a leaderboard row carries whole moves", okBoard, whyBoard)
+
+    -- So does a listing: a buyer is choosing between creatures.
+    local collectionId = next(held.collection or {})
+    send(MOVER, { Action = "Market.List", MonsterId = collectionId, Price = "20" })
+    local _, listedRes = send(MOVER, { Action = "User.Info" })
+    local market = json.decode(listedRes.market)
+    local listing = select(2, next(market))
+    local okList, whyList = fullMove(listing and listing.monster and listing.monster.moves,
+                                     "market listing")
+    ok("a market listing carries whole moves", okList, whyList)
+    -- ...while the escrowed copy behind it stays thin.
+    local escrowed = next(Market) and Market[next(Market)]
+    local escrowMove = escrowed and escrowed.monster and select(2, next(escrowed.monster.moves))
+    local escrowExtra = 0
+    for k in pairs(escrowMove or {}) do if k ~= "count" then escrowExtra = escrowExtra + 1 end end
+    ok("but the companion in escrow is still stored thin", escrowExtra == 0, escrowExtra)
+
+    -- The mint queue is a wire payload the off-process worker composites a card
+    -- from, and the card is drawn from each move'''s type. It is the one place a
+    -- companion leaves this process without going through a view.
+    send(OWNER, { Action = "Admin.Grant", PlayerId = MOVER, Item = "rune", Amount = "100" })
+    local minting = send(MOVER, { Action = "Monster.Mint" })
+    if errOf(minting) == nil then
+      local _, mintRes = send(MOVER, { Action = "User.Info" })
+      local queue = json.decode(mintRes.mintqueue)
+      local job = queue and queue[#queue]
+      local okQueue, whyQueue = fullMove(job and job.monster and job.monster.moves,
+                                         "mint queue job")
+      ok("a queued mint carries whole moves for the card", okQueue, whyQueue)
+    else
+      -- Minting is paused in this build, so the queue cannot be filled through
+      -- the handler. Assert the primitive it uses instead: the queue line is
+      -- `withMoves(Battle.clone(m))` and this is what `withMoves` calls.
+      local hydrated = Battle.hydrateMoves(stored.moves)
+      local okHydrate, whyHydrate = fullMove(hydrated, "hydrated moveset")
+      ok("minting is paused, so the hydration the queue uses is checked directly",
+         okHydrate, whyHydrate)
+    end
+
+    -- A row written by an older build arrives with whole moves. It must be
+    -- accepted, reduced on the way in, and served whole again afterwards.
+    local LEGACY = "LEGACY" .. string.rep("l", 37)
+    send(OWNER, { Action = "Admin.Load" }, json.encode({ players = { {
+      address = LEGACY, unlocked = true, faction = "Sky Nomads",
+      monsters = { ["m1"] = {
+        name = "Airbud", elementType = "air", faction = "Sky Nomads",
+        attack = 2, defense = 2, speed = 2, health = 2, level = 3,
+        energy = 50, happiness = 50,
+        status = { type = "Home", since = 1, until_time = 1 },
+        moves = { ["Gale Force"] = {
+          name = "Gale Force", type = "air", rarity = 3, count = 1,
+          damage = 3, attack = 0, speed = 5, defense = -2, health = 0,
+        } },
+      } },
+      activeId = "m1", monsterSeq = 1,
+    } } }))
+    local legacyStored = Players[LEGACY] and Players[LEGACY].monsters
+      and Players[LEGACY].monsters["m1"]
+    ok("a legacy row loads", legacyStored ~= nil, legacyStored ~= nil)
+    local legacyExtra = {}
+    for k in pairs((legacyStored or {}).moves and legacyStored.moves["Gale Force"] or {}) do
+      if k ~= "count" then legacyExtra[#legacyExtra + 1] = k end
+    end
+    ok("and its whole moves are reduced on the way in", #legacyExtra == 0,
+       json.encode(legacyExtra))
+    ok("without losing the uses it had",
+       legacyStored and legacyStored.moves["Gale Force"]
+       and legacyStored.moves["Gale Force"].count == 1,
+       legacyStored and json.encode(legacyStored.moves))
+    local legacyBack = send(LEGACY, { Action = "User.Info" })
+    local okLegacy, whyLegacy = fullMove(legacyBack.monster and legacyBack.monster.moves,
+                                         "restored legacy companion")
+    ok("and it is served whole again", okLegacy, whyLegacy)
+    ok("with the definition from the pool, not the row",
+       legacyBack.monster.moves["Gale Force"]
+       and legacyBack.monster.moves["Gale Force"].speed == 5,
+       legacyBack.monster and json.encode(legacyBack.monster.moves["Gale Force"]))
+  end
+
+  -- What the process KEEPS ---------------------------------------------------
+  --
+  -- `Battles` was append-only. The one deletion in the file drops a pending
+  -- challenge nobody took, so every fight ever fought stayed in Lua memory for
+  -- the life of the process: about four kilobytes each, three quarters of it
+  -- the per-round `turns` log, and the node photographs the whole heap on
+  -- every slot. These pin the retention rules that replaced that.
+  do
+    local FIGHTER = "FIGHTER" .. string.rep("f", 36)
+
+    send(OWNER, { Action = "Admin.Unlock", Addresses = FIGHTER })
+    send(FIGHTER, { Action = "Faction.Join", Faction = "Sky Nomads" })
+    send(FIGHTER, { Action = "Monster.Adopt" })
+
+    local function startFight()
+      send(OWNER, { Action = "Admin.Grant", PlayerId = FIGHTER, Item = "rune", Amount = "5" })
+      send(OWNER, { Action = "Admin.SetStats", PlayerId = FIGHTER },
+           json.encode({ energy = 100, happiness = 100 }))
+      send(FIGHTER, { Action = "Battle.Begin" })
+      local started = send(FIGHTER, { Action = "Battle.Start" })
+      return started and started.battle and started.battle.id
+    end
+
+    local before = send(OWNER, { Action = "Stats" })
+    local completedBefore = before and before.completedBattles or 0
+
+    local first = startFight()
+    ok("a bot fight starts", first ~= nil, first)
+
+    -- End it the way an owner would, which stamps `endedAt` and counts it.
+    send(OWNER, { Action = "Admin.ReleaseBattle", PlayerId = FIGHTER })
+    local justEnded = send(FIGHTER, { Action = "Battle.Info", BattleId = first })
+    ok("a fight that just ended is still readable",
+       justEnded and justEnded.status == "ended", errOf(justEnded))
+    ok("and still carries its turn log for the result screen",
+       justEnded and justEnded.turns ~= nil, errOf(justEnded))
+
+    -- A second fight inside the retention window must not evict the first: the
+    -- client may still be showing it.
+    local second = startFight()
+    ok("a second fight starts", second ~= nil, second)
+    local stillThere = send(FIGHTER, { Action = "Battle.Info", BattleId = first })
+    ok("a recent fight survives the next one starting",
+       stillThere and stillThere.id == first, errOf(stillThere))
+
+    -- Past the window, the next battle created reclaims it.
+    send(OWNER, { Action = "Admin.ReleaseBattle", PlayerId = FIGHTER })
+    T = T + (40 * 60 * 1000)
+    local third = startFight()
+    ok("a third fight starts", third ~= nil, third)
+    local gone = send(FIGHTER, { Action = "Battle.Info", BattleId = first })
+    ok("a fight older than the window is reclaimed", errOf(gone) == "Battle not found",
+       json.encode(gone))
+    local live = send(FIGHTER, { Action = "Battle.Info", BattleId = third })
+    ok("and the fight in progress is untouched", live and live.id == third, errOf(live))
+
+    -- The count is a counter now, not the size of the table, so reclaiming
+    -- cannot make the lifetime total go backwards.
+    local after = send(OWNER, { Action = "Stats" })
+    ok("finished fights are still counted after they are reclaimed",
+       after and after.completedBattles >= completedBefore + 2,
+       after and (after.completedBattles .. " vs " .. completedBefore))
+
+    -- And it survives a redeploy, like every other lifetime counter.
+    local exported = send(OWNER, { Action = "Admin.Export", Limit = "1" })
+    ok("the export carries the lifetime battle count",
+       exported and exported.battlesCompleted ~= nil, exported and exported.battlesCompleted)
+    local highWater = after and after.completedBattles or 0
+    send(OWNER, { Action = "Admin.Load" }, json.encode({ battlesCompleted = 0, players = {} }))
+    local afterLoad = send(OWNER, { Action = "Stats" })
+    ok("and a restore carrying zero cannot lower it",
+       afterLoad and afterLoad.completedBattles == highWater,
+       afterLoad and afterLoad.completedBattles)
+  end
+
+  -- What a slot actually writes ----------------------------------------------
+  --
+  -- `result` IS `base` on HyperBEAM: a key a slot does not write keeps the
+  -- value the slot before it left there. Every test above hands `compute` a
+  -- FRESH table, which is the one thing a real node never does -- so none of
+  -- them can tell a key that was deliberately skipped from one that was
+  -- rewritten, and skipping is the entire point of the gating in `compute`.
+  --
+  -- These drive a CARRIED base and work by sentinel: a key still holding its
+  -- sentinel afterwards was not recomputed, and one that no longer holds it
+  -- was. Being wrong in the safe direction only makes the process slow; being
+  -- wrong in the other publishes stale state to everyone, so both directions
+  -- are asserted for every key that matters.
+  do
+    local ECON1 = "ECON1" .. string.rep("1", 38)
+    local ECON2 = "ECON2" .. string.rep("2", 38)
+    local ECON5 = "ECON5" .. string.rep("5", 38)
+    local ECON6 = "ECON6" .. string.rep("6", 38)
+
+    local carried = { process = PROCESS }
+    local function sendOn(from, tags, data)
+      T = T + 1000
+      local body = { Address = from }
+      for k, v in pairs(tags) do body[k] = v end
+      if data then body.Data = data end
+      -- The return value IS `carried`; rebinding it is what makes the next
+      -- message a continuation of this one rather than a fresh process.
+      local res = compute(carried, { body = body, timestamp = T }, {})
+      carried = res
+      return json.decode(res.results.output.data), res
+    end
+
+    local function currentMetricDay()
+      local view = carried.metrics and json.decode(carried.metrics)
+      return view, view and view.daily
+        and (view.daily[tostring(T // 86400000)]
+          or view.daily[T // 86400000])
+    end
+
+    local function checkIncrementalTelemetry(label)
+      -- Stats is an independent authoritative scan and a read-only action, so
+      -- it cannot repair a drifting TelemetryTotals cache before comparison.
+      local statsNow = sendOn(OWNER, { Action = "Stats" })
+      local _, metricDay = currentMetricDay()
+      ok(label .. " publishes the current telemetry day",
+         type(metricDay) == "table", type(metricDay))
+      if type(metricDay) == "table" then
+        for _, field in ipairs({ "players", "unlocked", "monsters", "runes",
+                                 "lootboxes", "activeBattles", "wins", "losses",
+                                 "quests" }) do
+          ok(label .. " matches Stats for " .. field,
+             metricDay[field] == statsNow[field],
+             tostring(metricDay[field]) .. " / " .. tostring(statsNow[field]))
+        end
+        local factionRows = json.decode(carried.factions)
+        for _, faction in ipairs(factionRows or {}) do
+          ok(label .. " matches faction membership for " .. faction.element,
+             metricDay.factions
+               and metricDay.factions[faction.element] == faction.memberCount,
+             tostring(metricDay.factions and metricDay.factions[faction.element])
+               .. " / " .. tostring(faction.memberCount))
+        end
+      end
+    end
+
+    -- A process that has published nothing publishes everything, even for a
+    -- read. This is the absence fallback, and it is what makes a wrong entry
+    -- in READ_ONLY merely slow rather than silently stale.
+    sendOn(OWNER, { Action = "Stats" })
+    ok("a fresh process publishes the catalog", type(carried.catalog) == "string",
+       type(carried.catalog))
+    ok("and the faction tally", type(carried.factions) == "string", type(carried.factions))
+    ok("and the access flag", type(carried.access) == "string", type(carried.access))
+    ok("and the market", type(carried.market) == "string", type(carried.market))
+
+    -- A primary key can survive a partial/older snapshot while a sibling is
+    -- absent. Every sibling guard has to initialise its whole domain even when
+    -- the action itself is a pure read.
+    carried.market = "SENTINEL"
+    carried.marketstats = nil
+    carried.markethistory = nil
+    carried.runewithdrawals = "SENTINEL"
+    carried.runedeposits = nil
+    carried.assets = "SENTINEL"
+    carried.assetcount = nil
+    sendOn(OWNER, { Action = "Stats" })
+    ok("a missing market sibling republishes market stats and history",
+       type(carried.marketstats) == "string"
+         and type(carried.markethistory) == "string",
+       type(carried.marketstats) .. "/" .. type(carried.markethistory))
+    ok("a missing deposit sibling republishes both bridge ledgers",
+       type(carried.runedeposits) == "string", type(carried.runedeposits))
+    ok("a missing asset-count sibling republishes the asset registry",
+       type(carried.assetcount) == "string", type(carried.assetcount))
+
+    -- Constants are written once. A WRITE action is used here deliberately:
+    -- the statics must survive the one code path that rebuilds everything else.
+    carried.catalog = "SENTINEL"
+    carried.access = "SENTINEL"
+    carried.mintcost = "SENTINEL"
+    sendOn(OWNER, { Action = "Admin.Unlock", Addresses = ECON1 })
+    ok("the catalog is written once and never again", carried.catalog == "SENTINEL",
+       carried.catalog)
+    ok("and so is the access flag", carried.access == "SENTINEL", carried.access)
+    ok("and so is the mint price", carried.mintcost == "SENTINEL", carried.mintcost)
+
+    -- A read rebuilds nothing.
+    carried.factions = "SENTINEL"
+    carried.leaderboard = "SENTINEL"
+    carried.market = "SENTINEL"
+    carried.users = "SENTINEL"
+    carried.metrics = "SENTINEL"
+    sendOn(ALICE, { Action = "Leaderboard" })
+    ok("a read does not rebuild the faction tally", carried.factions == "SENTINEL",
+       carried.factions)
+    ok("nor the leaderboard", carried.leaderboard == "SENTINEL", carried.leaderboard)
+    ok("nor the market", carried.market == "SENTINEL", carried.market)
+    ok("nor the player count", carried.users == "SENTINEL", carried.users)
+
+    -- An unknown action is deliberately unclassified, so it takes the safe
+    -- path and republishes every derived domain. A future handler added without
+    -- a classification can be slow for one release, but never stale.
+    sendOn(ALICE, { Action = "Nonsense.Verb" })
+    ok("an unknown action fails safe by rebuilding aggregates",
+       carried.factions ~= "SENTINEL",
+       carried.factions)
+
+    -- A user-list mutation does not rebuild unrelated domains.
+    carried.factions = "SENTINEL"
+    carried.leaderboard = "SENTINEL"
+    carried.market = "SENTINEL"
+    carried.assets = "SENTINEL"
+    carried.runewithdrawals = "SENTINEL"
+    carried.mintqueue = "SENTINEL"
+    carried.depositqueue = "SENTINEL"
+    carried.users = "SENTINEL"
+    carried.metrics = "SENTINEL"
+    sendOn(OWNER, { Action = "Admin.Unlock", Addresses = ECON2 })
+    ok("an unlock leaves the faction tally alone", carried.factions == "SENTINEL",
+       carried.factions)
+    ok("and the leaderboard", carried.leaderboard == "SENTINEL", carried.leaderboard)
+    ok("and the market", carried.market == "SENTINEL", carried.market)
+    ok("and assets", carried.assets == "SENTINEL", carried.assets)
+    ok("and bridge ledgers", carried.runewithdrawals == "SENTINEL",
+       carried.runewithdrawals)
+    ok("and mint queues", carried.mintqueue == "SENTINEL"
+       and carried.depositqueue == "SENTINEL",
+       carried.mintqueue .. "/" .. carried.depositqueue)
+    ok("and the player count", carried.users ~= "SENTINEL", carried.users)
+    ok("and the metrics", carried.metrics ~= "SENTINEL", carried.metrics)
+
+    -- Admin.Unlock mints a record for an address that had none, so every one of
+    -- them needs a key before its owner can see anything.
+    ok("Admin.Unlock publishes every account it minted",
+       type(carried["player-" .. ECON1]) == "string"
+       and type(carried["player-" .. ECON2]) == "string",
+       type(carried["player-" .. ECON1]) .. "/" .. type(carried["player-" .. ECON2]))
+
+    -- Grant also goes through getPlayer and therefore may create its target.
+    -- It is an easy classification edge to miss because the usual target
+    -- already exists.
+    carried.users = "SENTINEL"
+    sendOn(OWNER, { Action = "Admin.Grant", PlayerId = ECON6,
+                    Item = "rune", Amount = "1" })
+    ok("a grant to a new address republishes the player count",
+       carried.users ~= "SENTINEL", carried.users)
+    ok("and publishes the newly created account",
+       type(carried["player-" .. ECON6]) == "string",
+       type(carried["player-" .. ECON6]))
+
+    -- Dispatch has always ignored Action value case. Every decision after
+    -- dispatch must use that same resolved name: admin targeting, audit,
+    -- telemetry and dirty-key publication used to inspect the raw spelling and
+    -- disagree with the handler that had just run.
+    local ECON7 = "ECON7" .. string.rep("7", 38)
+    carried.users = "SENTINEL"
+    carried.metrics = "SENTINEL"
+    local mixedGrant = sendOn(OWNER, {
+      Action = "aDmIn.GrAnT", PlayerId = ECON7, Item = "rune", Amount = "3",
+    })
+    ok("a mixed-case admin mutation succeeds",
+       mixedGrant and ((mixedGrant.inventory or {}).rune or 0) == 3,
+       mixedGrant and json.encode(mixedGrant))
+    ok("mixed-case admin targeting publishes the new account",
+       type(carried["player-" .. ECON7]) == "string",
+       type(carried["player-" .. ECON7]))
+    ok("mixed-case admin targeting republishes the user count",
+       carried.users ~= "SENTINEL", carried.users)
+    ok("mixed-case admin telemetry uses the canonical action",
+       carried.metrics ~= "SENTINEL", carried.metrics)
+    local mixedMetrics = json.decode(carried.metrics)
+    ok("the canonical admin action is counted and audited",
+       mixedMetrics.totals and mixedMetrics.totals["Admin.Grant"] >= 1
+         and mixedGrant.adminSnapshot ~= nil,
+       json.encode(mixedMetrics.totals))
+    ok("the published action still echoes the caller's spelling",
+       carried.action == "aDmIn.GrAnT", carried.action)
+
+    -- A grant is one companion for one wallet, and used to rewrite the entire
+    -- player table for no reason beyond being an Admin.* action.
+    carried["player-" .. ECON1] = "SENTINEL"
+    sendOn(OWNER, { Action = "Admin.CreateMonster", PlayerId = ECON2,
+                    Faction = "Inferno Blades", Into = "roster" })
+    ok("a grant publishes the account it granted to",
+       type(carried["player-" .. ECON2]) == "string"
+       and carried["player-" .. ECON2] ~= "SENTINEL",
+       type(carried["player-" .. ECON2]))
+    ok("and does not rewrite every other account",
+       carried["player-" .. ECON1] == "SENTINEL", carried["player-" .. ECON1])
+
+    -- The three high-frequency game loops update the player-facing aggregates
+    -- and telemetry, but not independent stores. These sentinels are the
+    -- regression guard for the original hot-path problem.
+    sendOn(OWNER, { Action = "Admin.Grant", PlayerId = ECON2,
+                    Item = "fire_berry", Amount = "20" })
+    sendOn(OWNER, { Action = "Admin.Grant", PlayerId = ECON2,
+                    Item = "rune", Amount = "20" })
+    local function hotAction(label, tags, data)
+      carried.factions = "SENTINEL"
+      carried.leaderboard = "SENTINEL"
+      carried.market = "SENTINEL"
+      carried.assets = "SENTINEL"
+      carried.runewithdrawals = "SENTINEL"
+      carried.runedeposits = "SENTINEL"
+      carried.mintqueue = "SENTINEL"
+      carried.depositqueue = "SENTINEL"
+      carried.metrics = "SENTINEL"
+      local value = sendOn(ECON2, tags, data)
+      ok(label .. " succeeds", value and value.error == nil,
+         value and value.error)
+      ok(label .. " republishes gameplay aggregates",
+         carried.factions ~= "SENTINEL" and carried.leaderboard ~= "SENTINEL",
+         carried.factions)
+      ok(label .. " republishes telemetry", carried.metrics ~= "SENTINEL",
+         carried.metrics)
+      ok(label .. " skips market/assets",
+         carried.market == "SENTINEL" and carried.assets == "SENTINEL",
+         carried.market .. "/" .. carried.assets)
+      ok(label .. " skips bridge/worker queues",
+         carried.runewithdrawals == "SENTINEL"
+         and carried.runedeposits == "SENTINEL"
+         and carried.mintqueue == "SENTINEL"
+         and carried.depositqueue == "SENTINEL",
+         carried.runewithdrawals .. "/" .. carried.mintqueue)
+      return value
+    end
+
+    hotAction("Monster.Feed", { Action = "mOnStEr.FeEd", Item = "fire_berry" })
+    local feedMetrics = json.decode(carried.metrics)
+    ok("a mixed-case player mutation is counted canonically",
+       feedMetrics.totals and feedMetrics.totals["Monster.Feed"] >= 1,
+       json.encode(feedMetrics.totals))
+    hotAction("Monster.Quest", { Action = "Monster.Quest" })
+    sendOn(OWNER, { Action = "Admin.SetStats", PlayerId = ECON2 },
+      json.encode({ energy = 50, happiness = 50,
+                    status = { type = "Home", since = T, until_time = T } }))
+    sendOn(ECON2, { Action = "Battle.Begin" })
+    local fight = sendOn(ECON2, { Action = "Battle.Start" })
+    local move
+    if fight and fight.battle and fight.battle.challenger then
+      for name in pairs(fight.battle.challenger.moves or {}) do move = move or name end
+    end
+    if fight and fight.battle and move then
+      hotAction("Battle.Attack", {
+        Action = "Battle.Attack", BattleId = fight.battle.id, Move = move,
+      })
+    else
+      ok("Battle.Attack setup succeeds", false, fight and json.encode(fight))
+    end
+
+    -- Settlement clears activeBattleId before the publication block looks at
+    -- the player. The shared singleton must be overwritten with the terminal
+    -- battle instead of preserving the previous slot's live view.
+    if Players[ECON2] and not Players[ECON2].activeBattleId then
+      sendOn(ECON2, { Action = "Battle.Start" })
+    end
+    local left = sendOn(ECON2, { Action = "Battle.Leave" })
+    local terminalBattle = carried.battle and json.decode(carried.battle)
+    ok("leaving a live battle succeeds", left and left.error == nil,
+       left and left.error)
+    ok("leaving publishes a terminal singleton battle",
+       terminalBattle and terminalBattle.status == "ended",
+       carried.battle)
+
+    sendOn(OWNER, { Action = "Admin.Grant", PlayerId = ECON2,
+                    Item = "rune", Amount = "2" })
+    sendOn(OWNER, { Action = "Admin.SetStats", PlayerId = ECON2 },
+      json.encode({ energy = 100, happiness = 100,
+                    status = { type = "Home", since = T, until_time = T } }))
+    sendOn(ECON2, { Action = "Battle.Begin" })
+    local posted = sendOn(ECON2, {
+      Action = "Battle.Challenge", Opponent = "OPEN",
+    })
+    ok("a pending challenge exists for singleton clearing",
+       posted and posted.battle and posted.battle.status == "pending",
+       posted and json.encode(posted))
+    sendOn(ECON2, { Action = "Battle.Leave" })
+    ok("withdrawing a pending challenge clears the singleton battle",
+       carried.battle == "null" and carried.battleid == "null",
+       tostring(carried.battle) .. "/" .. tostring(carried.battleid))
+
+    -- Compare before any later Admin.Load/AdjustAll full rebuild has a chance
+    -- to hide drift introduced by the incremental hot path.
+    checkIncrementalTelemetry("incremental hot path")
+
+    -- Export lazily normalises pre-roster rows. Because that is a real state
+    -- mutation hiding behind a read-shaped admin verb, the normalised wallet
+    -- key has to be published in the same slot.
+    local LEGACY = "000EXPORT" .. string.rep("e", 34)
+    Players[LEGACY] = {
+      address = LEGACY, unlocked = true, faction = "Inferno Blades",
+      monster = Battle.clone(Players[ECON2].monster),
+      inventory = {}, lootboxes = {}, wins = 0, losses = 0,
+      questsCompleted = 0, joinedAt = T,
+    }
+    Players[LEGACY].monster.id = nil
+    carried["player-" .. LEGACY] = "SENTINEL"
+    local exportPage = sendOn(OWNER, {
+      Action = "Admin.Export", Offset = "0", Limit = "1",
+    })
+    ok("Admin.Export visits the legacy row first",
+       exportPage and exportPage.players and exportPage.players[1]
+         and exportPage.players[1].address == LEGACY,
+       exportPage and json.encode(exportPage.players))
+    ok("Admin.Export publishes the row it normalised",
+       carried["player-" .. LEGACY] ~= "SENTINEL",
+       carried["player-" .. LEGACY])
+    local normalised = json.decode(carried["player-" .. LEGACY])
+    ok("the exported key carries the roster shape",
+       normalised and normalised.activeId ~= nil
+         and next(normalised.monsters or {}) ~= nil,
+       normalised and json.encode(normalised))
+
+    -- A restore publishes the rows it loaded, and only those.
+    carried["player-" .. ECON1] = "SENTINEL"
+    sendOn(OWNER, { Action = "Admin.Load" }, json.encode({
+      players = { { address = ECON5, unlocked = true, wins = 3 } },
+    }))
+    ok("Admin.Load publishes the row it loaded",
+       type(carried["player-" .. ECON5]) == "string", type(carried["player-" .. ECON5]))
+    ok("and leaves the accounts it never saw alone",
+       carried["player-" .. ECON1] == "SENTINEL", carried["player-" .. ECON1])
+
+    -- A bulk adjust publishes the accounts it moved, and skips the ones it
+    -- reported as skipped: nothing about those records changed.
+    carried["player-" .. ECON1] = "SENTINEL"
+    carried["player-" .. ECON2] = "SENTINEL"
+    local adjusted = sendOn(OWNER, { Action = "Admin.AdjustAll", Energy = 41 })
+    ok("Admin.AdjustAll reports what it changed", adjusted and adjusted.adjusted > 0,
+       adjusted and adjusted.adjusted)
+    ok("and publishes an account it adjusted",
+       carried["player-" .. ECON2] ~= "SENTINEL", carried["player-" .. ECON2])
+    ok("and not one with no companion to adjust",
+       carried["player-" .. ECON1] == "SENTINEL", carried["player-" .. ECON1])
+
+    -- The published faction roster is bounded; the count beside it is not.
+    local crowd = {}
+    for i = 1, 55 do
+      crowd[i] = { address = string.format("ECONROSTER%033d", i),
+                   unlocked = true, faction = "Sky Nomads" }
+    end
+    ok("the crowd is addressed the way a wallet is", #crowd[1].address == 43,
+       #crowd[1].address)
+    sendOn(OWNER, { Action = "Admin.Load" }, json.encode({ players = crowd }))
+    local tally = json.decode(carried.factions)
+    local sky
+    for _, f in ipairs(tally or {}) do if f.name == "Sky Nomads" then sky = f end end
+    ok("the faction tally counts every member", sky and sky.memberCount >= 55,
+       sky and sky.memberCount)
+    ok("but publishes at most fifty of them", sky and #sky.members == 50,
+       sky and #sky.members)
+
+    -- Accounts an admin message changes without ever naming them.
+    --
+    -- These are the cases the old blanket "republish every player on any
+    -- Admin.* action" was quietly covering up. Each one below changes somebody
+    -- the message identifies only indirectly -- through a companion's new
+    -- owner, a withdrawal id, or a queued mint job -- so `compute` cannot find
+    -- them from `PlayerId` and the handler has to name them itself.
+    local ECON3 = "ECON3" .. string.rep("3", 38)
+    local ECON4 = "ECON4" .. string.rep("4", 38)
+    sendOn(OWNER, { Action = "Admin.Unlock", Addresses = ECON3 .. "," .. ECON4 })
+    sendOn(OWNER, { Action = "Admin.CreateMonster", PlayerId = ECON3,
+                    Faction = "Stone Titans", Into = "roster" })
+    local giver = json.decode(carried["player-" .. ECON3])
+    local moving = giver and giver.activeId
+    ok("the giver has a companion to move", moving ~= nil, moving)
+
+    carried["player-" .. ECON4] = "SENTINEL"
+    sendOn(OWNER, { Action = "Admin.MoveMonster", PlayerId = ECON3,
+                    MonsterId = moving, Recipient = ECON4 })
+    ok("an admin move publishes the RECIPIENT, who is not the PlayerId",
+       carried["player-" .. ECON4] ~= "SENTINEL"
+       and type(carried["player-" .. ECON4]) == "string",
+       carried["player-" .. ECON4])
+    local gained = json.decode(carried["player-" .. ECON4])
+    ok("and the companion is there when they look",
+       gained and next(gained.collection or {}) ~= nil,
+       gained and json.encode(gained.collection))
+
+    -- A market purchase is a zero-net Rune transfer, but operational flow is
+    -- gross: the buyer removed `price` and the seller added `price`. Looking at
+    -- only the actor would record half; comparing only the total would record
+    -- neither.
+    sendOn(OWNER, { Action = "Admin.Grant", PlayerId = ECON3,
+                    Item = "rune", Amount = "10" })
+    local gainedId = gained and next(gained.collection or {})
+    local listed = gainedId and sendOn(ECON4, {
+      Action = "Market.List", MonsterId = gainedId,
+      Price = tostring(C.MARKET.minPrice),
+    }) or nil
+    local listingId = listed and listed.listing and listed.listing.id
+    ok("the transferred companion can be listed", listingId ~= nil,
+       listed and json.encode(listed))
+    local _, flowBefore = currentMetricDay()
+    local addedBefore = int(flowBefore and flowBefore.runeAdded, 0)
+    local removedBefore = int(flowBefore and flowBefore.runeRemoved, 0)
+    local bought = listingId and sendOn(ECON3, {
+      Action = "Market.Buy", ListingId = listingId,
+    }) or nil
+    ok("the second wallet can buy the listing",
+       bought and bought.error == nil, bought and bought.error)
+    local _, flowAfter = currentMetricDay()
+    ok("a two-wallet sale records the seller's Rune addition",
+       flowAfter and flowAfter.runeAdded == addedBefore + C.MARKET.minPrice,
+       flowAfter and flowAfter.runeAdded)
+    ok("a two-wallet sale records the buyer's Rune removal",
+       flowAfter and flowAfter.runeRemoved == removedBefore + C.MARKET.minPrice,
+       flowAfter and flowAfter.runeRemoved)
+
+    -- A refund names a WithdrawalId and nothing else, and pays an account.
+    sendOn(OWNER, { Action = "Admin.Grant", PlayerId = ECON3, Item = "rune", Amount = "5" })
+    sendOn(ECON3, { Action = "Rune.Withdraw", Amount = "2" })
+    local pending = sendOn(ECON3, { Action = "Rune.Withdrawals" })
+    local wid
+    for _, w in ipairs((pending or {}).withdrawals or {}) do
+      if w.status == "pending" then wid = w.id end
+    end
+    ok("there is a pending withdrawal to settle", wid ~= nil, wid)
+    if wid then
+      local _, refundBefore = currentMetricDay()
+      local refundAddedBefore = int(refundBefore and refundBefore.runeAdded, 0)
+      carried["player-" .. ECON3] = "SENTINEL"
+      sendOn(OWNER, { Action = "Admin.SettleWithdrawal", WithdrawalId = wid,
+                      Outcome = "refund" })
+      ok("a refund publishes the account it paid back",
+         carried["player-" .. ECON3] ~= "SENTINEL"
+         and type(carried["player-" .. ECON3]) == "string",
+         carried["player-" .. ECON3])
+      local _, refundAfter = currentMetricDay()
+      ok("an indirect withdrawal refund records its Rune addition",
+         refundAfter and refundAfter.runeAdded == refundAddedBefore + 2,
+         refundAfter and refundAfter.runeAdded)
+    end
+
+    -- Full rebuild actions and the incremental multi-wallet actions that follow
+    -- them both leave the cache exact.
+    checkIncrementalTelemetry("post-bulk and incremental path")
+
+    -- The board still carries the whole companion, and none of the scaffolding
+    -- the deferred clone needs in order to pick its fifty.
+    local board = json.decode(carried.leaderboard)
+    ok("the leaderboard has rows to check", type(board) == "table" and #board > 0,
+       type(board) == "table" and #board or type(board))
+    if type(board) == "table" and #board > 0 then
+      ok("a leaderboard row carries the whole companion",
+         type(board[1].monster) == "table" and board[1].monster.moves ~= nil,
+         type(board[1].monster))
+      ok("with its next level threshold", board[1].monster.nextLevelExp ~= nil,
+         board[1].monster.nextLevelExp)
+      ok("and no scaffolding left over from the sort", board[1].source == nil,
+         board[1].source)
+    end
+  end
+
+  -- Gold economy, exact ledgers, P2P escrow and finite NPC desks -------------
+  do
+    -- Isolate this contract slice from all of the deliberately destructive
+    -- admin/migration probes above, then account the world that already exists.
+    EconomyState = EconomyEngine.newState()
+    EconomyState = EconomyEngine.syncHoldings(EconomyState, Players, T)
+
+    local SELLER = "GOLDSELLER" .. string.rep("s", 33)
+    local BUYER = "GOLDBUYER" .. string.rep("b", 34)
+    send(OWNER, { Action = "Admin.Unlock", Addresses = SELLER .. "," .. BUYER })
+    send(OWNER, { Action = "Admin.Grant", PlayerId = SELLER,
+                  Item = "air_berry", Amount = "500" })
+    send(OWNER, { Action = "Admin.Grant", PlayerId = BUYER,
+                  Item = "air_berry", Amount = "500" })
+    send(OWNER, { Action = "Admin.Grant", PlayerId = SELLER,
+                  Item = "fire_berry", Amount = "20" })
+
+    local fundedBuyer = send(BUYER, {
+      Action = "Economy.Shop.Trade", Item = "air_berry", Side = "sell", Quantity = "19",
+    })
+    local fundedSeller = send(SELLER, {
+      Action = "Economy.Shop.Trade", Item = "air_berry", Side = "sell", Quantity = "1",
+    })
+    ok("the finite NPC buys exact player inventory",
+       fundedBuyer and int(fundedBuyer.gold, 0) > 0
+         and (fundedBuyer.inventory or {}).air_berry == 481,
+       fundedBuyer and json.encode(fundedBuyer))
+    ok("and Gold comes out of the named desk reserve",
+       fundedSeller and int(fundedSeller.gold, 0) > 0,
+       fundedSeller and json.encode(fundedSeller))
+
+    local listed = send(SELLER, {
+      Action = "Economy.Order.Place", Side = "sell", Item = "fire_berry",
+      Price = "10", Quantity = "5",
+    })
+    local sellOrder = listed and listed.economyResult and listed.economyResult.order
+    ok("a Gold sell order escrows its items", sellOrder and sellOrder.remaining == 5,
+       listed and json.encode(listed.economyResult))
+    local filled = send(BUYER, {
+      Action = "Economy.Order.Place", Side = "buy", Item = "fire_berry",
+      Price = "12", Quantity = "5",
+    })
+    ok("a crossing Gold order fills at the resting price",
+       filled and filled.economyResult and #filled.economyResult.fills == 1
+         and filled.economyResult.fills[1].price == 10,
+       filled and json.encode(filled.economyResult))
+    ok("the buyer receives the exact escrowed items",
+       filled and (filled.inventory or {}).fire_berry == 5,
+       filled and json.encode(filled))
+    local paidSeller = send(SELLER, { Action = "User.Info" })
+    ok("the seller receives proceeds less the deterministic two-percent fee",
+       paidSeller and int(paidSeller.gold, 0) >= 52, paidSeller and paidSeller.gold)
+
+    local partialAsk = send(SELLER, {
+      Action = "Economy.Order.Place", Side = "sell", Item = "fire_berry",
+      Price = "10", Quantity = "6",
+    })
+    local partialId = partialAsk and partialAsk.economyResult
+      and partialAsk.economyResult.order.id
+    local partialBid = send(BUYER, {
+      Action = "Economy.Order.Place", Side = "buy", Item = "fire_berry",
+      Price = "10", Quantity = "2",
+    })
+    local economyAfterPartial = send(BUYER, { Action = "Economy.View" })
+    local remaining = nil
+    for _, order in ipairs((economyAfterPartial or {}).orders or {}) do
+      if order.id == partialId then remaining = order.remaining end
+    end
+    ok("partial fills leave the exact remainder in escrow", remaining == 4, remaining)
+    local afterCancel = send(SELLER, { Action = "Economy.Order.Cancel", OrderId = partialId })
+    ok("cancelling returns the remaining item escrow",
+       afterCancel and (afterCancel.inventory or {}).fire_berry == 13,
+       afterCancel and json.encode(afterCancel))
+
+    local ownAsk = send(SELLER, {
+      Action = "Economy.Order.Place", Side = "sell", Item = "fire_berry",
+      Price = "10", Quantity = "1",
+    })
+    local goldBeforeSelf = ownAsk and ownAsk.gold
+    local ownBid = send(SELLER, {
+      Action = "Economy.Order.Place", Side = "buy", Item = "fire_berry",
+      Price = "10", Quantity = "1",
+    })
+    ok("self-trading is rejected", errOf(ownBid) ~= nil, json.encode(ownBid))
+    local afterSelf = send(SELLER, { Action = "User.Info" })
+    ok("a refused self-trade changes no Gold or escrow",
+       afterSelf.gold == goldBeforeSelf, afterSelf.gold)
+    if ownAsk and ownAsk.economyResult and ownAsk.economyResult.order then
+      send(SELLER, { Action = "Economy.Order.Cancel",
+                     OrderId = ownAsk.economyResult.order.id })
+    end
+
+    -- A fresh desk proves the NPC round trip is loss-making without bumping
+    -- into the first desk's deliberately tight 2%-of-supply epoch rail.
+    send(OWNER, { Action = "Admin.Grant", PlayerId = SELLER,
+                  Item = "water_berry", Amount = "1000" })
+    send(SELLER, { Action = "Economy.Shop.Trade", Item = "water_berry",
+                   Side = "sell", Quantity = "10" })
+    local roundTripBefore = send(BUYER, { Action = "User.Info" }).gold
+    local firstShopBuy = send(BUYER, { Action = "Economy.Shop.Trade",
+      ActionId = "shop-replay-1", Item = "water_berry", Side = "buy", Quantity = "1" })
+    local replayedShopBuy = send(BUYER, { Action = "Economy.Shop.Trade",
+      ActionId = "shop-replay-1", Item = "water_berry", Side = "buy", Quantity = "1" })
+    ok("replaying an NPC trade changes no balance, stock, or inventory",
+       replayedShopBuy.economyResult.replayed == true
+         and replayedShopBuy.gold == firstShopBuy.gold
+         and replayedShopBuy.inventory.water_berry == firstShopBuy.inventory.water_berry,
+       json.encode(replayedShopBuy.economyResult))
+    local roundTrip = send(BUYER, { Action = "Economy.Shop.Trade", Item = "water_berry",
+                                    Side = "sell", Quantity = "1" })
+    ok("a closed NPC round trip always loses Gold",
+       roundTrip and int(roundTrip.gold, roundTripBefore) < roundTripBefore,
+       roundTrip and (tostring(roundTripBefore) .. " -> " .. tostring(roundTrip.gold)))
+
+    local economy = send(BUYER, { Action = "Economy.View" })
+    ok("Gold remains exactly conserved across shop, escrow, fees and players",
+       economy and economy.invariants.gold.ok == true,
+       economy and json.encode(economy.invariants.gold))
+    ok("every fungible item and loot-box tier remains exactly conserved",
+       economy and economy.invariants.ok == true,
+       economy and json.encode(economy.invariants))
+    ok("the Scroll desk is safely paused until reliable supply exists",
+       economy and economy.desks.scroll.pause.buy ~= nil,
+       economy and economy.desks.scroll.pause.buy)
+    ok("the Rune desk is safely paused until token reconciliation exists",
+       economy and economy.desks.rune.pause.buy ~= nil,
+       economy and economy.desks.rune.pause.buy)
+
+    local preview = send(OWNER, { Action = "Admin.Economy.Preview" },
+      json.encode({ path = "gold.perQualifiedPlayer", value = 1200 }))
+    ok("an admin policy preview is non-mutating and shows its delay",
+       preview and preview.oldValue == 1000 and preview.newValue == 1200
+         and preview.effectiveAt > T,
+       preview and json.encode(preview))
+    local proposed = send(OWNER, { Action = "Admin.Economy.Propose" },
+      json.encode({ path = "gold.perQualifiedPlayer", value = 1200,
+                    reason = "adversarial simulation" }))
+    local changeId = proposed and proposed.change and proposed.change.id
+    local early = send(OWNER, { Action = "Admin.Economy.Apply", ChangeId = changeId })
+    ok("a policy change cannot bypass its 24-hour delay", errOf(early) ~= nil,
+       early and json.encode(early))
+
+    -- Pass recovery moves the complete economic identity, including escrow.
+    local PASSOLD = "PASSOLD" .. string.rep("o", 36)
+    local RECOVERY = "RECOVERY" .. string.rep("r", 35)
+    local PASSNEW = "PASSNEW" .. string.rep("n", 36)
+    send(OWNER, { Action = "Admin.Unlock", Addresses = PASSOLD })
+    send(OWNER, { Action = "Admin.Grant", PlayerId = PASSOLD,
+                  Item = "rock_berry", Amount = "1000" })
+    send(OWNER, { Action = "Admin.Grant", PlayerId = PASSOLD,
+                  Item = "rune", Amount = "10" })
+    send(PASSOLD, { Action = "Economy.Shop.Trade", Item = "rock_berry",
+                    Side = "sell", Quantity = "1" })
+    local recoveryOrder = send(PASSOLD, {
+      Action = "Economy.Order.Place", Side = "sell", Item = "rock_berry",
+      Price = "5", Quantity = "2",
+    })
+    local recoveryOrderId = recoveryOrder.economyResult.order.id
+    local secured = send(PASSOLD, { Action = "Pass.SetRecovery", Recovery = RECOVERY })
+    local stableAccountId = secured.pass.accountId
+    local recovered = send(RECOVERY, {
+      Action = "Pass.Recover", Account = PASSOLD, NewController = PASSNEW,
+    })
+    ok("recovery preserves the non-transferable account id",
+       recovered and recovered.pass.accountId == stableAccountId
+         and recovered.pass.controller == PASSNEW,
+       recovered and json.encode(recovered.pass))
+    ok("recovery preserves inventory, Gold, and the pass bond bucket",
+       recovered and (recovered.inventory.rune or 0) == 10
+         and recovered.gold > 0 and recovered.pass.bond == 0,
+       recovered and json.encode({ recovered.inventory, recovered.gold, recovered.pass }))
+    local oldGone = send(PASSOLD, { Action = "User.Info" })
+    ok("recovery disables the old controller", oldGone.exists == false, oldGone.exists)
+    local movedEconomy = send(PASSNEW, { Action = "Economy.View" })
+    local movedOrder = nil
+    for _, order in ipairs(movedEconomy.orders or {}) do
+      if order.id == recoveryOrderId then movedOrder = order end
+    end
+    ok("recovery moves open Gold escrow and quotas to the new controller",
+       movedOrder and movedOrder.account == PASSNEW, movedOrder and movedOrder.account)
+    local cooldown = send(PASSNEW, { Action = "Economy.Shop.Trade",
+      Item = "rock_berry", Side = "sell", Quantity = "1" })
+    ok("recovery pauses NPC selling for seven days", errOf(cooldown) ~= nil,
+       json.encode(cooldown))
+    send(PASSNEW, { Action = "Economy.Order.Cancel", OrderId = recoveryOrderId })
+
+    -- Optional Rune bond: still owned, but unavailable until delayed unbond.
+    EconomyState.policy.runeRewards.bondEnabled = true
+    EconomyState.policy.runeRewards.bondAmount = 5
+    local bonded = send(PASSNEW, { Action = "Pass.Bond" })
+    ok("a Rune bond moves value into the pass without consuming it",
+       bonded.pass.bond == 5 and bonded.inventory.rune == 5,
+       json.encode({ bonded.pass, bonded.inventory }))
+    local unbonding = send(PASSNEW, { Action = "Pass.BeginUnbond" })
+    ok("unbonding publishes its delayed release", unbonding.pass.unbond.readyAt > T,
+       json.encode(unbonding.pass.unbond))
+    local tooSoon = send(PASSNEW, { Action = "Pass.CompleteUnbond" })
+    ok("a Rune bond cannot rotate through identities before its delay", errOf(tooSoon) ~= nil,
+       json.encode(tooSoon))
+    T = T + EconomyState.policy.runeRewards.unbondDelay
+    local unbonded = send(PASSNEW, { Action = "Pass.CompleteUnbond" })
+    ok("the refundable bond returns after the delay",
+       unbonded.pass.bond == 0 and unbonded.inventory.rune == 10,
+       json.encode({ unbonded.pass, unbonded.inventory }))
+
+    -- Promise manifests are finite, public, one-use, and permanently seal the
+    -- unrestricted genesis grant path.
+    local PROMISED = "PROMISED" .. string.rep("p", 35)
+    local CLAIMED = "CLAIMED" .. string.rep("c", 36)
+    local SEALED = "SEALED" .. string.rep("s", 37)
+    send(OWNER, { Action = "Admin.Unlock", Addresses = PROMISED, Origin = "promised" })
+    local genesis = send(OWNER, { Action = "Admin.Pass.ConfigureGenesis" }, json.encode({
+      addresses = { PROMISED }, commitmentHash = string.rep("a", 64),
+      unassignedSlots = 1, claimDeadline = T + 86400000,
+    }))
+    ok("the promised-pass manifest seals with a public commitment",
+       genesis.genesis and genesis.genesis.sealed == true
+         and genesis.genesis.commitmentHash == string.rep("a", 64),
+       json.encode(genesis))
+    local promiseStart = send(PROMISED, { Action = "Faction.Join", Faction = "Sky Nomads" })
+    ok("a promised pass grants access and one starter companion but no economic items",
+       promiseStart.monster ~= nil and next(promiseStart.inventory) == nil
+         and #promiseStart.lootboxes == 0,
+       json.encode({ promiseStart.inventory, promiseStart.lootboxes }))
+    local claimed = send(CLAIMED, { Action = "Pass.ClaimPromise", ClaimId = "public-promise-0001" })
+    ok("one finite unassigned promise slot can be claimed once",
+       claimed.pass and claimed.pass.origin == "promised" and claimed.unlocked == true,
+       json.encode(claimed))
+    local repeated = send(SEALED, { Action = "Pass.ClaimPromise", ClaimId = "public-promise-0001" })
+    ok("a promised-pass claim cannot be replayed", errOf(repeated) ~= nil,
+       json.encode(repeated))
+    local genericGrant = send(OWNER, { Action = "Admin.Unlock", Addresses = SEALED })
+    ok("sealing removes the generic genesis pass faucet", errOf(genericGrant) ~= nil,
+       json.encode(genericGrant))
+
+    local exportedEconomy = send(OWNER, { Action = "Admin.Export", Section = "economy" })
+    ok("redeploy export carries the whole economy state",
+       exportedEconomy.section == "economy" and exportedEconomy.economy.version == 1,
+       exportedEconomy and exportedEconomy.section)
+    local importedEconomy = send(OWNER, { Action = "Admin.Load" },
+      json.encode({ players = {}, economy = exportedEconomy.economy }))
+    ok("redeploy import preserves an exact economy", importedEconomy.loaded == 0
+       and send(BUYER, { Action = "Economy.View" }).invariants.ok == true,
+       json.encode(importedEconomy))
+  end
+
   out[#out + 1] = ""
   out[#out + 1] = string.format("%d passed, %d failed", passed, failed)
   return table.concat(out, "\n")
 end
 
---- A runtime error inside the suite comes back from the node as a bare
---- `500 Oops` naming nothing, so catch it here and report it as a line of
---- output like any other failure.
+--- Driven from the outermost Lua frame, NOT through `pcall`.
+---
+--- `compute` ends with `collectgarbage("collect")`, and on Luerl a collect
+--- inside a pcall frame corrupts the state that pcall restores on return and
+--- kills the VM (see the note at the end of `compute` in game.lua). Production
+--- calls `compute` from Erlang with no Lua pcall on the stack; this suite has
+--- to match that or it tests a shape nobody deploys.
+---
+--- The cost is that a runtime error inside the suite comes back as a bare
+--- `500 Oops` naming nothing instead of a readable line. It still fails the
+--- run -- an HTML error page contains no "0 failed" for the runner to match.
 function gametest(base, req)
-  local ok, res = pcall(run, base, req)
-  if ok then return res end
-  return "ERROR: " .. tostring(res)
+  return run(base, req)
 end

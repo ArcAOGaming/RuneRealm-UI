@@ -78,7 +78,13 @@ local function run(base, req)
   r = send(GAME, { Action = "Mint", Recipient = BOB, Quantity = "40" })
   ok("a second withdraw adds to supply", r and r.TotalSupply == "140", r and r.TotalSupply)
 
-  for _, bad in ipairs({ "0", "-5", "1.5", "abc", "" }) do
+  -- Numeric, NOT ipairs. `compute` ends with `collectgarbage("collect")`, and
+  -- Luerl kills the VM if a collect runs while an ipairs iterator is open on
+  -- the stack -- it was this loop that found it. The account is at the end of
+  -- `compute` in game.lua.
+  local badQuantities = { "0", "-5", "1.5", "abc", "" }
+  for qi = 1, #badQuantities do
+    local bad = badQuantities[qi]
     r = send(GAME, { Action = "Mint", Recipient = ALICE, Quantity = bad })
     ok("mint refuses a quantity of '" .. bad .. "'", errOf(r) ~= nil, json.encode(r))
   end
@@ -356,16 +362,158 @@ local function run(base, req)
        "tokeninfo=" .. tostring(res.tokeninfo ~= nil) .. " info=" .. tostring(res.info))
   end
 
+  -- A mint tells the minter it happened --------------------------------------
+  --
+  -- The game deducts a player's in-game runes and asks for the mint in the same
+  -- message, and then cannot see whether it landed — a Lua process cannot
+  -- fetch. Without this notice every withdrawal stayed `pending` for good and
+  -- closing one meant an owner doing it by hand.
+  do
+    local WHO = "NOTIFYnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnn"
+    T = T + 1000
+    local res = compute({ process = PROCESS }, { body = {
+      commitments = { sig1 = { committer = GAME, alg = "rsa-pss-sha512" } },
+      Action = "Mint", Recipient = WHO, Quantity = "12", Reference = "w42",
+    }, timestamp = T }, {})
+
+    local outbox = res.results and res.results.outbox
+    local notice = outbox and outbox["mint-notice"]
+    ok("a mint notifies the minter", notice ~= nil, outbox and json.encode(outbox))
+    ok("aimed back at the game, not the recipient",
+       notice and notice.target == GAME, notice and notice.target)
+    ok("naming the handler the game declares",
+       notice and notice.Action == "Rune.Minted", notice and notice.Action)
+    -- The withdrawal's own id, carried back untouched. It is what lets the game
+    -- match the confirmation to the row it deducted, and what makes a repeated
+    -- delivery recognisable rather than settled twice.
+    ok("carrying the withdrawal reference back",
+       notice and notice.Reference == "w42", notice and notice.Reference)
+    ok("and the amount actually minted",
+       notice and notice.Quantity == "12", notice and notice.Quantity)
+    -- The holder still gets their own notice; this is an addition, not a swap.
+    ok("the recipient is still credited-noticed",
+       outbox and outbox["credit-notice"] ~= nil, outbox and json.encode(outbox))
+  end
+
+  -- A delivery is signed by the SCHEDULER, not by the sending process ---------
+  --
+  -- The second half of the same live incident. Once the action name matched,
+  -- the token still refused the mint: a pushed message arrives carrying the
+  -- SCHEDULER's signature, `provenSigner` returned the scheduler, the scheduler
+  -- is not the minter, and the game had already deducted the player's runes.
+  -- The scheduler's address even accrued in `balances` as a phantom account.
+  --
+  -- A signature on a delivery attests transport, not authorship. These pin all
+  -- three cases, because getting the middle one wrong destroys value and
+  -- getting the last one wrong hands the mint to anybody.
+  do
+    local SCHED = "SCHEDULERssssssssssssssssssssssssssssssssss"
+    local VICTIM = "VICTIMvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvv"
+
+    --- Drive compute with a process state that names our scheduler, the way a
+    --- live node presents it.
+    local function deliver(committer, fromProcess, tags)
+      T = T + 1000
+      local body = {
+        commitments = { sig1 = { committer = committer, alg = "rsa-pss-sha512" } },
+        ["from-process"] = fromProcess,
+      }
+      for k, v in pairs(tags) do body[k] = v end
+      local res = compute(
+        { process = PROCESS, ["scheduler-location"] = SCHED },
+        { body = body, timestamp = T }, {}
+      )
+      return json.decode(res.results.output.data)
+    end
+
+    local before = num(send(GAME, { Action = "Total-Supply" }).TotalSupply)
+
+    -- 1. Our scheduler vouching for the game: this is a real delivery.
+    local ok1 = deliver(SCHED, GAME, { Action = "Mint", Recipient = VICTIM, Quantity = "9" })
+    ok("a scheduler-signed delivery mints for the game it names",
+       errOf(ok1) == nil and ok1.Balance == "9", json.encode(ok1))
+
+    -- 2. Someone else's wallet signature carrying a from-process tag. The tag is
+    --    a claim about itself and must be inert, or the mint is public.
+    local forged = deliver(ALICE, GAME, { Action = "Mint", Recipient = ALICE, Quantity = "1000000" })
+    ok("a wallet cannot forge from-process to mint",
+       errOf(forged) ~= nil, json.encode(forged))
+
+    -- 3. The scheduler vouching for a process that is NOT the minter.
+    local wrong = deliver(SCHED, ALICE, { Action = "Mint", Recipient = ALICE, Quantity = "50" })
+    ok("a scheduler-signed delivery from a non-minter is still refused",
+       errOf(wrong) ~= nil, json.encode(wrong))
+
+    -- 4. The scheduler must never become an account in its own right.
+    local sched = deliver(SCHED, GAME, { Action = "Balance", Recipient = SCHED })
+    ok("the scheduler holds nothing",
+       sched and (sched.Balance == "0" or sched.Balance == nil), json.encode(sched))
+
+    local after = num(send(GAME, { Action = "Total-Supply" }).TotalSupply)
+    ok("only the legitimate delivery moved supply", after == before + 9,
+       string.format("%d -> %d", before, after))
+  end
+
+  -- An action's CASE must not decide whether value moves ----------------------
+  --
+  -- This is a regression, and it cost a real rune on a live process. The game's
+  -- `Rune.Withdraw` deducts the player's balance and then asks this token to
+  -- mint, through the outbox, with `action = "mint"`. The dispatcher looked up
+  -- the exact string, `H` holds `Mint`, and the answer was "unknown action".
+  -- The deduction had already happened. The rune was destroyed.
+  --
+  -- Nothing between two processes preserves the case of a value, so a token
+  -- that only answers one capitalisation will eventually eat somebody's
+  -- balance. Every spelling of every verb that moves value is checked here.
+  do
+    local CASE = "CASEcccccccccccccccccccccccccccccccccccccc"
+    --- Whole-number balance of `who`, read the way the suite reads any reply.
+    local function heldBy(who)
+      local reply = send(who, { Action = "Balance" })
+      return math.tointeger(tonumber(reply and reply.Balance) or 0) or 0
+    end
+    local before = heldBy(CASE)
+
+    local r1 = send(GAME, { Action = "mint", Recipient = CASE, Quantity = "7" })
+    ok("a lowercase 'mint' from the game is honoured", errOf(r1) == nil, json.encode(r1))
+    local afterLower = heldBy(CASE)
+    ok("and it actually credited", afterLower == before + 7, afterLower)
+
+    local r2 = send(GAME, { Action = "MINT", Recipient = CASE, Quantity = "3" })
+    ok("a shouted 'MINT' is honoured too", errOf(r2) == nil, json.encode(r2))
+
+    -- The exact name must still win, and the case-insensitive fallback must not
+    -- have made an unknown verb resolve to something that happens to be close.
+    local r3 = send(GAME, { Action = "Mint", Recipient = CASE, Quantity = "1" })
+    ok("the declared spelling still works", errOf(r3) == nil, json.encode(r3))
+    local r4 = send(GAME, { Action = "minty", Recipient = CASE, Quantity = "1" })
+    ok("a verb that does not exist is still refused", errOf(r4) ~= nil, json.encode(r4))
+
+    local total = heldBy(CASE)
+    ok("every spelling moved exactly what it said", total == before + 11, total)
+
+    -- And authority is unchanged by any of it: a non-minter is still refused
+    -- however they spell it.
+    local r5 = send(ALICE, { Action = "mint", Recipient = ALICE, Quantity = "1000" })
+    ok("case-insensitivity does not grant anyone authority",
+       errOf(r5) ~= nil, json.encode(r5))
+  end
+
   out[#out + 1] = ""
   out[#out + 1] = string.format("%d passed, %d failed", passed, failed)
   return table.concat(out, "\n")
 end
 
---- A runtime error inside the suite comes back from the node as a bare
---- `500 Oops` naming nothing, so catch it here and report it as a line of
---- output like any other failure.
+--- Driven from the outermost Lua frame, NOT through `pcall`.
+---
+--- `compute` ends with `collectgarbage("collect")`, and on Luerl a collect
+--- inside a pcall frame corrupts the state pcall restores on return and kills
+--- the VM (full account at the end of `compute` in game.lua). Production calls
+--- `compute` from Erlang with no Lua pcall on the stack, so the suite has to
+--- match that or it tests a shape nobody deploys.
+---
+--- The cost is that a runtime error comes back as a bare `500 Oops` naming
+--- nothing. It still fails the run: an HTML error page carries no "0 failed".
 function runetest(base, req)
-  local ok, res = pcall(run, base, req)
-  if ok then return res end
-  return "ERROR: " .. tostring(res)
+  return run(base, req)
 end

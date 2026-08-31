@@ -1,0 +1,23 @@
+{
+  "protocol": "runerealm-battle-fleet/1",
+  "enabled": false,
+  "node": "https://schedule.forward.computer",
+  "gameProcess": "REPLACE_WITH_CLEAN_TEST_GAME_PROCESS_ID____",
+  "size": 2,
+  "capacityPerWorker": 32,
+  "maxRetainedPerWorker": 100,
+  "maxPendingPerWorker": 100,
+  "maxTicketTtlPerWorker": 3600000,
+  "maxOutcomesPerWorker": 10000,
+  "maxConfirmationsPerWorker": 10000,
+  "managerMode": "assign-only",
+  "workers": [
+    {
+      "workerId": "battle-worker-01",
+      "operationId": "runerealm-battle-fleet/1:REPLACE_WITH_CLEAN_TEST_GAME_PROCESS_ID____:battle-worker-01",
+      "workerProcessId": "REPLACE_WITH_TEST_WORKER_PROCESS_ID________",
+      "lifecycle": "ready",
+      "statusKey": "fleetstatus"
+    }
+  ]
+}

@@ -108,12 +108,74 @@ local function run(base, req)
   local _, raw = signed(OWNER, { Action = "AMM.Info" })
   ok("published pool values contain no floats", not raw.amm:match("[%d]%.[%d]"), raw.amm)
 
+  -- A credit notice is signed by the SCHEDULER ---------------------------------
+  --
+  -- `processMessage` above models an UNSIGNED delivery, which is one of the two
+  -- shapes a node produces. The other is the one that broke the Rune bridge in
+  -- production: the scheduler signs the delivery it carries. Under the old rule
+  -- ("believe from-process only when nothing signed the message") every real
+  -- credit notice would be discarded as unattested — the token would take the
+  -- deposit and the pool would never credit it, losing it as silently as the
+  -- withdrawal did.
+  do
+    local SCHED = "SCHEDULERssssssssssssssssssssssssssssssssss"
+    local CAROL = "CAROLcccccccccccccccccccccccccccccccccccccc"
+
+    --- A delivery as a live node presents it: signed by our own scheduler, with
+    --- the origin attested in `from-process`, and the process state naming that
+    --- scheduler so the pool can tell it is ours.
+    local function delivered(committer, fromProcess, tags)
+      T = T + 1000
+      messageId = messageId + 1
+      local body = {
+        commitments = { sig = { committer = committer, alg = "rsa-pss-sha512" } },
+        ["from-process"] = fromProcess,
+        id = "sched-" .. tostring(messageId),
+      }
+      for k, v in pairs(tags) do body[k] = v end
+      local res = compute(
+        { process = PROCESS, ["scheduler-location"] = SCHED },
+        { body = body, timestamp = T }, {}
+      )
+      return json.decode(res.results.output.data)
+    end
+
+    local good = delivered(SCHED, QUOTE,
+      { Action = "Credit-Notice", Sender = CAROL, Quantity = "250000" })
+    ok("a scheduler-signed credit notice is credited",
+       good and good.error == nil and good.deposit and good.deposit.quote == "250000",
+       json.encode(good))
+
+    -- The forgery must stay closed: our scheduler's signature is the only thing
+    -- that makes `from-process` mean anything.
+    local forged = delivered(CAROL, QUOTE,
+      { Action = "Credit-Notice", Sender = CAROL, Quantity = "999999" })
+    ok("a wallet signature cannot pass itself off as a token notice",
+       forged and forged.error ~= nil, json.encode(forged))
+
+    -- A scheduler vouching for a process that is not in the pair is still not
+    -- a pool token.
+    local stranger = delivered(SCHED, "STRANGERsssssssssssssssssssssssssssssssss",
+      { Action = "Credit-Notice", Sender = CAROL, Quantity = "1000" })
+    ok("a scheduler-signed notice from a non-pool token is refused",
+       stranger and stranger.error ~= nil, json.encode(stranger))
+  end
+
   out[#out + 1] = ""
   out[#out + 1] = string.format("%d passed, %d failed", passed, failed)
   return table.concat(out, "\n")
 end
 
+--- Driven from the outermost Lua frame, NOT through `pcall`.
+---
+--- `compute` ends with `collectgarbage("collect")`, and on Luerl a collect
+--- inside a pcall frame corrupts the state pcall restores on return and kills
+--- the VM (full account at the end of `compute` in game.lua). Production calls
+--- `compute` from Erlang with no Lua pcall on the stack, so the suite has to
+--- match that or it tests a shape nobody deploys.
+---
+--- The cost is that a runtime error comes back as a bare `500 Oops` naming
+--- nothing. It still fails the run: an HTML error page carries no "0 failed".
 function ammtest(base, req)
-  local ok, res = pcall(run, base, req)
-  return ok and res or ("ERROR: " .. tostring(res))
+  return run(base, req)
 end

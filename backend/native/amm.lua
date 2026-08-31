@@ -115,13 +115,45 @@ local function provenSigner(msg)
   return nil
 end
 
---- An outbox delivery cannot sign: a process id has no private key. HyperBEAM
---- attests its origin as `from-process`. A browser can include a tag with that
---- spelling, but its real wallet signature wins above; consequently only a
---- message with NO wallet signer may use the process provenance.
-local function sourceProcess(msg)
-  if provenSigner(msg) then return nil end
-  return msg["from-process"] or msg.FromProcess
+--- This process's own scheduler — the only identity permitted to vouch for
+--- another process. See the same helper in rune.lua.
+local function schedulerAddress(base)
+  if type(base) ~= "table" then return nil end
+  local found = base["scheduler-location"] or base.SchedulerLocation
+    or base["scheduler_location"]
+  if type(found) == "string" and #found == 43 then return found end
+  local p = base.process or base.Process
+  if type(p) == "table" then
+    local nested = p["scheduler-location"] or p.SchedulerLocation
+    if type(nested) == "string" and #nested == 43 then return nested end
+  end
+  return nil
+end
+
+--- Which PROCESS a message came from, if any, and only when that is attested.
+---
+--- A process id has no private key, so a token's `Credit-Notice` cannot carry
+--- the token's own signature. It carries `from-process`, and this decides
+--- whether to believe it.
+---
+--- The original rule was "believe it only when nothing signed the message",
+--- reasoning that an outbox delivery is unsigned. A live node disproves that:
+--- the SCHEDULER signs the delivery. Under the old rule every real credit
+--- notice would be discarded as unattested, so a deposit would be taken by the
+--- token and never credited here -- the same shape of loss as the Rune
+--- withdrawal that prompted this, and equally silent.
+---
+--- A scheduler signature attests transport. Our own scheduler vouching for
+--- `from-process` is exactly the attestation this needs; anybody else's
+--- signature means an ordinary wallet message, whose `from-process` tag is a
+--- claim about itself and is ignored.
+local function sourceProcess(msg, base)
+  local signed = provenSigner(msg)
+  local fromProcess = msg["from-process"] or msg.FromProcess
+  if not signed then return fromProcess end
+  local scheduler = schedulerAddress(base)
+  if fromProcess and scheduler and signed == scheduler then return fromProcess end
+  return nil
 end
 
 local function isOwner(address)
@@ -299,7 +331,7 @@ end
 --- two configured token processes. Sender is the account whose tokens moved.
 H["Credit-Notice"] = function(base, msg)
   if not configured() then return fail(base, "Pool is not configured") end
-  local token = sourceProcess(msg)
+  local token = sourceProcess(msg, base)
   if token ~= BaseToken and token ~= QuoteToken then return fail(base, "Credit notice is not from a pool token") end
   local sender = msg.Sender
   if not validId(sender) then return fail(base, "Credit notice has no valid sender") end
@@ -474,13 +506,33 @@ local function resolveOwner(base)
   return Owner
 end
 
+--- Find a handler by name, ignoring case.
+---
+--- An action arrives as a VALUE, and nothing on the way here preserves its case
+--- reliably: a wallet-signed message carries whatever the client typed, and a
+--- message delivered from another process's outbox carries whatever that
+--- process wrote. That mismatch is not hypothetical -- `Rune.Withdraw` emitted
+--- `action = "mint"` against a token holding `Mint`, so the game deducted the
+--- player's runes and the token answered "unknown action", destroying them.
+---
+--- The exact name still wins, so no existing caller changes behaviour.
+local ACTION_ALIASES = nil
+local function resolveHandler(action)
+  if H[action] then return H[action] end
+  if ACTION_ALIASES == nil then
+    ACTION_ALIASES = {}
+    for name, fn in pairs(H) do ACTION_ALIASES[tostring(name):lower()] = fn end
+  end
+  return ACTION_ALIASES[tostring(action):lower()]
+end
+
 function compute(base, req, opts)
   resolveOwner(base)
   local raw = (req and req.body) or {}
   local msg = caseInsensitive(raw.Tags or raw)
   local action = msg.Action or msg.action or "none"
   local timestamp = int((req and (req.timestamp or req.Timestamp)) or msg.Timestamp, 0)
-  local handler = H[action]
+  local handler = resolveHandler(action)
   local result
   if not handler then
     result = fail(base, "unknown action '" .. tostring(action) .. "'")
@@ -495,5 +547,17 @@ function compute(base, req, opts)
   result.swaps = encode(RecentSwaps)
   local who = provenSigner(msg) or msg.Sender
   if validId(who) then result["deposit-" .. who] = encode(depositView(who)) end
+  -- Compact the heap before the node photographs it. See the long note at the
+  -- end of `compute` in game.lua: HyperBEAM snapshots this process by
+  -- term_to_binary-ing the WHOLE Luerl table store, Luerl never collects on its
+  -- own, and `collectgarbage("step")` is a no-op on this runtime -- so without
+  -- this line every transient table from every message since spawn is still in
+  -- the heap when the node writes the checkpoint.
+  --
+  -- A full `collect`, as a bare statement. NOT through `pcall`, and not from
+  -- inside a pcall frame: a collect renumbers the table store and Luerl's pcall
+  -- restores stale indices into it, which kills the VM.
+  collectgarbage("collect")
+
   return result
 end

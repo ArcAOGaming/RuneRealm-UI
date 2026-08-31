@@ -1,3 +1,7 @@
+--- PARKED FEATURE: this external one-unit companion-asset index is not deployed.
+--- Companions remain inside game.lua; this source is retained only for a future
+--- explicit decision to reintroduce external companion assets.
+---
 --- marketplace.lua - curated Rune Realm companion market index.
 ---
 --- Companion assets already are one-unit token@1.0 processes with the

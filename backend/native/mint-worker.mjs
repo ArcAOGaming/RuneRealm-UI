@@ -1,9 +1,14 @@
 /**
+ * PARKED FEATURE: companion asset export/import is excluded from normal routes
+ * and deployments by ECONOMY_MARKETPLACE_PLAN.md. This worker is retained as
+ * source only and exposed solely through `npm run parked:mint:*` commands.
+ *
  * mint-worker.mjs — the half of the mint that needs a wallet.
  *
- *   node backend/native/mint-worker.mjs            # drain, then poll
- *   node backend/native/mint-worker.mjs --once     # one pass and exit (cron)
- *   node backend/native/mint-worker.mjs --dry-run  # render and price, sign nothing
+ *   node backend/native/mint-worker.mjs               # drain, then poll
+ *   node backend/native/mint-worker.mjs --once        # one pass and exit (cron)
+ *   node backend/native/mint-worker.mjs --dry-run     # render and price, sign nothing
+ *   node backend/native/mint-worker.mjs --seed <id>   # pay one asset's premium
  *
  * The game process publishes two queues and this drains them. It is the ONLY
  * component holding a funded key, and it holds no authority the process owner
@@ -30,8 +35,7 @@
  * every append republishes the whole manifest, so per-mint appends would make
  * the cost of minting grow with the size of the collection.
  *
- * Each new asset is also SEEDED with one winston — see `seedAsset`. The minter
- * pays that so a player never can.
+ * Seeding — the expensive half — is LAZY. See `seedAsset`.
  */
 import fs from 'node:fs';
 import path from 'node:path';
@@ -47,30 +51,68 @@ import { renderCardPng } from './card/render.mjs';
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.join(HERE, '..', '..');
 
-const NODE = process.env.NODE_URL || 'https://schedule.forward.computer';
 const LEDGER = process.env.MINT_LEDGER || path.join(HERE, 'mint-ledger.json');
 const POLL_MS = Number(process.env.MINT_POLL_MS || 60_000);
 
 /**
  * Refuse to start below this, so a pass cannot die halfway through a batch.
  *
- * A mint is cheap (~0.003 AR) but its seed is not (~0.23 AR), so one card costs
- * about a quarter of an AR all in. This floor is two of them.
+ * A mint is ~0.003 AR now that seeding is lazy, so this floor is about thirty
+ * cards rather than two. Seeding has its own budget below and its own floor;
+ * running out of seed money must not stop minting.
  */
-const MIN_BALANCE_WINSTON = 500_000_000_000n;   // 0.5 AR
+const MIN_BALANCE_WINSTON = Number.isFinite(Number(process.env.MINT_MIN_BALANCE_AR))
+  ? BigInt(Math.round(Number(process.env.MINT_MIN_BALANCE_AR) * 1e12))
+  : 100_000_000_000n;                           // 0.1 AR
+
+/**
+ * The most a single pass may spend on wallet-generation seeds.
+ *
+ * A seed is ~0.22 AR — seventy-five times a mint — so an unbounded pass over a
+ * queue that fifty test wallets can fill is a way to empty the minter's wallet
+ * by accident. Nothing here needs to be fast; it needs to be impossible to be
+ * surprised by. Raise it deliberately with MINT_SEED_BUDGET_AR.
+ */
+const SEED_BUDGET_WINSTON = BigInt(Math.round(
+  Number(process.env.MINT_SEED_BUDGET_AR ?? 1) * 1e12,
+));
+
+/** Anything at or above this quote is the wallet-generation premium, not dust. */
+const PREMIUM_FLOOR = 1_000_000_000n;           // 0.001 AR
+
+let seedSpent = 0n;
 
 const argv = process.argv.slice(2);
 const has = (name) => argv.includes(`--${name}`);
+const flagValue = (name) => (has(name) ? argv[argv.indexOf(`--${name}`) + 1] : undefined);
 const DRY = has('dry-run');
 
-function processId() {
-  if (process.env.GAME_PROCESS) return process.env.GAME_PROCESS;
+/**
+ * Restore the old behaviour: pay every card's seed the moment it is minted.
+ *
+ * Off by default and worth leaving off. It only buys a player the ability to
+ * transfer an asset they never told the game they wanted to move — which the
+ * app has no button for.
+ */
+const SEED_ON_MINT = has('seed-on-mint') || process.env.MINT_SEED_ON_MINT === '1';
+
+/**
+ * The process and the node it lives on, both from `live-process.txt`.
+ *
+ * Line 1 is the id and line 2 is the node, and they belong together: a deploy
+ * writes both at once. Reading the id from the file while defaulting the node
+ * to some other host is how the worker ends up asking a node that has never
+ * heard of this process, which answers 404 for `mintqueue` and reads exactly
+ * like a process deployed without the mint handlers.
+ */
+function liveProcess() {
   const file = path.join(ROOT, 'live-process.txt');
-  if (fs.existsSync(file)) {
-    const found = fs.readFileSync(file, 'utf8').match(/[A-Za-z0-9_-]{43}/);
-    if (found) return found[0];
-  }
-  throw new Error('set GAME_PROCESS, or write live-process.txt');
+  const [fileId, fileNode] = fs.existsSync(file)
+    ? fs.readFileSync(file, 'utf8').trim().split(/\r?\n/).map((line) => line.trim())
+    : [];
+  const pid = process.env.GAME_PROCESS || (/^[A-Za-z0-9_-]{43}$/.test(fileId ?? '') ? fileId : null);
+  if (!pid) throw new Error('set GAME_PROCESS, or write live-process.txt');
+  return { pid, node: process.env.NODE_URL || fileNode || 'https://schedule.forward.computer' };
 }
 
 function wallet() {
@@ -81,9 +123,11 @@ function wallet() {
 
 // Ledger ---------------------------------------------------------------------
 
-const readLedger = () => (fs.existsSync(LEDGER)
-  ? JSON.parse(fs.readFileSync(LEDGER, 'utf8'))
-  : { mints: {}, deposits: {} });
+const readLedger = () => {
+  const base = { mints: {}, deposits: {}, seeds: {} };
+  if (!fs.existsSync(LEDGER)) return base;
+  return { ...base, ...JSON.parse(fs.readFileSync(LEDGER, 'utf8')) };
+};
 
 function writeLedger(update) {
   const next = { ...readLedger(), ...update };
@@ -174,18 +218,21 @@ async function mintOne(jwk, pid, owner, job) {
     onSigned: (id) => { recordMint(seq, { address: job.address, txId: id, state: 'signed' }); },
   });
   recordMint(seq, { assetId, state: 'posted', bytes: png.length });
-  // Seed before reporting: the player is told they own it only once it is a
-  // thing they can actually move without a surprise fee.
-  await seedAsset(jwk, assetId, seq).catch((error) => {
-    console.error(`  #${seq} SEED FAILED (${error.message}) — the first transfer`
-      + ' of this asset will pay the premium instead of us');
-  });
+  // NOT seeded here. Seeding costs seventy-five times what the card does and
+  // most cards are never moved, so it is paid at the moment one is — see
+  // `seedAsset` and `settleDeposits`.
+  if (SEED_ON_MINT) {
+    await seedAsset(jwk, assetId, { seq }).catch((error) => {
+      console.error(`  #${seq} seed failed (${error.message}) — it will be`
+        + ' seeded when this asset is first asked to move');
+    });
+  }
   await report(jwk, pid, seq, assetId, job.address);
   return assetId;
 }
 
 /**
- * Send the new asset one winston, so that transferring it later costs dust.
+ * Send an asset one winston, so that transferring it costs dust.
  *
  * Arweave charges a premium on the FIRST transaction ever sent to an address
  * ("An extra fee is taken for the first transaction sent to a new wallet
@@ -199,6 +246,18 @@ async function mintOne(jwk, pid, owner, job) {
  * entire history — a `quantity: 1` seed that paid 0.228287 AR at block 1984705,
  * then a transfer at block 1984750 that paid 0.000037.
  *
+ * WHEN it is paid is the whole cost of this pipeline. The premium is 0.22 AR
+ * and a card is 0.003, so seeding at mint time makes every card cost
+ * seventy-five times what it needs to — and it buys nothing for the great
+ * majority of cards, which are minted, looked at, and never moved again. Fifty
+ * test wallets minting once each is 11 AR of seeds and 0.15 AR of cards.
+ *
+ * So it is paid on the first move instead. A deposit is queued on the game
+ * process BEFORE the player signs the transfer (`Monster.Deposit` claims
+ * nothing and verifies nothing — it only publishes the intent), which gives
+ * this worker the one thing it needs: notice. It seeds, and the player's
+ * transfer that follows costs dust.
+ *
  * It is charged to the MINTER deliberately. It is the cost of issuing a
  * tradable thing, and it belongs with whoever issues it, not with the player
  * who later tries to bring their companion home.
@@ -207,24 +266,43 @@ async function mintOne(jwk, pid, owner, job) {
  * It only means the first transfer pays the premium instead of us, so it is
  * logged loudly and the pass carries on.
  */
-async function seedAsset(jwk, assetId, seq) {
-  if (readLedger().mints[seq]?.seedTx) return;
+async function seedAsset(jwk, assetId, { seq = null, label = assetId } = {}) {
+  const ledger = readLedger();
+  if (seq !== null && ledger.mints[seq]?.seedTx) return 'already';
+  if (ledger.seeds?.[assetId]) return 'already';
+
   const cost = await targetPrice(assetId);
-  if (cost < 1_000_000_000n) {
+  if (cost < PREMIUM_FLOOR) {
     // Already seeded — someone has sent this address AR before. Nothing to do.
-    recordMint(seq, { seeded: 'already' });
-    return;
+    if (seq !== null) recordMint(seq, { seeded: 'already' });
+    writeLedger({ seeds: { ...readLedger().seeds, [assetId]: { at: Date.now(), tx: null } } });
+    return 'already';
   }
-  console.log(`  #${seq} seeding ${assetId} — ${Number(cost) / 1e12} AR`);
-  if (DRY) return;
+  if (seedSpent + cost > SEED_BUDGET_WINSTON) {
+    console.log(`  ${label}: seed would cost ${Number(cost) / 1e12} AR and this pass has`
+      + ` ${Number(SEED_BUDGET_WINSTON - seedSpent) / 1e12} AR of seed budget left`
+      + ' — raise MINT_SEED_BUDGET_AR to allow it');
+    return 'over-budget';
+  }
+  console.log(`  ${label}: seeding ${assetId} — ${Number(cost) / 1e12} AR`);
+  if (DRY) return 'dry';
+
   const id = await signAndPost(jwk, {
     target: assetId,
     quantity: '1',
     tags: {},
-    onSigned: (tx) => { recordMint(seq, { seedTx: tx }); },
+    onSigned: (tx) => {
+      if (seq !== null) recordMint(seq, { seedTx: tx });
+      writeLedger({ seeds: { ...readLedger().seeds, [assetId]: { at: Date.now(), tx, state: 'signed' } } });
+    },
   });
-  recordMint(seq, { seedTx: id, seeded: true });
-  console.log(`  #${seq} seeded -> ${id}`);
+  seedSpent += cost;
+  if (seq !== null) recordMint(seq, { seedTx: id, seeded: true });
+  writeLedger({
+    seeds: { ...readLedger().seeds, [assetId]: { at: Date.now(), tx: id, winston: String(cost) } },
+  });
+  console.log(`  ${label}: seeded -> ${id}`);
+  return id;
 }
 
 async function report(jwk, pid, seq, assetId, address) {
@@ -251,6 +329,12 @@ async function refund(jwk, pid, seq, reason) {
  * A deposit is settled by the asset's own balances, never by a transfer showing
  * up in a gateway index. GraphQL finds candidates; only the process knows who
  * holds what, and a transfer is a message it applies.
+ *
+ * This is also where seeding happens. A queued deposit is the player saying
+ * they are about to move the asset, which is the notice the minter needs to pay
+ * the wallet-generation premium before they do — see `seedAsset`. A deposit
+ * that is queued and not yet transferred is the normal case on the first pass,
+ * not a fault.
  */
 async function settleDeposits(jwk, pid, vault) {
   const queue = asList(await readKey(pid, 'depositqueue'));
@@ -258,6 +342,10 @@ async function settleDeposits(jwk, pid, vault) {
     try {
       const holder = await assetHolder(job.assetId);
       if (holder !== vault) {
+        // Seed FIRST, while the asset is still theirs to send. Once they have
+        // signed the transfer it is too late to save them the fee.
+        await seedAsset(jwk, job.assetId, { label: `deposit #${job.seq}` })
+          .catch((error) => console.error(`  deposit ${job.assetId}: seed failed: ${error.message}`));
         console.log(`  deposit ${job.assetId}: held by ${holder ?? 'nobody yet'}, waiting`);
         continue;
       }
@@ -394,15 +482,27 @@ async function testMint(jwk, owner, spec) {
 
 const jwk = wallet();
 const owner = await jwkToAddress(jwk);
-console.log(`minter ${owner}\nnode    ${NODE}${DRY ? '\n(dry run)' : ''}`);
+const { pid, node: NODE } = liveProcess();
+console.log(`minter  ${owner}\nnode    ${NODE}\nprocess ${pid}${DRY ? '\n(dry run)' : ''}`);
 
 if (has('test-mint')) {
   await testMint(jwk, owner, argv[argv.indexOf('--test-mint') + 1]);
   process.exit(0);
 }
 
-const pid = processId();
-console.log(`process ${pid}`);
+// Seed one asset by hand. This is the escape hatch for an asset that needs to
+// move for a reason the game never hears about — a marketplace listing, say —
+// and it is the only place a 0.22 AR premium is paid on a bare instruction.
+if (has('seed')) {
+  const assetId = flagValue('seed');
+  if (!/^[A-Za-z0-9_-]{43}$/.test(String(assetId ?? ''))) {
+    console.error('usage: --seed <assetId>');
+    process.exit(1);
+  }
+  const outcome = await seedAsset(jwk, assetId, { label: 'manual' });
+  console.log(`seed: ${outcome}`);
+  process.exit(0);
+}
 
 if (has('once') || DRY) {
   // A single pass reports its failure and exits non-zero rather than dumping a

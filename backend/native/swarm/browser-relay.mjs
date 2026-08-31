@@ -21,9 +21,17 @@ const option = (name, fallback) => {
 };
 const target = String(option('target', '')).replace(/\/$/, '');
 const port = Number(option('port', 8793));
+const browserConcurrency = Number(option('browser-concurrency', 50));
+const requestTimeoutMs = Number(option('request-timeout-ms', 360_000));
 if (!/^https:\/\//.test(target)) throw new Error('--target must be an https:// node URL');
 if (!Number.isInteger(port) || port < 1024 || port > 65535) {
   throw new Error('--port must be an integer from 1024 to 65535');
+}
+if (!Number.isInteger(browserConcurrency) || browserConcurrency < 1 || browserConcurrency > 50) {
+  throw new Error('--browser-concurrency must be an integer from 1 to 50');
+}
+if (!Number.isInteger(requestTimeoutMs) || requestTimeoutMs < 30_000 || requestTimeoutMs > 900_000) {
+  throw new Error('--request-timeout-ms must be an integer from 30000 to 900000');
 }
 
 const token = randomBytes(18).toString('base64url');
@@ -124,7 +132,7 @@ code{display:block;overflow-wrap:anywhere;color:#7f8ca8;font-size:11px;margin-to
 <p id="state" class="live">Connected. Waiting for signed game traffic…</p>
 <div class="grid"><div><small>Forwarded</small><strong id="forwarded">0</strong></div><div><small>Failures</small><strong id="failed">0</strong></div><div><small>In flight</small><strong id="active">0</strong></div></div>
 <code>${target}</code></main><script type="module">
-const TARGET=${JSON.stringify(target)};let forwarded=0,failed=0,active=0;
+const TARGET=${JSON.stringify(target)},CONCURRENCY=${browserConcurrency};let forwarded=0,failed=0,active=0;
 const state=document.querySelector('#state'),forwardedEl=document.querySelector('#forwarded'),failedEl=document.querySelector('#failed'),activeEl=document.querySelector('#active');
 const b64bytes=(value)=>{const binary=atob(value);const bytes=new Uint8Array(binary.length);for(let i=0;i<binary.length;i++)bytes[i]=binary.charCodeAt(i);return bytes};
 const bytesB64=(buffer)=>{const bytes=new Uint8Array(buffer);let binary='';for(let i=0;i<bytes.length;i+=8192)binary+=String.fromCharCode(...bytes.subarray(i,i+8192));return btoa(binary)};
@@ -139,7 +147,7 @@ async function deliver(job){active++;paint();state.textContent='Forwarding '+job
   active--;paint();if(!failed){state.textContent='Connected. Waiting for signed game traffic…';state.className='live'}
 }
 async function loop(){for(;;){try{const response=await fetch('./__relay/next',{cache:'no-store'});if(response.status===204)continue;if(!response.ok)throw new Error('relay '+response.status);await deliver(await response.json())}catch(error){state.textContent='Local relay disconnected: '+error;state.className='bad';await new Promise(resolve=>setTimeout(resolve,1000))}}}
-paint();loop();
+paint();for(let i=0;i<CONCURRENCY;i++)loop();
 </script></body></html>`;
 }
 
@@ -195,8 +203,8 @@ const server = http.createServer(async (request, response) => {
         inFlight.delete(id);
         const queueIndex = queued.indexOf(current);
         if (queueIndex >= 0) queued.splice(queueIndex, 1);
-        if (!response.writableEnded) response.writeHead(504).end('Browser relay timed out after 180s');
-      }, 180_000),
+        if (!response.writableEnded) response.writeHead(504).end(`Browser relay timed out after ${Math.round(requestTimeoutMs / 1000)}s`);
+      }, requestTimeoutMs),
     };
     inFlight.set(id, job);
     queued.push(job);
@@ -211,6 +219,8 @@ server.listen(port, '127.0.0.1', () => {
   console.log(`relay node  ${base}`);
   console.log(`relay page  ${base}/`);
   console.log(`target      ${target}`);
+  console.log(`forwarders  ${browserConcurrency}`);
+  console.log(`timeout     ${Math.round(requestTimeoutMs / 1000)}s`);
 });
 
 const close = () => server.close(() => process.exit(0));

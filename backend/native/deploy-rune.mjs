@@ -62,7 +62,10 @@ const read = (f) => fs.readFileSync(path.join(HERE, f), 'utf8');
 // The bundle must match run-rune-test.sh exactly, or the suite is testing
 // something other than what ships.
 const lua = [
-  read(process.env.HYPER_AOS ? path.basename(process.env.HYPER_AOS) : 'hyper-aos.lua'),
+  // `json.lua` alone, not all of hyper-aos: this process defines its own
+  // `compute` and uses nothing else aos provides. Set HYPER_AOS to bundle the
+  // full runtime instead -- it registers `.json` the same way.
+  read(process.env.HYPER_AOS ? path.basename(process.env.HYPER_AOS) : 'json.lua'),
   'local jsonx = (function()', read('jsonenc.lua'), 'end)()',
   'local encode, jsonObject = jsonx.encode, jsonx.object',
   read('rune.lua'),

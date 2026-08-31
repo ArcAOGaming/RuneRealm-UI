@@ -93,7 +93,11 @@ local function run(base, req)
 
   -- Read each one back AS THEMSELVES and compare against what was recovered.
   local mismatched, floats, badMoves, checked = {}, {}, {}, 0
-  for _, row in ipairs(rows) do
+  -- Numeric, NOT ipairs: \`compute\` ends with \`collectgarbage("collect")\` and
+  -- Luerl kills the VM if a collect runs with an ipairs iterator open on the
+  -- stack. See the note at the end of \`compute\` in game.lua.
+  for ri = 1, #rows do
+    local row = rows[ri]
     local p, rawInfo = send(row.address, { Action = "User.Info" })
     checked = checked + 1
     -- Every number this game stores is an integer, and no address or item id
@@ -193,22 +197,28 @@ local function run(base, req)
   return table.concat(out, "\\n")
 end
 
---- The device calls the function named in the URL path. A runtime error inside
---- comes back from the node as a bare \`500 Oops\` naming nothing, so catch it
---- here and report it as a line of output like any other failure.
+--- Driven from the outermost Lua frame, NOT through \`pcall\`. \`compute\` ends
+--- with a collect, and on Luerl a collect inside a pcall frame corrupts the
+--- state pcall restores on return and takes the VM down with it. Production
+--- calls \`compute\` from Erlang with no Lua frame above it, so this has to
+--- match. The cost is that a runtime error comes back as a bare \`500 Oops\`
+--- naming nothing; it still fails the run, because an HTML page carries no
+--- "0 failed" for the runner to match.
 function verifylegacy(base, req)
-  local ok, res = pcall(run, base, req)
-  if ok then return res end
-  return "ERROR: " .. tostring(res)
+  return run(base, req)
 end
 `;
 
 const bundle = [
-  read(process.env.HYPER_AOS ? path.basename(process.env.HYPER_AOS) : 'hyper-aos.lua'),
+  // `json.lua` alone, not all of hyper-aos: this process defines its own
+  // `compute` and uses nothing else aos provides. Set HYPER_AOS to bundle the
+  // full runtime instead -- it registers `.json` the same way.
+  read(process.env.HYPER_AOS ? path.basename(process.env.HYPER_AOS) : 'json.lua'),
   'local C = (function()',     read('constants.lua'), 'end)()',
   'local jsonx = (function()', read('jsonenc.lua'),   'end)()',
   'local encode, jsonObject = jsonx.encode, jsonx.object',
   'Battle = (function()',      read('battle.lua'),    'end)()',
+  'local EconomyEngine = (function()', read('economy.lua'), 'end)()',
   read('game.lua'),
   CHECK.replace('__PAYLOAD__', payload),
 ].join('\n');
@@ -217,8 +227,18 @@ console.log(`node:   ${NODE}`);
 console.log(`bundle: ${Buffer.byteLength(bundle)} bytes`);
 console.log(`rows:   ${JSON.parse(payload).players.length}\n`);
 
+// The whole verification is ONE request: 168 players pushed through Admin.Load
+// and every one read back, on Luerl, which is Lua interpreted in Erlang. Its
+// cost therefore tracks the size of `game.lua`, and that grew from ~184 KB to
+// ~233 KB when hunt and the in-game market landed. Five minutes stopped being
+// enough and the abort reads exactly like the node being down — it failed two
+// deploys that way before anyone looked at the number.
+//
+// Raise `LUA_TEST_TIMEOUT` rather than trimming rows, the same way
+// `run-test.sh` says to. Seconds, to match that file.
+const timeoutSec = Number(process.env.LUA_TEST_TIMEOUT || 900);
 const controller = new AbortController();
-const timer = setTimeout(() => controller.abort(), 300_000);
+const timer = setTimeout(() => controller.abort(), timeoutSec * 1000);
 let res;
 try {
   res = await fetch(`${NODE}/~lua@5.3a/verifylegacy`, {

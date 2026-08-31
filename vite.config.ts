@@ -37,6 +37,10 @@ export default defineConfig(({ mode }) => {
       }),
     ],
     base: '/',
-    build: { target: 'es2022', sourcemap: true },
+    // Sourcemaps are 34 MB of a 50 MB bundle, and a Permaweb deploy writes the
+    // bundle to Arweave permanently: shipping them means publishing unminified
+    // source forever and paying four times over for the privilege, on every
+    // deploy. Opt in with BUILD_SOURCEMAP=true when debugging a built bundle.
+    build: { target: 'es2022', sourcemap: local.BUILD_SOURCEMAP === 'true' },
   };
 });

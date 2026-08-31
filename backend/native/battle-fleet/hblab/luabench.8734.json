@@ -1,0 +1,41 @@
+{
+  "node": "http://localhost:8734",
+  "workers": [
+    {
+      "label": "lua-x1",
+      "runtime": "lua@5.3a",
+      "processId": "jQlEdHImff59SM0J-Q_ZTvJbd0BpvUXOrcGenNS9sKc",
+      "battles": 1,
+      "results": [
+        "results/output/data"
+      ],
+      "tags": {
+        "battles": "1"
+      }
+    },
+    {
+      "label": "lua-x5",
+      "runtime": "lua@5.3a",
+      "processId": "jQlEdHImff59SM0J-Q_ZTvJbd0BpvUXOrcGenNS9sKc",
+      "battles": 5,
+      "results": [
+        "results/output/data"
+      ],
+      "tags": {
+        "battles": "5"
+      }
+    },
+    {
+      "label": "lua-x20",
+      "runtime": "lua@5.3a",
+      "processId": "jQlEdHImff59SM0J-Q_ZTvJbd0BpvUXOrcGenNS9sKc",
+      "battles": 20,
+      "results": [
+        "results/output/data"
+      ],
+      "tags": {
+        "battles": "20"
+      }
+    }
+  ]
+}

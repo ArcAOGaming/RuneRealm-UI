@@ -381,13 +381,37 @@ async function journey(api, { address, faction, pid, node }) {
   const board = await api.readLeaderboard();
   check('the leaderboard is published', Array.isArray(board), `${board?.length} rows`);
   check('this player is on it', board?.some((r) => r.address === address));
-  // `/now/player` holds whoever the process computed LAST, so with anyone else
-  // playing this legitimately returns null — that is the guard working, not a
-  // failure. What must never happen is it returning somebody else's record.
-  const published = await api.readPublishedPlayer(address);
-  check('the published player is either ours or nobody at all',
-    published === null || published.address === address,
-    published ? `got ${published.address.slice(0, 8)}…` : 'null (someone else was last)');
+  // Each player is republished under their OWN address as `player-<address>`,
+  // which is what makes connecting a wallet free (HANDOFF §2). That key cannot
+  // return somebody else's record, so unlike the old `/now/player` — whoever
+  // computed LAST — this asserts the record IS ours rather than settling for
+  // "ours or nobody".
+  //
+  // Read as a plain unsigned GET: the client's own reader is module-private and
+  // exporting it merely to be tested would widen the app's API for the test's
+  // convenience.
+  // `accept: text/plain`, which is what the client's own `getText` sends.
+  //
+  // The shape of the answer depends on this header. Asking for
+  // `application/json` gets an ENVELOPE -- `{"ao-result":"body","body":"<the
+  // json, as a string>"}` -- so the record is a string one level down and
+  // `published.address` is undefined. Asking for text/plain returns the record
+  // itself. Matching the client is also the point: a test that reads the
+  // published surface differently from the app is not testing the app.
+  const publishedRes = await fetch(`${node}/${pid}~process@1.0/now/player-${address}`,
+    { headers: { accept: 'text/plain' } });
+  const publishedText = publishedRes.status === 404 ? null : (await publishedRes.text()).trim();
+  const published = publishedText && !/^<!DOCTYPE html|^<html/i.test(publishedText)
+    ? JSON.parse(publishedText)
+    : null;
+  check('this player is published under their own address',
+    published !== null && published.address === address,
+    // Never dereference the thing under test in the message: a record that came
+    // back without an `address` crashed the harness here rather than failing the
+    // assertion, which turns a reportable result into a stack trace.
+    published?.address ? `got ${published.address.slice(0, 8)}…`
+      : published ? `record has no address: ${JSON.stringify(published).slice(0, 80)}`
+        : 'no record published');
   const liveFactions = await api.readFactions();
   const mine = liveFactions.find((f) => f.name === current.faction);
   check('faction membership counts update', (mine?.memberCount ?? 0) >= 1,
@@ -488,8 +512,15 @@ const argv = process.argv.slice(2);
 const isPvp = argv.includes('--pvp');
 const factionIndex = argv.indexOf('--faction');
 const faction = factionIndex >= 0 ? argv[factionIndex + 1] : undefined;
+// The guard has to be conditional on `--faction` being PRESENT. Without it
+// `factionIndex` is -1, `factionIndex + 1` is 0, and the filter drops argv[0] --
+// which is the burner name. `names` came out empty, the code fell back to
+// `listBurners()[0]`, and every `e2e.mjs burner-07` silently ran burner-01
+// instead. It looked like it worked because burner-01 is a real account: runs
+// reported someone else's runes, someone else's record, and one failed for a
+// depleted balance that belonged to a wallet nobody had named.
 const names = argv.filter((a, i) =>
-  !a.startsWith('--') && i !== factionIndex + 1);
+  !a.startsWith('--') && !(factionIndex >= 0 && i === factionIndex + 1));
 
 const { pid, node } = liveProcess();
 console.log(`process  ${pid}`);

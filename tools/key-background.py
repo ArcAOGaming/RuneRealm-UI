@@ -13,7 +13,7 @@ it and nothing else: an interior pixel of the same white -- a highlight on a
 lantern -- is never reached, because the fill cannot cross the subject to get
 there. A global "delete every white pixel" would punch holes in the art.
 
-  python tools/key-background.py 'RuneRealm-Assets/_generated/paths/*/mid.png'
+  python tools/key-background.py 'RuneRealm-Assets/_generated/scenes/quest/*/mid.png'
 """
 import argparse
 import collections

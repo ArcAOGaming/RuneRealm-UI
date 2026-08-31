@@ -94,10 +94,17 @@ function exampleMove(type: Move['type']): Move {
 
 function exampleMonster(record: Showcase): Monster {
   const [attack, defense, speed, health] = record.stats;
+  const art = { fire: 'Fire', water: 'Water', air: 'Air', rock: 'Earth' }[record.element];
   return {
+    // An exhibition creature, not one the process issued: the id says so rather
+    // than borrowing a shape that looks like a real companion's.
+    id: `example-${record.element}`,
     name: record.name,
     image: '',
     sprite: '',
+    holographic: true,
+    background: art,
+    border: art,
     faction: record.faction,
     elementType: record.element,
     berryItem: BERRIES[record.element],

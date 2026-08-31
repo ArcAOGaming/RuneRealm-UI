@@ -82,7 +82,7 @@ const CARD_OPTS = { extended: has('extended') };
 /** A satchel to show off the panel when there is no live player to read. */
 const SAMPLE_BAG = {
   fire_berry: 18, water_berry: 9, air_berry: 21, rock_berry: 18,
-  emerald: 1, scroll: 2, rune: 9,
+  fire_berry: 6, scroll: 2, rune: 9,
 };
 
 if (has('all')) {

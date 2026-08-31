@@ -162,6 +162,63 @@ balance may be re-serialized on every checkpoint. If your table is large, look a
 `~trie@1.0` (a radix trie stored as messages) or split state across processes.
 Measure this early — it is the risk most likely to invalidate a migration plan. `[?]`
 
+### Luerl never collects, so the snapshot is every table you ever made `[V]`
+
+**Verified 2026-08-29 on a live `~lua@5.3a`.** This is the single biggest thing
+on this page for anyone whose process is slow.
+
+The blob above is `term_to_binary` of Luerl's table store. Luerl runs no
+collector of its own, so unless the process asks for one, every transient table
+every message ever built is still in that store when the node checkpoints. The
+snapshot is therefore sized by allocations-since-spawn, not by live state.
+RuneRealm hit this at ~900x: 320 KB of game state, a 282 MB snapshot, ~1.6 MB
+added per action, 5–6 s to write. 282 MB / (303 slots × ~2,400 tables per
+message) is ~390 bytes per table — the whole overhead is accounted for by
+uncollected tables.
+
+**`collectgarbage` is a stub for every argument except `"collect"`.** `"count"`
+and `"step"` both return nil and do nothing. A process that "collects" with
+`collectgarbage("step")` is not collecting at all, and nothing will tell it so.
+
+**You can measure the store from Lua, because `tostring` prints the index:**
+
+```lua
+tostring({})   --> "table: 5020"   -- the slot the store just handed out
+```
+
+Take that number before and after a message and the difference is the tables
+that message left behind. Two loops over the same actions — one with a real
+collect, one with `collectgarbage` stubbed out — separate live data from
+garbage without decoding a single snapshot. `backend/native/heap_probe.lua` in
+this repo does exactly that; measured against the RuneRealm bundle:
+
+| message | tables allocated | tables kept | garbage |
+|---|---|---|---|
+| `User.Login` (a pure read) | 264 | ~0 | all of it |
+| unlock + join + adopt (a real write) | 2,405 | 802 | 67% |
+
+**A collect is safe only at the outermost Lua frame.** A collection renumbers
+the table store, and two things hold raw indices across it and do not survive:
+
+- **`pcall`.** It restores the interpreter state it captured on entry, so a
+  collect anywhere inside a pcall frame leaves that state indexing freed tables.
+  Fatal only when something is live across the collect — with pure garbage it
+  passes, which is exactly how it survives a small test and kills a real
+  process.
+- **`ipairs`.** Its iterator holds a raw index. A collect inside an `ipairs`
+  loop is fatal with no garbage at all. `pairs` (which re-resolves through
+  `next`) and numeric `for` are both fine.
+
+Fatal means the **Erlang process dies**: the node answers `500` with an HTML
+page and there is nothing for `pcall` to return to. So put the collect at the
+end of your `compute`, as a bare statement, after every pcall has returned —
+`dev_lua` calls `compute` from Erlang with no Lua frame above it, which is the
+one place it is always safe. Test harnesses that drive `compute` in a loop have
+to index numerically for the same reason.
+
+None of this reproduces under `ao-loader`, which is real Lua 5.3 where all
+three forms are ordinary and correct. It only shows up on Luerl.
+
 ---
 
 ## 5. There is no database device
@@ -195,6 +252,12 @@ GET /{process-id}~process@1.0/now/battle
 No signature, no scheduling, no cost. **This is what Bazar does in production
 today.** `[V]` Any client polling loop still going through the signed write path
 is the first thing to fix in a port.
+
+RuneRealm also reads `/now/at-slot` as its cheap completion gate. The node must
+set `process-now-from-cache=always`; HyperBEAM defaults this option to `false`,
+which lets a `/now/...` request compute toward the scheduler head and turns a
+supposedly passive poll into more process work. Treat cached `now` behavior as a
+deployment prerequisite for the client's one-pull write path.
 
 ---
 

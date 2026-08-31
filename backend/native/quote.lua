@@ -56,12 +56,44 @@ local function provenSigner(msg)
   return nil
 end
 
---- A process can spend only its own account. A real wallet signature always
---- wins, so a user cannot attach a forged `from-process` tag and name a payer.
-local function actor(msg)
+--- This process's own scheduler. See the identical helper in rune.lua for the
+--- incident that made it necessary.
+local function schedulerAddress(base)
+  if type(base) ~= "table" then return nil end
+  local found = base["scheduler-location"] or base.SchedulerLocation
+    or base["scheduler_location"]
+  if type(found) == "string" and #found == 43 then return found end
+  local p = base.process or base.Process
+  if type(p) == "table" then
+    local nested = p["scheduler-location"] or p.SchedulerLocation
+    if type(nested) == "string" and #nested == 43 then return nested end
+  end
+  return nil
+end
+
+--- A process can spend only its own account.
+---
+--- This used to prefer any real signature, on the assumption that a delivery
+--- from another process is unsigned. On a live node it is not: the SCHEDULER
+--- signs it. That assumption cost the Rune bridge a player's runes, and here it
+--- would break the AMM's payout leg -- the pool sends TEST-RELIC out of its own
+--- balance, the delivery arrives signed by the scheduler, and this would read
+--- the scheduler as the payer and refuse. A swap would take the input and never
+--- deliver the output.
+---
+--- So a signature from OUR OWN scheduler means "this is a delivery" and the
+--- attested `from-process` is the actor. Any other signature is an ordinary
+--- wallet message and wins outright, which keeps a forged `from-process` tag
+--- inert.
+local function actor(msg, base)
   local signed = provenSigner(msg)
-  if signed then return signed end
-  return msg["from-process"] or msg.FromProcess
+  local fromProcess = msg["from-process"] or msg.FromProcess
+  if signed then
+    local scheduler = schedulerAddress(base)
+    if fromProcess and scheduler and signed == scheduler then return fromProcess end
+    return signed
+  end
+  return fromProcess
 end
 
 local function isOwner(address)
@@ -113,7 +145,7 @@ local H = {}
 H["Info"] = function(base) return reply(base, infoView()) end
 
 H["Balance"] = function(base, msg)
-  local address = msg.Account or msg.Recipient or actor(msg)
+  local address = msg.Account or msg.Recipient or actor(msg, base)
   if not address then return fail(base, "No address") end
   return reply(base, { Account = address, Balance = asString(balanceOf(address)), Ticker = Ticker })
 end
@@ -150,7 +182,7 @@ H["Admin.Mint"] = function(base, msg)
 end
 
 H["Transfer"] = function(base, msg)
-  local from = actor(msg)
+  local from = actor(msg, base)
   if not from then return fail(base, "Unsigned messages cannot transfer") end
   local to = msg.Recipient
   if type(to) ~= "string" or to == "" then return fail(base, "Recipient is required") end
@@ -210,12 +242,27 @@ local function resolveOwner(base)
   return Owner
 end
 
+--- Find a handler by name, ignoring case.
+---
+--- See rune.lua for the incident this prevents: a caller that spells an action
+--- differently from the table must not silently fail, because the other half of
+--- a cross-process action has usually already happened by then. Exact wins.
+local ACTION_ALIASES = nil
+local function resolveHandler(action)
+  if H[action] then return H[action] end
+  if ACTION_ALIASES == nil then
+    ACTION_ALIASES = {}
+    for name, fn in pairs(H) do ACTION_ALIASES[tostring(name):lower()] = fn end
+  end
+  return ACTION_ALIASES[tostring(action):lower()]
+end
+
 function compute(base, req, opts)
   resolveOwner(base)
   local raw = (req and req.body) or {}
   local msg = caseInsensitive(raw.Tags or raw)
   local action = msg.Action or msg.action or "none"
-  local handler = H[action]
+  local handler = resolveHandler(action)
   local result
   if not handler then
     result = fail(base, "unknown action '" .. tostring(action) .. "'")
@@ -227,7 +274,19 @@ function compute(base, req, opts)
   result.balances = encode(balancesView())
   result.totalsupply = asString(TotalSupply)
   result.ticker = Ticker
-  local who = actor(msg) or msg.Recipient or msg.Account
+  local who = actor(msg, base) or msg.Recipient or msg.Account
   if type(who) == "string" and who ~= "" then result["balance-" .. who] = asString(balanceOf(who)) end
+  -- Compact the heap before the node photographs it. See the long note at the
+  -- end of `compute` in game.lua: HyperBEAM snapshots this process by
+  -- term_to_binary-ing the WHOLE Luerl table store, Luerl never collects on its
+  -- own, and `collectgarbage("step")` is a no-op on this runtime -- so without
+  -- this line every transient table from every message since spawn is still in
+  -- the heap when the node writes the checkpoint.
+  --
+  -- A full `collect`, as a bare statement. NOT through `pcall`, and not from
+  -- inside a pcall frame: a collect renumbers the table store and Luerl's pcall
+  -- restores stale indices into it, which kills the VM.
+  collectgarbage("collect")
+
   return result
 end

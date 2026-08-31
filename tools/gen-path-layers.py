@@ -44,7 +44,7 @@ import urllib.error
 import urllib.request
 
 API = "https://api.pixellab.ai/v1/generate-image-pixflux"
-OUT = pathlib.Path("RuneRealm-Assets/_generated/paths")
+OUT = pathlib.Path("RuneRealm-Assets/_generated/scenes/quest")
 SEED = 7
 
 # Shared by every layer: flat elevation is what makes a texture tile at all.

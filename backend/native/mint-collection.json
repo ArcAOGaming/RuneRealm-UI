@@ -1,12 +1,13 @@
 {
   "processId": "FLpgYCuzLQt-wevwCvuTh9oJ89r_geDO3JWjNaXdQKc",
-  "manifestId": "HQ7MaWFmyvP6a4O_9YH1Nfe4OqyO6BOTwDanjnSfg_c",
+  "manifestId": "TpFdUJH03UQPBJXLHvChrDtiRJj_FdZNhJRUW9vYmTY",
   "name": "Rune Realm Companions",
   "description": "Companions raised in Rune Realm and pulled out of the game as one-unit assets. Each card is composited from the creature the process actually holds — its element, level, stats and moves at the moment it was minted.",
   "owner": "DA9qhP25ZPz6MHIhO-7aNHDN3LsTAL7yCKYIkqr13Z8",
   "assets": [
-    "BbKbzXwM_Im7V3TIzj2QSEjaWe9YUwS71JCsH9-Cllg"
+    "BbKbzXwM_Im7V3TIzj2QSEjaWe9YUwS71JCsH9-Cllg",
+    "sHvH3w0stemtbk1FkJDB3EMuPyuJtnvx2uoGlbzSn8Y"
   ],
   "createdAt": 1787865841301,
-  "updatedAt": 1787867113088
+  "updatedAt": 1787966767729
 }

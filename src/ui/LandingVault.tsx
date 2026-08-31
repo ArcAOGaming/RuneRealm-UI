@@ -11,9 +11,9 @@ const TIERS = [
 ];
 
 const SPOILS: Spoil[] = [
-  { url: ITEM_ART.ruby!, amount: 2 },
+  { url: ITEM_ART.fire_berry!, amount: 5 },
   { url: ITEM_ART.scroll!, amount: 1 },
-  { url: ITEM_ART.emerald!, amount: 4 },
+  { url: ITEM_ART.air_berry!, amount: 5 },
 ];
 
 /** A self-contained demo of the real loot ceremony. No loot is spent or won. */

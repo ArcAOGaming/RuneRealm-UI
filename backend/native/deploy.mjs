@@ -91,21 +91,44 @@ const PREVIOUS = (() => {
 
 const read = (f) => fs.readFileSync(path.join(HERE, f), 'utf8');
 
+// A fresh process id is unknowable until spawn returns, while every worker is
+// immutably bound to a game process id. Pre-sealing here can therefore only bind
+// a new game to workers for some older game. Always spawn unconfigured, deploy
+// verified workers against the returned pid, then seal once with
+// configure-battle-fleet.mjs. game.lua still supports preinjected manifests for
+// deterministic/manual bundlers that genuinely know their process id.
+const fleetManifestPath = process.env.BATTLE_FLEET_MANIFEST;
+if (fleetManifestPath) {
+  throw new Error('BATTLE_FLEET_MANIFEST cannot be pre-sealed by deploy.mjs because the new game '
+    + 'process id is not known yet. Deploy the game first, deploy workers with BATTLE_GAME_PROCESS, '
+    + 'then run npm run configure:battle-fleet.');
+}
+
 // The bundle must match run-test.sh exactly, or the suite is testing something
 // other than what ships.
 const lua = [
-  read(process.env.HYPER_AOS ? path.basename(process.env.HYPER_AOS) : 'hyper-aos.lua'),
+  // `json.lua` alone, not all of hyper-aos: this process defines its own
+  // `compute` and uses nothing else aos provides. Set HYPER_AOS to bundle the
+  // full runtime instead -- it registers `.json` the same way.
+  read(process.env.HYPER_AOS ? path.basename(process.env.HYPER_AOS) : 'json.lua'),
   'local C = (function()',     read('constants.lua'), 'end)()',
   `C.PUBLIC_ACCESS = ${PUBLIC_ACCESS ? 'true' : 'false'}`,
   'local jsonx = (function()', read('jsonenc.lua'),   'end)()',
   'local encode, jsonObject = jsonx.encode, jsonx.object',
   'Battle = (function()',      read('battle.lua'),    'end)()',
+  'local EconomyEngine = (function()', read('economy.lua'), 'end)()',
+  'BattleFleetBootstrapConfig = { enabled = true }',
+  'BattleFleetConfig = nil',
+  'BattleFleetAuthority = (function()',
+  read('battle-fleet/authority.lua'),
+  'end)()',
   read('game.lua'),
 ].join('\n');
 
 console.log(`node:   ${NODE}`);
 console.log(`owner:  ${owner}`);
 console.log(`access: ${PUBLIC_ACCESS ? 'public (new wallets may join)' : 'Eternal Pass allow-list'}`);
+console.log('fleet:  unconfigured (monolith; staged one-time fleet seal available)');
 console.log(`module: ${Buffer.byteLength(lua)} bytes`);
 
 let t = Date.now();
@@ -375,6 +398,11 @@ if (migrateFrom) {
         checkins: chunk.checkins ?? {},
         metrics: chunk.metrics ?? {},
         audit: chunk.audit ?? [],
+        battlesCompleted: chunk.battlesCompleted ?? 0,
+        withdrawals: chunk.withdrawals ?? {},
+        withdrawSeq: chunk.withdrawSeq ?? 0,
+        deposits: chunk.deposits ?? {},
+        runeToken: chunk.runeToken ?? '',
       };
     }
     carried.push(...(chunk.players ?? []));
@@ -414,6 +442,7 @@ if (migrateFrom) {
    */
   const untouched = (p) => !p.monster && !p.faction
     && !(p.lootboxes ?? []).length
+    && !Number(p.gold)
     && !Object.values(p.inventory ?? {}).some((n) => Number(n) > 0)
     && !Number(p.wins) && !Number(p.losses) && !Number(p.questsCompleted);
 
@@ -433,6 +462,120 @@ if (migrateFrom) {
     const historyReply = await outJson('load-history');
     if (historyReply.error) throw new Error(`history migration failed: ${historyReply.error}`);
   }
+
+  /**
+   * The marketplace, which is custody rather than an index.
+   *
+   * A companion that is listed for sale lives in `Market` and in NOBODY's
+   * collection — that is the whole point of the escrow — so it is not in any
+   * player row and walking only the player table does not merely forget the
+   * listings, it destroys the creatures inside them. There is nowhere else to
+   * recover one from.
+   *
+   * It pages separately from the players because each entry holds a whole
+   * companion and there is no bound on how many people are selling at once.
+   * Failing to carry it is fatal for the same reason a partial player
+   * migration is: it looks like it worked, and the loss surfaces later as a
+   * seller whose companion is simply gone.
+   */
+  const listings = [];
+  let marketSeq = 0;
+  let marketHistory = null;
+  let marketTotal = null;
+  let marketOffset = 0;
+  let marketDone = false;
+  for (let page = 0; page < 200 && !marketDone; page++) {
+    let chunk = null;
+    for (let attempt = 0; attempt < 4; attempt++) {
+      await sendMessage({
+        node: migrateNode, jwk, process: migrateFrom, action: 'Admin.Export',
+        tags: { Action: 'Admin.Export', Section: 'market',
+                Offset: String(marketOffset), Limit: '25' },
+      });
+      const got = await readOld();
+      // A process deployed before the market existed does not know this
+      // section and answers with an ordinary player page. That is not a
+      // failure to retry — there is simply nothing to carry.
+      //
+      // This test has to come FIRST, and a market page has to be identified by
+      // carrying a `market` array rather than merely by having a `count`. A
+      // player page has a finite `count` too, so the old order accepted one as
+      // a market chunk: `marketTotal` was then the PLAYER total, no listing was
+      // ever accumulated, and the guard below aborted a healthy deploy with
+      // "read 0 of 51" — 51 being the number of players. The fallback branch
+      // was unreachable, so the case it was written for never once ran.
+      if (got && Array.isArray(got.players) && !Array.isArray(got.market)) {
+        marketDone = true;
+        break;
+      }
+      if (!got.error && Number.isFinite(got.count) && Array.isArray(got.market)) {
+        chunk = got;
+        break;
+      }
+      await new Promise((r) => setTimeout(r, 1500));
+    }
+    if (marketDone) break;
+    if (!chunk) {
+      console.error(`\n  market export stopped at offset ${marketOffset} after 4 attempts.`);
+      console.error('  Companions in escrow would be destroyed by continuing. Re-run.');
+      process.exit(1);
+    }
+    if (marketTotal === null) marketTotal = chunk.total ?? 0;
+    if (marketOffset === 0) {
+      marketSeq = chunk.marketSeq ?? 0;
+      marketHistory = chunk.marketHistory ?? null;
+    }
+    listings.push(...(chunk.market ?? []));
+    marketOffset += chunk.count;
+    if (chunk.done || chunk.count === 0) marketDone = true;
+  }
+
+  if (marketTotal !== null && listings.length < marketTotal) {
+    console.error(`\n  MARKET MIGRATION INCOMPLETE: read ${listings.length} of ${marketTotal}.`);
+    console.error('  Every unread listing is a companion that exists nowhere else.');
+    process.exit(1);
+  }
+
+  if (listings.length || marketHistory) {
+    const BATCH = 10;
+    for (let i = 0; i < Math.max(1, Math.ceil(listings.length / BATCH)); i++) {
+      await sendMessage({
+        node: NODE, jwk, process: pid, action: 'Admin.Load',
+        data: JSON.stringify({
+          players: [],
+          market: listings.slice(i * BATCH, (i + 1) * BATCH),
+          marketSeq,
+          ...(i === 0 && marketHistory ? { marketHistory } : {}),
+        }),
+      });
+      const reply = await outJson('load-market');
+      if (reply.error) throw new Error(`market migration failed: ${reply.error}`);
+    }
+    console.log(`  carried ${listings.length} listing(s) out of escrow`);
+  }
+
+  // Gold, fungible-item and loot-box ledgers, Gold orders/escrow, finite shop
+  // reserves, bounded histories and pending policy changes are one durable
+  // state object. Load it LAST: its bucket totals describe the complete player
+  // and order population, so loading it before paged players would make an
+  // intermediate partial world look like a reconciliation correction.
+  await sendMessage({
+    node: migrateNode, jwk, process: migrateFrom, action: 'Admin.Export',
+    tags: { Action: 'Admin.Export', Section: 'economy' },
+  });
+  const economyExport = await readOld();
+  if (economyExport?.section === 'economy' && economyExport.economy) {
+    await sendMessage({
+      node: NODE, jwk, process: pid, action: 'Admin.Load',
+      data: JSON.stringify({ players: [], economy: economyExport.economy }),
+    });
+    const economyReply = await outJson('load-economy');
+    if (economyReply.error) throw new Error(`economy migration failed: ${economyReply.error}`);
+    console.log('  carried Gold, item, loot-box, order, shop and policy state');
+  } else {
+    console.log('  predecessor has no economy export; bootstrapped ledgers from restored holdings');
+  }
+
   console.log(`  carried ${loaded} players across\n`);
 }
 
@@ -449,8 +592,20 @@ function loadPaidList(file) {
   return raw.split(/\r?\n/).map((s) => s.trim()).filter((s) => s && !s.startsWith('#'));
 }
 
+// The paid allow-list is skipped on a --no-paid deploy.
+//
+// `Admin.Unlock` MINTS a record for every address it is given, so unlocking the
+// 168 paid wallets does not merely permit them, it creates 168 accounts. On a
+// real deployment that is exactly right. On a test process it is 168 empty
+// players sitting under whatever the run is measuring, inflating `users` and
+// every leaderboard denominator — and under `--free` it buys nothing anyway,
+// because public access already admits any wallet.
+const skipPaid = process.argv.includes('--no-paid')
+  || process.env.PAID_LIST === '0';
 const paidFile = process.env.PAID_LIST || path.join(HERE, 'paid.json');
-if (fs.existsSync(paidFile)) {
+if (skipPaid) {
+  console.log('skipping the paid allow-list (--no-paid)');
+} else if (fs.existsSync(paidFile)) {
   const all = [...new Set(loadPaidList(paidFile))];
   // 43-character base64url is what an Arweave address looks like. Anything else
   // is a paste artefact and would otherwise become a permanently unlockable

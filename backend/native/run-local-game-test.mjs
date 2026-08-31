@@ -19,13 +19,20 @@ const source = [
   'local jsonx = (function()', read('jsonenc.lua'), 'end)()',
   'local encode, jsonObject = jsonx.encode, jsonx.object',
   'Battle = (function()', read('battle.lua'), 'end)()',
+  'local EconomyEngine = (function()', read('economy.lua'), 'end)()',
+  'BattleFleetConfig = nil',
+  'BattleFleetAuthority = (function()', read('battle-fleet/authority.lua'), 'end)()',
   read('game.lua'), read('game_test.lua'),
   'return gametest({}, {})',
 ].join('\n');
 
 const handle = await AoLoader(fs.readFileSync(WASM), {
   format: 'wasm32-unknown-emscripten',
-  computeLimit: 9_000_000_000_000,
+  // The integrated economy and pass scenarios deliberately exercise hundreds
+  // of complete process messages in one Eval. This is a harness allowance, not
+  // a per-message production budget: each handler still runs in its own slot on
+  // HyperBEAM.
+  computeLimit: 18_000_000_000_000,
   memoryLimit: 512 * 1024 * 1024,
 });
 const result = await handle(null, {
@@ -40,7 +47,16 @@ const result = await handle(null, {
     { name: 'Type', value: 'Process' },
   ] },
 });
-if (result.Error) throw new Error(result.Error);
+if (result.Error) {
+  const line = Number(/\[string "aos"\]:(\d+)/.exec(result.Error)?.[1]);
+  if (Number.isFinite(line)) {
+    const lines = source.split(/\r?\n/);
+    const start = Math.max(0, line - 4);
+    console.error(lines.slice(start, line + 3)
+      .map((text, index) => `${start + index + 1}: ${text}`).join('\n'));
+  }
+  throw new Error(result.Error);
+}
 const data = result.Output?.data;
 const output = typeof data === 'string' ? data : data?.output;
 const text = typeof output === 'string' ? output : JSON.stringify(output);

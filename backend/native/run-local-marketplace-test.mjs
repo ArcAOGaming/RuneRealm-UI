@@ -22,7 +22,6 @@ const PROCESS_ID = 'local-marketplace-tests'.padEnd(43, '_');
 const OWNER = 'local-marketplace-owner'.padEnd(43, '_');
 
 const suites = [
-  ['marketplace', 'marketplace.lua', 'marketplace_test.lua', 'markettest'],
   ['amm', 'amm.lua', 'amm_test.lua', 'ammtest'],
   ['quote', 'quote.lua', 'quote_test.lua', 'quotetest'],
   ['rune', 'rune.lua', 'rune_test.lua', 'runetest'],

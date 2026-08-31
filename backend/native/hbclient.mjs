@@ -587,6 +587,106 @@ export async function spawnProcess({ node, jwk, lua, scheduler, authority, ...fi
     ...(lua ? { module: { 'content-type': 'application/lua', body: lua } } : {}),
     ...fields
   };
+  return scheduleProcess(node, jwk, proc);
+}
+
+/** Spawn a pre-cached Rust/WASM process using HyperBEAM's JSON interface.
+ *
+ * `image` is deliberately an immutable content id, not a local filename, and
+ * `dev_wasm` resolves it through `hb_cache:read` at init. That read falls back
+ * to `hb_store_gateway`, so an ordinary Arweave transaction id resolves —
+ * measured: the node serves the aos module
+ * `Do_Uc2Sju_ffp6Ev0AnLVdPtot15rvMjP-a9VVaA5fM` as application/wasm without
+ * ever having held it. `battle-fleet/image.mjs` publishes the worker that way,
+ * so no node operator or `cache_writers` entry is involved. */
+export async function spawnWasmProcess({
+  node, jwk, image, imageBytes, scheduler, authority, deviceStack, ...fields
+}) {
+  const sched = scheduler || (await nodeAddress(node));
+  return scheduleProcess(node, jwk, wasmProcessDefinition({
+    image, imageBytes, scheduler: sched, authority, deviceStack, ...fields,
+  }));
+}
+
+/** Pure process-definition builder, exported so deployment compatibility can
+ * be tested without mutating a public scheduler. */
+export function wasmProcessDefinition({
+  image, imageBytes, scheduler, authority, deviceStack, randomSeed, ...fields
+}) {
+  // Two ways to name the module, and they are not interchangeable.
+  //
+  // `image` is a content id, which `dev_wasm:init/3` resolves with
+  // `hb_cache:read(Id)` and then reads the `body` key OF THE RESULT. A message
+  // the node pulled from a gateway does not have one: `dev_tx`/`ans104@1.0`
+  // decoding puts a transaction's payload under `data`, so the read succeeds,
+  // `body` is `not_found`, and the process dies at init inside
+  // `hb_beamr:start(not_found, wasm)` with a bare `function_clause`. Measured on
+  // hyperbeam.tylerw.ai against our own published module and against the aos
+  // module `Do_Uc2Sju...` alike: `GET /<id>/data` serves the bytes and
+  // `GET /<id>/body` 404s for both. An `image` id therefore only works when the
+  // bytes are in the NODE's own cache as a message with a `body` -- which is
+  // what `dev_wasm:cache_wasm_image/2` and `/~cache@1.0/write` do, and both are
+  // gated on the node's `cache_writers` list.
+  //
+  // `imageBytes` needs no such privilege. `dev_wasm` also accepts `image` as a
+  // MESSAGE and reads `body` from it directly, so the module travels inside the
+  // signed process definition as `image/body`. It costs one copy of the binary
+  // per spawn and binds the exact executable into the immutable process, which
+  // is the property the fleet wanted from an image id anyway.
+  if (imageBytes && image) {
+    throw new Error('Pass either a WASM image id or inline imageBytes, not both');
+  }
+  if (imageBytes) {
+    if (!Buffer.isBuffer(imageBytes) || imageBytes.length === 0) {
+      throw new Error('WASM imageBytes must be a non-empty Buffer');
+    }
+  } else if (!/^[A-Za-z0-9_-]{43}$/.test(image || '')) {
+    throw new Error('WASM image must be a 43-character cached content id');
+  }
+  if (!/^[A-Za-z0-9_-]{43}$/.test(scheduler || '')) {
+    throw new Error('WASM scheduler must be a 43-character address');
+  }
+  return {
+    device: 'process@1.0',
+    type: 'Process',
+    'scheduler-device': 'scheduler@1.0',
+    'execution-device': 'stack@1.0',
+    'scheduler-location': scheduler,
+    scheduler,
+    // Device names are matched BYTE-FOR-BYTE against the node's registry, and
+    // every name in it is lowercase. `JSON-Iface@1.0` is therefore a different
+    // string from `json-iface@1.0` and resolves to nothing: the process dies at
+    // init with `{device_not_loadable,<<"JSON-Iface@1.0">>,
+    // <<"device-name-not-resolvable">>}`, which reads as "this node has no JSON
+    // interface" and is not that at all. `/~<name>@<ver>/keys` distinguishes the
+    // two: a registered device answers 200, an unresolvable one answers that
+    // same 500. Keep every device name here lowercase.
+    //
+    // The worker is a self-contained wasm32-unknown-unknown module with zero
+    // imports, so it must not depend on WASI, and the stack omits it. (The node
+    // does register `wasi@1.0`; the earlier reading that it did not was the
+    // casing bug above.)
+    // The signed process owner remains available through env.Process.
+    authority: authority || scheduler,
+    'device-stack': deviceStack || [
+      'json-iface@1.0', 'wasm-64@1.0', 'multipass@1.0', 'patch@1.0',
+    ],
+    'stack-keys': ['init', 'compute', 'snapshot', 'normalize'],
+    image: imageBytes ? { body: imageBytes } : image,
+    'output-prefix': 'wasm',
+    passes: 2,
+    // `/results/outbox`, not `/results/patches`: `dev_json_iface` builds the
+    // outbox as a numbered map and leaves `patches` a list, and `dev_patch`
+    // folds its source with `maps:fold/3`. See ProcessResponse in
+    // battle-fleet-rust/src/lib.rs.
+    'patch-from': '/results/outbox',
+    'patch-to': '/',
+    'random-seed': randomSeed || String(Math.floor(Math.random() * 1e9)),
+    ...fields,
+  };
+}
+
+async function scheduleProcess(node, jwk, proc) {
   // Where a spawn is POSTed depends on the node's build, and the failure looks
   // nothing like the cause: `permaweb/edge` answers the bare `/schedule` with a
   // flat `404 not_found`, which reads as "this node is broken" rather than
@@ -667,12 +767,49 @@ export async function sendMessage({ node, jwk, process: pid, action, tags = {}, 
     const res = await postSigned(node, candidate, msg, jwk);
     if (res.status === 200) {
       if (!path) SCHEDULE_ROUTE.set(node, candidate);
-      return { slot: res.headers['slot'], headers: res.headers };
+      const slot = res.headers['slot'];
+      // Fire and forget. The push is best-effort by definition — the caller's
+      // message is already accepted, and the delivery it triggers happens on
+      // the receiving process's own timeline. AWAITING it doubled the round
+      // trips of every backend write for no benefit: most messages emit no
+      // outbox at all, so the wait was usually spent confirming there was
+      // nothing to deliver. A 99-message seeding run paid that 99 times.
+      if (slot !== undefined && slot !== null) {
+        pushSlot({ node, process: pid, slot }).catch(() => {});
+      }
+      return { slot, headers: res.headers };
     }
     tried.push(`${candidate} -> ${res.status} ${hbError(res)}`);
     if (res.status !== 404) break;
   }
   throw new Error(`send failed on ${node}:\n  ${tried.join('\n  ')}`);
+}
+
+/**
+ * Deliver whatever a computed slot left in its outbox.
+ *
+ * A process cannot send anything by itself. A handler that wants to reach
+ * another process writes the message into `results.outbox`, and it sits there
+ * until somebody asks the node to push it — nothing does that automatically.
+ *
+ * `Rune.Withdraw` is the proof: the game deducted a player's runes and queued
+ * the token's mint, and because nothing pushed, the token's slot count never
+ * moved and the runes were destroyed. Every message that crosses a process
+ * boundary needs this second half, so it runs for every write rather than only
+ * where an outbox is expected — pushing an empty one costs nothing, and a
+ * handler that starts emitting one later would otherwise silently stop working.
+ *
+ * Best-effort and never throws: the caller's own message has already been
+ * accepted, and failing it because a downstream delivery was slow would report
+ * completed work as an error.
+ */
+export async function pushSlot({ node, process: pid, slot }) {
+  try {
+    const res = await send(node, `/${pid}~process@1.0/push&slot=${slot}`, 'GET', {});
+    return res.status === 200;
+  } catch {
+    return false;
+  }
 }
 
 

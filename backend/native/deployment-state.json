@@ -1,23 +1,23 @@
 {
   "version": 1,
-  "deployedAt": "2026-08-28T16:48:59.447Z",
+  "deployedAt": "2026-08-30T23:50:20.340Z",
   "node": "https://hyperbeam.tylerw.ai",
   "owner": "DA9qhP25ZPz6MHIhO-7aNHDN3LsTAL7yCKYIkqr13Z8",
   "processes": {
-    "game": "YUwUslusKtTJTu0g7M_qHjgfC2HpG8DCFWs_G2pozt0",
-    "rune": "C4KguU6ixunOuwfCaIeJ9FDj4E0HQmnwPLNdtYnpYiw",
-    "market": "6yI83FzNf5d0HIVVPJutrPUL0-2xrxe_AQfiL8ivr_w",
-    "amm": "02Db0p0twtp1IpFIDQP62p8yvPD8stpRQquIv-LaQdo",
-    "quote": "e_iLPZoYleBRvTSFmhyexhHVj3k52cj6M1qhgB2dAyE",
+    "game": "Sjf2oEUkKIKvXgleCPD5urvCYmahf7Q3Esvn1TN78Cs",
+    "rune": "KZSbMhEEzMvu0TnGXSh9u8lHNexqYw00lljmYLqhZ3A",
+    "market": "",
+    "amm": "6e-BMF4NON7ZPi4ZUZs9cZ6idoTem3_bsCkIvJEkIcM",
+    "quote": "neqJJmAwsq9jkaUEhEYNOKp8wTNbpoHQxN-q9mBi50E",
     "collection": "FLpgYCuzLQt-wevwCvuTh9oJ89r_geDO3JWjNaXdQKc"
   },
   "wiring": {
-    "runeMinter": "YUwUslusKtTJTu0g7M_qHjgfC2HpG8DCFWs_G2pozt0",
-    "gameRuneToken": "C4KguU6ixunOuwfCaIeJ9FDj4E0HQmnwPLNdtYnpYiw",
-    "marketGame": "YUwUslusKtTJTu0g7M_qHjgfC2HpG8DCFWs_G2pozt0",
+    "runeMinter": "Sjf2oEUkKIKvXgleCPD5urvCYmahf7Q3Esvn1TN78Cs",
+    "gameRuneToken": "KZSbMhEEzMvu0TnGXSh9u8lHNexqYw00lljmYLqhZ3A",
+    "marketGame": null,
     "ammPair": [
-      "C4KguU6ixunOuwfCaIeJ9FDj4E0HQmnwPLNdtYnpYiw",
-      "e_iLPZoYleBRvTSFmhyexhHVj3k52cj6M1qhgB2dAyE"
+      "KZSbMhEEzMvu0TnGXSh9u8lHNexqYw00lljmYLqhZ3A",
+      "neqJJmAwsq9jkaUEhEYNOKp8wTNbpoHQxN-q9mBi50E"
     ]
   },
   "build": "passed",

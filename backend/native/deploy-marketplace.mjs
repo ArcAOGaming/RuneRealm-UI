@@ -1,5 +1,5 @@
 /**
- * Deploy the Rune Realm companion index, Rune AMM and test quote token.
+ * Deploy the Rune Realm Rune AMM and test quote token.
  *
  *   HB_WALLET=path/to/key.json node backend/native/deploy-marketplace.mjs
  *
@@ -31,10 +31,6 @@ const readLines = (name) => {
 };
 const gameLive = readLines('live-process.txt');
 const runeLive = readLines('rune-process.txt');
-const collectionFile = path.join(HERE, 'mint-collection.json');
-const collection = fs.existsSync(collectionFile)
-  ? JSON.parse(fs.readFileSync(collectionFile, 'utf8'))
-  : {};
 
 const GAME = process.env.GAME_PROCESS || gameLive[0];
 const RUNE = process.env.RUNE_TOKEN || runeLive[0];
@@ -59,7 +55,10 @@ const jwk = JSON.parse(fs.readFileSync(WALLET, 'utf8'));
 const owner = jwkToAddress(jwk);
 const read = (name) => fs.readFileSync(path.join(HERE, name), 'utf8');
 const bundle = (contract) => [
-  read(process.env.HYPER_AOS ? path.basename(process.env.HYPER_AOS) : 'hyper-aos.lua'),
+  // `json.lua` alone, not all of hyper-aos: this process defines its own
+  // `compute` and uses nothing else aos provides. Set HYPER_AOS to bundle the
+  // full runtime instead -- it registers `.json` the same way.
+  read(process.env.HYPER_AOS ? path.basename(process.env.HYPER_AOS) : 'json.lua'),
   'local jsonx = (function()', read('jsonenc.lua'), 'end)()',
   'local encode, jsonObject = jsonx.encode, jsonx.object',
   read(contract),
@@ -108,7 +107,6 @@ console.log(`node:       ${NODE}`);
 console.log(`owner:      ${owner}`);
 console.log(`game:       ${GAME}`);
 console.log(`Rune:       ${RUNE}`);
-console.log(`collection: ${collection.processId || '(not configured)'}`);
 console.log('');
 
 let quote = process.env.QUOTE_TOKEN;
@@ -125,7 +123,6 @@ if (quote) {
 }
 
 const amm = await spawn('amm', 'amm.lua', 'TEST-Rune Realm Swap');
-const market = await spawn('market', 'marketplace.lua', 'TEST-Rune Realm Companion Market');
 
 await action(amm, 'Admin.Configure', {
   BaseToken: RUNE,
@@ -136,35 +133,29 @@ await action(amm, 'Admin.Configure', {
   QuoteDenomination: String(QUOTE_DENOMINATION),
   FeeBps: String(FEE_BPS),
 });
-await action(market, 'Admin.Configure', {
-  GameProcess: GAME,
-  RuneToken: RUNE,
-  QuoteToken: quote,
-  AmmProcess: amm,
-  ...(isId(collection.processId) ? { CollectionId: collection.processId } : {}),
-  QuoteTicker: 'AR',
-});
-
-let assets = {};
-try {
-  assets = JSON.parse(await readKey(GAME, 'assets'));
-} catch (error) {
-  console.warn(`warning: could not read the game asset registry: ${error.message}`);
-}
-const rows = Object.values(assets || {}).filter((row) => isId(row?.assetId));
-for (let i = 0; i < rows.length; i += 25) {
-  const result = await action(market, 'Admin.LoadAssets', {}, JSON.stringify({ assets: rows.slice(i, i + 25) }));
-  console.log(`registry     ${Math.min(i + 25, rows.length)}/${rows.length} (${result.added} added)`);
-}
+// `marketplace.lua` is deliberately NOT spawned here. It indexes one-unit
+// `token@1.0` companion assets that settle in native AR, and monsters are no
+// longer minted as those, so it would index nothing. The live companion market
+// is `Market.List` / `Market.Buy` / `Market.Cancel` inside game.lua, paid in
+// in-game Rune, where the listing itself is the custody and a sale is one
+// atomic action rather than a saga.
+//
+// The file and its suite are kept and still tested. TODO: if monster minting is
+// ever re-enabled, revisit whether the index should come back -- and note that
+// it was never wired to the UI, so "bring it back" means building that too.
+// See MARKETPLACE.md.
+//
+// What remains here is the exchange, which is a different thing and still real:
+// Rune and the quote token have holders, so they stay their own processes with
+// an AMM between them.
 
 const state = {
-  market, amm, rune: RUNE, quote, game: GAME,
-  collection: isId(collection.processId) ? collection.processId : '',
+  amm, rune: RUNE, quote, game: GAME,
   node: NODE, owner, quoteTicker: QUOTE_TICKER,
   quoteDenomination: QUOTE_DENOMINATION, feeBps: FEE_BPS,
 };
 fs.writeFileSync(path.join(ROOT, 'marketplace-processes.txt'), [
-  market, amm, RUNE, quote, NODE, owner,
+  amm, RUNE, quote, NODE, owner,
 ].join('\n') + '\n');
 fs.writeFileSync(path.join(HERE, 'marketplace-state.json'), `${JSON.stringify(state, null, 2)}\n`);
 
@@ -183,8 +174,7 @@ function syncFrontend() {
   const defaultsFile = path.join(ROOT, 'src', 'lib', 'marketplace-config.ts');
   let defaults = fs.readFileSync(defaultsFile, 'utf8');
   const values = {
-    market, amm, rune: RUNE, quote, node: NODE,
-    collection: isId(collection.processId) ? collection.processId : '',
+    amm, rune: RUNE, quote, node: NODE,
   };
   for (const [key, value] of Object.entries(values)) {
     const pattern = new RegExp(`(${key}:\\s*')[^']*(')`);
@@ -194,12 +184,10 @@ function syncFrontend() {
   fs.writeFileSync(defaultsFile, defaults);
 
   const vars = {
-    VITE_MARKET_PROCESS: market,
     VITE_AMM_PROCESS: amm,
     VITE_RUNE_PROCESS: RUNE,
     VITE_QUOTE_PROCESS: quote,
     VITE_MARKET_NODE: NODE,
-    VITE_COLLECTION_PROCESS: isId(collection.processId) ? collection.processId : '',
   };
   for (const rel of ['.env.example', '.env.local']) {
     const file = path.join(ROOT, rel);

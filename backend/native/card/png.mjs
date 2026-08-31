@@ -6,8 +6,9 @@
  * between a funded wallet and a permanent transaction, on every machine that
  * ever runs a mint. Node already ships zlib, and the art is uniform: all 106
  * PNGs under `src/assets` are 8-bit RGBA, non-interlaced, verified by reading
- * their IHDR. So this handles exactly that, and refuses anything else loudly
- * rather than guessing.
+ * their IHDR. Studio generation can also return 8-bit RGB plates, so the
+ * decoder accepts those and expands them to opaque RGBA before compositing.
+ * Everything else is refused loudly rather than guessed.
  *
  * The encoder writes filter type 0 on every row. A smarter filter would shrink
  * the file, and file size is money here — but the difference measured under 3%
@@ -46,6 +47,7 @@ export function decodePng(buffer) {
 
   let width = 0;
   let height = 0;
+  let colour = 0;
   const idat = [];
   let offset = 8;
   while (offset < buf.length) {
@@ -55,8 +57,9 @@ export function decodePng(buffer) {
     if (type === 'IHDR') {
       width = body.readUInt32BE(0);
       height = body.readUInt32BE(4);
-      const [depth, colour, , , interlace] = [body[8], body[9], body[10], body[11], body[12]];
-      if (depth !== 8 || colour !== 6 || interlace !== 0) {
+      const [depth, nextColour, , , interlace] = [body[8], body[9], body[10], body[11], body[12]];
+      colour = nextColour;
+      if (depth !== 8 || (colour !== 2 && colour !== 6) || interlace !== 0) {
         throw new Error(`unsupported PNG: depth=${depth} colour=${colour} interlace=${interlace}`);
       }
     } else if (type === 'IDAT') {
@@ -69,7 +72,17 @@ export function decodePng(buffer) {
   if (!width || !height) throw new Error('PNG has no IHDR');
 
   const raw = zlib.inflateSync(Buffer.concat(idat));
-  return { width, height, data: unfilter(raw, width, height) };
+  const channels = colour === 6 ? 4 : 3;
+  const pixels = unfilter(raw, width, height, channels);
+  if (channels === 4) return { width, height, data: pixels };
+  const data = new Uint8Array(width * height * 4);
+  for (let src = 0, dst = 0; src < pixels.length; src += 3, dst += 4) {
+    data[dst] = pixels[src];
+    data[dst + 1] = pixels[src + 1];
+    data[dst + 2] = pixels[src + 2];
+    data[dst + 3] = 255;
+  }
+  return { width, height, data };
 }
 
 /**
@@ -78,8 +91,7 @@ export function decodePng(buffer) {
  * `bpp` is 4 here — the filters reference the pixel to the left, which for RGBA
  * is four bytes back, not one.
  */
-function unfilter(raw, width, height) {
-  const bpp = 4;
+function unfilter(raw, width, height, bpp) {
   const stride = width * bpp;
   const out = new Uint8Array(stride * height);
   let pos = 0;

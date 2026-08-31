@@ -1,24 +1,17 @@
 /**
+ * PARKED FEATURE: this screen has no application route during the integrated
+ * economy launch. Existing source and recovered character recipes stay here,
+ * but normal navigation and Sprite.Update both remain disabled.
+ *
  * The character creator.
  *
- * Compose a sheet from the layer art, dye each garment, watch it walk around,
- * then publish it: the PNG and its Phaser atlas both go to Arweave, and the two
- * transaction ids are written to the player record by `Sprite.Update`.
+ * Compose a sheet from bundled layer art, dye each garment, and save the six
+ * selected style/colour pairs to the game. The rendered sheet is derived data:
+ * every client can rebuild it from the same local art, so no bitmap or atlas is
+ * uploaded and changing clothes costs one ordinary game signature.
  *
- * Why the atlas is uploaded rather than referenced: the old customiser sent
- * only the PNG and pointed every character at one shared atlas id. That works
- * exactly as long as the frame layout never changes — and the shared atlas has
- * a broken frame name in it (see `spriteAtlas.ts`), which every character
- * inherited. Uploading the pair together means a sheet always travels with the
- * atlas that describes it.
- *
- * The dye is baked into the sheet, not stored beside it. Every consumer of a
- * character — the open world, a battle, whatever comes next — gets one PNG that
- * already looks right, and none of them needs to know that six layers and six
- * colours went into it. That also means nothing here changes the publish path
- * or the process: `Sprite.Update` still takes two ids.
- *
- * Everything above the upload is local: no wallet is touched until Publish.
+ * Legacy Arweave characters still render elsewhere, but every new save uses
+ * the outfit map and becomes independent of gateways and upload fees.
  *
  * THE SCREEN DOES NOT SCROLL. `useFitViewport` below is how, and the note on
  * each row says what gives way when the window is short.
@@ -30,7 +23,6 @@ import {
   CATEGORIES, composite, emptyOutfit, isBare, isNone, randomOutfit,
   type Facing, type Outfit,
 } from '../lib/sprites';
-import { buildAtlas } from '../lib/spriteAtlas';
 import { Button, ErrorNote, Panel, cx } from '../ui/primitives';
 import { useToast } from '../ui/Toast';
 import { Portrait } from '../ui/character/Portrait';
@@ -41,12 +33,12 @@ import { Wardrobe } from '../ui/character/Wardrobe';
  * An outfit survives a reload.
  *
  * Six choices and six colours is twenty minutes of fiddling, and the only place
- * it was ever recorded was a published sheet — so refreshing the page before
- * paying for an upload threw the lot away. Local, per browser, and deliberately
- * not the player record: this is a draft, and the process only ever hears about
- * the finished thing.
+ * the save action would throw the current draft away. The saved player record
+ * is the portable source of truth; this browser copy only protects unfinished
+ * edits between refreshes.
  */
-const DRAFT_KEY = 'runerealm.outfit.v1';
+const DRAFT_PREFIX = 'runerealm.outfit.v2.';
+const LEGACY_DRAFT_KEY = 'runerealm.outfit.v1';
 
 /**
  * Garments that have been renamed since a draft could have been saved.
@@ -62,29 +54,37 @@ const RENAMED: Record<string, string> = { Boy: 'Short', Girl: 'Long' };
 /** Below this the screen would be squeezing controls rather than fitting them. */
 const MIN_LOCKED_HEIGHT = 430;
 
-function loadDraft(): Outfit {
+function normaliseOutfit(saved: unknown): Outfit {
   const base = emptyOutfit();
+  if (!saved || typeof saved !== 'object') return base;
+  const record = saved as Partial<Outfit>;
+  // Validated against the art rather than trusted: a garment can be renamed
+  // or dropped between releases, and a saved recipe naming one that no longer
+  // exists must fall back to `None` instead of compositing a null layer.
+  for (const category of CATEGORIES) {
+    const piece = record[category.name];
+    if (!piece || typeof piece.style !== 'string') continue;
+    const style = RENAMED[piece.style] ?? piece.style;
+    if (!category.options.some((o) => o.name === style)) continue;
+    base[category.name] = {
+      style,
+      color: /^#[0-9a-f]{6}$/i.test(piece.color) ? piece.color : base[category.name].color,
+    };
+  }
+  return base;
+}
+
+function loadDraft(address: string | null, saved?: Outfit): Outfit {
   try {
-    const raw = localStorage.getItem(DRAFT_KEY);
-    if (!raw) return base;
-    const saved = JSON.parse(raw) as Outfit;
-    // Validated against the art rather than trusted: a garment can be renamed
-    // or dropped between releases, and a draft naming one that no longer exists
-    // must fall back to `None` instead of compositing a null layer.
-    for (const category of CATEGORIES) {
-      const piece = saved?.[category.name];
-      if (!piece || typeof piece.style !== 'string') continue;
-      const style = RENAMED[piece.style] ?? piece.style;
-      if (!category.options.some((o) => o.name === style)) continue;
-      base[category.name] = {
-        style,
-        color: /^#[0-9a-f]{6}$/i.test(piece.color) ? piece.color : base[category.name].color,
-      };
-    }
+    const local = address ? localStorage.getItem(`${DRAFT_PREFIX}${address}`) : null;
+    if (local) return normaliseOutfit(JSON.parse(local));
+    if (saved) return normaliseOutfit(saved);
+    const legacy = localStorage.getItem(LEGACY_DRAFT_KEY);
+    if (legacy) return normaliseOutfit(JSON.parse(legacy));
   } catch {
     // A corrupt or unreadable draft is not worth a broken screen.
   }
-  return base;
+  return saved ? normaliseOutfit(saved) : emptyOutfit();
 }
 
 /**
@@ -144,12 +144,14 @@ export default function Customiser() {
   const { address, player, loadingPlayer, refresh } = useGame();
   const toast = useToast();
 
-  const [outfit, setOutfit] = useState<Outfit>(loadDraft);
+  const [outfit, setOutfit] = useState<Outfit>(() => loadDraft(address, player?.outfit));
   const [view, setView] = useState<'portrait' | 'roam'>('portrait');
   const [facing, setFacing] = useState<Facing>('down');
   const [walking, setWalking] = useState(true);
-  const [publishing, setPublishing] = useState(false);
+  const [saving, setSaving] = useState(false);
   const [error, setError] = useState<unknown>(null);
+  const hydratedAddress = useRef<string | null>(player && address ? address : null);
+  const skipDraftWrite = useRef(false);
 
   const rootRef = useRef<HTMLDivElement>(null);
   useFitViewport(rootRef);
@@ -175,24 +177,34 @@ export default function Customiser() {
   }, [outfit]);
 
   useEffect(() => {
-    try { localStorage.setItem(DRAFT_KEY, JSON.stringify(outfit)); } catch { /* private mode */ }
-  }, [outfit]);
+    if (!address || !player || player.address !== address || hydratedAddress.current === address) return;
+    hydratedAddress.current = address;
+    skipDraftWrite.current = true;
+    setOutfit(loadDraft(address, player.outfit));
+  }, [address, player]);
 
-  const publish = async () => {
-    const sheet = sheetRef.current;
-    if (!sheet) return;
-    setPublishing(true);
+  useEffect(() => {
+    if (!address || !player || player.address !== address) return;
+    if (skipDraftWrite.current) {
+      skipDraftWrite.current = false;
+      return;
+    }
+    try {
+      localStorage.setItem(`${DRAFT_PREFIX}${address}`, JSON.stringify(outfit));
+    } catch { /* private mode */ }
+  }, [address, player, outfit]);
+
+  const save = async () => {
+    setSaving(true);
     setError(null);
     try {
-      const { uploadSprite } = await import('../lib/spriteUpload');
-      const { spriteTxId, atlasTxId } = await uploadSprite(sheet, buildAtlas);
-      await api.spriteUpdate(spriteTxId, atlasTxId);
+      await api.spriteUpdate(outfit);
       await refresh();
-      toast.success('Your character is published.');
+      toast.success('Your character is saved.');
     } catch (e) {
       setError(e);
     } finally {
-      setPublishing(false);
+      setSaving(false);
     }
   };
 
@@ -212,6 +224,8 @@ export default function Customiser() {
 
   const bare = isBare(outfit);
   const worn = CATEGORIES.filter((c) => !isNone(outfit[c.name]?.style ?? 'None')).length;
+  const savedOutfit = player?.outfit ? normaliseOutfit(player.outfit) : null;
+  const dirty = !savedOutfit || JSON.stringify(savedOutfit) !== JSON.stringify(outfit);
 
   return (
     <div ref={rootRef} className="customiser-screen flex flex-col gap-2.5 lg:overflow-hidden">
@@ -220,9 +234,8 @@ export default function Customiser() {
 
         The heading used to carry a rule and a sentence of explanation under it:
         ninety pixels of prose at the top of a screen whose whole job is to be
-        looked at. What that sentence said — nothing costs anything until you
-        publish — belongs next to the Publish button, where somebody is actually
-        deciding, and that is where it went.
+        looked at. Saving is explained beside the Save button, where somebody
+        is actually deciding, and that is where it went.
       */}
       <div className="flex shrink-0 flex-wrap items-center gap-x-4 gap-y-2">
         <h1 className="font-display text-xl font-semibold tracking-tight">Character</h1>
@@ -298,7 +311,7 @@ export default function Customiser() {
       </div>
 
       {/*
-        The publish bar. `shrink-0`, so an error appearing takes its space out
+        The save bar. `shrink-0`, so an error appearing takes its space out
         of the stage above rather than making the page taller than the window.
       */}
       <Panel className="shrink-0 px-4 py-2.5">
@@ -306,17 +319,19 @@ export default function Customiser() {
           <ErrorNote error={error} onRetry={() => setError(null)} />
         ) : (
           <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
-            <Button size="sm" variant="primary" busy={publishing} onClick={publish}>
-              Publish character
+            <Button size="sm" variant="primary" busy={saving} disabled={!dirty} onClick={save}>
+              {dirty ? 'Save character' : 'Character saved'}
             </Button>
             <p className="min-w-0 flex-1 text-[12px] leading-snug text-faint">
               {bare
-                ? 'Nothing on yet. A bare character publishes fine, but there is not much to see.'
-                : 'Free until you press this. It writes the sheet and its atlas to Arweave permanently, then points your account at them — a signature, twice.'}
+                ? 'Nothing on yet. A bare character is valid and can still be saved.'
+                : dirty
+                  ? 'Your preview is local until you save its clothing and colour choices to the game.'
+                  : 'Saved as game data. No image upload, mint, gateway, or permanent atlas required.'}
             </p>
-            {player?.spriteTxId && (
+            {player?.outfit && (
               <span className="shrink-0 font-mono text-[11px] text-faint">
-                published {player.spriteTxId.slice(0, 8)}…
+                saved in game
               </span>
             )}
           </div>

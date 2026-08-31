@@ -17,6 +17,7 @@ type SwarmRow = {
   profile: SwarmWalletProfile;
   summary?: AdminPlayerSummary;
   board?: LeaderboardRow;
+  player?: Player;
   status: string;
   hasCompanion: boolean;
   attention: string[];
@@ -42,17 +43,22 @@ function rowState(
   profile: SwarmWalletProfile,
   summary?: AdminPlayerSummary,
   board?: LeaderboardRow,
+  player?: Player,
 ): SwarmRow {
-  const hasCompanion = Boolean(board?.monster || summary?.name);
-  const status = board?.monster?.status.type
+  const hasCompanion = Boolean(player?.monster || board?.monster || summary?.name);
+  const status = player?.monster?.status.type
+    ?? board?.monster?.status.type
     ?? summary?.status
     ?? (summary ? 'No companion' : 'Not joined');
   const attention: string[] = [];
-  if (!summary) attention.push('Not joined');
-  else if (!summary.unlocked) attention.push('Access revoked');
-  if (summary && !hasCompanion) attention.push('No companion');
-  if (summary?.faction && summary.faction !== profile.faction) attention.push('Faction differs from plan');
-  return { profile, summary, board, status, hasCompanion, attention };
+  const joined = Boolean(player || summary);
+  const unlocked = player?.unlocked ?? summary?.unlocked;
+  if (!joined) attention.push('Not joined');
+  else if (!unlocked) attention.push('Access revoked');
+  if (joined && !hasCompanion) attention.push('No companion');
+  const actualFaction = player?.faction ?? summary?.faction;
+  if (actualFaction && actualFaction !== profile.faction) attention.push('Faction differs from plan');
+  return { profile, summary, board, player, status, hasCompanion, attention };
 }
 
 export default function SwarmMonitor({ snapshot }: { snapshot: AdminSnapshot }) {
@@ -60,15 +66,19 @@ export default function SwarmMonitor({ snapshot }: { snapshot: AdminSnapshot }) 
   const [metrics, setMetrics] = useState<AdminMetrics>(snapshot.metrics);
   const [selected, setSelected] = useState(SWARM_WALLETS[0].address);
   const [player, setPlayer] = useState<Player | null>(null);
+  const [playerSamples, setPlayerSamples] = useState<Map<string, Player>>(() => new Map());
   const [watching, setWatching] = useState(true);
   const [sampledAt, setSampledAt] = useState(0);
   const [summaryError, setSummaryError] = useState<unknown>(null);
   const [playerError, setPlayerError] = useState<unknown>(null);
   const [refreshing, setRefreshing] = useState(false);
   const [playerLoading, setPlayerLoading] = useState(false);
+  const [rosterRefreshing, setRosterRefreshing] = useState(false);
+  const [rosterSampledAt, setRosterSampledAt] = useState(0);
   const baselineActions = useRef(totalActions(snapshot.metrics));
   const watchStartedAt = useRef(Date.now());
   const summaryInFlight = useRef(false);
+  const rosterInFlight = useRef(false);
 
   const refreshSummary = useCallback(async () => {
     if (summaryInFlight.current) return;
@@ -98,6 +108,7 @@ export default function SwarmMonitor({ snapshot }: { snapshot: AdminSnapshot }) 
     try {
       const next = await api.readPlayer(selected);
       setPlayer(next);
+      if (next) setPlayerSamples((current) => new Map(current).set(selected, next));
       setPlayerError(null);
     } catch (error) {
       setPlayerError(error);
@@ -105,6 +116,30 @@ export default function SwarmMonitor({ snapshot }: { snapshot: AdminSnapshot }) 
       setPlayerLoading(false);
     }
   }, [selected]);
+
+  const refreshRoster = useCallback(async () => {
+    if (rosterInFlight.current) return;
+    rosterInFlight.current = true;
+    setRosterRefreshing(true);
+    const sampled = new Map<string, Player>();
+    let nextIndex = 0;
+    const runner = async () => {
+      while (nextIndex < SWARM_WALLETS.length) {
+        const profile = SWARM_WALLETS[nextIndex++];
+        try {
+          const value = await api.readPlayer(profile.address);
+          if (value) sampled.set(profile.address, value);
+        } catch { /* Keep the prior sample; the banner reports the next good sweep. */ }
+      }
+    };
+    await Promise.all(Array.from({ length: 4 }, runner));
+    if (sampled.size) {
+      setPlayerSamples((current) => new Map([...current, ...sampled]));
+      setRosterSampledAt(Date.now());
+    }
+    setRosterRefreshing(false);
+    rosterInFlight.current = false;
+  }, []);
 
   useEffect(() => {
     void refreshSummary();
@@ -121,36 +156,44 @@ export default function SwarmMonitor({ snapshot }: { snapshot: AdminSnapshot }) 
     return () => window.clearInterval(timer);
   }, [refreshPlayer, watching]);
 
+  useEffect(() => {
+    if (!watching) return undefined;
+    const first = window.setTimeout(() => { void refreshRoster(); }, 5_000);
+    const timer = window.setInterval(() => { void refreshRoster(); }, 60_000);
+    return () => { window.clearTimeout(first); window.clearInterval(timer); };
+  }, [refreshRoster, watching]);
+
   const rows = useMemo(() => {
     const summaries = new Map(snapshot.players.map((entry) => [entry.address, entry]));
     const board = new Map(leaderboard.map((entry) => [entry.address, entry]));
     return SWARM_WALLETS.map((profile) => rowState(
       profile, summaries.get(profile.address), board.get(profile.address),
+      playerSamples.get(profile.address),
     ));
-  }, [leaderboard, snapshot.players]);
+  }, [leaderboard, playerSamples, snapshot.players]);
 
-  const joined = rows.filter(({ summary }) => summary).length;
+  const joined = rows.filter(({ summary, player }) => summary || player).length;
   const companions = rows.filter(({ hasCompanion }) => hasCompanion).length;
   const busy = rows.filter(({ status }) => ![
     'Home', 'No companion', 'Not joined',
   ].includes(status)).length;
-  const battling = rows.filter(({ status, summary }) => status === 'Battle' || summary?.activeBattleId).length;
-  const levelTotal = rows.reduce((sum, row) => sum + (row.board?.level ?? row.summary?.level ?? 0), 0);
-  const wins = rows.reduce((sum, row) => sum + (row.board?.wins ?? row.summary?.wins ?? 0), 0);
-  const losses = rows.reduce((sum, row) => sum + (row.board?.losses ?? row.summary?.losses ?? 0), 0);
-  const quests = rows.reduce((sum, row) => sum + (row.board?.quests ?? row.summary?.questsCompleted ?? 0), 0);
-  const runes = rows.reduce((sum, row) => sum + Number(row.summary?.inventory.rune ?? 0), 0);
-  const chests = rows.reduce((sum, row) => sum + lootboxTotal(row.summary), 0);
+  const battling = rows.filter(({ status }) => status === 'Battle').length;
+  const levelTotal = rows.reduce((sum, row) => sum + (row.player?.monster?.level ?? row.board?.level ?? row.summary?.level ?? 0), 0);
+  const wins = rows.reduce((sum, row) => sum + (row.player?.wins ?? row.board?.wins ?? row.summary?.wins ?? 0), 0);
+  const losses = rows.reduce((sum, row) => sum + (row.player?.losses ?? row.board?.losses ?? row.summary?.losses ?? 0), 0);
+  const quests = rows.reduce((sum, row) => sum + (row.player?.questsCompleted ?? row.board?.quests ?? row.summary?.questsCompleted ?? 0), 0);
+  const runes = rows.reduce((sum, row) => sum + Number(row.player?.inventory.rune ?? row.summary?.inventory.rune ?? 0), 0);
+  const chests = rows.reduce((sum, row) => sum + (row.player?.lootboxes.length ?? lootboxTotal(row.summary)), 0);
   const care = rows.reduce((sum, row) => sum
-    + Number(row.board?.monster?.totalTimesFed ?? 0)
-    + Number(row.board?.monster?.totalTimesPlay ?? 0), 0);
+    + Number(row.player?.monster?.totalTimesFed ?? row.board?.monster?.totalTimesFed ?? 0)
+    + Number(row.player?.monster?.totalTimesPlay ?? row.board?.monster?.totalTimesPlay ?? 0), 0);
   const attention = rows.filter((row) => row.attention.length).length;
   const actionDelta = Math.max(0, totalActions(metrics) - baselineActions.current);
   const elapsedMinutes = Math.max(1 / 60, (Math.max(sampledAt, Date.now()) - watchStartedAt.current) / 60_000);
   const actionsPerMinute = actionDelta / elapsedMinutes;
 
   const refreshNow = () => {
-    void Promise.all([refreshSummary(), refreshPlayer()]);
+    void Promise.all([refreshSummary(), refreshPlayer(), refreshRoster()]);
   };
 
   return (
@@ -173,13 +216,14 @@ export default function SwarmMonitor({ snapshot }: { snapshot: AdminSnapshot }) 
             <Button size="sm" variant="ghost" onClick={() => setWatching((value) => !value)}>
               {watching ? 'Pause watch' : 'Resume watch'}
             </Button>
-            <Button size="sm" variant="ghost" busy={refreshing} onClick={refreshNow}
+            <Button size="sm" variant="ghost" busy={refreshing || rosterRefreshing} onClick={refreshNow}
               icon={<Refresh className="h-4 w-4" />}>Sample now</Button>
           </div>
         </div>
         <div className="relative z-[1] mt-4 flex flex-wrap gap-x-5 gap-y-1 font-mono text-[10px] text-faint">
           <span>public pulse every {POLL_MS / 1000}s</span>
           <span>last sample {sampledAt ? relativeTime(sampledAt) : 'pending'}</span>
+          <span>50-player sweep {rosterSampledAt ? relativeTime(rosterSampledAt) : rosterRefreshing ? 'running' : 'pending'}</span>
           <span>owner snapshot {relativeTime(snapshot.generatedAt)}</span>
           <span>{actionDelta} realm actions observed ({actionsPerMinute.toFixed(1)}/min)</span>
         </div>
@@ -303,7 +347,7 @@ function SwarmDirectory({ rows, selected, onSelect, player, playerError, playerL
           <table className="admin-roster-table admin-swarm-table w-full text-left">
             <thead><tr><th>Agent</th><th>Role</th><th>State</th><th>Level</th><th>Record</th><th>Coverage</th></tr></thead>
             <tbody>{filtered.map((row) => {
-              const monster = row.board?.monster;
+              const monster = row.player?.monster ?? row.board?.monster;
               return (
                 <tr key={row.profile.address} className={cx(selected === row.profile.address && 'is-selected')}
                   onClick={() => onSelect(row.profile.address)}>
@@ -313,9 +357,9 @@ function SwarmDirectory({ rows, selected, onSelect, player, playerError, playerL
                   </button></td>
                   <td><span className="block whitespace-nowrap text-[11px] text-muted">{row.profile.roleLabel}</span><span className="mt-0.5 block text-[10px] text-faint">{row.profile.faction}</span></td>
                   <td><SwarmStateBadge row={row} /></td>
-                  <td className="font-mono text-sm">{row.board?.level ?? row.summary?.level ?? 0}</td>
-                  <td className="whitespace-nowrap font-mono text-xs">{row.board?.wins ?? row.summary?.wins ?? 0}–{row.board?.losses ?? row.summary?.losses ?? 0}</td>
-                  <td className="whitespace-nowrap font-mono text-[10px] text-faint">Q{row.board?.quests ?? row.summary?.questsCompleted ?? 0} · F{monster?.totalTimesFed ?? 0} · P{monster?.totalTimesPlay ?? 0}</td>
+                  <td className="font-mono text-sm">{monster?.level ?? row.board?.level ?? row.summary?.level ?? 0}</td>
+                  <td className="whitespace-nowrap font-mono text-xs">{row.player?.wins ?? row.board?.wins ?? row.summary?.wins ?? 0}–{row.player?.losses ?? row.board?.losses ?? row.summary?.losses ?? 0}</td>
+                  <td className="whitespace-nowrap font-mono text-[10px] text-faint">Q{row.player?.questsCompleted ?? row.board?.quests ?? row.summary?.questsCompleted ?? 0} · F{monster?.totalTimesFed ?? 0} · P{monster?.totalTimesPlay ?? 0}</td>
                 </tr>
               );
             })}</tbody>
@@ -413,7 +457,7 @@ function SwarmAgentDetail({ row, player, playerError, playerLoading, onRefresh, 
       <Panel className="p-5">
         <SectionTitle right={<span className="font-mono text-[10px] text-faint">{berryCount} berries</span>}>Inventory sample</SectionTitle>
         <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
-          {(['rune', 'fire_berry', 'water_berry', 'air_berry', 'rock_berry', 'scroll', 'legendary_scroll'] as const).map((item) => (
+          {(['rune', 'fire_berry', 'water_berry', 'air_berry', 'rock_berry', 'scroll'] as const).map((item) => (
             <div key={item} className="admin-compact-row !p-2.5">
               <span className="truncate text-[10px] text-faint">{ITEM_NAME[item]}</span>
               <span className="font-mono text-xs text-ink">{fmt(Number(inventory[item] ?? 0))}</span>

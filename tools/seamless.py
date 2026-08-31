@@ -22,7 +22,7 @@ so no colour is ever averaged into existence. Cross-fading the two sides would
 be easier and would produce a soft grey smear through the middle of a piece of
 pixel art -- 200 new colours where the palette had 80.
 
-  python tools/seamless.py 'RuneRealm-Assets/_generated/scenes/path/*.png'
+  python tools/seamless.py 'RuneRealm-Assets/_generated/scenes/quest/*/*.png'
   python tools/seamless.py '...' --check      # report seam error, write nothing
 
 `--check` measures the discontinuity at the wrap: the mean channel difference

@@ -15,12 +15,17 @@
  * network.
  */
 
-import { readJSON, readState, send, GAME_PROCESS } from './hyperbeam';
+import {
+  AcceptedWriteError, activeAddress, HB_NODE, OutboxDeliveryError, pushSlotWithRetry,
+  readJSON, readState, send, GAME_PROCESS, type SendOptions,
+} from './hyperbeam';
 import {
   AdminAuditEntry, AdminFactionStats, AdminMetrics, AdminPlayerPatch,
-  AdminPlayerSummary, AdminSnapshot, Battle, Catalog, Element, Faction,
-  GameError, GameStats, ItemId, LeaderboardRow, OpenChallenge, Player,
-  RegistryAsset, Reply,
+  AdminPlayerSummary, AdminSnapshot, Battle, BattleFleetConfig, BattleFleetRoute, BerryItemId,
+  Catalog, CharacterOutfit, EconomyPolicyChange, EconomyView, Element, Faction,
+  GoldMarketItemId, GoldOrderSide,
+  GameError, GameStats, ItemId, LeaderboardRow, Listing, OpenChallenge, Player,
+  RegistryAsset, Reply, RuneWithdrawal, Sale,
 } from './types';
 
 function unwrap<T>(reply: Reply<T>): T {
@@ -32,6 +37,9 @@ function unwrap<T>(reply: Reply<T>): T {
 
 let adminSnapshotCache: AdminSnapshot | null = null;
 let adminSnapshotInFlight: Promise<AdminSnapshot> | null = null;
+let economyActionSeq = 0;
+const economyActionId = (kind: string) =>
+  `${kind}-${Date.now().toString(36)}-${(++economyActionSeq).toString(36)}`;
 
 // This is the process that preceded Admin.Snapshot. Keeping the compatibility
 // decision beside the process id means its first admin page load uses its
@@ -56,7 +64,10 @@ function rememberAdminSnapshot(value: unknown) {
   adminSnapshotCache = snapshot as AdminSnapshot;
 }
 
-const write = async <T>(tags: Record<string, string>, data?: string): Promise<T> => {
+const write = async <T>(
+  tags: Record<string, string>, data?: string,
+  options: SendOptions<T> = {},
+): Promise<T> => {
   const action = tags.Action ?? '';
   const mutatesAdminState = action.startsWith('Admin.')
     && action !== 'Admin.Snapshot' && action !== 'Admin.Export';
@@ -67,7 +78,7 @@ const write = async <T>(tags: Record<string, string>, data?: string): Promise<T>
 
   const value = unwrap<T>(await send<Reply<T>>(
     Object.entries(tags).map(([name, value]) => ({ name, value })),
-    { data },
+    { data, ...options },
   ));
   rememberAdminSnapshot(value);
   return value;
@@ -92,7 +103,118 @@ const write = async <T>(tags: Record<string, string>, data?: string): Promise<T>
  * process computed LAST — so it answered null most of the time the moment
  * anybody else was playing, and login had to be a signed write to be reliable.
  */
-export const readPlayer = (address: string) => readJSON<Player>(`player-${address}`);
+const fleetRoutes = new Map<string, BattleFleetRoute>();
+const fleetPlayers = new Map<string, Player>();
+let battleFleetConfigPromise: Promise<BattleFleetConfig | null> | null = null;
+const FLEET_PROTOCOL = 'runerealm-battle-fleet/1';
+const PROCESS_ID = /^[A-Za-z0-9_-]{43}$/;
+const OPAQUE_ID = /^[A-Za-z0-9_-]{1,192}$/;
+
+function clearFleetRoutes(address: string, exceptBattleId?: string) {
+  for (const [battleId, cached] of fleetPlayers) {
+    if (cached.address === address && battleId !== exceptBattleId) {
+      fleetPlayers.delete(battleId);
+      fleetRoutes.delete(battleId);
+    }
+  }
+}
+
+function validateFleetRoute(
+  player: Player, config: BattleFleetConfig | null,
+): BattleFleetRoute | null {
+  const route = player.battleFleet;
+  if (!route || !config?.enabled || config.protocol !== FLEET_PROTOCOL
+      || route.protocol !== FLEET_PROTOCOL
+      || player.activeBattleId !== route.battleId
+      || !OPAQUE_ID.test(route.battleId) || !OPAQUE_ID.test(route.reservationId)
+      || !OPAQUE_ID.test(route.assignmentId) || !OPAQUE_ID.test(route.ticket)
+      || !OPAQUE_ID.test(route.workerId) || !PROCESS_ID.test(route.workerProcessId)
+      || !['opening', 'battling', 'cancel-pending'].includes(route.status)
+      || !Array.isArray(config.workers)) return null;
+  const worker = config.workers.find((candidate) => candidate.workerId === route.workerId
+    && candidate.workerProcessId === route.workerProcessId);
+  if (!worker) return null;
+  const configuredNode = (config.node || HB_NODE).replace(/\/$/, '');
+  const routedNode = (route.node || configuredNode).replace(/\/$/, '');
+  if (!/^https?:\/\//.test(configuredNode) || routedNode !== configuredNode) return null;
+  return { ...route, node: configuredNode };
+}
+
+function validateFleetBattle(
+  battle: Battle | null, route: BattleFleetRoute, playerAddress: string,
+): battle is Battle {
+  if (!battle || battle.id !== route.battleId || battle.protocol !== FLEET_PROTOCOL
+      || battle.workerId !== route.workerId || battle.kind !== 'bot'
+      || (battle.status !== 'battling' && battle.status !== 'ended')
+      || !Number.isSafeInteger(battle.round) || battle.round < 0
+      || !Array.isArray(battle.turns)
+      || !battle.challenger || battle.challenger.address !== playerAddress
+      || battle.challenger.side !== 'challenger'
+      || !battle.challenger.moves || typeof battle.challenger.moves !== 'object'
+      || !battle.accepter || battle.accepter.side !== 'accepter'
+      || !battle.accepter.moves || typeof battle.accepter.moves !== 'object') return false;
+  return true;
+}
+
+function rememberFleetRoute(player: Player, route: BattleFleetRoute) {
+  clearFleetRoutes(player.address, route.battleId);
+  fleetRoutes.set(route.battleId, route);
+  fleetPlayers.set(route.battleId, player);
+}
+
+const readAuthorityPlayer = (address: string) => readJSON<Player>(`player-${address}`);
+
+async function hydrateFleetPlayer(player: Player): Promise<Player> {
+  if (!player.battleFleet) {
+    clearFleetRoutes(player.address);
+    return player;
+  }
+  const config = await fleetConfig();
+  const route = validateFleetRoute(player, config);
+  if (!route) {
+    clearFleetRoutes(player.address);
+    return { ...player, battle: undefined, battleFleetHydration: 'invalid' };
+  }
+  const routed = { ...player, battleFleet: route };
+  rememberFleetRoute(routed, route);
+
+  let battle: Battle | null = null;
+  let unavailable = false;
+  try { battle = await readFleetBattle(route); }
+  catch { unavailable = true; }
+  if (!battle) {
+    const waiting = {
+      ...routed, battle: undefined,
+      battleFleetHydration: unavailable ? 'unavailable' as const : 'opening' as const,
+    };
+    fleetPlayers.set(route.battleId, waiting);
+    return waiting;
+  }
+  if (!validateFleetBattle(battle, route, player.address)) {
+    clearFleetRoutes(player.address);
+    return { ...routed, battle: undefined, battleFleetHydration: 'invalid' };
+  }
+
+  // A terminal worker publication can race the authority settlement. Re-read
+  // the account once: if recursive delivery already cleared this exact route,
+  // use the settled account instead of resurrecting a stale outcome route.
+  if (battle.status === 'ended') {
+    const latest = await readAuthorityPlayer(player.address).catch(() => null);
+    if (latest && (latest.activeBattleId !== route.battleId
+        || latest.battleFleet?.reservationId !== route.reservationId)) {
+      clearFleetRoutes(player.address);
+      return latest;
+    }
+  }
+  const hydrated = { ...routed, battle, battleFleetHydration: 'ready' as const };
+  fleetPlayers.set(route.battleId, hydrated);
+  return hydrated;
+}
+
+export const readPlayer = async (address: string) => {
+  const player = await readAuthorityPlayer(address);
+  return player ? hydrateFleetPlayer(player) : null;
+};
 
 /** Whether this deployment admits new wallets without an Eternal Pass. */
 export const readAccess = () => LEGACY_ADMIN_PROCESSES.has(GAME_PROCESS)
@@ -103,6 +225,66 @@ export const readAccess = () => LEGACY_ADMIN_PROCESSES.has(GAME_PROCESS)
 export const readFactions = () => readJSON<Faction[]>('factions');
 export const readLeaderboard = () => readJSON<LeaderboardRow[]>('leaderboard');
 export const readBattle = () => readJSON<Battle>('battle');
+/** Immutable fleet routes published by the game authority. */
+export const readBattleFleet = () => readJSON<BattleFleetConfig>('battlefleet');
+
+async function fleetConfig() {
+  const pending = battleFleetConfigPromise ?? readBattleFleet().catch(() => null);
+  battleFleetConfigPromise = pending;
+  const config = await pending;
+  // Enabled manifests are sealed forever and safe to cache. An unconfigured
+  // clean-test game may be sealed after this tab opened, so do not cache its
+  // disabled publication (or a transient missing-key read) forever.
+  const valid = config?.enabled === true && config.protocol === FLEET_PROTOCOL
+    && Array.isArray(config.workers) && config.workers.length > 0;
+  if (!valid && battleFleetConfigPromise === pending) {
+    battleFleetConfigPromise = null;
+  }
+  return valid ? config : null;
+}
+
+const fleetActionId = (prefix: string) => {
+  const random = globalThis.crypto?.randomUUID?.()
+    ?? `${Date.now()}-${Math.floor(Math.random() * 1e9)}`;
+  return `${prefix}-${random}`;
+};
+
+async function readFleetBattle(route: BattleFleetRoute, signal?: AbortSignal) {
+  return readJSON<Battle>(`battle-${route.battleId}`, {
+    process: route.workerProcessId,
+    node: route.node || HB_NODE,
+    signal,
+  });
+}
+
+/** Poll worker and authority caches only. This never requests computation. */
+async function waitForFleetBattle(
+  route: BattleFleetRoute, playerAddress: string, attempts = 60,
+): Promise<Battle> {
+  for (let attempt = 0; attempt < attempts; attempt++) {
+    const [battle, authority] = await Promise.all([
+      readFleetBattle(route).catch(() => null),
+      readAuthorityPlayer(playerAddress).catch(() => null),
+    ]);
+    if (battle) {
+      if (!validateFleetBattle(battle, route, playerAddress)) {
+        throw new GameError('The assigned worker published an invalid battle route.');
+      }
+      return battle;
+    }
+    if (authority && (authority.activeBattleId !== route.battleId
+        || authority.battleFleet?.reservationId !== route.reservationId)) {
+      clearFleetRoutes(playerAddress);
+      throw new GameError('The battle worker rejected this reservation and the session credit '
+        + 'was restored. It is safe to try another battle.');
+    }
+    if (attempt + 1 < attempts) {
+      await new Promise((resolve) => setTimeout(resolve, Math.min(1000, 100 + attempt * 50)));
+    }
+  }
+  throw new GameError('The assigned battle worker has not published this battle yet. '
+    + 'The reservation is durable; refresh instead of starting another battle.');
+}
 /** Items, activities and the combat tuning. Static; safe to fetch once. */
 export const readCatalog = () => readJSON<Catalog>('catalog');
 /** Open PvP challenges. Published, so the lobby's refresh costs nothing. */
@@ -141,15 +323,22 @@ export const joinFaction = (faction: string) =>
 
 export const adopt = () => write<Player>({ Action: 'Monster.Adopt' });
 
-export const feed = (item?: ItemId) =>
-  write<Player>({ Action: 'Monster.Feed', ...(item ? { Item: item } : {}) });
+export const feed = (item?: ItemId, monsterId?: string) =>
+  write<Player>({
+    Action: 'Monster.Feed',
+    ...(item ? { Item: item } : {}),
+    ...(monsterId ? { MonsterId: monsterId } : {}),
+  });
 
-export const startPlay = () => write<Player>({ Action: 'Monster.Play' });
+export const startPlay = (monsterId?: string) =>
+  write<Player>({ Action: 'Monster.Play', ...(monsterId ? { MonsterId: monsterId } : {}) });
 
-export const startQuest = () => write<Player>({ Action: 'Monster.Quest' });
+export const startQuest = (monsterId?: string) =>
+  write<Player>({ Action: 'Monster.Quest', ...(monsterId ? { MonsterId: monsterId } : {}) });
 
 /** Collects a finished Play or Quest — one verb for both. */
-export const claim = () => write<Player>({ Action: 'Monster.Claim' });
+export const claim = (monsterId?: string) =>
+  write<Player>({ Action: 'Monster.Claim', ...(monsterId ? { MonsterId: monsterId } : {}) });
 
 export const levelUp = (points: {
   attack: number; defense: number; speed: number; health: number;
@@ -177,15 +366,61 @@ export const openLootbox = (rarity?: number) =>
     ...(rarity ? { Rarity: String(rarity) } : {}),
   });
 
+// Hunt ----------------------------------------------------------------------
+
+/** Freeze a chosen roster companion and open its run on the Hunt process. */
+export const beginHunt = (monsterId: string) =>
+  write<Player>({ Action: 'Hunt.Begin', MonsterId: monsterId }, undefined, {
+    requiredOutbox: true,
+  });
+
 // Arena ---------------------------------------------------------------------
 
 /** Pay the Rune, take the four battles. */
-export const enterArena = () => write<Player>({ Action: 'Battle.Begin' });
+export const enterArena = (berry?: BerryItemId) =>
+  write<Player>({ Action: 'Battle.Begin', ...(berry ? { Item: berry } : {}) });
 
-export const leaveArena = () => write<Player>({ Action: 'Battle.Leave' });
+export async function leaveArena(): Promise<Player> {
+  const pending = await write<Player>({ Action: 'Battle.Leave' }, undefined, {
+    // This action can emit a fleet cancellation. Delivery cannot depend on a
+    // fallible pre-read or even on reading this slot's reply: the write may be
+    // durably accepted and cancel-pending while its correlated read times out.
+    // A monolith leave has an empty outbox, so its rare extra push is harmless.
+    requiredOutbox: true,
+  });
+  const route = pending.battleFleet;
+  if (!route || route.status !== 'cancel-pending') return pending;
+  for (let attempt = 0; attempt < 20; attempt++) {
+    const settled = await readAuthorityPlayer(pending.address).catch(() => null);
+    if (settled && (settled.activeBattleId !== route.battleId
+        || settled.battleFleet?.reservationId !== route.reservationId)) {
+      clearFleetRoutes(pending.address);
+      return settled;
+    }
+    if (attempt < 19) await new Promise((resolve) => setTimeout(resolve, 100 + attempt * 50));
+  }
+  return { ...pending, battle: undefined, battleFleetHydration: 'cancel-pending' };
+}
 
-export const startBotBattle = (difficulty = 1) =>
-  write<Player>({ Action: 'Battle.Start', Difficulty: String(difficulty) });
+export async function startBotBattle(difficulty = 1): Promise<Player> {
+  const config = await fleetConfig();
+  if (!config?.enabled) {
+    return write<Player>({ Action: 'Battle.Start', Difficulty: String(difficulty) });
+  }
+
+  const authorityPlayer = await write<Player>({
+    Action: 'Battle.Start',
+    Difficulty: String(difficulty),
+    StartId: fleetActionId('start'),
+  }, undefined, { requiredOutbox: true });
+  const route = validateFleetRoute(authorityPlayer, config);
+  if (!route) throw new GameError('Fleet-enabled Battle.Start returned an invalid worker route.');
+  rememberFleetRoute(authorityPlayer, route);
+  const battle = await waitForFleetBattle(route, authorityPlayer.address);
+  const rendered = { ...authorityPlayer, battle };
+  fleetPlayers.set(route.battleId, rendered);
+  return rendered;
+}
 
 /**
  * `Opponent`, not `Target`. An ANS-104 data item carries a lowercase `target`
@@ -208,7 +443,7 @@ export const acceptChallenge = (battleId: string) =>
  * the fight therefore never advanced — the countdown ran out and the enemy
  * never moved.
  */
-export const attack = (battleId: string, move: string, round?: number) =>
+const attackMonolith = (battleId: string, move: string, round?: number) =>
   write<Player>({
     Action: 'Battle.Attack',
     BattleId: battleId,
@@ -219,6 +454,90 @@ export const attack = (battleId: string, move: string, round?: number) =>
     // choices survives is scheduler order rather than click order.
     ...(round === undefined ? {} : { Round: String(round) }),
   });
+
+export async function attack(
+  battleId: string, move: string, round?: number, actionId = fleetActionId('attack'),
+): Promise<Player> {
+  let route = fleetRoutes.get(battleId);
+  if (!route) {
+    // A reload recovers the route from the authority's published player state.
+    const address = await activeAddress();
+    if (address) await readPlayer(address);
+    route = fleetRoutes.get(battleId);
+  }
+  if (!route) return attackMonolith(battleId, move, round);
+
+  let battle: Battle | null = null;
+  try {
+    battle = unwrap<Battle>(await send<Reply<Battle>>([
+      { name: 'Action', value: 'Battle.Attack' },
+      { name: 'BattleId', value: battleId },
+      { name: 'Move', value: move },
+      { name: 'Ticket', value: route.ticket },
+      { name: 'ActionId', value: actionId },
+      { name: 'Round', value: String(round ?? 0) },
+    ], {
+      process: route.workerProcessId,
+      node: route.node || HB_NODE,
+      // Ordinary rounds have no outbox. Only terminal settlement is pushed.
+      requiredOutbox: (reply) => !!reply && typeof reply === 'object'
+        && !('error' in reply) && reply.status === 'ended',
+    }));
+  } catch (error) {
+    if (error instanceof AcceptedWriteError) {
+      // A cache read proves whether the accepted, unread slot was terminal.
+      const published = await readFleetBattle(route).catch(() => null);
+      const cachedAddress = fleetPlayers.get(battleId)?.address ?? await activeAddress();
+      if (cachedAddress && validateFleetBattle(published, route, cachedAddress)
+          && published.status === 'ended') {
+        const delivered = await pushSlotWithRetry(error.slot, {
+          process: route.workerProcessId,
+          node: route.node || HB_NODE,
+        });
+        if (!delivered) {
+          throw new OutboxDeliveryError({
+            slot: error.slot, action: 'battle.attack', completed: true, cause: error,
+          });
+        }
+        // The signed action is known terminal and its durable slot has now
+        // been delivered. Continue into the normal authority-settlement poll
+        // instead of surfacing the original reply-read failure and tempting a
+        // caller to replay an already-applied round.
+        battle = published;
+      } else {
+        throw error;
+      }
+    } else {
+      throw error;
+    }
+  }
+
+  if (!battle) throw new GameError('The battle worker returned no battle state.');
+
+  const cached = fleetPlayers.get(battleId);
+  if (battle.status !== 'ended' && cached) {
+    const rendered = { ...cached, battle };
+    fleetPlayers.set(battleId, rendered);
+    return rendered;
+  }
+
+  // The pushed terminal slot recursively settles at the account authority.
+  // Refresh that account; the worker itself never awards inventory or wins.
+  const address = cached?.address ?? await activeAddress();
+  if (address) {
+    for (let attempt = 0; attempt < 20; attempt++) {
+      const settled = await readPlayer(address).catch(() => null);
+      if (settled && settled.activeBattleId !== battleId) {
+        fleetRoutes.delete(battleId);
+        fleetPlayers.delete(battleId);
+        return { ...settled, battle, result: battle.winner === 'challenger' ? 'win' : 'loss' };
+      }
+      if (attempt < 19) await new Promise((resolve) => setTimeout(resolve, 100 + attempt * 50));
+    }
+  }
+  throw new GameError('The battle ended, but account settlement is not published yet. '
+    + 'Refresh; do not replay the terminal attack.');
+}
 
 /**
  * Signed variant, kept for the case where a caller needs the value as of *now*
@@ -284,19 +603,147 @@ export const mint = () => write<Player>({ Action: 'Monster.Mint' });
 export const depositAsset = (assetId: string) =>
   write<Player>({ Action: 'Monster.Deposit', AssetId: assetId });
 
+/** Save the small character recipe; the browser rebuilds its sheet locally. */
+export const spriteUpdate = (outfit: CharacterOutfit) =>
+  write<Player>({ Action: 'Sprite.Update' }, JSON.stringify(outfit));
+
+// The active companion and the collection --------------------------------------
+//
+// A player has exactly one active companion and any number of others in a
+// collection. Storing the active companion costs a rune; choosing a different
+// collection companion is one free atomic exchange and cannot happen while the
+// active companion is away.
+
+/** Send a roster companion to the collection. Home only, costs one rune. */
+export const storeMonster = (monsterId?: string) =>
+  write<Player>({ Action: 'Monster.Store', ...(monsterId ? { MonsterId: monsterId } : {}) });
+
+/** Bring one back out when the active slot is empty. */
+export const retrieveMonster = (monsterId: string) =>
+  write<Player>({ Action: 'Monster.Retrieve', MonsterId: monsterId });
+
+/** Atomically exchange the active companion with one in the collection. */
+export const setActiveMonster = (monsterId: string) =>
+  write<Player>({ Action: 'Monster.SetActive', MonsterId: monsterId });
+
 /**
- * Point the account at a published character.
+ * Hand a companion to another account.
  *
- * Both ids are Arweave transactions: the sheet, and the Phaser atlas that
- * describes its frames. The process validates both and stores them on the
- * player, so the open world can render whatever somebody made.
+ * From the collection only, same rule as a listing — the roster is what the
+ * game is acting on, and a companion cannot change hands mid-quest. The whole
+ * record moves, so the receiver gets the creature exactly as it was.
  */
-export const spriteUpdate = (txId: string, atlasTxId?: string) =>
+export const transferMonster = (monsterId: string, recipient: string) =>
+  write<Player>({ Action: 'Monster.Transfer', MonsterId: monsterId, Recipient: recipient });
+
+// The marketplace ---------------------------------------------------------------
+//
+// Sales settle in this process, in in-game runes. A listing is custody: the
+// companion leaves the seller's collection and lives in escrow until it is
+// bought or cancelled, so it can never be sold twice or sold and kept.
+
+/** Every companion currently for sale, keyed by listing id. Free to read. */
+export const readMarket = () => readJSON<Record<string, Listing>>('market');
+
+/** What has actually sold, newest first. Free to read. */
+export const readMarketHistory = () => readJSON<Sale[]>('markethistory');
+
+export const readMarketStats = () =>
+  readJSON<{ listings: number; sales: number }>('marketstats');
+
+// Gold goods economy --------------------------------------------------------
+
+/** Exact ledgers, Gold order book, finite NPC desks and public policy state. */
+export const readEconomy = () => readJSON<EconomyView>('economy');
+
+export const placeGoldOrder = (
+  side: GoldOrderSide,
+  item: GoldMarketItemId,
+  price: number,
+  quantity: number,
+) => write<Player>({
+  Action: 'Economy.Order.Place', Side: side, Item: item,
+  ActionId: economyActionId('order'),
+  Price: String(Math.max(1, Math.floor(price))),
+  Quantity: String(Math.max(1, Math.floor(quantity))),
+});
+
+export const cancelGoldOrder = (orderId: string) =>
+  write<Player>({ Action: 'Economy.Order.Cancel', OrderId: orderId,
+    ActionId: economyActionId('cancel') });
+
+export const maintainGoldOrders = (limit = 25) =>
+  write<Player>({ Action: 'Economy.Order.Maintain', Limit: String(Math.max(1, Math.floor(limit))) });
+
+/** `buy` buys from the NPC; `sell` sells the named inventory item to it. */
+export const tradeGameShop = (
+  side: GoldOrderSide,
+  item: GoldMarketItemId,
+  quantity: number,
+) => write<Player>({
+  Action: 'Economy.Shop.Trade', Side: side, Item: item,
+  ActionId: economyActionId('shop'),
+  Quantity: String(Math.max(1, Math.floor(quantity))),
+});
+
+export const setPassRecovery = (recovery: string) =>
+  write<Player>({ Action: 'Pass.SetRecovery', Recovery: recovery });
+
+export const claimPromisedPass = (claimId: string) =>
+  write<Player>({ Action: 'Pass.ClaimPromise', ClaimId: claimId });
+
+export const recoverPassAccount = (account: string, newController: string) =>
+  write<Player>({ Action: 'Pass.Recover', Account: account, NewController: newController });
+
+export const bondPassRune = () => write<Player>({ Action: 'Pass.Bond' });
+export const beginPassUnbond = () => write<Player>({ Action: 'Pass.BeginUnbond' });
+export const completePassUnbond = () => write<Player>({ Action: 'Pass.CompleteUnbond' });
+
+/** List a collection companion for a whole number of runes. */
+export const listMonster = (monsterId: string, price: number) =>
   write<Player>({
-    Action: 'Sprite.Update',
-    TxId: txId,
-    ...(atlasTxId ? { AtlasTxId: atlasTxId } : {}),
+    Action: 'Market.List',
+    MonsterId: monsterId,
+    Price: String(Math.max(1, Math.floor(price))),
   });
+
+/** Take your own listing down; the companion returns to your collection. */
+export const cancelListing = (listingId: string) =>
+  write<Player>({ Action: 'Market.Cancel', ListingId: listingId });
+
+/**
+ * Buy a listed companion.
+ *
+ * One message does all of it — the buyer is debited, the seller credited, and
+ * the companion moves — so there is no window where the runes have moved and
+ * the companion has not.
+ */
+export const buyListing = (listingId: string) =>
+  write<Player>({ Action: 'Market.Buy', ListingId: listingId });
+
+// Rune, out of the game --------------------------------------------------------
+
+/**
+ * Take in-game Rune out to the TEST-Rune token process.
+ *
+ * The process deducts BEFORE it asks the token to mint, and carries the
+ * withdrawal's own id as the mint's `reference` — so a mint that arrives twice
+ * is recognised as the same one rather than paid out again. That ordering is
+ * the whole safety property; see the note above `Rune.Withdraw` in game.lua.
+ *
+ * The reply comes back with `withdrawal` set to `pending`. Settlement is the
+ * token process applying an outbox message, so the balance appears on the token
+ * a moment later, not in this reply.
+ */
+export const withdrawRune = (amount: number) =>
+  write<Player & { withdrawal?: RuneWithdrawal }>({
+    Action: 'Rune.Withdraw',
+    Amount: String(Math.max(1, Math.floor(amount))),
+  });
+
+/** This wallet's withdrawals, and the token they settle on. */
+export const readWithdrawals = () =>
+  write<{ withdrawals: RuneWithdrawal[]; token: string }>({ Action: 'Rune.Withdrawals' });
 
 /**
  * Daily worship, bucketed by streak tier: `{ [epochDay]: {high, medium, low} }`.
@@ -348,7 +795,7 @@ type LegacyAdminExport = {
 
 const legacyItems: ItemId[] = [
   'rune', 'fire_berry', 'water_berry', 'air_berry', 'rock_berry',
-  'ruby', 'emerald', 'topaz', 'diamond', 'scroll', 'legendary_scroll',
+  'scroll',
 ];
 
 const legacyFactions: Array<{ name: string; element: Element }> = [
@@ -377,6 +824,7 @@ function legacySnapshot(exported: LegacyAdminExport): AdminSnapshot {
       happiness: monster?.happiness ?? 0,
       status: monster?.status?.type ?? 'No companion',
       inventory: player.inventory ?? {},
+      gold: player.gold ?? 0,
       lootboxes: Array.isArray(player.lootboxes) ? player.lootboxes : [],
       wins: player.wins ?? 0,
       losses: player.losses ?? 0,
@@ -391,6 +839,10 @@ function legacySnapshot(exported: LegacyAdminExport): AdminSnapshot {
       lastActiveAt: player.lastActiveAt ?? 0,
       lastAction: player.lastAction,
       assets: Object.keys(player.assets ?? {}).length,
+      passOrigin: player.pass?.origin,
+      accountId: player.pass?.accountId,
+      recoveryCooldownUntil: player.pass?.recoveryCooldownUntil ?? 0,
+      runeBond: player.pass?.bond ?? 0,
     };
   });
 
@@ -521,6 +973,57 @@ export const adminReleaseBattle = (address: string) =>
   write<{ released: string[]; battleId?: string; player: Player }>({
     Action: 'Admin.ReleaseBattle', PlayerId: address,
   });
+
+export const adminPreviewEconomyPolicy = (path: string, value: unknown) =>
+  write<{ path: string; oldValue: unknown; newValue: unknown; effectiveAt: number; effect?: Record<string, unknown> }>(
+    { Action: 'Admin.Economy.Preview' }, JSON.stringify({ path, value }),
+  );
+
+export const adminProposeEconomyPolicy = (
+  path: string, value: unknown, reason: string,
+) => write<{ change: EconomyPolicyChange }>(
+  { Action: 'Admin.Economy.Propose' }, JSON.stringify({ path, value, reason }),
+);
+
+export const adminApplyEconomyPolicy = (changeId: string) =>
+  write<{ change: EconomyPolicyChange }>({
+    Action: 'Admin.Economy.Apply', ChangeId: changeId,
+  });
+
+export const adminEmergencyPauseEconomy = (reason: string) =>
+  write<{ emergency: { paused: boolean; reason: string; at: number } }>({
+    Action: 'Admin.Economy.EmergencyPause', Reason: reason,
+  });
+
+export const adminPauseEconomyDesk = (
+  item: GoldMarketItemId, side: GoldOrderSide, reason: string,
+) => write<{ desk: { item: GoldMarketItemId; side: GoldOrderSide; paused: boolean; reason: string } }>({
+  Action: 'Admin.Economy.PauseDesk', Item: item, Side: side, Reason: reason,
+});
+
+export const adminObserveRuneSupply = (totalSupply: number, reason: string) =>
+  write<{ totalSupply: number }>({
+    Action: 'Admin.Economy.ObserveRuneSupply', TotalSupply: String(Math.max(0, Math.floor(totalSupply))), Reason: reason,
+  });
+
+export const adminReleaseGold = (
+  item: GoldMarketItemId, amount: number, reason: string,
+) => write<{ release: { item: GoldMarketItemId; amount: number; issued: number; reserve: number } }>({
+  Action: 'Admin.Economy.ReleaseGold', Item: item,
+  Amount: String(Math.max(1, Math.floor(amount))), Reason: reason,
+});
+
+export const adminObserveGoldPolicy = (reason: string) =>
+  write<{ observation: {
+    target: number; qualifiedActive: number; observations: number;
+    authorizedBefore: number; authorizedAfter: number;
+  } }>({ Action: 'Admin.Economy.ObserveGold', Reason: reason });
+
+export const adminConfigureGenesisPasses = (configuration: {
+  addresses: string[]; commitmentHash: string; unassignedSlots: number; claimDeadline: number;
+}) => write<{ genesis: Record<string, unknown>; quote: EconomyView['passQuote'] }>(
+  { Action: 'Admin.Pass.ConfigureGenesis' }, JSON.stringify(configuration),
+);
 
 /** What `Admin.AdjustAll` reports back. */
 export type AdjustAllResult = {

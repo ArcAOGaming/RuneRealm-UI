@@ -59,7 +59,7 @@ def main():
     ap.add_argument("--scale", type=int, default=2, help="integer upscale for viewing")
     a = ap.parse_args()
 
-    src = pathlib.Path("RuneRealm-Assets/_generated/paths") / a.biome
+    src = pathlib.Path("RuneRealm-Assets/_generated/scenes/quest") / a.biome
     layers = {}
     for name in ORDER:
         p = src / f"{name}.png"

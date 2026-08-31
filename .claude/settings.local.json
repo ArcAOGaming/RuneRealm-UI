@@ -6,7 +6,10 @@
       "Bash(git submodule:*)",
       "Bash(vite build:*)",
       "Bash(npx vite build:*)",
-      "Bash(npm run build:reality:*)"
+      "Bash(npm run build:reality:*)",
+      "Bash(npm run redeploy:*)",
+      "Bash(node backend/native/redeploy.mjs:*)",
+      "Bash(npm run *)"
     ],
     "deny": [],
     "ask": []

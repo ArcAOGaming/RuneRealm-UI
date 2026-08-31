@@ -1,4 +1,8 @@
 /**
+ * PARKED FEATURE: normal deployments do not create or update a companion
+ * collection. Retained for a future explicit product decision; invoke only via
+ * the deliberately named `npm run parked:collection` command.
+ *
  * collection.mjs — the Bazar collection, created and kept up to date.
  *
  * A collection is not a list the marketplace maintains for you; it is two

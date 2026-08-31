@@ -85,6 +85,15 @@ TotalSupply = TotalSupply or 0
 --- replaying the whole message history.
 Minted = Minted or 0
 Burned = Burned or 0
+--- Counts the burns, so each notice to the game carries an id of its own.
+---
+--- A burn is a DEPOSIT seen from this side: the game credits in-game Rune when
+--- it hears about one. Delivery between two processes is not exactly-once, so
+--- without something to recognise a repeat by, a notice that arrives twice pays
+--- the player twice out of nothing. The mint path already carries the game's
+--- withdrawal id as `reference` for exactly this reason; this is the same idea
+--- travelling the other way.
+BurnSeq = BurnSeq or 0
 
 --- The game process, and the ONLY address that may mint or burn. Empty until
 --- the owner sets it, and mint/burn refuse while it is empty rather than
@@ -198,19 +207,60 @@ local function provenSigner(msg)
   return nil
 end
 
+--- This process's own scheduler, which is the only identity allowed to vouch
+--- for another process.
+---
+--- Published on the process itself as `scheduler-location`, and verified
+--- against a live delivery: the assignment that carried a push was committed by
+--- exactly this address. Several spellings are tried because the key is the
+--- node's, not ours, and a missing one must degrade to "no scheduler known"
+--- rather than to "trust anybody".
+local function schedulerAddress(base)
+  if type(base) ~= "table" then return nil end
+  local found = base["scheduler-location"] or base.SchedulerLocation
+    or base["scheduler_location"]
+  if type(found) == "string" and #found == 43 then return found end
+  local p = base.process or base.Process
+  if type(p) == "table" then
+    local nested = p["scheduler-location"] or p.SchedulerLocation
+    if type(nested) == "string" and #nested == 43 then return nested end
+  end
+  return nil
+end
+
 --- The actor allowed to move value.
 ---
---- A process id has no private key, so a message emitted through
---- process-outbox@1.0 cannot carry an RSA signature from that process. The
---- scheduler instead attests its origin in `from-process`. Prefer a real wallet
---- signature whenever one exists; that makes a user-supplied `from-process`
---- tag inert, because the signer remains the payer. Only an unsigned outbox
---- delivery falls through to the process identity, and it can still spend only
---- that process's own balance.
-local function actor(msg)
+--- A process id has no private key, so a message from another process cannot
+--- carry that process's own signature. What it carries instead is
+--- `from-process`, and the question is only ever whether to believe it.
+---
+--- This used to answer that by preferring any real signature, on the assumption
+--- that an outbox delivery is unsigned. That assumption is wrong on a live
+--- node: the SCHEDULER signs the delivery it carries. So a perfectly good mint
+--- from the game arrived signed by the scheduler, `provenSigner` returned the
+--- scheduler, the scheduler is not the minter, and the token answered "Not
+--- authorised" -- after the game had already deducted the player's runes. The
+--- scheduler's address even accumulated in `balances` as a phantom account.
+---
+--- The signature on a delivery attests TRANSPORT, not authorship. So:
+---
+---   * signed by our own scheduler -> it is a delivery; `from-process` is
+---     attested and that process is the actor.
+---   * no proven signature at all  -> an unsigned delivery, which some nodes
+---     and the test harness produce; `from-process` is all there is.
+---   * signed by anyone else       -> an ordinary wallet message. The SIGNER is
+---     the actor and any `from-process` tag it carries is inert. This is the
+---     forgery case, and it stays closed: a wallet cannot make the scheduler
+---     sign a lie about where a message came from.
+local function actor(msg, base)
   local signed = provenSigner(msg)
-  if signed then return signed end
-  return msg["from-process"] or msg.FromProcess
+  local fromProcess = msg["from-process"] or msg.FromProcess
+  if signed then
+    local scheduler = schedulerAddress(base)
+    if fromProcess and scheduler and signed == scheduler then return fromProcess end
+    return signed
+  end
+  return fromProcess
 end
 
 local function isOwner(address)
@@ -348,7 +398,7 @@ end
 --- The sender is the SIGNER, never a tag: a token that let a tag name the payer
 --- would let anyone spend anyone's balance.
 H["Transfer"] = function(base, msg)
-  local from = actor(msg)
+  local from = actor(msg, base)
   if not from then return failStandard(base, "Transfer", "Unsigned messages cannot move Rune", msg) end
 
   local to = msg.Recipient
@@ -410,7 +460,7 @@ end
 --- the same Rune arriving here. Nothing else may call it, because every Rune
 --- minted without a matching in-game deduction is a Rune backed by nothing.
 H["Mint"] = function(base, msg)
-  local from = actor(msg)
+  local from = actor(msg, base)
   if not isMinter(from) then
     return fail(base, Minter == "" and "No minter is configured" or "Not authorised")
   end
@@ -438,6 +488,22 @@ H["Mint"] = function(base, msg)
         target = to, Action = "Credit-Notice",
         Sender = from, Quantity = asString(amount), ["X-Reason"] = "withdraw",
       },
+      -- Tell the minter it happened.
+      --
+      -- The game deducts a player's in-game runes and asks for the mint in the
+      -- same message, then has no way of learning whether it landed: it cannot
+      -- fetch, and nothing here was telling it. So every withdrawal sat at
+      -- `pending` forever and closing one was an owner running
+      -- `Admin.SettleWithdrawal` by hand.
+      --
+      -- `reference` is the withdrawal's own id, carried back untouched, which
+      -- is what lets the game match this to the row it deducted -- and what
+      -- makes a duplicate delivery recognisable rather than settled twice.
+      ["mint-notice"] = {
+        target = from, Action = "Rune.Minted",
+        Recipient = to, Quantity = asString(amount),
+        Reference = msg.Reference or msg.reference,
+      },
     },
   }
   return base
@@ -454,7 +520,7 @@ end
 --- nothing, so this refuses unless a minter is configured: there is no
 --- legitimate burn while the other half of the bridge does not exist.
 H["Burn"] = function(base, msg)
-  local from = actor(msg)
+  local from = actor(msg, base)
   if not from then return fail(base, "Unsigned messages cannot burn Rune") end
   if Minter == "" then return fail(base, "No minter is configured") end
 
@@ -475,6 +541,8 @@ H["Burn"] = function(base, msg)
   credit(account, -amount)
   TotalSupply = TotalSupply - amount
   Burned = Burned + amount
+  BurnSeq = BurnSeq + 1
+  local reference = "b" .. asString(BurnSeq)
 
   base.results = {
     output = { data = encode({
@@ -483,13 +551,22 @@ H["Burn"] = function(base, msg)
       Quantity = asString(amount),
       Balance = asString(balanceOf(account)),
       TotalSupply = asString(TotalSupply),
+      Reference = reference,
     }) },
     -- The game needs to hear about a burn it did not initiate: that is a
     -- player depositing, and it is what tells the game to credit them.
+    --
+    -- `Reference` is what makes that safe. The supply is already gone by the
+    -- time this leaves, so the credit on the other side is the only thing that
+    -- gives it back — and a delivery that arrives twice would pay for a burn
+    -- that happened once. The game keys its deposit ledger on this and ignores
+    -- a repeat, the same way `reference` on the mint stops a withdrawal being
+    -- settled twice.
     outbox = {
       ["burn-notice"] = {
         target = Minter, Action = "Burn-Notice",
         Account = account, Quantity = asString(amount),
+        Reference = reference,
       },
     },
   }
@@ -565,6 +642,31 @@ local function resolveOwner(base)
   return Owner
 end
 
+--- Find a handler by name, ignoring case.
+---
+--- An action arrives as a VALUE, and nothing on the way here preserves its
+--- case reliably. A wallet-signed message carries whatever the client typed;
+--- a message delivered from another process's outbox carries whatever that
+--- process wrote. `Rune.Withdraw` emitted `action = "mint"` and this table
+--- holds `Mint`, so the withdrawal deducted the player's runes on the game
+--- side and died here with "unknown action 'mint'" -- the token never minted,
+--- and the rune was destroyed.
+---
+--- Matching case-insensitively is the fix, and it is the right one rather than
+--- a patch over one caller: `Target`/`target` and the lowercasing of tag names
+--- are the same story, and a token that only answers one capitalisation is a
+--- token that silently eats value from any caller that guesses differently.
+--- The exact name still wins, so nothing about the existing API changes.
+local ACTION_ALIASES = nil
+local function resolveHandler(action)
+  if H[action] then return H[action] end
+  if ACTION_ALIASES == nil then
+    ACTION_ALIASES = {}
+    for name, fn in pairs(H) do ACTION_ALIASES[tostring(name):lower()] = fn end
+  end
+  return ACTION_ALIASES[tostring(action):lower()]
+end
+
 function compute(base, req, opts)
   resolveOwner(base)
 
@@ -572,7 +674,7 @@ function compute(base, req, opts)
   local tags = caseInsensitive(msg.Tags or msg)
   local action = tags.Action or tags.action or "none"
 
-  local handler = H[action]
+  local handler = resolveHandler(action)
   local result
   if not handler then
     local names = {}
@@ -613,6 +715,18 @@ function compute(base, req, opts)
   publish(signer(msg))
   publish(tags.Recipient)
   publish(tags.Account)
+
+  -- Compact the heap before the node photographs it. See the long note at the
+  -- end of `compute` in game.lua: HyperBEAM snapshots this process by
+  -- term_to_binary-ing the WHOLE Luerl table store, Luerl never collects on its
+  -- own, and `collectgarbage("step")` is a no-op on this runtime -- so without
+  -- this line every transient table from every message since spawn is still in
+  -- the heap when the node writes the checkpoint.
+  --
+  -- A full `collect`, as a bare statement. NOT through `pcall`, and not from
+  -- inside a pcall frame: a collect renumbers the table store and Luerl's pcall
+  -- restores stale indices into it, which kills the VM.
+  collectgarbage("collect")
 
   return result
 end

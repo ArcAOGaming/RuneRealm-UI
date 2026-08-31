@@ -43,9 +43,6 @@ import berryWater from '../assets/art/berry-water.png';
 import berryFire from '../assets/art/berry-fire.png';
 import berryRock from '../assets/art/berry-rock.png';
 
-import gemRuby from '../assets/art/gem-ruby.png';
-import gemEmerald from '../assets/art/gem-emerald.png';
-import gemTopaz from '../assets/art/gem-topaz.png';
 import scrollArt from '../assets/art/scroll.png';
 
 const PORTRAITS: Record<Element, string> = {
@@ -69,10 +66,5 @@ export const ITEM_ART: Partial<Record<ItemId, string>> = {
   water_berry: berryWater,
   fire_berry: berryFire,
   rock_berry: berryRock,
-  ruby: gemRuby,
-  emerald: gemEmerald,
-  topaz: gemTopaz,
-  diamond: gemTopaz,
   scroll: scrollArt,
-  legendary_scroll: scrollArt,
 };

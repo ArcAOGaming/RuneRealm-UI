@@ -4,8 +4,8 @@
  *
  *   node backend/native/swarm.mjs plan
  *   node backend/native/swarm.mjs wallets
- *   node backend/native/swarm.mjs run --live --cycles 10 --concurrency 4
- *   node backend/native/swarm.mjs run --live --duration 2h --concurrency 4
+ *   node backend/native/swarm.mjs run --live --mode soak --duration 2h
+ *   node backend/native/swarm.mjs run --live --mode stress --limit 50
  *
  * `run` bundles and calls src/lib/game.ts, so every action uses the same
  * ANS-104 signature, scheduling, slot correlation, and response handling as the
@@ -14,10 +14,16 @@
  */
 import fs from 'node:fs';
 import path from 'node:path';
-import { Worker } from 'node:worker_threads';
 import { fileURLToPath } from 'node:url';
 import { ensureBurners, listBurners, liveProcess } from './burners.mjs';
+import { Actor } from './swarm/actor.mjs';
 import { buildSwarmClient } from './swarm/build-client.mjs';
+import { failureEventFields } from './swarm/error-fields.mjs';
+import {
+  createGatedDispatcher, createTokenBucket, resolveLoadPolicy,
+  inspectTerminations, responseOutcomeCounts, SAFE_ACTIONS_PER_SECOND, SAFE_CONCURRENCY,
+  settledValuesOrThrow,
+} from './swarm/load-control.mjs';
 import { PROFILES, ROLE_DEFINITIONS, pvpPairs } from './swarm/profiles.mjs';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
@@ -44,12 +50,49 @@ function integerOption(name, fallback, { min = 0, max = Number.MAX_SAFE_INTEGER 
   return value;
 }
 
+function optionalNumberOption(name) {
+  const value = option(name, undefined);
+  if (value === undefined) return undefined;
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed) || parsed <= 0) {
+    throw new Error(`--${name} must be a number greater than zero`);
+  }
+  return parsed;
+}
+
 function durationMs(value) {
   if (!value) return null;
   const match = /^(\d+(?:\.\d+)?)(ms|s|m|h)$/.exec(String(value));
   if (!match) throw new Error('--duration must look like 30s, 15m, or 2h');
   const unit = { ms: 1, s: 1_000, m: 60_000, h: 3_600_000 }[match[2]];
   return Number(match[1]) * unit;
+}
+
+async function readEconomyAudit(node, pid) {
+  try {
+    const response = await fetch(`${node}/${pid}~process@1.0/now/economy`, {
+      headers: { accept: 'application/json' }, signal: AbortSignal.timeout(90_000),
+    });
+    const text = (await response.text()).trim();
+    if (!response.ok || /^<!DOCTYPE html|^<html/i.test(text)) {
+      return { ok: false, error: `economy read ${response.status}` };
+    }
+    const value = JSON.parse(text);
+    return {
+      ok: value?.invariants?.ok === true,
+      mode: value?.mode,
+      invariants: value?.invariants,
+      gold: value?.gold,
+      openOrders: value?.orders?.length ?? 0,
+      fillsRetained: value?.fills?.length ?? 0,
+      desks: Object.fromEntries(Object.entries(value?.desks ?? {}).map(([item, desk]) => [
+        item, { stock: desk.stock, stockCap: desk.stockCap, goldReserve: desk.goldReserve,
+          pause: desk.pause },
+      ])),
+    };
+  } catch (error) {
+    return { ok: false, error: error instanceof Error ? error.message : String(error) };
+  }
 }
 
 function selectedProfiles() {
@@ -107,11 +150,12 @@ function printPlan(profiles = selectedProfiles()) {
   console.log('\nPlanning is read-only. Live writes require the explicit --live flag.');
 }
 
-async function mapLimit(items, limit, fn) {
+async function mapLimit(items, limit, fn, shouldStart = () => true) {
   const results = new Array(items.length);
   let next = 0;
   async function runner() {
     while (true) {
+      if (!shouldStart()) return;
       const index = next++;
       if (index >= items.length) return;
       try {
@@ -125,81 +169,21 @@ async function mapLimit(items, limit, fn) {
   return results;
 }
 
-class Actor {
-  constructor({ profile, burner, clientFile, runId, seed, timeoutMs }) {
-    this.profile = profile;
-    this.burner = burner;
-    this.timeoutMs = timeoutMs;
-    this.sequence = 0;
-    this.pending = new Map();
-    this.worker = new Worker(new URL('./swarm/worker.mjs', import.meta.url), {
-      workerData: {
-        profile,
-        walletFile: burner.file,
-        address: burner.address,
-        clientFile,
-        runId,
-        seed,
-      },
-    });
-    this.ready = new Promise((resolve, reject) => {
-      const timeout = setTimeout(() => reject(new Error(`${profile.wallet} worker did not start`)), 30_000);
-      this.worker.on('message', (message) => {
-        if (message.type === 'ready') {
-          clearTimeout(timeout);
-          resolve(message);
-          return;
-        }
-        const pending = this.pending.get(message.id);
-        if (!pending) return;
-        clearTimeout(pending.timeout);
-        this.pending.delete(message.id);
-        if (message.ok) pending.resolve(message.value);
-        else {
-          const error = new Error(message.error.message);
-          error.name = message.error.name;
-          error.durationMs = message.error.durationMs;
-          pending.reject(error);
-        }
-      });
-      this.worker.once('error', reject);
-    });
-    this.worker.on('error', (error) => this.rejectPending(error));
-    this.worker.on('exit', (code) => {
-      if (code !== 0) this.rejectPending(new Error(`${profile.wallet} worker exited ${code}`));
-    });
-  }
-
-  rejectPending(error) {
-    for (const pending of this.pending.values()) {
-      clearTimeout(pending.timeout);
-      pending.reject(error);
-    }
-    this.pending.clear();
-  }
-
-  async call(command, payload) {
-    await this.ready;
-    const id = `${this.profile.wallet}:${++this.sequence}`;
-    return new Promise((resolve, reject) => {
-      const timeout = setTimeout(() => {
-        this.pending.delete(id);
-        reject(new Error(`${this.profile.wallet} ${command} timed out after ${this.timeoutMs}ms`));
-      }, this.timeoutMs);
-      this.pending.set(id, { resolve, reject, timeout });
-      this.worker.postMessage({ id, command, payload });
-    });
-  }
-
-  terminate() {
-    return this.worker.terminate();
-  }
-}
-
 function quantile(values, fraction) {
   if (!values.length) return 0;
   const sorted = [...values].sort((a, b) => a - b);
   return sorted[Math.min(sorted.length - 1, Math.floor(sorted.length * fraction))];
+}
+
+function timingStats(values) {
+  const valid = values.filter((value) => Number.isFinite(value) && value >= 0);
+  return {
+    count: valid.length,
+    p50Ms: quantile(valid, 0.5),
+    p90Ms: quantile(valid, 0.9),
+    p99Ms: quantile(valid, 0.99),
+    maxMs: valid.length ? Math.max(...valid) : 0,
+  };
 }
 
 async function runLive() {
@@ -210,16 +194,30 @@ async function runLive() {
     return;
   }
 
-  const concurrency = integerOption('concurrency', 4, { min: 1, max: 50 });
+  if (flag('stress') && option('mode', undefined) !== undefined) {
+    throw new Error('Use either --stress or --mode, not both');
+  }
+  const mode = flag('stress') ? 'stress' : option('mode', 'soak');
+  const policy = resolveLoadPolicy({
+    mode,
+    walletCount: profiles.length,
+    concurrency: option('concurrency', undefined),
+    actionsPerSecond: optionalNumberOption('actions-per-second'),
+    burst: option('burst', undefined),
+  });
+  const { concurrency, actionsPerSecond, burst } = policy;
   const cycles = integerOption('cycles', 10, { min: 1, max: 1_000_000 });
   const runFor = durationMs(option('duration', null));
-  const tickMs = integerOption('tick-ms', 1_000, { min: 0, max: 3_600_000 });
-  const timeoutMs = integerOption('timeout-ms', 120_000, { min: 5_000, max: 600_000 });
-  const seed = integerOption('seed', Date.now() & 0x7fffffff, { min: 0, max: 0x7fffffff });
-  if (concurrency > 4) {
-    console.warn(`WARNING: ${concurrency} concurrent writers exceeds the measured safe default of 4.`);
+  const cleanupOnly = flag('cleanup-only');
+  if (cleanupOnly && runFor !== null) {
+    throw new Error('--cleanup-only cannot be combined with --duration');
   }
-
+  const tickMs = integerOption('tick-ms', 1_000, { min: 0, max: 3_600_000 });
+  // Bootstrap may perform login, faction choice, and adoption sequentially;
+  // each scheduled slot gets its own one-minute compute window in the shipped
+  // client. Keep the actor envelope above that combined worst case.
+  const timeoutMs = integerOption('timeout-ms', 300_000, { min: 5_000, max: 600_000 });
+  const seed = integerOption('seed', Date.now() & 0x7fffffff, { min: 0, max: 0x7fffffff });
   const burners = new Map(listBurners().map((burner) => [burner.name, burner]));
   const missing = profiles.filter((profile) => !burners.has(profile.wallet));
   if (missing.length) {
@@ -228,7 +226,9 @@ async function runLive() {
   const addresses = profiles.map((profile) => burners.get(profile.wallet).address);
   if (new Set(addresses).size !== addresses.length) throw new Error('Burner addresses are not unique');
 
-  const { pid, node } = liveProcess();
+  const configured = liveProcess();
+  const pid = option('pid', configured.pid);
+  const node = option('node', configured.node);
   const runId = new Date().toISOString().replace(/[:.]/g, '-');
   const runDir = path.join(OUT_DIR, 'runs', runId);
   fs.mkdirSync(runDir, { recursive: true });
@@ -243,14 +243,39 @@ async function runLive() {
     runId,
     seed,
     timeoutMs,
+    peers: profiles
+      .filter((other) => other.wallet !== profile.wallet)
+      .map((other) => burners.get(other.wallet).address),
   }));
   const byWallet = new Map(actors.map((actor) => [actor.profile.wallet, actor]));
   const timings = new Map();
+  const successfulResponseDurations = [];
+  const failedResponseDurations = [];
+  const acquireDispatchToken = actionsPerSecond === null
+    ? async () => 0
+    : createTokenBucket({ actionsPerSecond, burst });
+  const dispatch = createGatedDispatcher({ concurrency, acquire: acquireDispatchToken });
+  // Cleanup is operational recovery, not part of the offered stress load. Give
+  // it its own conservative gate even when gameplay deliberately runs all
+  // fifty actors without a rate limit.
+  const cleanupConcurrency = Math.min(SAFE_CONCURRENCY, actors.length);
+  const cleanupDispatch = createGatedDispatcher({
+    concurrency: cleanupConcurrency,
+    acquire: createTokenBucket({ actionsPerSecond: SAFE_ACTIONS_PER_SECOND, burst: 1 }),
+  });
   const failures = [];
   let actionCount = 0;
+  // Rejections a soak absorbed rather than died on. Reported with the run
+  // totals so a tolerant run cannot quietly hide a rising failure rate.
+  let tolerated = 0;
+  let failedResponseCount = 0;
   let stopping = false;
   let interrupted = false;
   let fatalError = null;
+  let deadline = null;
+
+  const canDispatchGameplay = () => !stopping
+    && (deadline === null || Date.now() < deadline);
 
   const onSignal = () => {
     if (interrupted) process.exit(130);
@@ -264,6 +289,7 @@ async function runLive() {
   const observe = (actor, phase, outcome) => {
     actionCount++;
     const duration = outcome.durationMs ?? 0;
+    successfulResponseDurations.push(duration);
     const bucket = timings.get(outcome.action) ?? [];
     bucket.push(duration);
     timings.set(outcome.action, bucket);
@@ -278,62 +304,102 @@ async function runLive() {
     return outcome;
   };
 
-  const failed = (actor, phase, error) => {
+  const failed = (actor, phase, error, { response = true } = {}) => {
+    if (response) failedResponseCount++;
     const entry = { wallet: actor.profile.wallet, callSign: actor.profile.callSign,
-      phase, error: error.message, durationMs: error.durationMs ?? null };
+      phase, ...failureEventFields(error) };
     failures.push(entry);
-    console.error(`${actor.profile.wallet.padEnd(9)} ${actor.profile.callSign.padEnd(12)} ERROR ${phase}: ${error.message}`);
+    if (response && Number.isFinite(error.durationMs)) {
+      failedResponseDurations.push(error.durationMs);
+    }
+    console.error(`${actor.profile.wallet.padEnd(9)} ${actor.profile.callSign.padEnd(12)} ERROR ${phase}: ${entry.error}`);
     record({ type: 'error', ...entry });
   };
 
-  const invoke = async (actor, phase, command, payload) => {
+  const invokeVia = async (gate, actor, phase, command, payload, {
+    shouldStart = () => true, dispatchDeadline = null,
+  } = {}) => {
     try {
-      return observe(actor, phase, await actor.call(command, payload));
+      const dispatched = await gate(() => actor.call(command, payload), {
+        shouldStart, deadline: dispatchDeadline,
+      });
+      if (!dispatched.started) return null;
+      return observe(actor, phase, dispatched.value);
     } catch (error) {
       failed(actor, phase, error);
+      if (error?.fatalRetirement === true) {
+        stopping = true;
+        fatalError = fatalError ?? error;
+      }
       throw error;
     }
   };
+  const invoke = (actor, phase, command, payload, options) =>
+    invokeVia(dispatch, actor, phase, command, payload, options);
+  const invokeCleanup = (actor, phase, command, payload) =>
+    invokeVia(cleanupDispatch, actor, phase, command, payload);
+  const invokeGameplay = (actor, phase, command, payload) => invoke(
+    actor, phase, command, payload,
+    { shouldStart: canDispatchGameplay, dispatchDeadline: deadline },
+  );
 
   const pairs = pvpPairs(profiles).map((pair) => ({ ...pair, stage: 'prepare', battleId: null, rounds: 0 }));
   const pairedWallets = new Set(pairs.flatMap((pair) => [pair.challenger.wallet, pair.accepter.wallet]));
   const routineActors = actors.filter((actor) => !pairedWallets.has(actor.profile.wallet));
 
   async function advancePair(pair, cycle) {
+    if (!canDispatchGameplay()) return;
     const challenger = byWallet.get(pair.challenger.wallet);
     const accepter = byWallet.get(pair.accepter.wallet);
     if (pair.stage === 'prepare') {
       const prepared = await Promise.allSettled([
-        invoke(challenger, `cycle.${cycle}.pvp.prepare`, 'preparePvp'),
-        invoke(accepter, `cycle.${cycle}.pvp.prepare`, 'preparePvp'),
+        invokeGameplay(challenger, `cycle.${cycle}.pvp.prepare`, 'preparePvp'),
+        invokeGameplay(accepter, `cycle.${cycle}.pvp.prepare`, 'preparePvp'),
       ]);
-      if (prepared.some((entry) => entry.status === 'rejected')) return;
-      const [left, right] = prepared.map((entry) => entry.value);
+      const [left, right] = settledValuesOrThrow(prepared, `${pair.name} prepare`);
+      if (!left || !right) return;
       if (left.occupied || right.occupied) {
-        await Promise.allSettled([
-          invoke(challenger, `cycle.${cycle}.pvp.recover`, 'cleanup'),
-          invoke(accepter, `cycle.${cycle}.pvp.recover`, 'cleanup'),
-        ]);
+        settledValuesOrThrow(await Promise.allSettled([
+          invokeCleanup(challenger, `cycle.${cycle}.pvp.recover`, 'cleanup'),
+          invokeCleanup(accepter, `cycle.${cycle}.pvp.recover`, 'cleanup'),
+        ]), `${pair.name} recovery cleanup`);
         return;
       }
       if (!left.ready || !right.ready) return;
-      const challenged = await invoke(
+      if (!canDispatchGameplay()) return;
+      const challenged = await invokeGameplay(
         challenger, `cycle.${cycle}.pvp.challenge`, 'challenge', accepter.burner.address,
       );
+      if (!challenged) return;
       pair.battleId = challenged.battleId;
       if (!pair.battleId) throw new Error(`${pair.name} challenge returned no battle id`);
-      await invoke(accepter, `cycle.${cycle}.pvp.accept`, 'accept', pair.battleId);
+      // A challenge that began inside the soak window can publish after the
+      // deadline. Cancel it instead of starting another gameplay write late.
+      if (!canDispatchGameplay()) {
+        settledValuesOrThrow(await Promise.allSettled([
+          invokeCleanup(challenger, `cycle.${cycle}.pvp.deadline-cleanup`, 'cleanup'),
+          invokeCleanup(accepter, `cycle.${cycle}.pvp.deadline-cleanup`, 'cleanup'),
+        ]), `${pair.name} deadline cleanup`);
+        pair.stage = 'prepare';
+        pair.battleId = null;
+        pair.rounds = 0;
+        return;
+      }
+      const accepted = await invokeGameplay(
+        accepter, `cycle.${cycle}.pvp.accept`, 'accept', pair.battleId,
+      );
+      if (!accepted) return;
       pair.stage = 'battle';
       pair.rounds = 0;
       return;
     }
 
-    const moved = await Promise.allSettled([
-      invoke(challenger, `cycle.${cycle}.pvp.round`, 'pvpMove', pair.battleId),
-      invoke(accepter, `cycle.${cycle}.pvp.round`, 'pvpMove', pair.battleId),
-    ]);
+    const moved = settledValuesOrThrow(await Promise.allSettled([
+      invokeGameplay(challenger, `cycle.${cycle}.pvp.round`, 'pvpMove', pair.battleId),
+      invokeGameplay(accepter, `cycle.${cycle}.pvp.round`, 'pvpMove', pair.battleId),
+    ]), `${pair.name} round`);
     pair.rounds++;
-    const outcomes = moved.filter((entry) => entry.status === 'fulfilled').map((entry) => entry.value);
+    const outcomes = moved.filter(Boolean);
     const ended = outcomes.some((outcome) => outcome.action === 'pvp.ended'
       || outcome.state?.battle?.status === 'ended'
       || outcome.battle?.status === 'ended');
@@ -342,11 +408,11 @@ async function runLive() {
       pair.stage = 'prepare';
       pair.battleId = null;
       pair.rounds = 0;
-    } else if (pair.rounds >= 55 || moved.every((entry) => entry.status === 'rejected')) {
-      await Promise.allSettled([
-        invoke(challenger, `cycle.${cycle}.pvp.abort`, 'cleanup'),
-        invoke(accepter, `cycle.${cycle}.pvp.abort`, 'cleanup'),
-      ]);
+    } else if (pair.rounds >= 55) {
+      settledValuesOrThrow(await Promise.allSettled([
+        invokeCleanup(challenger, `cycle.${cycle}.pvp.abort`, 'cleanup'),
+        invokeCleanup(accepter, `cycle.${cycle}.pvp.abort`, 'cleanup'),
+      ]), `${pair.name} abort cleanup`);
       pair.stage = 'prepare';
       pair.battleId = null;
       pair.rounds = 0;
@@ -357,14 +423,16 @@ async function runLive() {
   // A timed soak measures actual play. First-time onboarding can take several
   // minutes for fifty wallets on a serial compute queue, so start the requested
   // duration only after every actor has successfully bootstrapped.
-  let deadline = null;
-  record({ type: 'run.start', runId, pid, node, seed, concurrency,
+  record({ type: 'run.start', runId, pid, node, seed, mode, concurrency,
+    actionsPerSecond, burst,
     cycles: runFor === null ? cycles : null, durationMs: runFor, wallets: manifestRows(profiles) });
   console.log(`Rune Realm swarm ${runId}`);
   console.log(`process     ${pid}`);
   console.log(`node        ${node}`);
   console.log(`actors      ${actors.length} (${pairs.length} fixed PvP pairs)`);
+  console.log(`mode        ${mode}`);
   console.log(`concurrency ${concurrency}`);
+  console.log(`start rate  ${actionsPerSecond === null ? 'unlimited' : `${actionsPerSecond} worker command(s)/s, burst ${burst}`}`);
   console.log(`seed        ${seed}`);
   console.log(`events      ${eventsFile}\n`);
 
@@ -379,22 +447,78 @@ async function runLive() {
     if (bootstrapped.some((entry) => entry.status === 'rejected')) {
       throw new Error('One or more wallets failed to bootstrap; see the event log');
     }
+    const blocked = bootstrapped.filter((entry) => entry.status === 'fulfilled'
+      && entry.value.blocked === true);
+    if (blocked.length && !cleanupOnly) {
+      // Sit them out; do not abandon the run.
+      //
+      // A blocked wallet is one sworn to a faction that is not its plan, which
+      // is permanent — the process refuses a second oath. Aborting the whole
+      // run made a handful of such wallets fatal to all fifty, and the only
+      // remedy on offer was a redeploy. That is the wrong trade for a process
+      // somebody is already using: the other actors are still valid load and
+      // still measure the thing being measured.
+      //
+      // What is genuinely lost is narrow and worth stating: a PvP pair whose
+      // partner is excluded cannot duel, so PvP coverage drops for those pairs.
+      // `verify.mjs` reads the event log, where every exclusion is recorded.
+      //
+      // `--strict-plan` restores the abort, for a fresh deployment where a
+      // mismatch means the seeding step went wrong and should be fixed first.
+      if (flag('strict-plan')) {
+        throw new Error(`${blocked.length} wallet(s) do not match their test plan; `
+          + 'see the event log');
+      }
+      const excluded = new Set(blocked.map((entry) => entry.value.wallet));
+      for (let i = actors.length - 1; i >= 0; i -= 1) {
+        if (excluded.has(actors[i].profile.wallet)) actors.splice(i, 1);
+      }
+      record({ type: 'plan.excluded', wallets: [...excluded] });
+      console.log(`\n${excluded.size} wallet(s) sworn off-plan and excluded: `
+        + `${[...excluded].join(', ')}`);
+      console.log(`Running with ${actors.length}. --strict-plan aborts instead.`);
+    }
 
-    if (runFor !== null) {
+    if (runFor !== null && !cleanupOnly) {
       deadline = Date.now() + runFor;
       record({ type: 'soak.start', durationMs: runFor, deadline: new Date(deadline).toISOString() });
       console.log(`\nSoak window started; running gameplay for ${Math.round(runFor / 60_000)} minute(s).`);
     }
 
-    const cycleLimit = runFor === null ? cycles : Number.MAX_SAFE_INTEGER;
+    const cycleLimit = cleanupOnly
+      ? 0
+      : runFor === null ? cycles : Number.MAX_SAFE_INTEGER;
     for (let cycle = 1; !stopping && cycle <= cycleLimit
       && (deadline === null || Date.now() < deadline); cycle++) {
       console.log(`\n--- cycle ${cycle} ---`);
-      await mapLimit(routineActors, concurrency, (actor) =>
-        invoke(actor, `cycle.${cycle}`, 'tick'));
-      if (pairs.length && !stopping) {
-        await mapLimit(pairs, Math.max(1, Math.floor(concurrency / 2)), (pair) =>
-          advancePair(pair, cycle));
+      const batches = [mapLimit(routineActors, routineActors.length, (actor) =>
+        invokeGameplay(actor, `cycle.${cycle}`, 'tick'), canDispatchGameplay)];
+      if (pairs.length && canDispatchGameplay()) batches.push(
+        mapLimit(pairs, pairs.length, (pair) => advancePair(pair, cycle), canDispatchGameplay),
+      );
+      const cycleResults = await Promise.all(batches);
+      for (const results of cycleResults) {
+        // A soak absorbs an actor's rejection; a cycle run still fails loudly.
+        //
+        // Every rejection here is already recorded against its actor, and most
+        // of them are the run being concurrent rather than the game being
+        // wrong: an actor picks its action from published state, and by the
+        // time the message lands the companion has started a quest, the daily
+        // is already claimed, or the listing is gone. "Your companion is busy:
+        // Quest" ended a SIX HOUR soak after 133 seconds.
+        //
+        // This is the split the harness is built on — the swarm writes down
+        // what happened, `verify.mjs` decides afterwards whether it was
+        // allowed, because only the whole log can tell an entitled failure from
+        // a real one. Aborting mid-run throws away the evidence needed to make
+        // that call. `--fail-fast` restores the abort.
+        if (runFor === null || flag('fail-fast')) {
+          settledValuesOrThrow(results, `cycle ${cycle}`);
+        } else {
+          for (const entry of results) {
+            if (entry.status === 'rejected') tolerated += 1;
+          }
+        }
       }
       if (!stopping && tickMs > 0 && cycle < cycleLimit
           && (deadline === null || Date.now() + tickMs < deadline)) {
@@ -404,52 +528,76 @@ async function runLive() {
   } catch (error) {
     fatalError = error;
     const entry = { wallet: null, callSign: null, phase: 'run',
-      error: error.message, durationMs: null };
+      ...failureEventFields(error) };
     failures.push(entry);
     console.error(`\nRUN ERROR: ${error.message}`);
     record({ type: 'error', ...entry });
   } finally {
-    // Never leave a targeted challenge or live PvP fight blocking its partner.
-    if (pairs.length) {
-      console.log('\nCleaning up PvP sessions...');
-      const pvpActors = actors.filter((actor) => pairedWallets.has(actor.profile.wallet));
-      await mapLimit(pvpActors, concurrency, async (actor) => {
-        try { await invoke(actor, 'cleanup', 'cleanup'); } catch { /* already logged */ }
+    // Timed runs have a definite stop, so leave no bot or PvP arena session
+    // waiting for an actor that is no longer running. Cycle runs preserve bot
+    // progress unless --cleanup-all is explicit, while PvP is always released.
+    const cleanEveryArena = cleanupOnly || runFor !== null || flag('cleanup-all');
+    const cleanupActors = cleanEveryArena
+      ? actors
+      : actors.filter((actor) => pairedWallets.has(actor.profile.wallet));
+    if (cleanupActors.length) {
+      console.log(`\nCleaning up ${cleanEveryArena ? 'all arena' : 'PvP'} sessions...`);
+      await mapLimit(cleanupActors, cleanupActors.length, async (actor) => {
+        try {
+          await invokeCleanup(actor, cleanEveryArena ? 'cleanup-all' : 'cleanup', 'cleanup');
+        } catch { /* already logged */ }
       });
     }
-    if (flag('cleanup-all')) {
-      console.log('Cleaning up all arena sessions...');
-      await mapLimit(actors, concurrency, async (actor) => {
-        try { await invoke(actor, 'cleanup-all', 'cleanup'); } catch { /* already logged */ }
-      });
+    const terminations = await Promise.allSettled(actors.map((actor) => actor.terminate()));
+    const terminationAudit = inspectTerminations(terminations, (error, index) => {
+      failed(actors[index], 'terminate', error, { response: false });
+    });
+    if (terminationAudit.fatal) {
+      fatalError = fatalError ?? terminationAudit.firstError;
+      stopping = true;
     }
-    await Promise.allSettled(actors.map((actor) => actor.terminate()));
     process.off('SIGINT', onSignal);
     process.off('SIGTERM', onSignal);
   }
 
+  const economyAudit = await readEconomyAudit(node, pid);
+  if (!economyAudit.ok) {
+    failures.push({ wallet: 'system', callSign: 'Economy audit', phase: 'final',
+      error: economyAudit.error ?? 'published economy invariant failed' });
+  }
   const summary = {
     runId,
     pid,
     node,
     seed,
     walletCount: actors.length,
+    mode,
+    concurrency,
+    actionsPerSecond,
+    burst,
     actionCount,
     failureCount: failures.length,
     elapsedMs: Date.now() - startedAt,
-    actions: Object.fromEntries([...timings].map(([action, values]) => [action, {
-      count: values.length,
-      p50Ms: quantile(values, 0.5),
-      p90Ms: quantile(values, 0.9),
-      maxMs: Math.max(...values),
-    }])),
+    responses: {
+      ...responseOutcomeCounts({
+        successfulDurations: successfulResponseDurations,
+        failedDurations: failedResponseDurations,
+        failedCount: failedResponseCount,
+      }),
+      successLatencyMs: timingStats(successfulResponseDurations),
+      failureLatencyMs: timingStats(failedResponseDurations),
+    },
+    actions: Object.fromEntries([...timings].map(([action, values]) => [action, timingStats(values)])),
     failures,
+    economy: economyAudit,
   };
   const summaryFile = path.join(runDir, 'summary.json');
   fs.writeFileSync(summaryFile, JSON.stringify(summary, null, 2) + '\n');
   record({ type: 'run.end', ...summary });
   await new Promise((resolve) => stream.end(resolve));
-  console.log(`\n${actionCount} actions, ${failures.length} errors, ${Math.round(summary.elapsedMs / 1000)}s`);
+  console.log(`\n${actionCount} actions, ${failures.length} errors`
+    + `${tolerated ? ` (${tolerated} tolerated, run continued)` : ''}`
+    + `, ${Math.round(summary.elapsedMs / 1000)}s`);
   console.log(`summary     ${summaryFile}`);
   if (interrupted) process.exitCode = 130;
   else if (failures.length || fatalError) process.exitCode = 1;
@@ -468,6 +616,6 @@ if (command === 'wallets') {
 } else if (command === 'run') {
   await runLive();
 } else {
-  console.error('usage: swarm.mjs [plan | wallets | run --live] [options]');
+  console.error('usage: swarm.mjs [plan | wallets | run --live --mode soak|stress] [options]');
   process.exitCode = 1;
 }

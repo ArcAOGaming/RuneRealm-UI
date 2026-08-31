@@ -1,58 +1,25 @@
 /**
- * Network client for the companion market and Rune AMM.
+ * Network client for the Rune bridge and AMM.
  *
- * The two market halves have different settlement authorities:
- *
- * - A companion is an Arweave-scheduled token@1.0 process. This app curates
- *   and filters it, while its live balances/order book remain ownership truth.
- * - Rune/quote swaps settle in our Lua AMM after each token process delivers a
+ * Monster sales now settle in the game process through `lib/game.ts`. Rune and
+ * quote swaps settle in our Lua AMM after each token process delivers a
  *   Credit-Notice. Depositing and swapping are therefore two explicit writes.
  */
 import { readJSON, readState, send } from './hyperbeam';
 import { MARKET_DEFAULTS } from './marketplace-config';
-import { RegistryAsset, Reply } from './types';
+import { Reply } from './types';
 
 const env = (import.meta as { env?: Record<string, string> }).env ?? {};
 const ID = /^[A-Za-z0-9_-]{43}$/;
 
-export const MARKET_PROCESS = env.VITE_MARKET_PROCESS || MARKET_DEFAULTS.market;
 export const AMM_PROCESS = env.VITE_AMM_PROCESS || MARKET_DEFAULTS.amm;
 export const RUNE_PROCESS = env.VITE_RUNE_PROCESS || MARKET_DEFAULTS.rune;
 export const QUOTE_PROCESS = env.VITE_QUOTE_PROCESS || MARKET_DEFAULTS.quote;
 export const MARKET_NODE = env.VITE_MARKET_NODE || MARKET_DEFAULTS.node || undefined;
-export const MARKET_COLLECTION = env.VITE_COLLECTION_PROCESS || MARKET_DEFAULTS.collection;
 
-export const marketConfigured = () => [MARKET_PROCESS, AMM_PROCESS, RUNE_PROCESS, QUOTE_PROCESS]
+/** The exchange no longer depends on the legacy minted-asset index. */
+export const exchangeConfigured = () => [AMM_PROCESS, RUNE_PROCESS, QUOTE_PROCESS]
   .every((value) => ID.test(value));
-
-export interface MarketInfo {
-  name: string;
-  gameProcess: string;
-  collectionId: string;
-  runeToken: string;
-  quoteToken: string;
-  ammProcess: string;
-  quoteTicker: string;
-  settlement: string;
-  settlementAsset: 'AR';
-  assetCount: number;
-  activeListings: number;
-  owner: string;
-}
-
-export interface MarketListing {
-  assetId: string;
-  seller: string;
-  orderId: string;
-  /** Whole winston, because native asset sales settle in AR. */
-  price: string;
-  quote: 'AR';
-  status: 'active' | 'cancelled';
-  createdAt: number;
-  updatedAt: number;
-  /** Always false in the index. Verify the asset process before purchase. */
-  verified: false;
-}
 
 export interface TokenInfo {
   Name: string;
@@ -86,6 +53,17 @@ export interface AmmDeposit {
   shares: string;
 }
 
+/** A settled pool trade, newest entries are published by the AMM. */
+export interface AmmSwap {
+  id: number;
+  trader: string;
+  inputToken: string;
+  outputToken: string;
+  input: string;
+  output: string;
+  timestamp: number;
+}
+
 function unwrap<T>(reply: Reply<T>): T {
   if (reply && typeof reply === 'object' && 'error' in reply && reply.error) {
     throw new Error(String(reply.error));
@@ -94,7 +72,7 @@ function unwrap<T>(reply: Reply<T>): T {
 }
 
 const write = async <T>(process: string, tags: Record<string, string>): Promise<T> => {
-  if (!ID.test(process)) throw new Error('This marketplace process has not been deployed yet.');
+  if (!ID.test(process)) throw new Error('This external exchange process has not been deployed yet.');
   return unwrap<T>(await send<Reply<T>>(
     Object.entries(tags).map(([name, value]) => ({ name, value })),
     { process, node: MARKET_NODE },
@@ -106,12 +84,8 @@ const readMarketJSON = <T>(process: string, key: string) => {
   return readJSON<T>(key, { process, node: MARKET_NODE });
 };
 
-export const readMarketInfo = () => readMarketJSON<MarketInfo>(MARKET_PROCESS, 'marketinfo');
-export const readListings = () =>
-  readMarketJSON<Record<string, MarketListing>>(MARKET_PROCESS, 'listings');
-export const readMarketAssets = () =>
-  readMarketJSON<Record<string, RegistryAsset>>(MARKET_PROCESS, 'assets');
 export const readPool = () => readMarketJSON<AmmPool>(AMM_PROCESS, 'amm');
+export const readSwaps = () => readMarketJSON<AmmSwap[]>(AMM_PROCESS, 'swaps');
 export const readDeposit = (address: string) =>
   readMarketJSON<AmmDeposit>(AMM_PROCESS, `deposit-${address}`);
 export const readTokenInfo = (token: string) => readMarketJSON<TokenInfo>(token, 'tokeninfo');
@@ -125,6 +99,15 @@ export async function readTokenBalance(token: string, address: string): Promise<
 }
 
 export const claimQuoteFaucet = () => write<{ Balance: string }>(QUOTE_PROCESS, { Action: 'Faucet' });
+
+/**
+ * Move withdrawn Rune back into the game. Burning is the bridge deposit: the
+ * Rune token emits a replay-protected Burn-Notice and the game credits the
+ * same wallet's collection balance when that notice lands.
+ */
+export const depositRuneToGame = (quantity: string) => write<{
+  Action: 'Burn-Success'; Balance: string; Quantity: string; Reference: string;
+}>(RUNE_PROCESS, { Action: 'Burn', Quantity: quantity });
 
 /** First half of a swap: transfer tokens into the AMM's credited deposit. */
 export const depositToken = (token: string, quantity: string) => write<{ Balance: string }>(token, {
@@ -154,15 +137,6 @@ export const removeLiquidity = (shares: string) =>
   write<{ base: string; quote: string; pool: AmmPool }>(AMM_PROCESS, {
     Action: 'Liquidity.Remove', Shares: shares,
   });
-
-export const announceListing = (assetId: string, orderId: string, priceWinston: string) =>
-  write<MarketListing>(MARKET_PROCESS, {
-    Action: 'Listing.Create', AssetId: assetId, OrderId: orderId, Price: priceWinston,
-  });
-
-export const cancelListing = (assetId: string) => write<MarketListing>(MARKET_PROCESS, {
-  Action: 'Listing.Cancel', AssetId: assetId,
-});
 
 /** Exact decimal input -> atomic integer conversion. */
 export function parseUnits(value: string, denomination: number): string {

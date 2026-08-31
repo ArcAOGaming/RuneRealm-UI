@@ -25,11 +25,15 @@ const ARENAS = url(import.meta.glob('../assets/scenes/arena/*.png', {
   eager: true, query: '?url', import: 'default',
 }));
 
-const ROOMS = url(import.meta.glob('../assets/scenes/room/*.png', {
+const HOMES = url(import.meta.glob('../assets/scenes/home/*.png', {
   eager: true, query: '?url', import: 'default',
 }));
 
-const PATHS = url(import.meta.glob('../assets/scenes/path/*.png', {
+const PLAY = url(import.meta.glob('../assets/scenes/play/*.png', {
+  eager: true, query: '?url', import: 'default',
+}));
+
+const QUEST = url(import.meta.glob('../assets/scenes/quest/*/*.png', {
   eager: true, query: '?url', import: 'default',
 }));
 
@@ -44,15 +48,26 @@ const pick = (map: Record<string, string>, name: string) =>
 export const sheetUrl = (sprite: string) => pick(SHEETS, sprite);
 
 export const arenaUrl = (name: string) => pick(ARENAS, name);
-export const roomUrl = (name: string) => pick(ROOMS, name);
-export const pathUrl = (layer: string) => pick(PATHS, layer);
+export const homeUrl = (name: string) => pick(HOMES, name);
+export const playUrl = (name: string) => pick(PLAY, name);
+
+/** One named layer inside one quest route folder. */
+export const questLayerUrl = (route: string, layer: string) =>
+  QUEST[Object.keys(QUEST).find((k) => k.endsWith(`/quest/${route}/${layer}.png`)) ?? ''] ?? '';
 export const fxUrl = (name: string) => pick(FX, name);
 
 export const arenaNames = () =>
   Object.keys(ARENAS).map((k) => k.split('/').pop()!.replace(/\.png$/, '')).sort();
 
-export const roomNames = () =>
-  Object.keys(ROOMS).map((k) => k.split('/').pop()!.replace(/\.png$/, '')).sort();
+export const homeNames = () =>
+  Object.keys(HOMES).map((k) => k.split('/').pop()!.replace(/\.png$/, '')).sort();
+
+export const playNames = () =>
+  Object.keys(PLAY).map((k) => k.split('/').pop()!.replace(/\.png$/, '')).sort();
+
+export const questRoutes = () => [...new Set(
+  Object.keys(QUEST).map((k) => k.match(/\/quest\/([^/]+)\//)?.[1]).filter(Boolean) as string[],
+)].filter((route) => ['sky', 'far', 'mid'].every((layer) => questLayerUrl(route, layer))).sort();
 
 // Sheet geometry -------------------------------------------------------------
 

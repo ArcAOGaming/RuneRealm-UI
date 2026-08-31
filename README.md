@@ -4,11 +4,10 @@ Swear to a faction, raise its companion, send it on quests, and fight in the
 arena. A React SPA over a single HyperBEAM process — no legacynet, anywhere.
 
 **Start with [HANDOFF.md](HANDOFF.md).** The setting and writing canon lives in
-[LORE.md](LORE.md). For minting and the marketplace,
-[MINTING.md](MINTING.md) is the one-page version. It has the live process id, what works,
-what does not, and the decisions worth knowing before changing anything.
-[MARKETPLACE.md](MARKETPLACE.md) covers the companion index, Rune AMM, test quote
-token, and their deployment and verification flow.
+[LORE.md](LORE.md). [MINTING.md](MINTING.md) documents the parked historical
+companion-asset implementation; it is not a release workflow.
+[MARKETPLACE.md](MARKETPLACE.md) covers the integrated Gold/companion markets,
+Rune AMM, test quote token, and their deployment and verification flow.
 [HYPERBEAM.md](HYPERBEAM.md) records platform facts that were verified by
 running them rather than read in the docs.
 
@@ -113,14 +112,14 @@ See HANDOFF.md §6 before changing any of it.
 | `src/screens/` | Landing, hidden `/lore` chronicle, combined Factions/Standings, Companion, Arena, Market, Admin. |
 | `src/ui/` | Primitives, icons, art, chrome, toasts, dialog, error boundary. |
 | `src/gfx/` | The aether field and the sigils. No dependencies. |
-| `src/lib/card/` | The card builder. Shared by the browser and the minter. |
-| `src/lib/mint.ts` | The chain half of minting, from the page. |
-| `src/lib/marketplace.ts` | Companion-market and Rune-AMM reads and writes. |
-| `src/screens/Marketplace.tsx` | The custom companion browser and Rune exchange. |
+| `src/lib/card/` | The card builder. Browser-active; its minter consumer is parked. |
+| `src/lib/mint.ts` | Parked source for the old companion-asset chain path. |
+| `src/lib/marketplace.ts` | Rune bridge and Rune/quote AMM reads and writes. |
+| `src/screens/Marketplace.tsx` | Gold goods order book, finite NPC shop, companion market, and Rune exchange. |
 | `src/_hidden/` | Parked features — see the README in there. |
 | `backend/native/` | The process, its tests, and the deploy tooling. |
 | `backend/native/card/` | The minter's painter: PNG in, PNG out, no dependencies. |
-| `backend/native/mint-worker.mjs` | Drains the mint queue with a funded key. |
+| `backend/native/mint-worker.mjs` | Parked funded-worker source; normal deployments never run it. |
 
 ### Responsive contract
 
@@ -159,13 +158,19 @@ owns its install identity and `public/sw.js` owns its small presentation cache.
 ```bash
 npm run build                     # type-check + bundle
 npm run test:lua                  # the process suite, on a public node, free
-npm run test:marketplace:local    # market + AMM + token suites, offline
+npm run test:hunt                 # Hunt process + game bridge, offline
+npm run test:marketplace:local    # AMM + quote + Rune suites, offline
 node backend/native/e2e.mjs       # play the game through the real client code
 ```
 
 `npm run test:lua` runs the whole process — handlers, combat engine, auth — on a
 public node's `~lua@5.3a`. No wallet, no cost, and a construct Luerl rejects
 fails there before it can reach a deployment.
+
+`npm run test:hunt` executes both Hunt authorities against the checked-in aos
+runtime: the standalone roaming/battle/capture process and the ownership,
+inventory, locking, and settlement bridge in `game.lua`. The production deploy
+workflow runs it before any site bundle can be uploaded.
 
 `e2e.mjs` bundles `src/lib/game.ts` with esbuild and drives it against the live
 process with a throwaway wallet that produces real ANS-104 signatures. It is the
@@ -207,8 +212,8 @@ npm run deploy:contracts:resume        # resume an interrupted contract deployme
 ```
 
 The fixed `deploy:contracts*` scripts always enable `--free --with-bots` and
-never pass `--site`. They deploy the game, Rune, bridge, marketplace/index,
-test quote token, AMM, and collection; verify the graph; rewrite the frontend
+never pass `--site`. They deploy the integrated game/economy, Rune bridge,
+test quote token, AMM, battle workers, and hunt workers; verify the graph; rewrite the frontend
 process ids; and create the linked `dist/` bundle. Review
 `backend/native/deployment-state.json` after completion. Then commit and push
 the rewritten ids: pushing does **not** publish the site.
@@ -222,7 +227,9 @@ in `backend/native/deployment-state.json`. Supplying both flags is rejected.
 `--with-bots` validates all 50 gitignored swarm wallets before the first live
 write. In free mode they are admitted normally on their first signed action. In
 closed mode the redeploy grants those exact wallets access after the new game
-process is verified. It does not start the swarm or fund any wallet.
+process is verified. It does not start the swarm. In TEST mode it batch-funds
+those exact burners to the published 25 Rune / 5 Scroll test minimum; that
+action is unavailable after economy activation.
 
 ### Open-access deployments
 
@@ -244,30 +251,32 @@ Running only `npm run build` cannot open a closed process. Likewise, changing a
 client environment variable cannot bypass the process's Eternal Pass checks.
 
 Before reading the owner wallet or creating anything, the command runs the
-offline game, marketplace, AMM, token, and swarm suites, then runs the game,
-Rune, marketplace, quote, and recovered-player suites unsigned on a live
+offline game/economy, hunt, AMM, token, adversarial simulation, fuzz, and swarm
+suites, then runs the game, Rune, AMM/quote, and recovered-player suites unsigned on a live
 `~lua@5.3a`, followed by the app build. Override that free test host with
 `--live-test-node <url>` or `LUA_TEST_NODE`.
 
 It migrates from the process currently recorded in `live-process.txt`, deploys
 the new game and zero-supply Rune token on the same node, wires both directions,
-deploys `TEST-RELIC`, the Rune AMM and companion index, verifies every recorded
+deploys `TEST-RELIC` and the Rune AMM, verifies every recorded
 relationship, rewrites all frontend process ids, and only then creates `dist`.
 The final public process graph is saved in
 `backend/native/deployment-state.json`; it contains ids and the owner address,
 never wallet material.
 
-Phase 2 is the manually dispatched **Deploy Rune Realm to Permaweb** GitHub
+Phase 2 is the manually dispatched **Upload Rune Realm to Permaweb** GitHub
 Actions workflow. It installs from the lock file, runs the offline
 game/market/swarm suites, builds once from the committed process ids,
-fingerprints that exact `dist/` tree, uploads it, updates the configured ANT
-undername, and stores `site-deployment-state.json` as a workflow artifact.
-`DEPLOY_KEY` must contain a base64-encoded private Arweave JWK and
-`DEPLOY_ANT_PROCESS` must contain the ANT process id. The optional repository
-variables `DEPLOY_UNDERNAME` (configured as `runerealm`) and `DEPLOY_ARNS_NAME` control
-the record and add its public URL to the receipt. Missing or malformed
-deployment configuration fails the release instead of producing a successful
-workflow that deployed nothing.
+fingerprints that exact `dist/` tree, uploads every file plus an Arweave paths
+manifest, prints `MANIFEST_ID=<id>` in the job log, and stores
+`site-deployment-state.json` as a workflow artifact. It deliberately does not
+change an ANT or ArNS record. After checking the gateway URL in the receipt,
+link that manifest id to the desired ArNS name/undername manually.
+
+`DEPLOY_KEY` must contain a base64-encoded private Arweave JWK. No ANT process
+secret or ArNS repository variable is read by the workflow. Missing or
+malformed upload configuration fails the release instead of producing a
+successful workflow that uploaded nothing.
 
 The individual deployment commands remain available for focused work:
 
@@ -288,17 +297,19 @@ re-seeds the paid list from `backend/native/paid.json` every time, and
 satchel, record) across. A fight in progress does not survive; everything else
 does.
 
-## Minting
+## Parked companion-asset implementation
 
-A companion can be pulled out of the game as a one-unit Arweave asset, traded on
-Bazar, and put back.
+This path is disabled in the contract, absent from normal UI routes, and never
+run by a normal deployment. The source remains as a reference for a future
+explicit product decision; the deliberately named commands below are not part
+of release or test-bot operation.
 
 ```bash
 npm run cards                     # render every faction and tier to .cards/
-node backend/native/collection.mjs create
-npm run mint:dry                  # price a pass, sign nothing
-npm run mint:worker               # drain the queue, forever
-npm run mint:once                 # one pass, for cron
+npm run parked:collection -- create
+npm run parked:mint:dry           # price only, sign nothing
+npm run parked:mint:worker        # explicitly run the parked worker
+npm run parked:mint:once          # one explicitly parked pass
 ```
 
 An asset **is** an Arweave transaction. Its data is the card image; its tags

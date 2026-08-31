@@ -9,10 +9,10 @@ set -euo pipefail
 
 NODE="${1:-https://alpha.neo.zephyrdev.xyz}"
 HERE="$(cd "$(dirname "$0")" && pwd)"
-AOS="${HYPER_AOS:-$HERE/hyper-aos.lua}"
+AOS="${HYPER_AOS:-$HERE/json.lua}"
 
 if [ ! -f "$AOS" ]; then
-  echo "hyper-aos.lua not found at $AOS" >&2
+  echo "json.lua not found at $AOS" >&2
   exit 1
 fi
 
@@ -29,7 +29,7 @@ trap 'rm -f "$BUNDLE"' EXIT
 echo "node:   $NODE"
 echo "bundle: $(wc -c < "$BUNDLE") bytes"
 echo
-RESULT="$(curl --fail-with-body -sS -m 180 -X POST "$NODE/~lua@5.3a/runetest" \
+RESULT="$(curl --fail-with-body -sS -m "${LUA_TEST_TIMEOUT:-600}" -X POST "$NODE/~lua@5.3a/runetest" \
   -H 'content-type: application/lua' --data-binary @"$BUNDLE")"
 printf '%s\n' "$RESULT"
 if ! grep -Eq '(^|[^0-9])0 failed([^0-9]|$)' <<<"$RESULT"; then

@@ -10,8 +10,25 @@ import * as esbuild from 'esbuild';
 export async function buildSwarmClient({ root, pid, node, outDir }) {
   fs.mkdirSync(outDir, { recursive: true });
   const outfile = path.join(outDir, 'client.mjs');
+  // The swarm calls the shipped verbs, and it also has to send messages the
+  // shipped verbs will not build. `listMonster` clamps its price to a legal
+  // one, which is correct for the app and useless for a probe asserting that a
+  // price of zero is refused — so the raw transport is exported alongside the
+  // client rather than reimplemented. It is still the app's transport: the same
+  // signing, scheduling, slot correlation and error shaping.
+  const entry = [
+    `export * from ${JSON.stringify(path.join(root, 'src', 'lib', 'game.ts').replace(/\\/g, '/'))};`,
+    'export { readHunt, search as huntSearch, attack as huntAttack,',
+    '  declineCapture as huntDeclineCapture, capture as huntCapture,',
+    '  retrySettlement as huntRetrySettlement, end as huntEnd }',
+    `  from ${JSON.stringify(path.join(root, 'src', 'lib', 'hunt.ts').replace(/\\/g, '/'))};`,
+    'export { send as rawSend, sendMessage as rawSendMessage, readSlot as rawReadSlot,',
+    '  readJSON as rawReadJSON, readState as rawReadState, pushSlotWithRetry as rawPushSlotWithRetry,',
+    '  AmbiguousWriteError, AcceptedWriteError, OutboxDeliveryError }',
+    `  from ${JSON.stringify(path.join(root, 'src', 'lib', 'hyperbeam.ts').replace(/\\/g, '/'))};`,
+  ].join('\n');
   await esbuild.build({
-    entryPoints: [path.join(root, 'src', 'lib', 'game.ts')],
+    stdin: { contents: entry, resolveDir: root, sourcefile: 'swarm-client.ts', loader: 'ts' },
     bundle: true,
     format: 'esm',
     platform: 'neutral',

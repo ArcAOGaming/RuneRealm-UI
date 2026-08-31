@@ -1,5 +1,10 @@
 # Minting — state of play
 
+> **PARKED:** companion mint/export/import, collection deployment, the funded
+> worker, creator, and customiser are disabled and excluded from normal routes
+> and deploys by `ECONOMY_MARKETPLACE_PLAN.md`. This file preserves historical
+> implementation facts only. Do not use it as a release checklist.
+
 One page for whoever builds the marketplace. Everything below is verified on
 chain unless it says otherwise. Depth is in [HANDOFF.md](HANDOFF.md) §9b.
 

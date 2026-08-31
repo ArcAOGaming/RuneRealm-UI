@@ -1,34 +1,43 @@
 # Rune Realm marketplace
 
-The marketplace has two settlement paths because the assets already speak two
-different protocols. The companion side preserves the native one-unit asset
-standard; the Rune side is a dedicated two-token constant-product pool.
+> **Note (2026-08-30):** `marketplace.lua` is **no longer deployed**. It indexes
+> one-unit `token@1.0` companion assets that settle in native AR, and monsters
+> are no longer minted as those, so it would index nothing. Companion trading
+> lives in `game.lua` and is paid in in-game Rune — which it already did; the
+> index was a second surface the UI never read.
+>
+> **TODO — revisit only if monster minting is re-enabled.** The file and its
+> suite remain as parked source outside normal deployment/preflight. Two things
+> to know before bringing it back: it was never wired to the UI, so restoring it
+> means building that too; and it is an *index*, not a settlement authority —
+> the asset process still owns custody and payment.
+>
+> The integrated Gold/P2P/NPC implementation follows
+> [ECONOMY_MARKETPLACE_PLAN.md](ECONOMY_MARKETPLACE_PLAN.md).
+
+The market has three user-facing surfaces. Gold goods orders and the finite NPC
+shop settle inside the game authority, companion sales use in-game Rune in that
+same authority, and wallet Rune/TEST-RELIC trade through the external AMM.
 
 ## Architecture
 
-### Companions
+### Monsters
 
-Every minted companion is already a `token@1.0` process composed with
-`arweave-swap@1.0`. Its balance and order book are the authority. A second
-contract cannot atomically move that L1 asset, so `marketplace.lua` is a curated
-index rather than a custodian:
+Monsters are game records, not newly minted NFTs. The game process is both the
+ownership authority and the market escrow, which keeps a sale to one atomic
+state transition:
 
-1. The deployer copies the game's `/now/assets` registry into the index.
-2. A holder creates a native `make-offer` on the asset process.
-3. The holder signs `Listing.Create` with the permanent offer transaction id
-   and its whole-winston AR price.
-4. The UI combines indexed creature data with a fresh read of the asset's own
-   `/now/balances` and sends the user to its native market action.
+1. `Market.List` accepts only a monster in the seller's collection.
+2. Listing moves the complete monster record out of that collection and into
+   `Market[listingId]` escrow.
+3. `Market.Buy` debits the buyer's in-game Rune, credits the seller, and moves
+   the monster into the buyer's collection in one handler.
+4. `Market.Cancel` returns an unsold monster to the seller's collection.
 
-The index's `marketinfo` is also the on-chain process registry: it publishes the
-game, collection, Rune token, quote token and AMM ids together. The all-in-one
-deployer checks that graph against the AMM pair before it builds the app.
-
-An indexed listing always carries `verified: false`. Ownership and offer state
-must be checked on the asset process immediately before payment. Companion
-sales currently settle in native AR; neither AO nor Rune is substituted by the
-index. Any direct asset transaction added later must follow `MINTING.md`: a
-targeted transaction uses native `quantity: '1'`, including offers and cancels.
+There is no external order id, AR price, ownership re-check, or NFT mint in this
+path, and there is no longer a second index process that could disagree with it.
+Mint/export/import is absent from the companion screen and refused by the
+normal contract configuration. Legacy registry data remains readable only.
 
 ### Rune exchange
 
@@ -56,12 +65,17 @@ target node before configuring AO.
 
 ## Files
 
-- `backend/native/marketplace.lua` — curated asset registry and listing index.
+- `backend/native/game.lua` — authoritative monster collection, escrow, Rune
+  payment, cancellations, and sale history. The only companion market that runs.
+- `backend/native/marketplace.lua` — parked minted-asset index source, not
+  deployed or included in normal preflight; see the TODO above.
 - `backend/native/amm.lua` — Rune/quote AMM, deposits and LP accounting.
 - `backend/native/quote.lua` — faucet-backed `TEST-RELIC` token.
-- `backend/native/deploy-marketplace.mjs` — spawns and configures the three
-  processes, imports the game registry, and writes the frontend ids.
-- `src/screens/Marketplace.tsx` — `/market`, companion discovery and Rune swap UI.
+- `backend/native/deploy-marketplace.mjs` — spawns and configures quote and AMM
+  external processes and writes their frontend ids; it never creates an index
+  or companion collection.
+- `src/screens/Marketplace.tsx` — `/market`, monster trading, Rune bridge,
+  Gold goods/P2P/NPC trading, TEST-RELIC faucet, liquidity, charts, and swaps.
 - `src/lib/marketplace.ts` — reads, signed actions and exact decimal conversion.
 
 ## Test and deploy
@@ -82,7 +96,7 @@ npm run test:marketplace
 
 The recommended deployment is the serialized full-stack command. It reads the
 current game from `live-process.txt`, migrates it, creates and wires Rune, then
-creates the market processes and performs the final build only after all ids are
+creates the quote/AMM processes and performs the final build only after all ids are
 written:
 
 ```bash
@@ -90,38 +104,39 @@ npm run deploy:all -- --plan
 npm run deploy:all
 ```
 
-The full command first exercises the game, Rune, marketplace, AMM, quote, and
+The full command first exercises the game/economy, Rune, AMM, quote, and
 recovered-player migration on a live unsigned `~lua@5.3a` endpoint. It only
 reads the deployment wallet after that preflight succeeds.
 
 The local deployment wallet already used by the game scripts is the default;
-`HB_WALLET` can override it. To publish the linked build too, set
-`DEPLOY_ANT_PROCESS` and add `--site`. A failed run can continue from complete
-recorded stages with `--resume`.
+`HB_WALLET` can override it. Add `--site` to upload the linked build and print
+its Permaweb manifest id. This does not update ArNS; link the printed id
+manually after verifying its gateway URL. A failed contract run can continue
+from complete recorded stages with `--resume`.
 
-To deploy only the marketplace against the currently recorded game and Rune
+To deploy only the external exchange against the currently recorded game and Rune
 processes:
 
 ```bash
-HB_WALLET=/path/to/key.json npm run deploy:marketplace
+HB_WALLET=/path/to/key.json npm run deploy:exchange
 ```
 
-The default deployment creates an empty Rune/`TEST-RELIC` pool, faucets 1,000
-`TEST-RELIC` to the owner, and creates the companion index. It does not invent
-Rune supply. Withdraw earned Rune, transfer both tokens into the AMM, then add
-the credited amounts as initial liquidity from `/market`.
+The default deployment creates an empty Rune/`TEST-RELIC` pool and faucets test
+inventory to the owner. It no longer spawns a companion index. The deployment
+does not invent Rune supply: withdraw earned Rune, transfer both tokens into
+the AMM, then add the credited amounts as initial liquidity from `/market`.
 
 To test an existing compatible quote token instead:
 
 ```bash
 QUOTE_TOKEN=<process-id> QUOTE_TICKER=<ticker> QUOTE_DENOMINATION=<decimals> \
-HB_WALLET=/path/to/key.json npm run deploy:marketplace
+HB_WALLET=/path/to/key.json npm run deploy:exchange
 ```
 
 The deployer writes `marketplace-processes.txt`,
 `backend/native/marketplace-state.json`, `src/lib/marketplace-config.ts`, and the
-six `VITE_*` marketplace variables. Pass `-- --no-env` to leave frontend
+four exchange `VITE_*` variables. Pass `-- --no-env` to leave frontend
 configuration untouched.
 
-No marketplace process id in the repository means the contracts have not been
-deployed yet; `/market` intentionally shows a safe not-configured state.
+The Rune desk requires configured Rune, quote, and AMM process ids. Monster
+trading requires only the configured game process.

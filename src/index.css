@@ -253,6 +253,108 @@
   }
 }
 
+/* Companion collection -----------------------------------------------------
+   The three.js cards own only the arrival. The workspace is ordinary DOM and
+   becomes readable while the cards fall into place. */
+.collection-card-entrance {
+  height: 100%;
+  min-height: 34rem;
+  opacity: 1;
+  transition: opacity 300ms ease;
+}
+.collection-card-entrance.is-leaving { opacity: 0; }
+.collection-workspace {
+  opacity: 0;
+  transform: translateY(1.25rem);
+  transition: opacity 320ms ease, transform 420ms cubic-bezier(.16,.8,.24,1);
+}
+.collection-workspace.is-ready { opacity: 1; transform: none; }
+.collection-page,
+.collection-workspace { width: 100%; height: 100%; }
+.collection-card-target { position: relative; }
+.collection-page.is-intro .collection-card-target:not(.is-arriving) { opacity: 0; }
+.collection-card-target.is-arriving {
+  animation: collection-card-poof 360ms cubic-bezier(.12,.78,.2,1) var(--collection-poof-delay, 0ms) both;
+}
+.collection-card-target.is-arriving::after {
+  content: '';
+  position: absolute;
+  inset: -12%;
+  border: 1px solid rgb(var(--element) / .72);
+  box-shadow:
+    0 0 18px rgb(var(--element) / .65),
+    0 0 38px rgb(var(--rune) / .2) inset;
+  opacity: 0;
+  pointer-events: none;
+  animation: collection-card-flare 390ms ease-out var(--collection-poof-delay, 0ms) both;
+}
+@keyframes collection-card-poof {
+  0% { opacity: 0; filter: brightness(3.2) blur(4px); transform: scale(.78); }
+  48% { opacity: 1; filter: brightness(1.45) blur(0); transform: scale(1.055); }
+  100% { opacity: 1; filter: none; transform: none; }
+}
+@keyframes collection-card-flare {
+  0% { opacity: 0; transform: scale(.3); }
+  24% { opacity: .9; }
+  100% { opacity: 0; transform: scale(1.24); }
+}
+.collection-heading::after {
+  content: '';
+  position: absolute;
+  inset: auto -8rem -11rem auto;
+  width: 28rem;
+  height: 22rem;
+  border: 1px solid rgb(var(--element) / .14);
+  transform: rotate(-18deg);
+  box-shadow: 0 0 80px rgb(var(--element) / .08) inset;
+  pointer-events: none;
+}
+.collection-active-card {
+  border-color: rgb(var(--element) / .58);
+  box-shadow: 0 0 0 1px rgb(var(--element) / .09) inset, 0 16px 50px rgb(var(--element) / .09);
+}
+.collection-stored-card {
+  border-color: rgb(var(--edge) / .68);
+  background: linear-gradient(180deg, rgb(var(--surface) / .7), rgb(var(--void) / .48));
+  transition: border-color 140ms ease, background 140ms ease, transform 140ms ease;
+}
+.collection-stored-card:has(.collection-card-button:not(:disabled):hover),
+.collection-stored-card:has(.collection-card-button:focus-visible) {
+  border-color: rgb(var(--element) / .58);
+  background: linear-gradient(180deg, rgb(var(--element) / .08), rgb(var(--void) / .5));
+  transform: translateY(-2px);
+}
+.collection-card-button:focus-visible {
+  outline: 1px solid rgb(var(--element) / .8);
+  outline-offset: -3px;
+}
+.collection-card-button:not(:disabled) { cursor: pointer; }
+.collection-card-button:disabled + .collection-card-content { opacity: .58; }
+.collection-card-target.is-swapping { visibility: hidden; }
+.collection-card-target.is-swap-arriving {
+  animation: collection-swap-arrive 280ms cubic-bezier(.12,.78,.2,1) both;
+}
+@keyframes collection-swap-arrive {
+  0% { opacity: 0; filter: brightness(2.4); transform: scale(.88); }
+  62% { opacity: 1; filter: brightness(1.25); transform: scale(1.025); }
+  100% { opacity: 1; filter: none; transform: none; }
+}
+.collection-scroll {
+  scrollbar-width: thin;
+  scrollbar-color: rgb(var(--element) / .38) transparent;
+  overscroll-behavior: contain;
+}
+@media (min-width: 1024px) {
+  .collection-active-card .collection-card-target {
+    width: min(100%, 21rem, calc((100dvh - 12rem) * .608));
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .collection-card-entrance { display: none; }
+  .collection-workspace { opacity: 1; transform: none; transition: none; }
+  .collection-page.is-intro .collection-card-target { opacity: 1; }
+}
+
 /* -------------------------------------------------------------------------
    Public front door
 
@@ -1599,6 +1701,188 @@ pre,
   .altar-choice-name { font-size: 9px; }
 }
 
+/* Market ------------------------------------------------------------------ */
+.market-tabs {
+  position: sticky;
+  top: calc(var(--app-header-height, 4rem) + .5rem);
+  z-index: 20;
+  backdrop-filter: blur(16px) saturate(130%);
+  box-shadow: 0 14px 34px -24px rgb(0 0 0 / .95);
+}
+
+.market-forge {
+  isolation: isolate;
+  background:
+    radial-gradient(circle at 50% 46%, rgb(var(--arcane) / .13), transparent 30%),
+    radial-gradient(circle at 22% 45%, rgb(var(--rune) / .08), transparent 24%),
+    linear-gradient(145deg, rgb(var(--void) / .48), rgb(var(--void) / .9));
+}
+
+.market-forge::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  pointer-events: none;
+  background-image:
+    linear-gradient(rgb(var(--rune) / .035) 1px, transparent 1px),
+    linear-gradient(90deg, rgb(var(--rune) / .035) 1px, transparent 1px);
+  background-size: 28px 28px;
+  mask-image: radial-gradient(circle, black 28%, transparent 82%);
+}
+
+.market-forge > div:not(.market-forge-fallback) { z-index: 2; }
+.market-forge canvas { width: 100%; height: 100%; display: block; }
+
+.market-forge-fallback {
+  opacity: .75;
+  background:
+    radial-gradient(circle at 24% 50%, rgb(var(--rune) / .22) 0 2%, transparent 2.5%),
+    radial-gradient(circle at 76% 50%, rgb(var(--arcane) / .28) 0 2%, transparent 2.5%),
+    linear-gradient(90deg, transparent 24%, rgb(var(--rune) / .18) 50%, transparent 76%);
+}
+
+.market-metric {
+  transition: background-color .18s ease;
+}
+
+.market-metric:hover { background: rgb(var(--raised) / .82); }
+
+.market-chart canvas { image-rendering: auto; }
+
+.market-monster-card {
+  transition: transform .22s ease, box-shadow .22s ease;
+}
+
+.market-monster-card:hover {
+  transform: translateY(-3px);
+  box-shadow:
+    0 1px 0 rgb(255 255 255 / .04) inset,
+    0 28px 54px -30px rgb(var(--element) / .38);
+}
+
+@media (min-width: 1024px) {
+  .market-screen {
+    display: flex;
+    width: 100%;
+    height: 100%;
+    min-height: 0;
+    flex: 1;
+    flex-direction: column;
+  }
+
+  .market-screen > .market-tabs {
+    position: relative;
+    top: auto;
+    flex: none;
+  }
+
+  .market-tabpanel {
+    display: flex;
+    min-height: 0;
+    flex: 1;
+    overflow: hidden;
+  }
+
+  .market-tabpanel > * { width: 100%; }
+
+  .market-monsters,
+  .market-rune {
+    display: flex;
+    min-height: 0;
+    flex: 1;
+    flex-direction: column;
+  }
+
+  .market-monsters > :not(.market-monsters-scroll),
+  .market-rune > :not(.market-rune-workspace) { flex: none; }
+
+  .market-monster-chart { height: 7rem; }
+
+  .market-monsters-scroll {
+    min-height: 0;
+    flex: 1;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    padding-right: .5rem;
+    scrollbar-gutter: stable;
+    scrollbar-width: thin;
+    scrollbar-color: rgb(var(--element) / .45) transparent;
+  }
+
+  .market-rune-workspace {
+    min-height: 0;
+    flex: 1;
+  }
+
+  .market-rune-actions,
+  .market-rune-action-panel,
+  .market-rune-aside { min-height: 0; }
+
+  .market-rune-action-content {
+    padding: .75rem 1rem;
+  }
+
+  .market-rune-action-panel .market-desk-heading { margin-bottom: .75rem; }
+
+  .market-rune-action-panel .market-token-input {
+    padding: .625rem .75rem;
+  }
+
+  .market-rune-action-panel .market-token-output {
+    padding: .75rem;
+  }
+
+  .market-rune-action-panel .market-price-protection {
+    padding: .625rem .75rem;
+  }
+
+  .market-rune-action-panel .market-swap-direction {
+    width: 2rem;
+    height: 2rem;
+  }
+
+  .market-rune-action-panel .market-trade-form > :not([hidden]) ~ :not([hidden]) {
+    margin-top: .5rem;
+  }
+
+  .market-rune-aside {
+    grid-template-columns: minmax(0, 1.08fr) minmax(15rem, .92fr);
+    grid-template-rows: minmax(12rem, .8fr) minmax(13rem, 1fr);
+  }
+
+  .market-rune-aside > .market-forge {
+    grid-column: 1 / -1;
+    min-height: 0;
+  }
+
+  .market-rune-price {
+    display: flex;
+    min-height: 0;
+    flex-direction: column;
+  }
+
+  .market-rune-price .market-chart {
+    height: auto;
+    min-height: 0;
+    flex: 1;
+  }
+
+  .market-rune-side-stack {
+    min-height: 0;
+    grid-template-rows: auto minmax(0, 1fr);
+  }
+}
+
+@media (max-width: 1023px) {
+  .market-tabs { top: calc(var(--app-header-height, 4rem) + .25rem); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .market-monster-card { transition: none; }
+  .market-monster-card:hover { transform: none; }
+}
+
 @media (max-width: 1023px) {
   .button-control,
   .market-tab,
@@ -1740,11 +2024,508 @@ pre,
 }
 
 /* The arena's bottom band: a fixed box that holds either the move grid and the
-   round chain, or the outcome that replaces them both. Fixed, because the two
+   round log, or the outcome that replaces them both. Fixed, because the two
    states must SWAP rather than resize — an outcome that sets its own height
    shrinks the arena above it at the exact moment the fight ends.
 
    Measured, not estimated: the move grid wants 88px (two rows of 37px cells,
-   a 6px gap and 16px of panel padding) and the chain wants 60px, with 8px
-   between them. A first guess of 148 clipped the second row of moves. */
-.battle-screen { --battle-bottom: 156px; }
+   a 6px gap and 16px of panel padding) and the log wants 76px — its caption
+   row plus two turn lines and a round number, with 12px of panel padding —
+   with 8px between them. A first guess of 148 clipped the second row of
+   moves. */
+.battle-screen { --battle-bottom: 172px; }
+
+/* Companion acquisition ---------------------------------------------------
+   A transaction has already made the companion real by the time this portal
+   opens. The sequence therefore uses the returned creature's actual battle
+   and card assets: the magic is theatrical, but none of the record is mocked. */
+.acquisition-reveal {
+  position: fixed;
+  inset: 0;
+  z-index: 70;
+  isolation: isolate;
+  display: grid;
+  grid-template-rows: minmax(5.5rem, auto) minmax(0, 1fr) minmax(5.5rem, auto);
+  overflow: hidden;
+  padding-top: max(1.25rem, env(safe-area-inset-top));
+  padding-right: max(1.25rem, env(safe-area-inset-right));
+  padding-bottom: max(1.25rem, env(safe-area-inset-bottom));
+  padding-left: max(1.25rem, env(safe-area-inset-left));
+  background:
+    radial-gradient(circle at 50% 48%, rgb(var(--element) / .13), transparent 29%),
+    radial-gradient(circle at 50% 52%, rgb(var(--arcane) / .08), transparent 52%),
+    rgb(var(--void));
+}
+
+.acquisition-grid {
+  position: absolute;
+  inset: 0;
+  z-index: -2;
+  opacity: .32;
+  background-image:
+    linear-gradient(rgb(var(--rune) / .045) 1px, transparent 1px),
+    linear-gradient(90deg, rgb(var(--rune) / .045) 1px, transparent 1px);
+  background-size: 64px 64px;
+  mask-image: radial-gradient(circle at center, #000, transparent 68%);
+}
+
+.acquisition-glow {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  z-index: -1;
+  width: min(88vw, 58rem);
+  aspect-ratio: 1;
+  border: 1px solid rgb(var(--element) / .07);
+  box-shadow:
+    0 0 90px rgb(var(--element) / .1) inset,
+    0 0 120px rgb(var(--element) / .08);
+  transform: translate(-50%, -50%) rotate(45deg);
+}
+
+.acquisition-copy {
+  z-index: 20;
+  align-self: start;
+  justify-self: center;
+  max-width: 38rem;
+  text-align: center;
+}
+
+.acquisition-copy h1 {
+  margin-top: .25rem;
+  font-size: clamp(2rem, 5vw, 4rem);
+  font-weight: 600;
+  line-height: .95;
+  color: rgb(var(--ink));
+  text-shadow: 0 0 42px rgb(var(--element) / .25);
+}
+
+.acquisition-copy > p:last-child {
+  margin-top: .55rem;
+  font-size: .8125rem;
+  color: rgb(var(--faint));
+}
+
+.acquisition-skip {
+  position: absolute;
+  top: max(1rem, env(safe-area-inset-top));
+  right: max(1rem, env(safe-area-inset-right));
+  z-index: 30;
+  min-height: 2.75rem;
+  padding-inline: .75rem;
+  font-family: 'JetBrains Mono', ui-monospace, monospace;
+  font-size: 9px;
+  letter-spacing: .14em;
+  text-transform: uppercase;
+  color: rgb(var(--faint));
+  transition: color 160ms ease;
+}
+
+.acquisition-skip:hover { color: rgb(var(--ink)); }
+
+.acquisition-stage {
+  position: relative;
+  z-index: 2;
+  display: grid;
+  min-height: 0;
+  place-items: center;
+  perspective: 1200px;
+}
+
+.acquisition-card-space {
+  position: absolute;
+  width: min(24rem, 41dvh, calc(100vw - 2.5rem));
+  aspect-ratio: 648 / 1065;
+}
+
+.acquisition-card-layers { opacity: 0; }
+
+.acquisition-layer {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  opacity: 0;
+  filter: drop-shadow(0 14px 24px rgb(0 0 0 / .45));
+  transform-origin: center;
+  will-change: transform, opacity, filter;
+}
+
+.acquisition-phase-swirl .acquisition-card-layers,
+.acquisition-phase-forge .acquisition-card-layers,
+.acquisition-phase-burst .acquisition-card-layers { opacity: 1; }
+
+.acquisition-phase-swirl .acquisition-layer {
+  animation: acquisition-layer-swirl 2.5s cubic-bezier(.16, .72, .16, 1) var(--layer-delay) both;
+}
+
+.acquisition-phase-forge .acquisition-layer {
+  opacity: 1;
+  transform: none;
+  animation: acquisition-layer-seat .7s cubic-bezier(.2, .85, .3, 1) both;
+}
+
+.acquisition-phase-burst .acquisition-card-layers {
+  transform-style: preserve-3d;
+  animation: acquisition-flat-release .56s cubic-bezier(.36, .02, .72, .38) both;
+}
+
+.acquisition-phase-burst .acquisition-layer {
+  opacity: 1;
+  transform: none;
+}
+
+@keyframes acquisition-flat-release {
+  0% { opacity: 1; transform: rotateY(0) scale(1); filter: brightness(1); }
+  34% { opacity: 1; transform: rotateY(72deg) scale(1.045); filter: brightness(1.12); }
+  72% { opacity: .92; transform: rotateY(188deg) scale(.88); filter: brightness(1.7); }
+  100% { opacity: 0; transform: rotateY(316deg) scale(.22); filter: brightness(4) blur(2px); }
+}
+
+@keyframes acquisition-layer-swirl {
+  0% {
+    opacity: 0;
+    transform: translate3d(var(--layer-x0), var(--layer-y0), -260px)
+      rotate(var(--layer-rotation)) scale(.42);
+    filter: blur(3px) drop-shadow(0 14px 24px rgb(0 0 0 / .35));
+  }
+  13% { opacity: .72; }
+  48% {
+    opacity: .9;
+    transform: translate3d(var(--layer-x1), var(--layer-y1), 80px)
+      rotate(calc(0deg - var(--layer-rotation))) scale(.72);
+    filter: blur(0) drop-shadow(0 18px 32px rgb(var(--element) / .2));
+  }
+  78% {
+    opacity: 1;
+    transform: translate3d(-2vw, 1.5vh, 30px) rotate(18deg) scale(.9);
+  }
+  100% {
+    opacity: 1;
+    transform: translate3d(0, 0, 0) rotate(0) scale(1);
+    filter: drop-shadow(0 18px 32px rgb(0 0 0 / .5));
+  }
+}
+
+@keyframes acquisition-layer-seat {
+  0% { opacity: 1; transform: scale(1.025); filter: brightness(1.65); }
+  45% { filter: brightness(1.08) drop-shadow(0 0 22px rgb(var(--element) / .45)); }
+  100% { opacity: 1; transform: none; filter: none; }
+}
+
+.acquisition-creature {
+  position: relative;
+  z-index: 14;
+  width: min(20rem, 43dvh, 70vw);
+  aspect-ratio: 1;
+  transform-origin: 50% 85%;
+  filter: drop-shadow(0 24px 18px rgb(0 0 0 / .58));
+}
+
+.acquisition-creature canvas {
+  width: 100%;
+  height: 100%;
+  image-rendering: pixelated;
+}
+
+.acquisition-phase-entrance .acquisition-creature {
+  animation: acquisition-creature-enter .9s cubic-bezier(.14, .78, .2, 1) both;
+}
+
+.acquisition-phase-attack .acquisition-creature {
+  animation: acquisition-attack-weight .28s steps(2, end) 2 alternate;
+  filter:
+    drop-shadow(0 0 16px rgb(var(--element) / .55))
+    drop-shadow(0 24px 18px rgb(0 0 0 / .58));
+}
+
+.acquisition-phase-attack .acquisition-creature::before,
+.acquisition-phase-attack .acquisition-creature::after {
+  content: '';
+  position: absolute;
+  inset: 10%;
+  z-index: -1;
+  border: 2px solid rgb(var(--element) / .8);
+  opacity: 0;
+  transform: rotate(45deg) scale(.25);
+  animation: acquisition-strike-ring .72s cubic-bezier(.1, .7, .2, 1) .24s both;
+}
+
+.acquisition-phase-attack .acquisition-creature::after {
+  inset: 20%;
+  animation-delay: .34s;
+  transform: rotate(45deg) scale(.18);
+}
+
+@keyframes acquisition-creature-enter {
+  0% { opacity: 0; transform: translate3d(-52vw, 12%, 0) scale(.72); }
+  68% { opacity: 1; transform: translate3d(3%, 0, 0) scale(1.04); }
+  100% { opacity: 1; transform: none; }
+}
+
+@keyframes acquisition-attack-weight {
+  from { transform: translateY(2%) scale(1.02); }
+  to { transform: translateY(-1%) scale(1.08); }
+}
+
+@keyframes acquisition-strike-ring {
+  0% { opacity: .9; transform: rotate(45deg) scale(.22); }
+  100% { opacity: 0; transform: rotate(145deg) scale(1.35); }
+}
+
+.acquisition-portrait-morph {
+  position: absolute;
+  z-index: 13;
+  width: min(15rem, 34dvh, 58vw);
+  max-height: 48dvh;
+  object-fit: contain;
+  opacity: 0;
+  filter:
+    drop-shadow(0 0 22px rgb(var(--element) / .45))
+    drop-shadow(0 20px 18px rgb(0 0 0 / .55));
+  pointer-events: none;
+}
+
+.acquisition-phase-swirl .acquisition-portrait-morph {
+  animation: acquisition-portrait-form 1.35s cubic-bezier(.18, .76, .2, 1) both;
+}
+
+@keyframes acquisition-portrait-form {
+  0% { opacity: 0; transform: scale(.38); filter: brightness(3) blur(2px); }
+  24% { opacity: 1; transform: scale(.72); filter: brightness(1.6) blur(0); }
+  58% { opacity: .92; transform: scale(.88) rotate(-3deg); }
+  100% { opacity: 0; transform: scale(.52) rotate(10deg); filter: brightness(1.3); }
+}
+
+.acquisition-vortex {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  z-index: 0;
+  width: min(82vw, 46rem);
+  aspect-ratio: 1;
+  opacity: 0;
+  transform: translate(-50%, -50%);
+  transition: opacity .3s ease;
+  pointer-events: none;
+}
+
+.acquisition-phase-attack .acquisition-vortex,
+.acquisition-phase-swirl .acquisition-vortex,
+.acquisition-phase-forge .acquisition-vortex { opacity: 1; }
+
+.acquisition-vortex > i {
+  position: absolute;
+  inset: 18%;
+  border: 1px solid rgb(var(--element) / .22);
+  border-right-color: transparent;
+  border-bottom-color: rgb(var(--rune) / .08);
+  border-radius: 50%;
+  animation: acquisition-vortex-turn 3.8s linear infinite;
+}
+
+.acquisition-vortex > i:nth-child(2) {
+  inset: 28%;
+  animation-duration: 2.4s;
+  animation-direction: reverse;
+}
+
+.acquisition-vortex > i:nth-child(3) {
+  inset: 39%;
+  animation-duration: 1.6s;
+}
+
+.acquisition-vortex > span {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 3px;
+  height: 10px;
+  background: rgb(var(--element));
+  box-shadow: 0 0 10px rgb(var(--element) / .9);
+  opacity: .55;
+  transform-origin: 0 0;
+  animation: acquisition-vortex-particle 2.2s linear var(--particle-delay) infinite;
+}
+
+@keyframes acquisition-vortex-turn {
+  to { transform: rotate(360deg); }
+}
+
+@keyframes acquisition-vortex-particle {
+  0% {
+    opacity: 0;
+    transform: rotate(var(--particle-angle)) translateY(var(--particle-radius)) scale(.45);
+  }
+  18% { opacity: .75; }
+  100% {
+    opacity: 0;
+    transform: rotate(calc(var(--particle-angle) + 410deg)) translateY(1.2rem) scale(1.3);
+  }
+}
+
+.acquisition-phase-forge .acquisition-vortex {
+  animation: acquisition-vortex-collapse .75s ease-in both;
+}
+
+@keyframes acquisition-vortex-collapse {
+  to { opacity: 0; transform: translate(-50%, -50%) scale(.2) rotate(90deg); }
+}
+
+.acquisition-boom {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  z-index: 18;
+  width: 1px;
+  height: 1px;
+  opacity: 0;
+  pointer-events: none;
+}
+
+.acquisition-phase-burst .acquisition-boom { opacity: 1; }
+
+.acquisition-boom > i {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 5rem;
+  height: 5rem;
+  border: 3px solid rgb(var(--element) / .9);
+  border-radius: 50%;
+  box-shadow:
+    0 0 30px rgb(var(--element) / .85),
+    0 0 70px rgb(var(--rune) / .4) inset;
+  transform: translate(-50%, -50%) scale(.15);
+}
+
+.acquisition-phase-burst .acquisition-boom > i {
+  animation: acquisition-boom-ring .55s cubic-bezier(.08, .72, .22, 1) both;
+}
+
+.acquisition-boom > i:nth-child(2) {
+  border-color: rgb(var(--rune) / .75);
+  animation-delay: .08s;
+}
+
+.acquisition-boom > span {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 4px;
+  height: 20px;
+  background: linear-gradient(rgb(var(--rune)), rgb(var(--element)), transparent);
+  box-shadow: 0 0 12px rgb(var(--element));
+  transform-origin: 50% 0;
+}
+
+.acquisition-phase-burst .acquisition-boom > span {
+  animation: acquisition-boom-shard .52s cubic-bezier(.12, .7, .2, 1) both;
+}
+
+@keyframes acquisition-boom-ring {
+  0% { opacity: 0; transform: translate(-50%, -50%) scale(.12); }
+  18% { opacity: 1; }
+  100% { opacity: 0; transform: translate(-50%, -50%) scale(5.8); }
+}
+
+@keyframes acquisition-boom-shard {
+  0% {
+    opacity: 1;
+    transform: translate(-50%, -50%) rotate(var(--boom-angle)) translateY(0) scaleY(.35);
+  }
+  100% {
+    opacity: 0;
+    transform: translate(-50%, -50%) rotate(var(--boom-angle))
+      translateY(calc(0px - var(--boom-distance))) scaleY(1.25);
+  }
+}
+
+.acquisition-card-object {
+  z-index: 12;
+  opacity: 0;
+  animation: acquisition-object-arrive .52s cubic-bezier(.12, .82, .22, 1) both;
+}
+
+.acquisition-card-object > canvas { image-rendering: pixelated; }
+
+.acquisition-card-fallback {
+  position: absolute;
+  inset: 12%;
+  width: 76%;
+  height: 76%;
+  object-fit: contain;
+}
+
+@keyframes acquisition-object-arrive {
+  0% { opacity: 0; transform: translateZ(-220px) scale(.22); filter: brightness(4) blur(2px); }
+  52% { opacity: 1; transform: translateZ(34px) scale(1.1); filter: brightness(1.3); }
+  100% { opacity: 1; transform: none; filter: none; }
+}
+
+.acquisition-footer {
+  z-index: 20;
+  display: grid;
+  min-height: 5.5rem;
+  place-items: end center;
+}
+
+.acquisition-layer-ledger {
+  display: flex;
+  max-width: min(48rem, 94vw);
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: .4rem 1rem;
+  font-family: 'JetBrains Mono', ui-monospace, monospace;
+  font-size: 9px;
+  letter-spacing: .12em;
+  text-transform: uppercase;
+  color: rgb(var(--faint));
+}
+
+.acquisition-layer-ledger span::before {
+  content: '';
+  display: inline-block;
+  width: 4px;
+  height: 4px;
+  margin-right: .45rem;
+  background: rgb(var(--element));
+  box-shadow: 0 0 7px rgb(var(--element) / .75);
+  transform: rotate(45deg) translateY(-1px);
+}
+
+.acquisition-finish {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+}
+
+@media (max-width: 639px) {
+  .acquisition-reveal {
+    grid-template-rows: minmax(5rem, auto) minmax(0, 1fr) minmax(6.5rem, auto);
+  }
+  .acquisition-copy { padding-inline: 2rem; }
+  .acquisition-copy h1 { font-size: clamp(2rem, 11vw, 3rem); }
+  .acquisition-copy > p:last-child { font-size: .75rem; }
+  .acquisition-finish { flex-direction: column; gap: .75rem; text-align: center; }
+  .acquisition-layer-ledger { max-width: 22rem; gap: .3rem .65rem; font-size: 8px; }
+}
+
+@media (max-height: 600px) {
+  .acquisition-reveal {
+    grid-template-rows: 4.2rem minmax(0, 1fr) 4.7rem;
+    padding-block: max(.65rem, env(safe-area-inset-top));
+  }
+  .acquisition-copy h1 { font-size: 1.85rem; }
+  .acquisition-copy > p:last-child { margin-top: .25rem; }
+  .acquisition-card-space { width: min(19rem, 48dvh, calc(100vw - 8rem)); }
+  .acquisition-finish { flex-direction: row; }
+  .acquisition-finish > p { display: none; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .acquisition-vortex,
+  .acquisition-portrait-morph,
+  .acquisition-creature { display: none; }
+  .acquisition-card-object { opacity: 1; transform: none; filter: none; }
+}

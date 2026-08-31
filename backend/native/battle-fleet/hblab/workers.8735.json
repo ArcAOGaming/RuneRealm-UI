@@ -1,0 +1,41 @@
+{
+  "node": "http://localhost:8735",
+  "gameProcess": "Lababababababababababababababababababababab",
+  "workers": [
+    {
+      "label": "lua",
+      "runtime": "lua@5.3a",
+      "processId": "igsQNzo7uDeXg-PHxU9hlxOgJaSnx4Ju89w97B-PIqQ",
+      "results": [
+        "results/output/data"
+      ]
+    },
+    {
+      "label": "rust",
+      "runtime": "rust-wasm@1",
+      "processId": "aimq0zpIJghGzdDaK8_DL5cOWedJVeduirDsUnJdfn8",
+      "image": "Mw149R2fTmamozhtPFep1lW7k2YhVA4Vi3RrSaZJVRU",
+      "results": [
+        "results/data"
+      ]
+    },
+    {
+      "label": "floor",
+      "runtime": "rust-wasm@1",
+      "processId": "JSeSh5IphfpBnbBt3RrmIpkRz6ZjYqud-j1k59phhyY",
+      "image": "OwEfPhUckCNXSw8L3lSgtio_NGo6MkS1CwfIeQd5Ipw",
+      "results": [
+        "results/data"
+      ]
+    },
+    {
+      "label": "bulk",
+      "runtime": "rust-wasm@1",
+      "processId": "o_aidzhq2oqHzacvCr8ooaFyAITShkOHnZc_E2ULalg",
+      "image": "UsCT6-Et7PD-NWq1uG5e2V3gCeIIuj5LyaSpV4wZcuY",
+      "results": [
+        "results/data"
+      ]
+    }
+  ]
+}

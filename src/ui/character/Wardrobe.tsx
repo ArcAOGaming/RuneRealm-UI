@@ -23,7 +23,7 @@
 import { useEffect, useRef, useState } from 'react';
 import {
   CATEGORIES, compositeOne, blitFrame, hsl, isNone, SPRITE_CROP,
-  type CategoryName, type Outfit,
+  type CategoryName, type Outfit, type Piece,
 } from '../../lib/sprites';
 import { Button, cx } from '../primitives';
 import { Swatches } from './Swatches';
@@ -56,7 +56,7 @@ export function Wardrobe({
   const piece = outfit[active];
   const worn = piece && !isNone(piece.style);
 
-  const set = (name: string, next: Partial<Outfit[string]>) =>
+  const set = (name: CategoryName, next: Partial<Piece>) =>
     onChange({ ...outfit, [name]: { ...outfit[name], ...next } });
 
   if (!category || !piece) return null;

@@ -16,7 +16,7 @@
 ---     table and "Earth" in asset filenames; only "rock" was ever stored on a
 ---     monster.
 ---
----   * Costs are item ids, not token process ids. Berries, gems, scrolls and
+---   * Costs are item ids, not token process ids. Berries, scrolls and
 ---     TRUNK were all legacynet processes and are gone. Items now live in the
 ---     player's record inside this process, so an activity is one signed
 ---     message instead of a token transfer plus a Credit-Notice round trip.
@@ -29,6 +29,10 @@ local C = {}
 --- assembled Lua bundle; keeping the source default closed makes tests and an
 --- ordinary release fail safe.
 C.PUBLIC_ACCESS = false
+
+--- Parked with companion asset export/import for the economy launch. Existing
+--- recipes remain readable; no normal route may create or modify one.
+C.CHARACTER_CUSTOMISER_ENABLED = false
 
 -- Elements ------------------------------------------------------------------
 
@@ -54,10 +58,20 @@ C.ITEMS = {
   rune             = { id = "rune",             name = "Rune",             section = "fuel"  },
   scroll           = { id = "scroll",           name = "Scroll",           section = "utility" },
   legendary_scroll = { id = "legendary_scroll", name = "Legendary Scroll", section = "utility" },
-  ruby             = { id = "ruby",             name = "Ruby",             section = "gem"   },
-  emerald          = { id = "emerald",          name = "Emerald",          section = "gem"   },
-  topaz            = { id = "topaz",            name = "Topaz",            section = "gem"   },
-  diamond          = { id = "diamond",          name = "Diamond",          section = "gem"   },
+}
+
+--- Gem and charm keys may still exist in an old player snapshot. They are left
+--- untouched so a future reintroduction can migrate them, but they are absent
+--- from the active catalog, admin controls, card satchel, and loot table.
+---
+--- Three berries may be eaten when an arena session begins. The deliberately
+--- strong first-pass bonus is folded into battle copies for all four fights.
+--- TODO(balance): try +3 or a shorter duration after real session data exists.
+C.BATTLE_BERRIES = {
+  fire_berry  = { item = "fire_berry",  stat = "attack",  amount = 5, cost = 3 },
+  rock_berry  = { item = "rock_berry",  stat = "defense", amount = 5, cost = 3 },
+  air_berry   = { item = "air_berry",   stat = "speed",   amount = 5, cost = 3 },
+  water_berry = { item = "water_berry", stat = "health",  amount = 5, cost = 3 },
 }
 
 -- Factions ------------------------------------------------------------------
@@ -221,6 +235,37 @@ C.MAX_HAPPINESS = 100
 --- Battles granted per paid session. Spending them is what a Rune buys.
 C.BATTLES_PER_SESSION = 4
 
+-- Hunt ----------------------------------------------------------------------
+--
+-- The catch curve is shown to the player before they commit. Keep every term
+-- published in the catalog so the percentage on screen is the percentage the
+-- Hunt process rolls, not a frontend approximation that can drift.
+C.HUNT = {
+  protocol = "runerealm-hunt/1",
+  levelRange = 5,
+  searchCooldown = 3000,
+  entry = {
+    berries = {
+      fire_berry = 5,
+      water_berry = 5,
+      air_berry = 5,
+      rock_berry = 5,
+    },
+  },
+  capture = {
+    minRuneBid = 1,
+    maxRuneBid = 5,
+    minChance = 5,
+    maxChance = 95,
+    baseChance = 15,
+    -- Equal-level odds for bids 1..5: 35%, 49%, 60%, 68%, 75%.
+    -- Five is likely, never certain; level advantage still moves the result.
+    runeScale = 120,
+    runeHalf = 5,
+    levelStep = 3,
+  },
+}
+
 -- Loot ----------------------------------------------------------------------
 -- `chance` is out of 1000 at rarity 1 and scales with the box tier. The
 -- original multiplied by 1.5^(rarity-1) with no ceiling, so a tier-5 box rolled
@@ -244,13 +289,7 @@ C.LOOT_TABLE = {
   { item = "water_berry",      chance = 800, minBox = 1, amount = 5 },
   { item = "rock_berry",       chance = 800, minBox = 1, amount = 5 },
   { item = "air_berry",        chance = 800, minBox = 1, amount = 5 },
-  { item = "rune",             chance = 250, minBox = 2, amount = 1 },
-  { item = "emerald",          chance = 500, minBox = 2, amount = 3 },
-  { item = "ruby",             chance = 400, minBox = 2, amount = 3 },
-  { item = "topaz",            chance = 300, minBox = 3, amount = 2 },
   { item = "scroll",           chance = 200, minBox = 3, amount = 1 },
-  { item = "diamond",          chance = 100, minBox = 4, amount = 1 },
-  { item = "legendary_scroll", chance =  50, minBox = 5, amount = 1 },
 }
 
 C.LOOT_CHANCE_CAP = 950
@@ -258,7 +297,7 @@ C.MAX_LOOT_RARITY = 5
 
 --- What a brand new player is handed so they can actually do something.
 C.STARTER_INVENTORY = {
-  air_berry = 5, water_berry = 5, fire_berry = 5, rock_berry = 5, rune = 3,
+  air_berry = 5, water_berry = 5, fire_berry = 5, rock_berry = 5,
 }
 
 C.STARTER_LOOTBOXES = { [1] = 3 }
@@ -287,11 +326,10 @@ C.DAILY = {
   -- Miss this much and the streak is gone. Two intervals: one to claim in, one
   -- of grace.
   breakAfter = 40 * 3600 * 1000,
-  runes = 1,
-  streakTiers = {
-    { streak = 10, runes = 3 },
-    { streak = 3,  runes = 2 },
-  },
+  -- Rune is allocated by EconomyState.policy.runeRewards. The old 1/2/3 per
+  -- wallet stipend multiplied global emission by wallet count and is disabled.
+  runes = 0,
+  streakTiers = {},
   lootboxRarity = 2,
   lootboxes = 1,
 }
@@ -314,6 +352,110 @@ end
 C.LEVEL_UP_POINTS = 10
 C.LEVEL_UP_MAX_PER_STAT = 5
 
+--- What a level-up costs, in Rune, for the level being ENTERED.
+---
+--- One quarter of the target level, rounded up: levels 1-4 cost 1, 5-8 cost 2,
+--- 9-12 cost 3, and so on. A sink that scales with progression rather than a
+--- flat fee, so it stays out of a new player's way — the first four levels cost
+--- what a single quest does — and only starts to bite once a player is deep
+--- enough to be earning steadily.
+---
+--- Integer division, not `math.ceil(level / 4)`: Luerl's `/` is float division
+--- and the result would be stored as 1.0 rather than 1, which is the defect
+--- CLAUDE.md warns about. `(level + 3) // 4` is exactly ceil for positive
+--- integers and never leaves the integer domain.
+function C.levelUpCost(level)
+  local target = math.tointeger(level) or 0
+  if target < 1 then target = 1 end
+  return (target + 3) // 4
+end
+
+-- One active companion and a collection --------------------------------------
+--
+-- A player raises exactly ONE active companion. Every other companion they own
+-- waits in the COLLECTION until it is chosen. The split keeps every game verb
+-- singular -- feed, play, quest, hunt, level and battle all mean "my
+-- companion" -- while captures and trades can still grow a real collection.
+--
+-- `monsters` remains the one-entry map used by older deployments and clients;
+-- changing its storage shape would make migrations needlessly destructive.
+-- The cap is therefore one, and `Monster.SetActive` atomically exchanges that
+-- entry with a collection entry.
+--
+-- Storing costs a rune and retrieving is free, deliberately. The charge is not
+-- revenue, it is a brake: a free round trip would let a player park a companion
+-- the instant a quest went badly and pull it back out with its timers reset.
+-- Making the outbound leg cost something and the inbound leg cost nothing means
+-- the collection is a place to keep things, not a mechanic to game.
+C.ROSTER = {
+  --- Exactly one companion is active. Everything else is collection.
+  max = 1,
+  --- Sending a companion to the collection. Free to bring one back.
+  storeCost = { item = "rune", amount = 1 },
+}
+
+-- The marketplace, in this process --------------------------------------------
+--
+-- Companion sales settle HERE rather than through a second contract, and that
+-- is not a preference: escrow has to live in the same process as the thing
+-- being escrowed. A separate index cannot take custody of a companion this
+-- process owns, so a listing moves the record into `Market` and a sale moves it
+-- out -- one process, one atomic step, no cross-process delivery to fail.
+--
+-- Prices are in IN-GAME runes, the inventory item, not the withdrawn token.
+-- A token-priced sale would need a credit notice from the token process, and
+-- that delivery path is not working on the current node (the game deducts and
+-- the token never mints; see Rune.Withdraw). In-game runes make a purchase a
+-- single deduction and credit inside one message, which cannot half-happen.
+C.MARKET = {
+  --- Both bounds are on the asking price, in runes.
+  minPrice = 1,
+  maxPrice = 1000000,
+  --- A listing is only ever created from the collection, never the roster.
+  --- Selling something that is mid-quest is not a state worth having.
+  fromCollectionOnly = true,
+}
+
+-- Gold economy --------------------------------------------------------------
+--
+-- These are contract defaults from ECONOMY_MARKETPLACE_PLAN.md. Open launch
+-- decisions remain disabled in the durable policy state created by
+-- economy.lua; putting the locked/default rails here keeps the deployed bundle,
+-- live-Luerl tests and browser catalog on one source of truth.
+C.ECONOMY = {
+  gold = {
+    launchSupply = 300000,
+    protocolCeiling = 20000000,
+    targetFloor = 300000,
+    stabilizationReserve = 180000,
+    perQualifiedPlayer = 1000,
+    normalWeeklyReleaseBps = 500,
+    contractWeeklyReleaseBps = 1000,
+    shopBurnBps = 2500,
+    burnAboveTargetBps = 11000,
+  },
+  orderbook = {
+    maxPerAccount = 20,
+    maxGlobal = 2000,
+    minValue = 10,
+    maxUnitPrice = 1000000,
+    maxQuantity = 1000000,
+    creationCost = 1,
+    feeBps = 200,
+    expiry = 30 * 24 * 3600 * 1000,
+    historyLimit = 500,
+  },
+  shop = {
+    accountWindow = 20 * 3600 * 1000,
+    policyEpoch = 7 * 24 * 3600 * 1000,
+    flowSupplyBps = 200,
+    policyDelay = 24 * 3600 * 1000,
+    anchorWeeklyBps = 500,
+  },
+  proceeds = { teamBps = 5000, runeBps = 3000, treasuryBps = 2000 },
+  amm = { maxSlippageBps = 100, maxWeeklyPoolBps = 500 },
+}
+
 -- Minting -------------------------------------------------------------------
 
 --- Pulling a companion out of the game as a tradable Arweave asset.
@@ -330,6 +472,24 @@ C.LEVEL_UP_MAX_PER_STAT = 5
 --- and the margin absorbs both a rise in the AR price and the occasional
 --- refunded failure.
 C.MINT = {
+  --- Pulling companions onto Arweave is OFF.
+  ---
+  --- Not removed: the queue, the worker, the deposit path and their tests all
+  --- still work, and this is the one line that turns them back on.
+  ---
+  --- It is off because the economics only make sense for a companion somebody
+  --- genuinely wants to own outside the game. A card costs about $0.006 to
+  --- mint, which is fine, but the FIRST time it moves -- a sale, a gift, or
+  --- coming home -- Arweave charges a new-account fee on the card's own
+  --- process address, currently about $0.47, once per card forever. That is
+  --- protocol (`ar_tx:get_tx_fee2`), it is not avoidable, and every asset on
+  --- the network pays it. Across a test run that mints and trades thousands of
+  --- companions it is the whole budget, for cards nobody keeps.
+  ---
+  --- So companions live in this process instead, where creating, trading,
+  --- giving and destroying one are all free and instant. Minting becomes an
+  --- export somebody chooses, not the way the game works.
+  enabled = false,
   cost = { item = "rune", amount = 10 },
   --- How long a queued job may sit before the worker is presumed dead and the
   --- player gets their runes back. Milliseconds.

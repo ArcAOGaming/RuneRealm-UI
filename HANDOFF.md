@@ -11,6 +11,12 @@ shape language, the hand-built icons, and what the four graphics renderers are
 each for. If you are writing story, quests, regions, enemies or public lore,
 [LORE.md](LORE.md) is the canon source.
 
+If you are touching Gold, item trading, the game shop, Rune economic policy,
+paid packs, or the marketplace process shape, read
+[ECONOMY_MARKETPLACE_PLAN.md](ECONOMY_MARKETPLACE_PLAN.md). It is the canonical
+next-build product plan and is deliberately separate from descriptions of what
+the current deployment already does.
+
 The landing page reveals only three core truths and puts the real companion
 cards first. The longer public telling is staged at `/lore`, but that route is
 deliberately absent from every navigation surface until the canon is ready.
@@ -196,9 +202,9 @@ transferable on a SEPARATE token process, joined to the game by one rule:
 game holds the mint, so supply can never exceed what players actually earned,
 and it starts at zero — nothing is pre-mined.
 
-The 168 restored players each start with **25 Rune held in game** (about eight
-days of the daily stipend, against one Rune per quest and one per four-battle
-arena session). That is an in-game balance, not minted supply.
+The 168 restored players each start with **25 Rune held in game**. The old
+per-wallet stipend is gone; new rewards come only from the configured fixed
+global epoch budget. This is an in-game balance, not minted supply.
 
 `Rune.Withdraw` deducts and then asks the token to mint. The order is chosen for
 which failure is survivable: if the mint never lands, the player is short until
@@ -381,9 +387,9 @@ game right up until two people play it at once.
     awarded — was worth about 1.09 Runes, against a session costing one Rune for
     four battles. Winning half your fights roughly doubled your Runes, and two
     players trading PvP wins (which paid tier-3 boxes) could farm indefinitely.
-    Runes are now a tier-2+ drop at a lower rate, both win types pay tier 1, and
-    the only faucet is a **daily stipend** keyed to the wallet and the clock, so
-    playing more cannot farm it.
+    Rune was removed from loot boxes entirely, both win types pay tier 1, and
+    issuance now comes only from a fixed global epoch budget with per-account
+    maturity/activity caps. Wallet count cannot enlarge it.
 
 19. **The published battle grew without bound** — about a kilobyte a round,
     carried on every message. The turn log is now trimmed to a window.
@@ -536,8 +542,9 @@ berries are worth double), play, quests, claiming, levelling with stat
 allocation, loot boxes, the satchel, arena sessions, bot battles, PvP challenge
 and accept, the leaderboard, and the owner tools.
 
-Plus a **daily stipend**, which is the only source of Runes that is not itself
-paid for in Runes.
+Plus the integrated Gold goods market, finite NPC desks, exact supply ledgers,
+Eternal Pass identity/recovery, and a globally bounded Rune reward policy. The
+open reward parameters remain visibly paused until approved.
 
 Verified four ways:
 
@@ -794,10 +801,10 @@ has published.
 - **PvP has no level bracket** and no rematch. The move deadline exists (three
   minutes, then the waiting player can play the round without the absent one),
   but a fight abandoned before anyone has moved still needs a manual forfeit.
-- **The daily stipend's numbers are a first guess.** 3 Runes and one uncommon
-  box per 20 hours, against a quest costing 1 and an arena session costing 1.
-  That is a sink, but nobody has played long enough to know whether it is the
-  right sink.
+- **The global Rune reward numbers remain open.** The per-wallet 1/2/3 stipend
+  is disabled. The admin page exposes the fixed epoch budget, maturity,
+  qualification, optional bond, per-account net cap, and Reward Reserve; none
+  activates until the launch values are approved.
 - **A fight in progress does not survive a redeploy.** Players do — see §4 —
   but `Battles` are process globals with no export, and restoring somebody into
   a battle that no longer exists would strand them, so anyone mid-fight comes
@@ -866,7 +873,22 @@ node backend/native/e2e.mjs burner-01             # one player, whole journey
 node backend/native/e2e.mjs --pvp burner-01 burner-02
 npm run recover:verify                            # the 168 recovered players,
                                                   # loaded and read back, free
+npm run probe:heap                                # Luerl tables left per
+                                                  # message, free
 ```
+
+`probe:heap` is the snapshot-size check. HyperBEAM checkpoints this process by
+`term_to_binary`-ing Luerl's whole table store, Luerl runs no collector of its
+own, and `collectgarbage("step")` is a no-op on that runtime — so a process that
+does not explicitly collect ships every transient table it has ever built to
+disk on every checkpoint. That is what a 282 MB snapshot of 320 KB of state was.
+`compute` now ends with a bare `collectgarbage("collect")`; the probe prints
+tables-allocated against tables-kept per message so the two can be told apart.
+
+The collect has to stay a bare statement at the end of `compute`. Inside a
+`pcall` frame, or inside an `ipairs` loop, it kills the Luerl VM outright —
+`HYPERBEAM.md` §4 has the reproduction. That is also why the Luerl suites are
+driven without `pcall` and index their message loops numerically.
 
 **Never point a test at a real player's wallet.** Burners live in `.burners/`,
 which is gitignored, and hold nothing.

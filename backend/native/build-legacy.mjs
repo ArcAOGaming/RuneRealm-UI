@@ -67,7 +67,7 @@ const BERRY_CAP = Number(arg('--berry-cap', '0')) || 0;
  * It lands as an IN-GAME balance, not as minted token supply: Rune is earned in
  * the game and only becomes circulating supply when somebody withdraws it, so
  * the token's supply stays at zero until a player asks for it. 25 is roughly
- * eight days of the daily stipend, against one Rune per quest and one per
+ * a historical reference balance, against one Rune per quest and one per
  * four-battle arena session — enough to actually play on return without being
  * a windfall.
  *

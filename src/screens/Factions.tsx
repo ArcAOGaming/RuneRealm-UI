@@ -19,8 +19,8 @@
  */import { lazy, Suspense, useMemo, useState } from 'react';
 import { useGame } from '../state/GameProvider';
 import * as api from '../lib/game';
-import { Faction, Element } from '../lib/types';
-import { Badge, Button, Panel, Skeleton, cx } from '../ui/primitives';
+import { Faction, Element, Monster } from '../lib/types';
+import { Badge, Button, Panel, Skeleton, Spinner, cx } from '../ui/primitives';
 import { Dialog } from '../ui/Dialog';
 import { ELEMENT_ICON, Check, Arrow } from '../ui/icons';
 import { article, ELEMENT_LABEL, ITEM_NAME, shortAddress } from '../lib/format';
@@ -32,11 +32,13 @@ import Ranks from './Ranks';
 // The hall is three.js and three.js is most of the bundle. It arrives after the
 // cards, which are the thing that actually carries the facts.
 const AltarHall = lazy(() => import('../ui/Altars'));
+const CompanionAcquisition = lazy(() => import('../ui/CompanionAcquisition'));
 import type { AltarInfo } from '../ui/Altars';
 
 export default function Factions() {
   const { factions, player, run, isPending } = useGame();
   const [confirming, setConfirming] = useState<Faction | null>(null);
+  const [acquired, setAcquired] = useState<Monster | null>(null);
   const navigate = useNavigate();
 
   const mine = player?.faction ?? null;
@@ -78,10 +80,16 @@ export default function Factions() {
   }, [factions, mine]);
 
   const join = async (faction: Faction) => {
-    const reply = await run('join', () => api.joinFaction(faction.name),
-      `You have sworn to the ${faction.name}.`);
+    const reply = await run('join', () => api.joinFaction(faction.name));
     setConfirming(null);
-    if (reply) navigate('/companion');
+    if (reply?.monster) {
+      setDetail(null);
+      setAcquired(reply.monster);
+    } else if (reply) {
+      // Compatibility with a process from before Faction.Join returned the
+      // adopted monster. The current process always takes the reveal path.
+      navigate('/companion');
+    }
   };
 
   return (
@@ -168,6 +176,28 @@ export default function Factions() {
           onCancel={() => setConfirming(null)}
           onConfirm={() => join(confirming)}
         />
+      )}
+
+      {acquired && (
+        <Suspense
+          fallback={(
+            <div
+              role="status"
+              data-element={acquired.elementType}
+              className="fixed inset-0 z-[70] grid place-items-center bg-void"
+            >
+              <Spinner className="h-8 w-8 text-element" />
+            </div>
+          )}
+        >
+          <CompanionAcquisition
+            monster={acquired}
+            onComplete={() => {
+              setAcquired(null);
+              navigate('/companion');
+            }}
+          />
+        </Suspense>
       )}
 
       <section id="ranks" className="scroll-mt-24 border-t border-rune/12 pt-12">
@@ -369,8 +399,9 @@ function ConfirmJoin({
         companion, and it will feed on {ITEM_NAME[faction.berry]}.
       </p>
         <p className="mt-3 text-[13px] text-faint">
-          Joining also hands you a starter pouch — berries, three Runes and three
-          loot boxes — so you can begin straight away.
+          Your companion arrives immediately. Rune is never created per wallet;
+          it comes from the fixed global reward policy or trade. Promised passes
+          grant access only and do not include economic starter items.
         </p>
       <div className="mt-5 flex justify-end gap-2">
         <Button variant="quiet" onClick={onCancel} disabled={busy}>Not yet</Button>

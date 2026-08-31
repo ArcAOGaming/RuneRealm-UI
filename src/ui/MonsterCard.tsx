@@ -44,6 +44,7 @@ export function StatusBadge({ monster }: { monster: Monster }) {
   const kind = monster.status.type;
   if (kind === 'Home') return <Badge tone="plain">At home</Badge>;
   if (kind === 'Battle') return <Badge tone="warn"><Sword className="h-3 w-3" />In the arena</Badge>;
+  if (kind === 'Hunt') return <Badge tone="element"><Clock className="h-3 w-3" />On the hunt</Badge>;
   return <Badge tone="element"><Clock className="h-3 w-3" />{kind === 'Play' ? 'Playing' : 'On a quest'}</Badge>;
 }
 

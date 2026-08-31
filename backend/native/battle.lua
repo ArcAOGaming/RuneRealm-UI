@@ -55,10 +55,28 @@ Battle.TUNING = {
   attackBase = 1,
   variance = 0.15,          -- +/- this fraction on every swing
 
+  --- Critical hits.
+  ---
+  --- The counterpart to a miss, and deliberately rarer than one: a miss is the
+  --- floor of a swing and this is its ceiling, so a round has an upside worth
+  --- watching as well as a downside. Rolled AFTER the hit check and only on
+  --- damaging moves — a heal cannot crit, and a swing that missed never got as
+  --- far as a damage number to multiply.
+  ---
+  --- Kept modest on purpose. At 1.6x a crit is a bad round for whoever takes
+  --- it, not a coin flip that decides the fight: the median fight is seven
+  --- rounds of roughly twelve swings, so about one swing in a fight lands as
+  --- one, and two in a row is rare rather than routine.
+  criticalChance = 0.09,
+  criticalMultiplier = 1.6,
+
   hpPerHealth = 12,         -- max HP = health stat * this
   shieldPerDefense = 4,     -- max shield = defense stat * this
   healPerPoint = 0.04,      -- one health point on a move = this share of max HP
-  shieldRegen = 20,         -- shield recovers maxShield/this each round
+  --- What a shield recovers at the end of a round in which its owner was NOT
+  --- hit, as a share of its cap. Take a single point of damage and you recover
+  --- nothing that round.
+  shieldRegenShare = 0.20,
 
   --- How many times each move can be used, as a multiple of its printed count.
   --- The printed counts total about eight uses across a four-move set, which a
@@ -86,6 +104,25 @@ Battle.TUNING = {
   --- rounds with no end in sight. The only escape was forfeiting the whole
   --- paid session.
   roundCap = 50,
+
+  --- How many turn entries survive the trim in `resolveRound`.
+  ---
+  --- This is a LATENCY number, not a gameplay one, and it was the single most
+  --- expensive value in the process. It used to be `roundCap * 2` — a hundred
+  --- entries, about 62 KB — against a median fight of seven rounds, so almost
+  --- every fight carried a log far larger than it would ever fill.
+  ---
+  --- The log is not merely stored: `Battle.view` deep-clones it and the result
+  --- is JSON-encoded into the reply AND published again under `battle`, on
+  --- every message. Measured on live Luerl with a 50-player fixture, dropping
+  --- 100 -> 10 took `Battle.Attack` from 1276 ms to 578 ms of CPU per message
+  --- and the published `battle` key from 61,980 B to 8,723 B. That second
+  --- number matters twice, because published-state size is also what drives
+  --- the node's per-slot marshalling cost.
+  ---
+  --- Ten still shows a player the recent exchange round by round, which is
+  --- what the log is for; what is dropped is the far past of a long fight.
+  turnLogKeep = 10,
 }
 
 local T = Battle.TUNING
@@ -93,8 +130,15 @@ local T = Battle.TUNING
 --- C is injected rather than required so the test harness can supply a stub.
 local C
 
+--- Every move in the game, by name, built on first use.
+---
+--- Move names are unique across the pools, which is what makes a name a
+--- sufficient key for a stored move -- see `Battle.compactMoves`.
+local MOVE_BY_NAME = nil
+
 function Battle.configure(constants)
   C = constants
+  MOVE_BY_NAME = nil
 end
 
 -- Helpers -------------------------------------------------------------------
@@ -107,10 +151,104 @@ local function clone(t)
 end
 Battle.clone = clone
 
+-- Stored moves --------------------------------------------------------------
+--
+-- A move is nine fields, and eight of them -- type, rarity, damage, attack,
+-- speed, defense, health, and the name itself -- are a verbatim copy of the
+-- entry in `C.MOVE_POOLS`. Only `count`, the uses remaining, ever differs from
+-- the definition.
+--
+-- Companions used to carry the whole thing. Half of every companion record was
+-- therefore a duplicate of a constant: 511 bytes of 1025, measured, multiplied
+-- by every companion in the process, sitting in the Lua heap that the node
+-- photographs on every slot.
+--
+-- So the store keeps `{ count = n }` keyed by name, and the definition is put
+-- back at the two doors where a move is actually needed: `Battle.combatant`,
+-- which builds the fighter a round is resolved against, and the view layer,
+-- which hands a companion to a client. Nothing between those doors reads a
+-- move's numbers.
+
+local function moveIndex()
+  if MOVE_BY_NAME then return MOVE_BY_NAME end
+  MOVE_BY_NAME = {}
+  for _, pool in pairs((C or {}).MOVE_POOLS or {}) do
+    for name, def in pairs(pool) do MOVE_BY_NAME[name] = def end
+  end
+  return MOVE_BY_NAME
+end
+
+--- The definition behind a move name, or nil if the pools do not know it.
+function Battle.moveDef(name) return moveIndex()[name] end
+
+--- One stored move, expanded into the shape everything else expects.
+function Battle.hydrateMove(name, stored)
+  local def = moveIndex()[name]
+  local out = def and clone(def) or {}
+  -- An unrecognised name keeps whatever was stored under it rather than
+  -- becoming an empty move: a pool renamed in a later build must not silently
+  -- disarm every companion that rolled from it.
+  if not def and type(stored) == "table" then out = clone(stored) end
+  out.name = name
+  local count = type(stored) == "table" and stored.count or nil
+  out.count = math.tointeger(tonumber(count)) or math.tointeger(tonumber(out.count)) or 0
+  return out
+end
+
+--- A whole moveset, expanded. Always a NEW table: callers mutate what they get.
+function Battle.hydrateMoves(moves)
+  local out = {}
+  for name, stored in pairs(moves or {}) do
+    out[name] = Battle.hydrateMove(name, stored)
+  end
+  return out
+end
+
+--- A whole moveset, reduced to what actually varies.
+---
+--- Accepts either shape, so it doubles as the migration: a record written by an
+--- older build arrives carrying full moves and is compacted on the way in.
+function Battle.compactMoves(moves)
+  local out = {}
+  for name, stored in pairs(moves or {}) do
+    if moveIndex()[name] then
+      local count = type(stored) == "table" and stored.count or nil
+      out[name] = { count = math.tointeger(tonumber(count)) or 0 }
+    else
+      out[name] = clone(stored)
+    end
+  end
+  return out
+end
+
+-- The isolated fleet uses this explicit 32-bit stream so Lua and Rust execute
+-- byte-for-byte reproducible combat without depending on Luerl/Erlang's host
+-- PRNG implementation. The monolith keeps its existing math.random stream
+-- unless a caller opts in with seedDeterministic.
+local RNG_STATE = nil
+function Battle.seedDeterministic(value)
+  local seed = math.tointeger(tonumber(value)) or 1
+  seed = seed & 0xffffffff
+  if seed == 0 then seed = 0x6d2b79f5 end
+  RNG_STATE = seed
+end
+
+local function nextDeterministic()
+  local x = RNG_STATE
+  x = (x ~ ((x << 13) & 0xffffffff)) & 0xffffffff
+  x = (x ~ (x >> 17)) & 0xffffffff
+  x = (x ~ ((x << 5) & 0xffffffff)) & 0xffffffff
+  RNG_STATE = x
+  return x
+end
+
 local function rand(low, high)
   low = math.tointeger(low) or 0
   high = math.tointeger(high) or low
   if high <= low then return low end
+  if RNG_STATE ~= nil then
+    return low + (nextDeterministic() % (high - low + 1))
+  end
   return math.random(low, high)
 end
 Battle.rand = rand
@@ -153,7 +291,11 @@ function Battle.combatant(monster, side, address)
   m.shield = m.maxShield
   -- Base stats are kept so the client can show how far a buff has drifted.
   m.baseAttack, m.baseDefense, m.baseSpeed = m.attack, m.defense, m.speed
-  m.moves = m.moves or {}
+  -- The fighter gets the FULL moves, rebuilt from the pools. This is the door
+  -- combat comes through -- `act` reads damage, type and rarity off what is
+  -- here -- and it is a copy, which is what keeps a fight from draining the
+  -- pet's own counts.
+  m.moves = Battle.hydrateMoves(monster.moves)
   for name, move in pairs(m.moves) do
     move.name = name
     move.count = math.max(1, (math.tointeger(move.count) or 1) * T.moveUses)
@@ -194,11 +336,17 @@ end
 --- healing when it is itself hurt, so bot fights are not pure coin flips.
 function Battle.chooseNpcMove(npc, opponent)
   local available = {}
+  local availableNames = {}
   for name, move in pairs(npc.moves or {}) do
     if (math.tointeger(move.count) or 0) > 0 then
-      move.name = name
-      available[#available + 1] = move
+      availableNames[#availableNames + 1] = name
     end
+  end
+  table.sort(availableNames)
+  for _, name in ipairs(availableNames) do
+    local move = npc.moves[name]
+    move.name = name
+    available[#available + 1] = move
   end
   if #available == 0 then return Battle.struggle(npc) end
 
@@ -281,6 +429,7 @@ local function act(attacker, defender, move)
     moveType = move.type,
     moveRarity = move.rarity or 0,
     missed = false,
+    critical = false,
     shieldDamage = 0,
     healthDamage = 0,
     statsChanged = {},
@@ -302,7 +451,12 @@ local function act(attacker, defender, move)
     -- at level 20. Variance is a flat percentage band for the same reason.
     local raw = move.damage * (T.attackBase + (attacker.attack or 0))
     local swing = 1.0 + (rand(0, 200) - 100) / 100 * T.variance
-    local damage = math.max(1, math.floor(raw * mult * swing))
+    -- The crit roll is its own roll, taken after the swing is known to land.
+    -- Folding it into `variance` would have made every swing slightly bigger
+    -- instead of one swing in eleven much bigger, which is the whole point.
+    entry.critical = rand(1, 100) <= math.floor(T.criticalChance * 100)
+    local crit = entry.critical and T.criticalMultiplier or 1.0
+    local damage = math.max(1, math.floor(raw * mult * swing * crit))
     entry.shieldDamage, entry.healthDamage = applyDamage(defender, damage)
     entry.superEffective = mult > 1.0
     entry.notEffective = mult < 1.0
@@ -379,17 +533,27 @@ function Battle.resolveRound(battle, challengerMove, accepterMove)
     battle.turns[#battle.turns + 1] = e
   end
 
-  -- Shields recover a fraction of their cap each round. Everyone gets this;
-  -- the original withheld it from anyone who had ever struggled.
+  -- Shields recover only for a fighter that came through the round untouched.
   --
-  -- The regen is capped BELOW what a bare struggle removes. Otherwise two
-  -- defensive companions regenerate faster than either can chip, and the fight
-  -- is arithmetically unwinnable — which is exactly what happened.
-  local struggleFloor = T.struggleDamage * (T.attackBase + 1)
+  -- "Untouched" means no blow LANDED on them: a miss is not a hit, and neither
+  -- is a move that dealt nothing. Whoever took so much as a point recovers
+  -- nothing that round, which is what stops this from healing the fighter being
+  -- beaten on, and what keeps two defensive companions from regenerating past
+  -- each other into a fight that cannot end.
+  --
+  -- That stalemate is why the old unconditional trickle had to be capped below
+  -- a struggle's damage. Making the regen conditional removes the stalemate at
+  -- the source, so the number itself no longer has to be tiny to be safe.
+  local wasHit = { challenger = false, accepter = false }
+  for _, e in ipairs(entries) do
+    if not e.missed and (e.shieldDamage + e.healthDamage) > 0 then
+      wasHit[e.attacker == "challenger" and "accepter" or "challenger"] = true
+    end
+  end
+
   for _, m in ipairs({ a, b }) do
-    if m.healthPoints > 0 then
-      local regen = math.min(math.ceil(m.maxShield / T.shieldRegen),
-                             math.max(0, struggleFloor - 1))
+    if m.healthPoints > 0 and not wasHit[m.side] then
+      local regen = math.ceil(m.maxShield * T.shieldRegenShare)
       m.shield = math.min(m.maxShield, m.shield + regen)
     end
   end
@@ -412,7 +576,8 @@ function Battle.resolveRound(battle, challengerMove, accepterMove)
   -- The log is published on every message and grows about a kilobyte a round,
   -- so only the recent history is kept. The full fight is still visible round
   -- by round as it happens; what is dropped is the far past of a long one.
-  local keep = T.roundCap * 2
+  -- See `turnLogKeep`: this bound is why an attack costs what it costs.
+  local keep = T.turnLogKeep
   if #battle.turns > keep then
     local trimmed = {}
     for i = #battle.turns - keep + 1, #battle.turns do
@@ -541,7 +706,9 @@ function Battle.rollMoves(element)
     chosen[pick].name = pick
   end
 
-  return chosen
+  -- Rolled whole, because the roll itself weighs rarity and damage, and stored
+  -- compact: from here on only the uses remaining are worth keeping.
+  return Battle.compactMoves(chosen)
 end
 
 --- A battle the client can render. `id` is supplied by the caller so it can be

@@ -104,19 +104,19 @@ function sweep(base, req)
     for _, hp in ipairs({ 8, 12, 16, 20 }) do
       for _, sh in ipairs({ 0, 3, 6 }) do
         for _, ab in ipairs({ 1, 2, 3 }) do
-          for _, regen in ipairs({ 10, 20 }) do
+          for _, regen in ipairs({ 0.1, 0.2, 0.35 }) do
             for _, uses in ipairs({ 2, 3, 5 }) do
               Battle.TUNING.hpPerHealth = hp
               Battle.TUNING.shieldPerDefense = sh
               Battle.TUNING.attackBase = ab
-              Battle.TUNING.shieldRegen = regen
+              Battle.TUNING.shieldRegenShare = regen
               Battle.TUNING.moveUses = uses
               local rows, s = profile()
               tried = tried + 1
               if s < bestScore then
                 bestScore = s
                 best = { hpPerHealth = hp, shieldPerDefense = sh, attackBase = ab,
-                         shieldRegen = regen, moveUses = uses, rows = rows }
+                         shieldRegenShare = regen, moveUses = uses, rows = rows }
               end
             end
           end
@@ -125,9 +125,9 @@ function sweep(base, req)
     end
     out[#out + 1] = string.format("swept %d combinations", tried)
     out[#out + 1] = string.format(
-      "best: hpPerHealth=%s shieldPerDefense=%s attackBase=%s shieldRegen=%s moveUses=%s  (score %.1f)",
+      "best: hpPerHealth=%s shieldPerDefense=%s attackBase=%s shieldRegenShare=%s moveUses=%s  (score %.1f)",
       best.hpPerHealth, best.shieldPerDefense, best.attackBase,
-      best.shieldRegen, best.moveUses, bestScore)
+      best.shieldRegenShare, best.moveUses, bestScore)
     out[#out + 1] = ""
     render(best.rows, out)
     return table.concat(out, "\n")
@@ -138,9 +138,9 @@ function balance(base, req)
   local out = {}
   local rows, s = profile()
   out[#out + 1] = string.format(
-    "tuning: hpPerHealth=%s shieldPerDefense=%s attackBase=%s shieldRegen=%s healPerPoint=%s",
+    "tuning: hpPerHealth=%s shieldPerDefense=%s attackBase=%s shieldRegenShare=%s healPerPoint=%s",
     Battle.TUNING.hpPerHealth, Battle.TUNING.shieldPerDefense,
-    Battle.TUNING.attackBase, Battle.TUNING.shieldRegen, Battle.TUNING.healPerPoint)
+    Battle.TUNING.attackBase, Battle.TUNING.shieldRegenShare, Battle.TUNING.healPerPoint)
   out[#out + 1] = string.format("score: %.1f  (lower is better; 0 would be a 7-round median everywhere)", s)
   out[#out + 1] = ""
   render(rows, out)

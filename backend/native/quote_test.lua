@@ -59,7 +59,16 @@ local function run(base, req)
   return table.concat(out, "\n")
 end
 
+--- Driven from the outermost Lua frame, NOT through `pcall`.
+---
+--- `compute` ends with `collectgarbage("collect")`, and on Luerl a collect
+--- inside a pcall frame corrupts the state pcall restores on return and kills
+--- the VM (full account at the end of `compute` in game.lua). Production calls
+--- `compute` from Erlang with no Lua pcall on the stack, so the suite has to
+--- match that or it tests a shape nobody deploys.
+---
+--- The cost is that a runtime error comes back as a bare `500 Oops` naming
+--- nothing. It still fails the run: an HTML error page carries no "0 failed".
 function quotetest(base, req)
-  local ok, res = pcall(run, base, req)
-  return ok and res or ("ERROR: " .. tostring(res))
+  return run(base, req)
 end

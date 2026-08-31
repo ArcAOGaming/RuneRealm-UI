@@ -31,3 +31,14 @@ backend/native/mint-ledger.json
 # Contact sheets from tools/gen-icons.py --sheet. Eyeballing only; the real
 # icons land in public/.
 .icons/
+
+# Fuzz run artefacts
+.fuzz/
+
+# Fixture for exercising the incremental Permaweb uploader
+.test-site/
+
+# Load/latency ladder artefacts and local run logs
+.ladder/
+.devserver.log
+.redeploy.log

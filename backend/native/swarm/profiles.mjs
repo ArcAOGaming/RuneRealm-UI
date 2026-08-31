@@ -12,46 +12,60 @@ export const FACTIONS = [
   'Stone Titans',
 ];
 
+/**
+ * Every reversible player capability selected by the routine dispatcher.
+ *
+ * Keep this list explicit: `swarm.test.mjs` requires every role to make a
+ * deliberate choice for every adapter, including a weight of zero. A new
+ * action therefore cannot exist in the worker while silently disappearing
+ * from some (or all) of the fifty-wallet fleet.
+ */
+export const ROUTINE_ACTIONS = Object.freeze([
+  'daily', 'quest', 'loot', 'feed', 'play', 'hunt', 'bot',
+  'store', 'retrieve', 'swap', 'list', 'buy', 'cancel', 'give',
+  'goods_make', 'goods_take', 'goods_cancel', 'shop_trade', 'arbitrage', 'probe',
+]);
+
 export const ROLE_DEFINITIONS = Object.freeze({
   quester: {
     label: 'Quest runner',
-    weights: { daily: 4, quest: 12, loot: 3, feed: 5, play: 1, bot: 1 },
+    weights: { daily: 4, quest: 12, loot: 3, feed: 5, play: 1, hunt: 3, bot: 1, store: 3, retrieve: 3, swap: 2, list: 2, buy: 2, cancel: 1, give: 1, goods_make: 3, goods_take: 5, goods_cancel: 2, shop_trade: 8, arbitrage: 3, probe: 4 },
     statPlan: { attack: 2, defense: 2, speed: 2, health: 4 },
     botDifficulty: 0.8,
   },
   caretaker: {
     label: 'Companion caretaker',
-    weights: { daily: 4, quest: 1, loot: 3, feed: 12, play: 10, bot: 0 },
+    weights: { daily: 4, quest: 1, loot: 3, feed: 12, play: 10, hunt: 2, bot: 0, store: 4, retrieve: 5, swap: 5, list: 1, buy: 2, cancel: 1, give: 1, goods_make: 2, goods_take: 6, goods_cancel: 2, shop_trade: 10, arbitrage: 2, probe: 4 },
     statPlan: { attack: 2, defense: 2, speed: 1, health: 5 },
     botDifficulty: 0.7,
   },
   arena: {
     label: 'Bot arena fighter',
-    weights: { daily: 4, quest: 0, loot: 3, feed: 5, play: 1, bot: 14 },
+    weights: { daily: 4, quest: 0, loot: 3, feed: 5, play: 1, hunt: 4, bot: 14, store: 2, retrieve: 3, swap: 4, list: 1, buy: 2, cancel: 1, give: 1, goods_make: 2, goods_take: 8, goods_cancel: 2, shop_trade: 8, arbitrage: 4, probe: 4 },
     statPlan: { attack: 5, defense: 1, speed: 2, health: 2 },
     botDifficulty: 1.2,
   },
   duelist: {
     label: 'PvP duelist',
-    weights: { daily: 5, quest: 0, loot: 2, feed: 6, play: 2, bot: 0 },
+    weights: { daily: 5, quest: 0, loot: 2, feed: 6, play: 2, hunt: 0, bot: 0, store: 2, retrieve: 2, swap: 3, list: 1, buy: 1, cancel: 1, give: 1, goods_make: 2, goods_take: 7, goods_cancel: 2, shop_trade: 8, arbitrage: 4, probe: 3 },
     statPlan: { attack: 4, defense: 2, speed: 3, health: 1 },
     botDifficulty: 1,
   },
   collector: {
     label: 'Loot collector',
-    weights: { daily: 12, quest: 3, loot: 14, feed: 5, play: 2, bot: 1 },
+    weights: { daily: 12, quest: 3, loot: 14, feed: 5, play: 2, hunt: 3, bot: 1, store: 5, retrieve: 4, swap: 2, list: 8, buy: 10, cancel: 3, give: 3, goods_make: 12, goods_take: 10, goods_cancel: 4, shop_trade: 12, arbitrage: 8, probe: 5 },
     statPlan: { attack: 2, defense: 3, speed: 2, health: 3 },
     botDifficulty: 0.8,
   },
   progression: {
     label: 'Progression generalist',
-    weights: { daily: 5, quest: 6, loot: 5, feed: 5, play: 4, bot: 6 },
+    weights: { daily: 5, quest: 6, loot: 5, feed: 5, play: 4, hunt: 3, bot: 6, store: 4, retrieve: 4, swap: 4, list: 4, buy: 4, cancel: 2, give: 2, goods_make: 6, goods_take: 6, goods_cancel: 3, shop_trade: 7, arbitrage: 5, probe: 5 },
     statPlan: { attack: 3, defense: 2, speed: 3, health: 2 },
     botDifficulty: 1,
   },
   chaos: {
     label: 'Randomized explorer',
-    weights: { daily: 5, quest: 5, loot: 5, feed: 5, play: 5, bot: 5 },
+    weights: { daily: 5, quest: 5, loot: 5, feed: 5, play: 5, hunt: 3, bot: 5, store: 5, retrieve: 5, swap: 5, list: 5, buy: 5, cancel: 5, give: 5, goods_make: 8, goods_take: 8, goods_cancel: 6, shop_trade: 8, arbitrage: 8, probe: 12 },
     statPlan: { attack: 2, defense: 3, speed: 3, health: 2 },
     botDifficulty: 0.5,
   },
@@ -101,7 +115,7 @@ const ASSIGNMENTS = [
   ['Chestwatch', 'collector', 'Sky Nomads', 'Claims dailies and opens every available chest for loot coverage.'],
   ['Gemledger', 'collector', 'Stone Titans', 'Builds a varied inventory and records randomized chest rewards.'],
   ['Berrybook', 'collector', 'Aqua Guardians', 'Turns loot into feeding while tracking water-berry consumption.'],
-  ['Runecounter', 'collector', 'Inferno Blades', 'Exercises the Rune faucet and spending paths without withdrawal.'],
+  ['Runecounter', 'collector', 'Inferno Blades', 'Measures globally bounded Rune spending and Gold/Rune trading without withdrawal.'],
   ['Satchel', 'collector', 'Stone Titans', 'Keeps inventory, lootbox rarity, and reward serialization busy.'],
 
   ['Wayfarer', 'progression', 'Sky Nomads', 'Mixes quests, care, loot, bot battles, and balanced level-ups.'],
