@@ -149,7 +149,6 @@ export function createMonolith(
 
   const reduced = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
 
-  renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
   // The page shows through: the aether is painted behind this canvas, and a
   // black rectangle over it is exactly what the old PNG logo was.
   renderer.setClearColor(0x000000, 0);
@@ -176,7 +175,9 @@ export function createMonolith(
   // A room environment rather than a shipped HDRI: it costs nothing, and the
   // gold inlay needs something to reflect or it reads as flat paint.
   const pmrem = new PMREMGenerator(renderer);
-  const env = pmrem.fromScene(new RoomEnvironment(), 0.06);
+  // 0.06 asks PMREM for more blur samples than Three.js supports and emits a
+  // warning on every StrictMode mount. 0.04 stays within its 20-sample limit.
+  const env = pmrem.fromScene(new RoomEnvironment(), 0.04);
   scene.environment = env.texture;
   scene.environmentIntensity = 0.32;
 
@@ -398,13 +399,19 @@ export function createMonolith(
   const size = () => {
     const w = Math.max(1, canvas.clientWidth);
     const h = Math.max(1, canvas.clientHeight);
+    // The hero seal is intentionally sharper than ordinary scene furniture.
+    // Adaptive supersampling avoids the blocky 1x result while keeping the
+    // small dedicated canvas comfortably inside a three-million-pixel budget.
+    const desiredRatio = Math.min((window.devicePixelRatio || 1) * 1.5, 2.5);
+    const budgetRatio = Math.sqrt(3_000_000 / (w * h));
+    renderer.setPixelRatio(Math.max(1, Math.min(desiredRatio, budgetRatio)));
     renderer.setSize(w, h, false);
     camera.aspect = w / h;
     // The slab has to survive a phone: pull the camera back as the box
     // narrows so the mark never crops, which is what a fixed FOV would do.
     camera.position.z = 4.4 * Math.max(1, 1.15 / camera.aspect);
     camera.updateProjectionMatrix();
-    moteMat.uniforms.uScale.value = Math.min(2, window.devicePixelRatio || 1);
+    moteMat.uniforms.uScale.value = Math.min(2, renderer.getPixelRatio());
   };
   const observer = new ResizeObserver(size);
   observer.observe(canvas);

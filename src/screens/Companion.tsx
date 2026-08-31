@@ -8,15 +8,17 @@
  * on a Credit-Notice.
  */
 import { lazy, Suspense, useEffect, useLayoutEffect, useRef, useState } from 'react';
-import { Link, Navigate } from 'react-router-dom';
+import { Link, Navigate, useNavigate } from 'react-router-dom';
 import { useGame } from '../state/GameProvider';
 import * as api from '../lib/game';
-import { ItemId, Monster, Player } from '../lib/types';
+import {
+  ActivityReceipt, BerryItemId, ItemId, levelUpCost, Monster, Player,
+} from '../lib/types';
 import {
   Bar, Button, Panel, SectionTitle, Skeleton, Spinner, cx,
 } from '../ui/primitives';
 import {
-  Arrow, Berry, Bolt, Clock, Gift, GLYPH_PATH, Heart, Map, Rune, Shield, Sparkle, Sword,
+  Arrow, Berry, Bolt, Clock, Gift, GLYPH_PATH, Heart, Map, Rune, Shield, Sparkle, Sword, Users,
 } from '../ui/icons';
 import {
   BERRY_FOR, countdown, ELEMENT_LABEL, ITEM_NAME,
@@ -27,15 +29,29 @@ import { Sigil } from '../ui/Sigil';
 import { Room } from '../ui/Room';
 import { ArenaPeek } from '../ui/ArenaPeek';
 import { SatchelDrawer } from '../ui/Satchel';
-import { MintButton, MintPanel } from '../ui/MintPanel';
 // three.js, so it arrives when somebody actually picks the card up.
 const CardViewer = lazy(() => import('../ui/CardViewer'));
+const HuntOffering = lazy(() => import('../ui/HuntOffering'));
 import { ITEM_ART, portrait } from '../ui/art';
 import { CardPreview } from '../ui/CardPreview';
 import type { ActivityRunes, RuneState } from '../gfx/activityRunes';
+import { HUNT_PROCESS } from '../lib/hyperbeam';
 
 export default function Companion() {
   const { player, loadingPlayer, address } = useGame();
+  const [activityReceipt, setActivityReceipt] = useState<ActivityReceipt>();
+
+  // A claim receipt is a hand-off to the ceremony, not durable player state.
+  // Let the animation finish, then forget it so remounting the room after an
+  // unrelated arena visit cannot celebrate the old reward again.
+  useEffect(() => {
+    if (!activityReceipt) return undefined;
+    const id = activityReceipt.id;
+    const timer = window.setTimeout(() => {
+      setActivityReceipt((current) => current?.id === id ? undefined : current);
+    }, 6000);
+    return () => window.clearTimeout(timer);
+  }, [activityReceipt]);
 
   if (loadingPlayer && !player) {
     return (
@@ -47,17 +63,18 @@ export default function Companion() {
   }
   if (!player?.unlocked) return <Navigate to="/" replace />;
   if (!player.faction) return <Navigate to="/factions" replace />;
+  if (player.hunt && player.monster?.status.type === 'Hunt') return <Navigate to="/hunt" replace />;
 
-  // A minted companion leaves the game, so an empty slot is no longer the same
-  // thing as a new player. Adoption still comes first, but the vault has to
-  // stay reachable — otherwise pulling a companion out would hide the asset
-  // that proves you own it.
+  // An empty active slot is no longer the same thing as a new player, and it
+  // has stopped being one twice over: a minted companion leaves the game, and
+  // a sold or stored one leaves the roster. `adopted` is the only thing that
+  // says whether this account is at the start of the flow — what it happens to
+  // be holding right now does not, because a player can return to holding
+  // nothing on purpose.
   if (!player.monster) {
-    const holding = Boolean(player.mint) || Object.keys(player.assets ?? {}).length > 0;
     return (
       <div className="animate-rise space-y-4">
-        <Adopt />
-        {holding && <div className="mx-auto max-w-md"><MintPanel player={player} /></div>}
+        {player.adopted ? <NoActiveCompanion player={player} /> : <Adopt />}
       </div>
     );
   }
@@ -65,8 +82,6 @@ export default function Companion() {
   // The vault is only worth a panel once there is something in it. An empty
   // "Nothing minted yet" box sat under the companion on every screen of every
   // player who had never minted, which is most of them.
-  const minted = Object.keys(player.assets ?? {}).length > 0;
-
   return (
     /*
       A page that fits.
@@ -79,7 +94,11 @@ export default function Companion() {
       follows from that, rather than the card being drawn at column width and
       the page growing to hold it.
     */
-    <div className="companion-screen animate-rise flex min-h-0 flex-1 flex-col">
+    <div className="companion-screen animate-rise flex min-h-0 flex-1 flex-col gap-3">
+      {/* Faction, adoption, character — and this is the third. It only appears
+          for an account that has never published a sprite, and it takes a row
+          rather than a modal because it is an offer, not a step being demanded
+          before the screen can be used. */}
       <div className="companion-layout grid min-h-0 flex-1 gap-3 lg:grid-cols-[minmax(0,1.15fr)_minmax(0,1fr)]">
         {/* The room is aspect-locked to its own plate and draws at a whole-number
             zoom, so its height follows its width and it is not a thing that can
@@ -98,24 +117,24 @@ export default function Companion() {
             {player.monster.status.type === 'Battle' && player.battle ? (
               <ArenaPeek battle={player.battle} address={address} />
             ) : (
-              <Room monster={player.monster} />
+              <Room
+                monster={player.monster}
+                playerOutfit={player.outfit}
+                playerSpriteTxId={player.spriteTxId}
+                activityReceipt={activityReceipt}
+              />
             )}
             <div className="pointer-events-none absolute right-3 top-3">
               <StatusBadge monster={player.monster} />
             </div>
           </div>
-          <Activities />
+          <Activities onActivityClaim={setActivityReceipt} />
         </div>
         <div className="companion-card-column flex min-h-0 flex-col gap-3">
           <CompanionCard monster={player.monster} player={player} />
           {/* Capped and scrolled inside itself. The vault is a list that grows
               with every mint, and left free it would take the height off the
               card — which is the thing the page is for. */}
-          {minted && (
-            <div className="max-h-[34%] shrink-0 overflow-y-auto">
-              <MintPanel player={player} />
-            </div>
-          )}
         </div>
       </div>
     </div>
@@ -146,6 +165,11 @@ function Adopt() {
           random spread of ten stat points. Adopting also hands you three loot
           boxes.
         </p>
+        <p className="mx-auto mt-2 max-w-sm text-[12px] leading-relaxed text-faint">
+          This is the one companion the realm gives you. Every other one is
+          bought, traded for, or won — so if you part with this one, you replace
+          it at the market rather than being handed another.
+        </p>
         <Button
           className="mt-6" size="lg" variant="primary"
           busy={isPending('adopt')}
@@ -158,10 +182,86 @@ function Adopt() {
   );
 }
 
+/**
+ * Adopted, but nothing active right now.
+ *
+ * Stored, sold, given away or minted out — from this screen's point of view
+ * they are the same situation and the wrong answer to all of them is the Adopt
+ * panel, which would offer a button the process is going to refuse. What the
+ * player needs is the way back to a companion they already own, or the market.
+ */
+function NoActiveCompanion({ player }: { player: Player }) {
+  const stored = Object.values(player.collection ?? {});
+  const { run, isPending } = useGame();
+
+  return (
+    <div className="mx-auto max-w-lg animate-rise">
+      <Panel className="p-8 text-center" glow>
+        <h1 className="text-xl font-semibold">
+          {stored.length ? 'Your companions are in storage' : 'You have no companion'}
+        </h1>
+        {stored.length ? (
+          <>
+            <p className="mx-auto mt-2 max-w-sm text-sm leading-relaxed text-muted">
+              {stored.length === 1
+                ? 'One companion is put away.'
+                : `${stored.length} companions are put away.`}{' '}
+              Choose which one should become your active companion.
+            </p>
+            <div className="mt-6 flex flex-wrap justify-center gap-2">
+              <Link to="/collection"><Button variant="ghost" icon={<Users className="h-4 w-4" />}>Open collection</Button></Link>
+              {stored.slice(0, 3).map((monster) => (
+                <Button
+                  key={monster.id} variant="primary"
+                  busy={isPending(`retrieve:${monster.id}`)}
+                  onClick={() => run(
+                    `retrieve:${monster.id}`,
+                    () => api.retrieveMonster(monster.id),
+                    `${monster.name} is home.`,
+                  )}
+                >
+                  Choose {monster.name}
+                </Button>
+              ))}
+            </div>
+          </>
+        ) : (
+          <>
+            <p className="mx-auto mt-2 max-w-sm text-sm leading-relaxed text-muted">
+              You have already used the one adoption this account gets. Every
+              companion after that changes hands rather than being created, so
+              the market is where the next one comes from.
+            </p>
+            <Link to="/market" className="mt-6 inline-block">
+              <Button size="lg" variant="primary">Go to the market</Button>
+            </Link>
+          </>
+        )}
+      </Panel>
+    </div>
+  );
+}
+
+/**
+ * The last step of setting up an account, and the only optional one.
+ *
+ * Faction, then adoption, then this — but a character is cosmetic and costs an
+ * upload, so it is offered rather than demanded and it stays offered. Dismissal
+ * is remembered per wallet in this browser only: it is a nudge, not a fact
+ * about the account, and there is no reason to spend a signed write recording
+ * that somebody said "later".
+ */
 // The card ------------------------------------------------------------------
 
 function CompanionCard({ monster, player }: { monster: Monster; player: Player }) {
+  const { catalog } = useGame();
+  // Priced from the process, never from arithmetic inlined here — see the note
+  // on `levelUpCost`. A deployment that predates the charge returns 0, and the
+  // button then behaves exactly as it used to.
+  const levelPrice = levelUpCost(catalog, monster.level + 1);
+  const canAfford = (player.inventory.rune ?? 0) >= levelPrice;
   const canLevel = monster.exp >= monster.nextLevelExp;
+  const ownedCount = Object.keys(player.collection ?? {}).length + 1;
   const [allocating, setAllocating] = useState(false);
   const [holding, setHolding] = useState(false);
 
@@ -229,13 +329,32 @@ function CompanionCard({ monster, player }: { monster: Monster; player: Player }
           its own panel with a second copy of the card above it — which is the
           card that is already on this screen at full size. */}
       <div className="relative mt-3 flex shrink-0 flex-wrap items-center gap-2">
+        <Link to="/collection" className="inline-flex">
+          <Button variant="ghost" size="sm" icon={<Users className="h-4 w-4" />}>
+            Collection
+            <span className="ml-1.5 font-mono text-[10px] opacity-70">
+              {ownedCount}
+            </span>
+          </Button>
+        </Link>
         {canLevel && (
           <Button variant="primary" size="sm" onClick={() => setAllocating(true)}
+                  disabled={!canAfford}
+                  title={canAfford ? undefined
+                    : `Levelling to ${monster.level + 1} costs ${levelPrice} Rune; `
+                      + `you hold ${player.inventory.rune ?? 0}`}
                   icon={<Sparkle className="h-4 w-4" />}>
             Level up to {monster.level + 1}
+            {/* The price sits on the button because it is deducted the moment
+                it is pressed. A cost discovered only in the refusal is how a
+                player loses a fight they thought they had already won. */}
+            {levelPrice > 0 && (
+              <span className="ml-1.5 font-mono text-[0.85em] opacity-70">
+                {levelPrice}◈
+              </span>
+            )}
           </Button>
         )}
-        <MintButton player={player} className="h-8 px-3 text-[13px]" />
         {/* The plain card, as an object. The extended card above is the
             dashboard; this is the thing that gets signed and traded, and it
             is worth being able to pick it up and look at the back of it. */}
@@ -248,13 +367,6 @@ function CompanionCard({ monster, player }: { monster: Monster; player: Player }
             owner has any reason to open from here. It used to sit on a line of
             its own above the whole layout, which cost the card thirty pixels
             of height for one link. */}
-        <Link
-          to="/character"
-          className="ml-auto inline-flex h-11 items-center gap-1.5 rounded-[3px] px-2 text-[11px] text-faint transition-colors hover:text-muted lg:h-8"
-        >
-          <Sparkle className="h-3 w-3" />
-          Edit character
-        </Link>
       </div>
 
       <div className="relative mt-3 flex shrink-0 flex-wrap items-center gap-x-4 gap-y-1 border-t border-rune/12 pt-3 text-[13px] text-faint">
@@ -283,6 +395,7 @@ function CompanionCard({ monster, player }: { monster: Monster; player: Player }
           <CardViewer monster={monster} onClose={() => setHolding(false)} />
         </Suspense>
       )}
+
     </Panel>
   );
 }
@@ -291,7 +404,7 @@ function CompanionCard({ monster, player }: { monster: Monster; player: Player }
 
 
 /**
- * The three tokens, mounted over the rows.
+ * The four tokens, mounted over the rows.
  *
  * three.js is a third of the bundle and the rest of this screen does not need
  * it, so the module arrives on the import rather than with the page — the same
@@ -314,7 +427,17 @@ function useActivityRunes(element: string, states: RuneState[]) {
     import('../gfx/activityRunes').then(({ createActivityRunes }) => {
       if (cancelled || !canvas.current) return;
       const handle = createActivityRunes(canvas.current, {
-        glyphs: [GLYPH_PATH.berry, GLYPH_PATH.sparkle, GLYPH_PATH.map],
+        glyphs: [
+          GLYPH_PATH.berry,
+          GLYPH_PATH.sparkle,
+          GLYPH_PATH.map,
+          [
+            'M12 2.2 15 7.4v5.4H9V7.4Z',
+            'M6.2 12.8h11.6V15H6.2Z',
+            'M10.6 15h2.8v4.4h-2.8Z',
+            'M9.2 19.4h5.6v2.2H9.2Z',
+          ],
+        ],
       });
       if (!handle) return;
       runes.current = handle;
@@ -372,37 +495,57 @@ function useActivityRunes(element: string, states: RuneState[]) {
 }
 
 /**
- * The three things you can do, side by side.
+ * The four things you can do, in one activity ledger.
  *
- * They began as three cards in a grid, each with an icon row, a labelled COST
+ * They began as cards in a grid, each with an icon row, a labelled COST
  * row, a labelled GAIN row, a reason paragraph and a full-width button — five
  * stacked blocks to say "one berry, twenty energy", and a panel as tall as the
  * companion beside it, spent almost entirely on chrome around six numbers.
  *
- * They are three cards again, but two lines each: the token and the name with
+ * They are cards again, but two lines each: the token and the name with
  * the button opposite it, and underneath, what it costs, an arrow, and what it
  * gives. The COST and GAIN labels are gone because an arrow says the same
  * thing in four pixels, and the tallies lost their boxes because three
  * bordered pills inside a bordered card inside a bordered panel is three
  * frames around a number.
  *
- * Across rather than down because the room above them is wide and they are
- * three choices of the same kind: a column makes a list you read in order, and
- * these are not in an order.
+ * Kept together because these are choices of the same kind, not a sequence.
  */
-function Activities() {
-  const { player, run, isPending, busy } = useGame();
+const HUNT_BERRY_IDS: BerryItemId[] = [
+  'fire_berry', 'water_berry', 'air_berry', 'rock_berry',
+];
+const FALLBACK_HUNT_BERRIES: Record<BerryItemId, number> = {
+  fire_berry: 5, water_berry: 5, air_berry: 5, rock_berry: 5,
+};
+
+function Activities({
+  onActivityClaim,
+}: {
+  onActivityClaim: (receipt: ActivityReceipt) => void;
+}) {
+  const { player, catalog, run, isPending, busy } = useGame();
+  const navigate = useNavigate();
+  const [huntGateOpen, setHuntGateOpen] = useState(false);
   const monster = player!.monster!;
-  const kind = monster.status.type;
+  const roster = Object.values(player!.monsters ?? { [monster.id]: monster });
+  const activityMonster = roster.find((candidate) => (
+    candidate.status.type === 'Play'
+      || candidate.status.type === 'Quest'
+      || candidate.status.type === 'Hunt'
+      || candidate.status.type === 'Battle'
+  ));
+  const kind = activityMonster?.status.type ?? monster.status.type;
 
-  if (kind === 'Play' || kind === 'Quest') return <InProgress monster={monster} />;
+  if (activityMonster && (kind === 'Play' || kind === 'Quest')) {
+    return <InProgress monster={activityMonster} onClaim={onActivityClaim} />;
+  }
 
-  // Anything but Home and the process refuses all three. The arena used to get
+  // Anything but Home and the process refuses every activity. The arena used to get
   // a whole empty state of its own, on a screen where the room behind the
   // companion has already changed to the beach and the badge already reads
   // "In the arena" — three drawings of one fact. It is a note in the heading
   // now, said once rather than once per row.
-  const away = kind !== 'Home';
+  const away = Boolean(activityMonster) || kind !== 'Home';
 
   // A companion only ever eats its own element's berry, so there is nothing to
   // choose: the row states the cost and feeds. The picker that used to sit
@@ -411,6 +554,12 @@ function Activities() {
   const ownBerry = BERRY_FOR[monster.elementType];
   const berries = player!.inventory[ownBerry] ?? 0;
   const runes = player!.inventory.rune ?? 0;
+  const huntConfigured = HUNT_PROCESS.length === 43;
+  const huntBerryCosts = catalog?.hunt?.entry?.berries ?? FALLBACK_HUNT_BERRIES;
+  const huntShort = HUNT_BERRY_IDS.filter((item) => (
+    (player!.inventory[item] ?? 0) < (huntBerryCosts[item] ?? 5)
+  ));
+  const canPayHunt = huntShort.length === 0;
 
   const berryIcon = <ItemIcon id={ownBerry} />;
   const energy = <Bolt className="h-3.5 w-3.5 shrink-0" />;
@@ -421,8 +570,19 @@ function Activities() {
     away || monster.energy >= 100 || berries < 1,
     away || monster.energy < 10 || berries < 1,
     away || runes < 1 || monster.energy < 25 || monster.happiness < 25,
+    away || !huntConfigured || !canPayHunt,
   ];
-  const working = [isPending('feed'), isPending('play'), isPending('quest')];
+  const working = [
+    isPending('feed'), isPending('play'), isPending('quest'), isPending('hunt'),
+  ];
+
+  const beginHunt = async () => {
+    const next = await run('hunt', () => api.beginHunt(monster.id));
+    if (next?.hunt) {
+      setHuntGateOpen(false);
+      navigate('/hunt');
+    }
+  };
 
   const [hovered, setHovered] = useState<number | null>(null);
   const { canvas, slots, live } = useActivityRunes(
@@ -434,6 +594,7 @@ function Activities() {
   // about half the column for three cards and a heading and centred them in it,
   // so the emptiness read as part of the activities rather than as space.
   return (
+    <>
     <Panel className="flex shrink-0 flex-col px-4 pb-3 pt-2.5">
       {/* Not `SectionTitle`: that one reserves a row for something on the
           right and a `mb-3` under it, and this heading has nothing on its right
@@ -459,7 +620,7 @@ function Activities() {
             live ? 'opacity-100' : 'opacity-0',
           )}
         />
-        <div className="relative grid gap-2 sm:grid-cols-3">
+        <div className="relative grid gap-2 sm:grid-cols-2">
         <ActivityCard
           icon={<Berry className="h-4 w-4" />}
           slot={(el) => { slots.current[0] = el; }}
@@ -534,9 +695,126 @@ function Activities() {
           disabled={busy || away || runes < 1 || monster.energy < 25 || monster.happiness < 25}
           onClick={() => run('quest', api.startQuest, 'Your companion sets out.')}
         />
+
+        <ActivityCard
+          icon={<Sword className="h-4 w-4" />}
+          slot={(el) => { slots.current[3] = el; }}
+          carved={live}
+          onHover={(on) => setHovered(on ? 3 : null)}
+          title="Hunt"
+          costs={HUNT_BERRY_IDS.map((item) => ({
+            icon: <ItemIcon id={item} />,
+            value: `−${huntBerryCosts[item] ?? 5}`,
+            title: ITEM_NAME[item],
+            short: (player!.inventory[item] ?? 0) < (huntBerryCosts[item] ?? 5),
+          }))}
+          gains={[
+            {
+              icon: <Gift className="h-3.5 w-3.5 shrink-0" />,
+              value: 'wild',
+              title: 'Chance to capture a wild companion',
+            },
+          ]}
+          reason={
+            away ? null
+              : !huntConfigured ? 'Hunt unavailable'
+                : huntShort.length ? `Need ${huntShort.map((item) => ITEM_NAME[item]).join(', ')}` : null
+          }
+          away={away}
+          action={`Review the hunt offering for ${monster.name}`}
+          busy={isPending('hunt')}
+          disabled={busy || away || !huntConfigured || !canPayHunt}
+          onClick={() => setHuntGateOpen(true)}
+        />
         </div>
       </div>
     </Panel>
+    {huntGateOpen && (
+      <HuntEntryDialog
+        monster={monster}
+        inventory={player!.inventory}
+        costs={huntBerryCosts}
+        busy={isPending('hunt')}
+        onClose={() => setHuntGateOpen(false)}
+        onConfirm={() => { void beginHunt(); }}
+      />
+    )}
+    </>
+  );
+}
+
+function HuntEntryDialog({
+  monster, inventory, costs, busy, onClose, onConfirm,
+}: {
+  monster: Monster;
+  inventory: Player['inventory'];
+  costs: Record<BerryItemId, number>;
+  busy: boolean;
+  onClose: () => void;
+  onConfirm: () => void;
+}) {
+  const canPay = HUNT_BERRY_IDS.every((item) => (
+    (inventory[item] ?? 0) >= (costs[item] ?? 5)
+  ));
+  return (
+    <Dialog
+      title="Open the Wild Verge"
+      element={monster.elementType}
+      busy={busy}
+      onClose={onClose}
+      className="!max-w-2xl !p-0 [&>h3]:px-6 [&>h3]:pb-3 [&>h3]:pt-5"
+    >
+      <div className="relative h-64 overflow-hidden border-b border-rune/15 bg-void/80">
+        <Suspense fallback={<div className="h-full animate-pulse bg-raised/40" />}>
+          <HuntOffering busy={busy} />
+        </Suspense>
+        <div className="pointer-events-none absolute inset-x-0 bottom-0 bg-gradient-to-t from-void via-void/80 to-transparent pb-3 pt-9 text-center">
+          <p className="eyebrow text-element">Four elements · one passage</p>
+          <p className="mt-1 text-sm text-muted">Twenty berries wake the gate.</p>
+        </div>
+      </div>
+      <div className="p-6">
+        <p className="text-sm leading-relaxed text-muted">
+          The offering is paid once when the hunt opens. Searching, fighting and returning are
+          included; a defeated wild companion may then be bound with a 1–5 Rune bid.
+        </p>
+        <div className="mt-5 grid grid-cols-2 gap-2 sm:grid-cols-4">
+          {HUNT_BERRY_IDS.map((item) => {
+            const need = costs[item] ?? 5;
+            const held = inventory[item] ?? 0;
+            const enough = held >= need;
+            return (
+              <div key={item} className={cx(
+                'border bg-raised/55 p-3 text-center',
+                enough ? 'border-element/20' : 'border-bad/45',
+              )}>
+                <div className="mx-auto grid h-10 w-10 place-items-center">
+                  {ITEM_ART[item]
+                    ? <img src={ITEM_ART[item]} alt="" className="h-9 w-9 object-contain" />
+                    : <Berry className="h-6 w-6" />}
+                </div>
+                <p className="mt-2 text-xs font-medium">{ITEM_NAME[item]}</p>
+                <p className={cx('mt-1 font-mono text-[11px]', enough ? 'text-good' : 'text-bad')}>
+                  {held} held · {need} offered
+                </p>
+              </div>
+            );
+          })}
+        </div>
+        <div className="mt-5 flex flex-wrap items-center justify-between gap-3 border-t border-edge/60 pt-4">
+          <p className="max-w-sm text-xs leading-relaxed text-faint">
+            The process checks all four balances before spending any. A refused entry keeps the
+            complete offering, and retrying the same opening never charges twice.
+          </p>
+          <div className="flex gap-2">
+            <Button variant="quiet" disabled={busy} onClick={onClose}>Keep the berries</Button>
+            <Button variant="primary" busy={busy} disabled={!canPay || busy} onClick={onConfirm}>
+              Offer 20 · enter
+            </Button>
+          </div>
+        </div>
+      </div>
+    </Dialog>
   );
 }
 
@@ -676,7 +954,13 @@ function ActivityCard({
 }
 
 /** A live countdown, with the claim button appearing the moment it is due. */
-function InProgress({ monster }: { monster: Monster }) {
+function InProgress({
+  monster,
+  onClaim,
+}: {
+  monster: Monster;
+  onClaim: (receipt: ActivityReceipt) => void;
+}) {
   const { run, isPending } = useGame();
   const [now, setNow] = useState(() => Date.now());
 
@@ -689,6 +973,22 @@ function InProgress({ monster }: { monster: Monster }) {
   const total = Math.max(1, monster.status.until_time - monster.status.since);
   const done = remaining <= 0;
   const label = monster.status.type === 'Play' ? 'Playing' : 'On a quest';
+  const activityKind = monster.status.type as ActivityReceipt['kind'];
+
+  const bringHome = async () => {
+    const reply = await run(
+      `claim:${monster.id}`,
+      () => api.claim(monster.id),
+      activityKind === 'Play' ? 'Back home, and happier for it.'
+        : 'Back from the quest with loot.',
+    );
+    if (!reply) return;
+    onClaim({
+      id: `${activityKind}:${monster.status.since}:${Date.now()}`,
+      kind: activityKind,
+      rewards: { ...(reply.rewards ?? {}) },
+    });
+  };
 
   return (
     <Panel className="shrink-0 p-4">
@@ -705,10 +1005,8 @@ function InProgress({ monster }: { monster: Monster }) {
         <Button
           variant={done ? 'primary' : 'ghost'}
           disabled={!done}
-          busy={isPending('claim')}
-          onClick={() => run('claim', api.claim,
-            monster.status.type === 'Play' ? 'Back home, and happier for it.'
-              : 'Back from the quest with loot.')}
+          busy={isPending(`claim:${monster.id}`)}
+          onClick={() => { void bringHome(); }}
           icon={done ? <Gift className="h-4 w-4" /> : <Clock className="h-4 w-4" />}
         >
           {done ? 'Bring them home' : countdown(remaining)}
@@ -716,8 +1014,11 @@ function InProgress({ monster }: { monster: Monster }) {
       </div>
       {!done && (
         <p className="mt-3 text-[13px] text-faint">
-          Nothing to watch — come back when the timer is up. The clock is the
-          chain's, not your browser's, so closing this page changes nothing.
+          <span className="text-muted">{monster.name}</span>{' '}
+          {monster.status.type === 'Play'
+            ? 'will keep playing until it is time to come home.'
+            : 'holds the realm activity slot until the quest is claimed.'}{' '}
+          The clock is the chain's, so closing this page changes nothing.
         </p>
       )}
     </Panel>

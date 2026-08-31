@@ -13,7 +13,7 @@ import { shortAddress } from '../lib/format';
 import { useAether } from './Aether';
 import { Sigil } from './Sigil';
 import { Button, cx } from './primitives';
-import { Berry, Exchange, Rune, Sword, Users, Wallet } from './icons';
+import { Berry, Exchange, Map, Rune, Sword, Users, Wallet } from './icons';
 import { Worship } from './Worship';
 import { Wordmark } from './Mark';
 
@@ -26,11 +26,14 @@ export function Shell({ children }: { children: React.ReactNode }) {
   const { pathname } = useLocation();
   const onHome = pathname === '/';
   const onPublicStory = onHome || pathname === '/lore';
+  const onMarket = pathname === '/market';
+  const onCollection = pathname === '/collection';
 
   const tabs: Tab[] = [];
   tabs.push({ to: '/factions', label: 'Factions', Icon: Users });
   if (player?.faction) tabs.push({ to: '/companion', label: 'Companion', Icon: Berry });
   if (player?.monster) tabs.push({ to: '/arena', label: 'Arena', Icon: Sword });
+  if (player?.hunt) tabs.push({ to: '/hunt', label: 'Hunt', Icon: Map });
   tabs.push({ to: '/market', label: 'Market', Icon: Exchange });
 
   const element = player?.monster?.elementType;
@@ -51,7 +54,9 @@ export function Shell({ children }: { children: React.ReactNode }) {
   // to be legible in one look — the stage, both fighters, and the moves you can
   // pick — and hunting for the move list below the fold is how you lose a round
   // you had already decided.
-  const fitted = pathname === '/companion' || pathname === '/arena';
+  const onArena = pathname === '/arena';
+  const onHunt = pathname === '/hunt';
+  const fitted = pathname === '/companion' || onArena || onHunt || onMarket || onCollection;
 
   /**
    * The arena hides its own chrome.
@@ -64,7 +69,7 @@ export function Shell({ children }: { children: React.ReactNode }) {
    *
    * Only on /arena, and only at lg: below that the header is the navigation.
    */
-  const canCollapse = pathname === '/arena';
+  const canCollapse = pathname === '/arena' || pathname === '/hunt';
   const [headerOpen, setHeaderOpen] = useState(false);
   useEffect(() => { setHeaderOpen(!canCollapse); }, [canCollapse]);
   const headerHidden = canCollapse && !headerOpen;
@@ -91,6 +96,7 @@ export function Shell({ children }: { children: React.ReactNode }) {
       className={cx(
         'app-shell flex min-h-full flex-col',
         !onPublicStory && 'app-shell--game',
+        onCollection && 'h-dvh min-h-0 overflow-hidden',
         fitted && 'lg:h-dvh lg:min-h-0 lg:overflow-hidden',
         headerHidden && 'app-shell--bare',
       )}
@@ -177,7 +183,15 @@ export function Shell({ children }: { children: React.ReactNode }) {
         !onPublicStory && !fitted && 'game-main mx-auto max-w-6xl px-4 pb-28 pt-6 sm:px-6 lg:pb-12',
         // Wider and tighter, and a flex column so the page below can claim the
         // height rather than measure it.
-        fitted && 'game-main game-main--fitted mx-auto max-w-[92rem] px-3 pb-28 pt-4 sm:px-4 lg:flex lg:min-h-0 lg:flex-col lg:pb-4 lg:pt-3',
+        fitted && cx(
+          'game-main game-main--fitted mx-auto px-3 pb-28 pt-4 sm:px-4 lg:flex lg:min-h-0 lg:flex-col lg:pb-4 lg:pt-3',
+          // The arena is the one page that IS a picture. Every rem of gutter is
+          // a rem the picture does not get, so it keeps none of the page's
+          // usual margin and none of its width cap.
+          (onArena || onHunt) && 'lg:px-2 lg:pb-2 lg:pt-2',
+          onCollection && 'flex min-h-0 max-w-none flex-col overflow-hidden px-2 pb-24 pt-2 sm:px-3 lg:px-4 lg:pb-3 lg:pt-3',
+          onMarket || onArena || onHunt || onCollection ? 'max-w-none' : 'max-w-[92rem]',
+        ),
       )}>
         {children}
       </main>

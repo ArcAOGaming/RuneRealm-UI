@@ -18,7 +18,7 @@
  * ran it through a mip chain would undo that at the first tilt.
  */
 import {
-  AdditiveBlending, BackSide, BoxGeometry, CanvasTexture, Color, LinearFilter, Mesh,
+  AdditiveBlending, BoxGeometry, CanvasTexture, Color, LinearFilter, Mesh,
   MeshBasicMaterial, MeshStandardMaterial, NearestFilter, NoToneMapping, PerspectiveCamera,
   PlaneGeometry, PMREMGenerator, PointLight, Scene, ShaderMaterial, SRGBColorSpace,
   WebGLRenderer,
@@ -55,37 +55,226 @@ export type CardObject = {
 /** One renderer per canvas; StrictMode mounts effects twice. See DESIGN.md §6. */
 const LIVE = new WeakMap<HTMLCanvasElement, () => void>();
 
-/** The back of the card: stone, with the realm's seal struck into it. */
+/** The back of the card: royal velvet, gold inlay and the realm's raised seal. */
 function backTexture(size = 512) {
   const c = document.createElement('canvas');
   c.width = Math.round(size * RATIO);
   c.height = size;
   const ctx = c.getContext('2d');
   if (ctx) {
-    ctx.fillStyle = '#15131d';
-    ctx.fillRect(0, 0, c.width, c.height);
-    // Grain, so the back is stone rather than a swatch.
-    for (let i = 0; i < 2600; i++) {
-      const g = Math.random();
-      ctx.fillStyle = g > 0.5
-        ? `rgba(190,180,205,${0.05 * (0.4 + g)})`
-        : 'rgba(4,3,8,0.12)';
-      ctx.beginPath();
-      ctx.arc(Math.random() * c.width, Math.random() * c.height, Math.random() * 1.6, 0, Math.PI * 2);
-      ctx.fill();
-    }
-    // A hairline inset frame, the same gold as every panel edge in the app.
-    ctx.strokeStyle = 'rgba(214,200,162,0.28)';
-    ctx.lineWidth = 2;
-    ctx.strokeRect(14, 14, c.width - 28, c.height - 28);
-  }
+    const W = c.width;
+    const H = c.height;
 
-  // The seal, centred, cut into the stone.
-  const sealSize = Math.round(c.width * 0.52);
-  const seal = document.createElement('canvas');
-  seal.width = seal.height = sealSize;
-  drawMark(seal, { color: 'rgba(214,200,162,0.62)', bind: 'rgba(214,200,162,0.62)' });
-  ctx?.drawImage(seal, (c.width - sealSize) / 2, (c.height - sealSize) / 2);
+    // A black-plum velvet field: almost neutral at the rim, saturated only
+    // where the central seal catches the light. It stays dark enough that the
+    // gold edge is still the brightest material when the card turns.
+    const velvet = ctx.createRadialGradient(W * 0.5, H * 0.43, 8, W * 0.5, H * 0.48, H * 0.72);
+    velvet.addColorStop(0, '#3b183f');
+    velvet.addColorStop(0.42, '#211127');
+    velvet.addColorStop(1, '#090812');
+    ctx.fillStyle = velvet;
+    ctx.fillRect(0, 0, c.width, c.height);
+
+    // A quiet brocade lattice beneath the metalwork. Clipped well inside the
+    // frame so it reads as woven cloth rather than a grid pasted over a card.
+    ctx.save();
+    ctx.beginPath();
+    ctx.rect(27, 27, W - 54, H - 54);
+    ctx.clip();
+    ctx.lineWidth = 1;
+    ctx.strokeStyle = 'rgba(214,200,162,0.055)';
+    for (let x = -H; x < W + H; x += 34) {
+      ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x + H, H); ctx.stroke();
+      ctx.beginPath(); ctx.moveTo(x + H, 0); ctx.lineTo(x, H); ctx.stroke();
+    }
+    ctx.restore();
+
+    // Deterministic velvet nap. A seeded texture means two copies of the same
+    // card do not mysteriously have different backs after every mount.
+    let seed = 0x51f15e;
+    const random = () => {
+      seed = Math.imul(seed ^ (seed >>> 15), 1 | seed);
+      seed ^= seed + Math.imul(seed ^ (seed >>> 7), 61 | seed);
+      return ((seed ^ (seed >>> 14)) >>> 0) / 4294967296;
+    };
+    for (let i = 0; i < 3100; i += 1) {
+      const light = random() > 0.48;
+      ctx.fillStyle = light ? 'rgba(244,222,255,0.035)' : 'rgba(0,0,0,0.09)';
+      const x = random() * W;
+      const y = random() * H;
+      ctx.fillRect(x, y, random() > 0.82 ? 2 : 1, 1);
+    }
+
+    const cutFrame = (inset: number, cut: number) => {
+      ctx.beginPath();
+      ctx.moveTo(inset + cut, inset);
+      ctx.lineTo(W - inset - cut, inset);
+      ctx.lineTo(W - inset, inset + cut);
+      ctx.lineTo(W - inset, H - inset - cut);
+      ctx.lineTo(W - inset - cut, H - inset);
+      ctx.lineTo(inset + cut, H - inset);
+      ctx.lineTo(inset, H - inset - cut);
+      ctx.lineTo(inset, inset + cut);
+      ctx.closePath();
+    };
+
+    // Three ranks of metal: bright crown gold, a shadowed bronze rail, then a
+    // fine inner inlay. The changing values make the frame feel built up, not
+    // like one thick yellow rectangle.
+    ctx.save();
+    ctx.shadowColor = 'rgba(0,0,0,0.8)';
+    ctx.shadowBlur = 8;
+    ctx.shadowOffsetY = 3;
+    cutFrame(10, 15);
+    ctx.strokeStyle = '#ead89c';
+    ctx.lineWidth = 4;
+    ctx.stroke();
+    ctx.restore();
+    cutFrame(17, 11);
+    ctx.strokeStyle = '#8f642d';
+    ctx.lineWidth = 2;
+    ctx.stroke();
+    cutFrame(23, 8);
+    ctx.strokeStyle = 'rgba(233,210,145,0.72)';
+    ctx.lineWidth = 1;
+    ctx.stroke();
+
+    const diamond = (x: number, y: number, radius: number, fill: string) => {
+      ctx.beginPath();
+      ctx.moveTo(x, y - radius);
+      ctx.lineTo(x + radius, y);
+      ctx.lineTo(x, y + radius);
+      ctx.lineTo(x - radius, y);
+      ctx.closePath();
+      ctx.fillStyle = fill;
+      ctx.fill();
+      ctx.strokeStyle = '#f0dc9c';
+      ctx.lineWidth = 1;
+      ctx.stroke();
+    };
+
+    // Mirrored filigree at every corner, kept geometric so it belongs beside
+    // the card's chamfered rim and the angular Rune Realm mark.
+    const corner = (x: number, y: number, sx: 1 | -1, sy: 1 | -1) => {
+      ctx.save();
+      ctx.translate(x, y);
+      ctx.scale(sx, sy);
+      ctx.strokeStyle = 'rgba(232,209,143,0.78)';
+      ctx.lineWidth = 1.5;
+      ctx.beginPath();
+      ctx.moveTo(0, 40); ctx.quadraticCurveTo(10, 9, 42, 0);
+      ctx.moveTo(0, 18); ctx.quadraticCurveTo(17, 16, 18, 0);
+      ctx.moveTo(9, 32); ctx.quadraticCurveTo(22, 23, 31, 9);
+      ctx.stroke();
+      ctx.beginPath();
+      ctx.arc(22, 20, 7, Math.PI * 0.15, Math.PI * 1.55);
+      ctx.strokeStyle = 'rgba(143,100,45,0.88)';
+      ctx.stroke();
+      diamond(18, 18, 4, '#7f356f');
+      ctx.restore();
+    };
+    corner(25, 25, 1, 1);
+    corner(W - 25, 25, -1, 1);
+    corner(25, H - 25, 1, -1);
+    corner(W - 25, H - 25, -1, -1);
+
+    // A royal crown above the seal. No lettering: the silhouette stays
+    // readable even when the card is held small or nearly edge-on.
+    const crownX = W / 2;
+    const crownY = H * 0.17;
+    ctx.save();
+    ctx.shadowColor = 'rgba(0,0,0,0.65)';
+    ctx.shadowBlur = 5;
+    ctx.beginPath();
+    ctx.moveTo(crownX - 38, crownY + 17);
+    ctx.lineTo(crownX - 32, crownY - 15);
+    ctx.lineTo(crownX - 12, crownY + 1);
+    ctx.lineTo(crownX, crownY - 24);
+    ctx.lineTo(crownX + 12, crownY + 1);
+    ctx.lineTo(crownX + 32, crownY - 15);
+    ctx.lineTo(crownX + 38, crownY + 17);
+    ctx.closePath();
+    const crownGold = ctx.createLinearGradient(crownX, crownY - 24, crownX, crownY + 23);
+    crownGold.addColorStop(0, '#fff0ba');
+    crownGold.addColorStop(0.45, '#d5a84e');
+    crownGold.addColorStop(1, '#795021');
+    ctx.fillStyle = crownGold;
+    ctx.fill();
+    ctx.strokeStyle = '#f1dda0';
+    ctx.lineWidth = 1.5;
+    ctx.stroke();
+    ctx.fillStyle = '#b87c39';
+    ctx.fillRect(crownX - 41, crownY + 15, 82, 9);
+    ctx.strokeRect(crownX - 41, crownY + 15, 82, 9);
+    diamond(crownX, crownY + 19, 4, '#6d2d75');
+    ctx.restore();
+
+    // Gold rails lead into a raised octagonal medallion. They make the centre
+    // feel mounted into the back rather than printed on top of the brocade.
+    const cy = H * 0.51;
+    const rail = ctx.createLinearGradient(28, cy, W - 28, cy);
+    rail.addColorStop(0, 'rgba(116,75,30,0)');
+    rail.addColorStop(0.18, '#9a6b2f');
+    rail.addColorStop(0.5, '#f1dda0');
+    rail.addColorStop(0.82, '#9a6b2f');
+    rail.addColorStop(1, 'rgba(116,75,30,0)');
+    ctx.fillStyle = rail;
+    ctx.fillRect(28, cy - 2, W - 56, 4);
+    diamond(36, cy, 7, '#5c285f');
+    diamond(W - 36, cy, 7, '#5c285f');
+
+    const octagon = (radius: number) => {
+      ctx.beginPath();
+      for (let i = 0; i < 8; i += 1) {
+        const angle = Math.PI / 8 + i * Math.PI / 4;
+        const x = W / 2 + Math.cos(angle) * radius;
+        const y = cy + Math.sin(angle) * radius;
+        if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
+      }
+      ctx.closePath();
+    };
+    ctx.save();
+    ctx.shadowColor = 'rgba(0,0,0,0.9)';
+    ctx.shadowBlur = 13;
+    ctx.shadowOffsetY = 6;
+    octagon(W * 0.3);
+    const medallionGold = ctx.createRadialGradient(W * 0.43, cy - W * 0.1, 4, W / 2, cy, W * 0.32);
+    medallionGold.addColorStop(0, '#fff0b0');
+    medallionGold.addColorStop(0.42, '#d2a44d');
+    medallionGold.addColorStop(1, '#62401b');
+    ctx.fillStyle = medallionGold;
+    ctx.fill();
+    ctx.restore();
+    octagon(W * 0.265);
+    ctx.fillStyle = '#160c1d';
+    ctx.fill();
+    ctx.strokeStyle = '#f0daa0';
+    ctx.lineWidth = 2;
+    ctx.stroke();
+    octagon(W * 0.225);
+    ctx.strokeStyle = 'rgba(143,100,45,0.9)';
+    ctx.lineWidth = 1.5;
+    ctx.stroke();
+
+    // The original carved seal remains the identity at the heart of the more
+    // elaborate treatment; it is brighter now because the medallion is metal.
+    const sealSize = Math.round(W * 0.43);
+    const seal = document.createElement('canvas');
+    seal.width = seal.height = sealSize;
+    drawMark(seal, { color: 'rgba(246,224,161,0.94)', bind: 'rgba(246,224,161,0.94)' });
+    ctx.drawImage(seal, (W - sealSize) / 2, cy - sealSize / 2);
+
+    // A small royal knot balances the crown and gives the back a clear axis.
+    const knotY = H * 0.84;
+    diamond(W / 2, knotY, 12, '#8b397c');
+    diamond(W / 2, knotY, 5, '#e6c76f');
+    ctx.strokeStyle = 'rgba(232,209,143,0.6)';
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.moveTo(W / 2 - 48, knotY); ctx.lineTo(W / 2 - 15, knotY);
+    ctx.moveTo(W / 2 + 15, knotY); ctx.lineTo(W / 2 + 48, knotY);
+    ctx.stroke();
+  }
 
   const tex = new CanvasTexture(c);
   tex.colorSpace = SRGBColorSpace;
@@ -95,10 +284,12 @@ function backTexture(size = 512) {
 
 export function createCardObject(
   canvas: HTMLCanvasElement,
-  { face, element = 'arcane' as CardElement }: {
+  { face, element = 'arcane' as CardElement, introSpin = false }: {
     /** The painted card, from `lib/card/browser`. */
     face: HTMLCanvasElement;
     element?: CardElement;
+    /** Begin with several physical turns and ease down into the held pose. */
+    introSpin?: boolean;
   },
 ): CardObject | null {
   LIVE.get(canvas)?.();
@@ -181,40 +372,31 @@ export function createCardObject(
       varying vec2 vUv; varying vec3 vView; varying vec3 vN;
       void main() {
         float facing = abs(dot(normalize(vN), normalize(vView)));
-        // Off-square is where foil lives. Square on, this is near zero.
-        float edgeOn = pow(1.0 - facing, 1.4);
+        // Off-square is where foil lives. It now wakes at a smaller angle so a
+        // normal hand tilt shows it clearly, while square-on still stays clean.
+        float angleReveal = smoothstep(0.006, 0.11, 1.0 - facing);
 
         // The diffraction band: a diagonal ramp across the card, swept by the
         // viewing angle so it travels when the card turns rather than when a
         // clock ticks.
         float band = (vUv.x * 1.4 + vUv.y * 2.2) + (vView.x * 3.2 + vView.y * 2.0);
-        vec3 holo = 0.5 + 0.5 * cos(6.28318 * (vec3(0.0, 0.33, 0.67) + band));
+        vec3 holo = 0.52 + 0.58 * cos(6.28318 * (vec3(0.0, 0.33, 0.67) + band));
 
-        // A single hard specular sweep on top, which is what actually reads as
-        // a laminated surface.
-        float sweep = smoothstep(0.48, 0.5, abs(fract(band * 0.5) - 0.5));
+        // A broad diffraction ribbon plus a hard white laminate streak. The old
+        // effect only had the hairline and disappeared against bright card art.
+        float ribbon = 1.0 - smoothstep(0.13, 0.38, abs(fract(band * 0.32) - 0.5));
+        float sweep = 1.0 - smoothstep(0.018, 0.075, abs(fract(band * 0.52) - 0.5));
 
-        vec3 c = mix(holo, uTint, 0.25);
-        float a = (edgeOn * 0.5 + sweep * edgeOn * 0.55) * (0.25 + uTilt * 0.9);
+        vec3 c = mix(holo, uTint, 0.12);
+        c = mix(c, vec3(1.0), sweep * 0.34);
+        float a = angleReveal * (0.22 + ribbon * 0.42 + sweep * 0.72)
+          * (0.68 + uTilt * 0.72);
         gl_FragColor = vec4(c, a);
       }`,
   });
   const foil = new Mesh(new PlaneGeometry(RATIO, 1), foilMat);
   foil.position.z = THICK / 2 + 0.0012;
   card.add(foil);
-
-  // A soft element-coloured wash behind the card, so it is sitting in light
-  // rather than floating on a page.
-  const glow = new Mesh(
-    new PlaneGeometry(RATIO * 2.6, 2.4),
-    new MeshBasicMaterial({
-      color: tint.clone(), transparent: true, opacity: 0.16,
-      blending: AdditiveBlending, depthWrite: false, side: BackSide,
-    }),
-  );
-  glow.position.z = -0.5;
-  glow.rotation.y = Math.PI;
-  scene.add(glow);
 
   const key = new PointLight(0xffffff, 14, 12, 2);
   key.position.set(-1.6, 2.0, 2.6);
@@ -229,7 +411,10 @@ export function createCardObject(
   let aimX = 0, aimY = 0;      // -1..1, where the pointer is over the card
   let tiltX = 0, tiltY = 0;    // eased
   let faceUp = true;
-  let spin = 0;                // eased toward 0 or π
+  // Four turns land face-up. Because this rotates the mesh, the gold edge,
+  // foil and royal back all flash past during the acquisition handoff.
+  let spin = introSpin && !reduced ? Math.PI * 8 : 0;
+  let spinningIn = introSpin && !reduced;
   let dragging = false;
   let dragFrom = 0;
   let dragSpin = 0;
@@ -300,7 +485,17 @@ export function createCardObject(
     const t = (now - t0) / 1000;
 
     const target = faceUp ? 0 : Math.PI;
-    spin += (target + dragSpin - spin) * (reduced ? 1 : 0.12);
+    if (spinningIn) {
+      // Exponential drag: quick off the impact, visibly heavy for the last
+      // half-turn, then handed back to the normal pointer interaction.
+      spin += (target - spin) * 0.045;
+      if (Math.abs(target - spin) < 0.018) {
+        spin = target;
+        spinningIn = false;
+      }
+    } else {
+      spin += (target + dragSpin - spin) * (reduced ? 1 : 0.12);
+    }
 
     // Held, not tracked: the card leans toward the pointer and lags it, which
     // is the difference between an object with mass and a cursor-follower.
@@ -327,7 +522,6 @@ export function createCardObject(
     },
     setElement(next) {
       const c = new Color(HUE[next] ?? HUE.arcane);
-      (glow.material as MeshBasicMaterial).color.copy(c);
       (foilMat.uniforms.uTint.value as Color).copy(c);
       rim.color.copy(c);
     },

@@ -53,6 +53,7 @@ const asPlayer = (r: LeaderboardRow): Player => ({
   faction: r.faction,
   monster: r.monster,
   inventory: {},
+  gold: 0,
   lootboxes: [],
   battlesRemaining: 0,
   wins: r.wins,

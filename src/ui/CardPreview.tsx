@@ -20,12 +20,13 @@
 import { useEffect, useRef, useState } from 'react';
 import { useGame } from '../state/GameProvider';
 import { drawCard } from '../lib/card/browser';
+import type { BrowserCardOptions } from '../lib/card/browser';
 import { cardSize } from '../lib/card/layout.mjs';
 import { ItemId, Monster } from '../lib/types';
 import { Skeleton, cx } from './primitives';
 
 export function CardPreview({
-  monster, className, eager, extended, inventory,
+  monster, className, eager, extended, inventory, authoring,
 }: {
   monster: Monster;
   className?: string;
@@ -34,6 +35,8 @@ export function CardPreview({
   extended?: boolean;
   /** The satchel, drawn into the panel. Only read when `extended`. */
   inventory?: Partial<Record<ItemId, number>>;
+  /** Local-only background/portrait overrides from the asset studio. */
+  authoring?: Pick<BrowserCardOptions, 'backgroundAsset' | 'portraitAsset' | 'assetUrls'>;
 }) {
   // The panel prints each move's uses, and the engine multiplies the stored
   // count by `moveUses` when a fight starts. Reading it from the published
@@ -53,6 +56,7 @@ export function CardPreview({
     monster.name, monster.elementType, monster.level,
     monster.attack, monster.speed, monster.defense, monster.health,
     Object.keys(monster.moves ?? {}).sort(),
+    authoring,
     // The panel shows these, so they have to redraw it. The plain card does
     // not, and listing them regardless would repaint every poll for nothing.
     extended ? [monster.energy, monster.happiness, monster.exp, inventory, tuning.moveUses] : 0,
@@ -80,7 +84,9 @@ export function CardPreview({
     (async () => {
       if (!canvas.current) return;
       try {
-        await drawCard(canvas.current, monster, { extended, inventory, moveUses: tuning.moveUses });
+        await drawCard(canvas.current, monster, {
+          extended, inventory, moveUses: tuning.moveUses, ...authoring,
+        });
         if (!cancelled) setState('drawn');
       } catch {
         if (!cancelled) setState('failed');

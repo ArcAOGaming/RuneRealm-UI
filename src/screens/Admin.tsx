@@ -13,7 +13,8 @@ import { GAME_OWNER } from '../lib/hyperbeam';
 import {
   ActivityType, AdminAuditEntry, AdminBattleSummary, AdminFactionStats,
   AdminMetricDay, AdminMetrics, AdminPlayerPatch, AdminPlayerSummary,
-  AdminSnapshot, Element, ItemId, Player,
+  AdminSnapshot, EconomyPolicyChange, EconomyView, Element, GoldMarketItemId,
+  GoldOrderSide, ItemId, Player,
 } from '../lib/types';
 import {
   Badge, Button, Empty, ErrorNote, Panel, SectionTitle, Skeleton, cx,
@@ -27,14 +28,16 @@ import { extractAddresses, ITEM_NAME, shortAddress } from '../lib/format';
 import { useToast } from '../ui/Toast';
 import SwarmMonitor from './admin/SwarmMonitor';
 import { SWARM_ADDRESSES, SWARM_WALLETS } from '../data/swarm-wallets';
+import { economyPreview } from '../lib/economy-preview';
 
-type Tab = 'overview' | 'swarm' | 'players' | 'operations' | 'tracking' | 'visualize' | 'create';
+type Tab = 'overview' | 'economy' | 'swarm' | 'players' | 'operations' | 'tracking' | 'visualize' | 'create';
 
 const Studio = lazy(() => import('./admin/Studio'));
 
 const ITEMS: ItemId[] = [
   'rune', 'fire_berry', 'water_berry', 'air_berry', 'rock_berry',
-  'ruby', 'emerald', 'topaz', 'diamond', 'scroll', 'legendary_scroll',
+  'scroll',
+  'legendary_scroll',
 ];
 
 const FACTIONS = [
@@ -75,6 +78,7 @@ function makeSwarmPreviewSnapshot(): AdminSnapshot {
       level: 1 + (index % 9), exp: (index * 37) % 500,
       energy: 42 + (index % 58), happiness: 51 + (index % 49), status,
       inventory: { rune: 4 + (index % 13), fire_berry: index % 4 },
+      gold: 25 + index * 3,
       lootboxes: [index % 3, index % 2, 0, 0, 0],
       wins: index % 8, losses: index % 4, questsCompleted: index % 11,
       battlesRemaining: status === 'Battle' ? 2 : 0,
@@ -84,6 +88,8 @@ function makeSwarmPreviewSnapshot(): AdminSnapshot {
       lastActiveAt: generatedAt - index * 21_000,
       lastAction: status === 'Home' ? 'Daily.Claim' : `Monster.${status}`,
       assets: 0,
+      passOrigin: 'test', accountId: profile.address,
+      recoveryCooldownUntil: 0, runeBond: 0,
     };
   });
   const runes = players.reduce((sum, player) => sum + Number(player.inventory.rune ?? 0), 0);
@@ -111,10 +117,19 @@ export default function Admin() {
   // The local studio never needs process authority. Starting there in dev
   // means opening /admin to browse art or balance combat asks for no wallet
   // signature at all; choosing a live-process tab performs the owner read.
-  const [tab, setTab] = useState<Tab>(import.meta.env.DEV ? 'visualize' : 'overview');
+  const [tab, setTab] = useState<Tab>(() => {
+    if (import.meta.env.DEV) {
+      const saved = window.sessionStorage.getItem('runerealm-admin-tab');
+      if (saved === 'visualize' || saved === 'create') return saved;
+      return 'visualize';
+    }
+    return 'overview';
+  });
   const [selected, setSelected] = useState<string | null>(null);
   const isSwarmPreview = import.meta.env.DEV
     && new URLSearchParams(window.location.search).has('swarm-preview');
+  const isEconomyPreview = import.meta.env.DEV
+    && new URLSearchParams(window.location.search).has('economy-preview');
   const swarmPreview = useMemo(() => isSwarmPreview ? makeSwarmPreviewSnapshot() : null, [isSwarmPreview]);
 
   const isOwner = address === GAME_OWNER;
@@ -133,12 +148,16 @@ export default function Admin() {
     }
     setLoading(true);
     try {
-      const next = await api.adminSnapshot({ force });
-      setSnapshot(next);
+      const [next, economy] = await Promise.all([
+        api.adminSnapshot({ force }),
+        api.readEconomy().catch(() => undefined),
+      ]);
+      const merged = economy ? { ...next, economy } : next;
+      setSnapshot(merged);
       setSelected((current) => (
-        current && next.players.some((p) => p.address === current)
+        current && merged.players.some((p) => p.address === current)
           ? current
-          : next.players[0]?.address ?? null
+          : merged.players[0]?.address ?? null
       ));
       setError(null);
     } catch (err) {
@@ -149,6 +168,11 @@ export default function Admin() {
   }, [address, tab]);
 
   useEffect(() => { void load(); }, [load]);
+  useEffect(() => {
+    if (import.meta.env.DEV && (tab === 'visualize' || tab === 'create')) {
+      window.sessionStorage.setItem('runerealm-admin-tab', tab);
+    }
+  }, [tab]);
 
   if (swarmPreview) {
     return (
@@ -163,6 +187,10 @@ export default function Admin() {
         <SwarmMonitor snapshot={swarmPreview} />
       </div>
     );
+  }
+
+  if (isEconomyPreview) {
+    return <div className="admin-console animate-rise space-y-4" data-element="arcane"><CommandHeader processId={processId} node={node} loading={false} isOwner onRefresh={async () => undefined} /><EconomyAdmin economy={economyPreview()} onChanged={async () => undefined} /></div>;
   }
 
   if (isLocalStudio) {
@@ -209,6 +237,7 @@ export default function Admin() {
         <>
           <CommandTabs tab={tab} onChange={setTab} snapshot={snapshot} />
           {tab === 'overview' && <Overview snapshot={snapshot} />}
+          {tab === 'economy' && <EconomyAdmin economy={snapshot.economy} onChanged={() => load(true)} />}
           {tab === 'swarm' && <SwarmMonitor snapshot={snapshot} />}
           {tab === 'players' && (
             <PlayersView snapshot={snapshot} selected={selected}
@@ -301,6 +330,7 @@ function CommandTabs({ tab, onChange, snapshot }: {
 }) {
   const tabs: Array<{ id: Tab; label: string; note: string }> = [
     { id: 'overview', label: 'Overview', note: `${snapshot.stats.activeToday} active` },
+    { id: 'economy', label: 'Economy', note: snapshot.economy?.invariants.ok ? 'exact' : 'attention' },
     { id: 'swarm', label: 'Test swarm', note: `${snapshot.players.filter(({ address }) => SWARM_ADDRESSES.has(address)).length}/50 live` },
     { id: 'players', label: 'Players', note: fmt(snapshot.players.length) },
     { id: 'operations', label: 'Operations', note: `${snapshot.battles.length} live` },
@@ -363,9 +393,10 @@ function Kpi({ icon, label, value, note }: {
 }) {
   return (
     <Panel className="admin-kpi p-4">
-      <div className="flex items-start justify-between gap-3">
-        <div><div className="eyebrow">{label}</div><div className="carve mt-1 font-mono text-3xl tabular-nums">{fmt(value)}</div></div>
-        <div className="admin-kpi-icon">{icon}</div>
+      <div className="relative min-w-0">
+        <div className="eyebrow pr-10">{label}</div>
+        <div className="carve mt-2 whitespace-nowrap font-mono text-2xl tabular-nums">{fmt(value)}</div>
+        <div className="admin-kpi-icon absolute right-0 top-0">{icon}</div>
       </div>
       <p className="mt-3 text-xs text-faint">{note}</p>
     </Panel>
@@ -713,7 +744,7 @@ function RecordEditor({ player, busy, onSave }: {
       {player.monster && <EditorSection title="Companion">
         <Field label="Name"><input value={draft.monster.name} onChange={(e) => monsterField('name', e.target.value)} className={inputClass} /></Field>
         {Object.entries({ level: 'Level', exp: 'Experience', attack: 'Attack', defense: 'Defense', speed: 'Speed', health: 'Health', energy: 'Energy', happiness: 'Happiness', totalTimesFed: 'Times fed', totalTimesPlay: 'Times played', totalTimesQuest: 'Times quested' }).map(([key, label]) => <NumberField key={key} label={label} value={draft.monster[key]} onChange={(v) => monsterField(key, v)} />)}
-        <Field label="Activity"><select value={draft.monster.statusType} onChange={(e) => monsterField('statusType', e.target.value)} className={inputClass}>{(['Home', 'Play', 'Quest', 'Battle', 'Minting'] as ActivityType[]).map((type) => <option key={type}>{type}</option>)}</select></Field>
+        <Field label="Activity"><select value={draft.monster.statusType} onChange={(e) => monsterField('statusType', e.target.value)} className={inputClass}>{(['Home', 'Play', 'Quest', 'Hunt', 'Battle', 'Minting'] as ActivityType[]).map((type) => <option key={type}>{type}</option>)}</select></Field>
         <NumberField label="Activity since · ms" value={draft.monster.statusSince} onChange={(v) => monsterField('statusSince', v)} />
         <NumberField label="Activity until · ms" value={draft.monster.statusUntil} onChange={(v) => monsterField('statusUntil', v)} />
         <label className="flex items-center gap-2 self-end pb-2 text-xs text-muted"><input type="checkbox" checked={reroll} onChange={(e) => setReroll(e.target.checked)} /> Reroll moveset</label>
@@ -762,6 +793,158 @@ function ActiveBattles({ battles, onChanged }: { battles: AdminBattleSummary[]; 
 
 function EconomyInventory({ snapshot }: { snapshot: AdminSnapshot }) {
   return <Panel className="p-5"><SectionTitle right={<span className="font-mono text-[11px] text-faint">all wallets</span>}>Realm inventory</SectionTitle><div className="grid grid-cols-2 gap-px overflow-hidden rounded-[3px] border border-edge/60 bg-edge/60 sm:grid-cols-3">{ITEMS.map((item) => <div key={item} className="bg-void/55 p-3"><div className="truncate text-[10px] uppercase tracking-wide text-faint">{ITEM_NAME[item]}</div><div className="mt-1 font-mono text-lg text-ink">{fmt(snapshot.stats.items[item])}</div></div>)}</div></Panel>;
+}
+
+const ECONOMY_DIALS: Array<{
+  path: string; label: string; kind?: 'boolean' | 'split'; note: string;
+}> = [
+  { path: 'gold.perQualifiedPlayer', label: 'Gold per qualified player', note: 'Long-run target input' },
+  { path: 'gold.normalWeeklyReleaseBps', label: 'Weekly Gold release / bps', note: 'Hard ceiling remains 1000 bps' },
+  { path: 'gold.shopBurnBps', label: 'NPC-sale policy share / bps', note: 'Burned only above the upper corridor; otherwise policy-locked' },
+  { path: 'gold.burnBelowTargetBps', label: 'Gold corridor lower / bps', note: 'Below this level fees remain policy-locked' },
+  { path: 'gold.burnAboveTargetBps', label: 'Gold corridor upper / bps', note: 'Above this level normal burns operate' },
+  { path: 'gold.expansionEnabled', label: 'Gold expansion enabled', kind: 'boolean', note: 'Open qualification policy should be approved first' },
+  { path: 'qualification.enabled', label: 'Qualified-player policy enabled', kind: 'boolean', note: 'Uses the visible candidate definition' },
+  { path: 'runeRewards.epochBudget', label: 'Global Rune / epoch', note: 'Zero keeps issuance paused' },
+  { path: 'runeRewards.enabled', label: 'Global Rune rewards enabled', kind: 'boolean', note: 'Never restores a per-wallet stipend' },
+  { path: 'amm.maxSlippageBps', label: 'Rune acquisition slippage / bps', note: 'Execution hard rail' },
+  { path: 'amm.maxWeeklyPoolBps', label: 'Weekly AMM reserve spend / bps', note: 'Execution hard rail' },
+  { path: 'proceeds.split', label: 'Paid proceeds split', kind: 'split', note: 'Team + Rune acquisition + treasury must total 10000 bps' },
+  { path: 'emergency.paused', label: 'Economy emergency state', kind: 'boolean', note: 'Disabling a pause is delayed; enabling it here is also delayed' },
+  ...(['air_berry', 'water_berry', 'fire_berry', 'rock_berry', 'scroll', 'rune'] as GoldMarketItemId[])
+    .flatMap((item) => [
+      { path: `desks.${item}.bidBps`, label: `${ITEM_NAME[item]} bid multiplier`, note: 'Normal movement capped at 5% per seven days' },
+      { path: `desks.${item}.askBps`, label: `${ITEM_NAME[item]} ask multiplier`, note: 'Normal movement capped at 5% per seven days' },
+      { path: `desks.${item}.stockBps`, label: `${ITEM_NAME[item]} stock target / bps`, note: 'Percentage of tracked total supply' },
+      { path: `desks.${item}.stockMax`, label: `${ITEM_NAME[item]} maximum stock`, note: 'Absolute cap; lower of cap and supply percentage wins' },
+      { path: `desks.${item}.goldReserve`, label: `${ITEM_NAME[item]} Gold allocation`, note: 'Moves Gold to or from the locked policy reserve' },
+      { path: `desks.${item}.limits.perAction`, label: `${ITEM_NAME[item]} per-action limit`, note: 'Applies independently to each player-facing side' },
+      { path: `desks.${item}.limits.perAccount`, label: `${ITEM_NAME[item]} 20h account limit`, note: 'Applies independently to each player-facing side' },
+      { path: `desks.${item}.limits.global`, label: `${ITEM_NAME[item]} 20h global limit`, note: 'Applies independently to each player-facing side' },
+      { path: `desks.${item}.enabled.buy`, label: `${ITEM_NAME[item]} NPC sell side`, kind: 'boolean' as const, note: 'Enabling or resuming applies only after the delay' },
+      { path: `desks.${item}.enabled.sell`, label: `${ITEM_NAME[item]} NPC buy side`, kind: 'boolean' as const, note: 'Enabling or resuming applies only after the delay' },
+    ]),
+];
+
+function EconomyAdmin({ economy, onChanged }: {
+  economy?: EconomyView; onChanged: () => Promise<void>;
+}) {
+  const toast = useToast();
+  const [dial, setDial] = useState(ECONOMY_DIALS[0].path);
+  const selectedDial = ECONOMY_DIALS.find((entry) => entry.path === dial) ?? ECONOMY_DIALS[0];
+  const [value, setValue] = useState('');
+  const [reason, setReason] = useState('');
+  const [preview, setPreview] = useState<{
+    path: string; oldValue: unknown; newValue: unknown;
+    effectiveAt: number; effect?: Record<string, unknown>;
+  } | null>(null);
+  const [busy, setBusy] = useState('');
+  const [runeSupply, setRuneSupply] = useState('');
+  const [releaseItem, setReleaseItem] = useState<GoldMarketItemId>('rune');
+  const [releaseAmount, setReleaseAmount] = useState('');
+  const [split, setSplit] = useState({ teamBps: '5000', runeBps: '3000', treasuryBps: '2000' });
+  const [promisedText, setPromisedText] = useState('');
+  const [promiseHash, setPromiseHash] = useState('');
+  const [promiseSlots, setPromiseSlots] = useState('0');
+  const [promiseDeadline, setPromiseDeadline] = useState('');
+
+  if (!economy) return <Panel className="p-6"><Empty icon={<Rune />} title="Economy state is not published">Deploy the integrated economy contract to enable exact ledgers and controls.</Empty></Panel>;
+
+  const parsedValue = selectedDial.kind === 'split'
+    ? { teamBps: asNumber(split.teamBps), runeBps: asNumber(split.runeBps), treasuryBps: asNumber(split.treasuryBps) }
+    : selectedDial.kind === 'boolean' ? value === 'true' : asNumber(value);
+  const valueReady = selectedDial.kind === 'split'
+    ? Object.values(parsedValue as Record<string, number>).reduce((sum, part) => sum + part, 0) === 10000
+    : value !== '';
+  const act = async (key: string, fn: () => Promise<unknown>, message: string) => {
+    setBusy(key);
+    try { await fn(); toast.success(message); await onChanged(); }
+    catch (err) { toast.error(err instanceof Error ? err.message : String(err)); }
+    finally { setBusy(''); }
+  };
+  const doPreview = async () => {
+    setBusy('preview');
+    try { setPreview(await api.adminPreviewEconomyPolicy(dial, parsedValue)); }
+    catch (err) { toast.error(err instanceof Error ? err.message : String(err)); }
+    finally { setBusy(''); }
+  };
+  const doPropose = () => {
+    if (!reason.trim()) { toast.error('A public reason is required.'); return; }
+    void act('propose', () => api.adminProposeEconomyPolicy(dial, parsedValue, reason.trim()),
+      'Policy change scheduled with its public delay.').then(() => setPreview(null));
+  };
+  const pauseDesk = (item: GoldMarketItemId, side: GoldOrderSide) => {
+    if (!reason.trim()) { toast.error('Use the reason field before pausing a desk.'); return; }
+    void act(`pause-${item}-${side}`, () => api.adminPauseEconomyDesk(item, side, reason.trim()),
+      `${ITEM_NAME[item]} ${side} side paused.`);
+  };
+  const pending = Object.values(economy.policy.pending ?? {}) as EconomyPolicyChange[];
+  const rune = economy.invariants.rune;
+  const promisedAddresses = extractAddresses(promisedText);
+
+  return <div className="space-y-4">
+    <section className="admin-kpi-grid">
+      <Kpi icon={<Rune />} label="Gold issued" value={economy.gold.issued} note={`${fmt(economy.gold.burned)} burned`} />
+      <Kpi icon={<Satchel />} label="Outstanding" value={economy.gold.outstanding} note={`target ${fmt(economy.gold.target)}`} />
+      <Kpi icon={<Lock />} label="P2P escrow" value={economy.gold.escrow} note={`${fmt(economy.orders.length)} open orders`} />
+      <Kpi icon={<Shield />} label="Shop reserves" value={economy.gold.shop} note={`${fmt(economy.gold.locked)} policy-locked`} />
+      <Kpi icon={<Users />} label="Qualified" value={economy.gold.qualifiedActive} note={`${fmt(economy.gold.candidateQualifiedActive)} candidates`} />
+      <Kpi icon={<Check />} label="Invariants" value={economy.invariants.ok ? 1 : 0} note={economy.invariants.ok ? 'All equations exact' : 'Affected desks paused'} />
+    </section>
+
+    {!economy.invariants.ok && <div className="rounded-[3px] border border-bad/45 bg-bad/[0.06] px-4 py-3 text-sm text-ink"><b>Accounting mismatch.</b> Inspect the differences below before resuming any desk.</div>}
+    <Panel className="p-5">
+      <SectionTitle right={<Badge tone={economy.policy.passes.genesisSealed ? 'good' : 'warn'}>{economy.policy.passes.genesisSealed ? 'genesis sealed' : 'pre-launch only'}</Badge>}>Eternal Pass policy</SectionTitle>
+      <div className="mt-4 grid grid-cols-2 gap-px overflow-hidden rounded-[3px] border border-edge/60 bg-edge/60 sm:grid-cols-4 lg:grid-cols-6"><MiniMetric label="Genesis" value={economy.passQuote.genesisPassCount} /><MiniMetric label="Lifetime" value={economy.passQuote.lifetimePassCount} /><MiniMetric label="Legacy" value={economy.policy.passes.legacyCount} /><MiniMetric label="Promised" value={economy.policy.passes.promisedCount} /><MiniMetric label="Next reference ¢" value={economy.passQuote.next} /><MiniMetric label="Foregone Rune-buy ¢" value={economy.policy.passes.foregoneRuneAcquisitionReference} /></div>
+      <p className="mt-3 text-xs leading-relaxed text-faint">The pass is non-transferable. Recovery moves the complete account and preserves maturity, balances, orders, limits, and history. Purchase remains disabled until an on-chain payment asset is selected.</p>
+      {!economy.policy.passes.genesisSealed && <div className="mt-4 grid gap-3 border-t border-edge/50 pt-4 lg:grid-cols-2"><label><span className="eyebrow mb-1.5 block">Promised wallet manifest</span><textarea className={cx(inputClass, 'min-h-28 resize-y font-mono text-xs')} value={promisedText} onChange={(event) => setPromisedText(event.target.value)} placeholder="Wallet addresses" /></label><div className="space-y-3"><Field label="Published commitment hash"><input className={cx(inputClass, 'font-mono')} value={promiseHash} onChange={(event) => setPromiseHash(event.target.value)} /></Field><div className="grid grid-cols-2 gap-3"><NumberField label="Unassigned slots" value={promiseSlots} onChange={setPromiseSlots} /><Field label="Claim deadline"><input className={inputClass} type="datetime-local" value={promiseDeadline} onChange={(event) => setPromiseDeadline(event.target.value)} /></Field></div><Button variant="danger" busy={busy === 'seal-genesis'} disabled={!promiseHash || (!promisedAddresses.length && asNumber(promiseSlots) === 0)} onClick={() => void act('seal-genesis', () => api.adminConfigureGenesisPasses({ addresses: promisedAddresses, commitmentHash: promiseHash, unassignedSlots: asNumber(promiseSlots), claimDeadline: promiseDeadline ? new Date(promiseDeadline).getTime() : 0 }), 'Genesis pass manifest permanently sealed.')}>Seal {promisedAddresses.length} promised pass{promisedAddresses.length === 1 ? '' : 'es'}</Button></div></div>}
+    </Panel>
+    <div className="grid gap-4 xl:grid-cols-[1.35fr_.65fr]">
+      <Panel className="overflow-hidden">
+        <div className="p-5"><SectionTitle right={<Badge tone={economy.invariants.ok ? 'good' : 'bad'}>{economy.invariants.ok ? 'exact' : 'paused'}</Badge>}>Asset supply equations</SectionTitle></div>
+        <div className="overflow-auto border-t border-edge/50"><table className="admin-roster-table w-full text-left"><thead><tr><th>Asset</th><th>Issued</th><th>Consumed</th><th>Players</th><th>Escrow</th><th>Shop</th><th>7d issue / use</th><th>Difference</th></tr></thead><tbody>
+          {Object.entries(economy.assets).map(([id, row]) => <tr key={id}><td>{ITEM_NAME[id as ItemId] ?? id}</td><td className="font-mono">{fmt(row.issued)}</td><td className="font-mono">{fmt(row.consumed)}</td><td className="font-mono">{fmt(row.player)}</td><td className="font-mono">{fmt(row.escrow)}</td><td className="font-mono">{fmt(row.shop)}</td><td className="font-mono text-xs">{fmt(row.rolling7d.issued)} / {fmt(row.rolling7d.consumed)}</td><td><Badge tone={economy.invariants.assets[id as GoldMarketItemId]?.difference === 0 ? 'good' : 'bad'}>{fmt(economy.invariants.assets[id as GoldMarketItemId]?.difference)}</Badge></td></tr>)}
+        </tbody></table></div>
+      </Panel>
+      <Panel className="p-5">
+        <SectionTitle right={<Badge tone={rune.difference === undefined ? 'warn' : rune.difference === 0 ? 'good' : 'bad'}>{rune.difference === undefined ? 'awaiting token' : `diff ${fmt(rune.difference)}`}</Badge>}>Rune reconciliation</SectionTitle>
+        <div className="mt-4 grid grid-cols-2 gap-px overflow-hidden rounded-[3px] border border-edge/60 bg-edge/60">
+          <MiniMetric label="Inside game" value={rune.inGame} /><MiniMetric label="Outside token" value={rune.outsideTokenSupply ?? 0} />
+          <MiniMetric label="Pending out" value={rune.pendingWithdrawals} /><MiniMetric label="Pending in" value={rune.pendingDeposits} />
+          <MiniMetric label="Economic" value={rune.economic} /><MiniMetric label="Accounted" value={rune.accounted} />
+        </div>
+        <div className="mt-4 space-y-2"><input className={cx(inputClass, 'font-mono')} inputMode="numeric" value={runeSupply} onChange={(event) => setRuneSupply(event.target.value)} placeholder="Published token total supply" /><Button className="w-full" busy={busy === 'rune-observe'} onClick={() => void act('rune-observe', () => api.adminObserveRuneSupply(asNumber(runeSupply), reason || 'token reconciliation'), 'Rune supply observation recorded.')}>Record token observation</Button></div>
+      </Panel>
+    </div>
+
+    <Panel className="overflow-hidden">
+      <div className="p-5"><SectionTitle right={<Badge tone="warn">NPC counterparties</Badge>}>Finite shop desks</SectionTitle><p className="text-xs text-faint">Pausing is immediate. Repricing or resuming must go through delayed policy.</p></div>
+      <div className="overflow-auto border-t border-edge/50"><table className="admin-roster-table w-full text-left"><thead><tr><th>Desk</th><th>Stock / cap</th><th>Gold reserve</th><th>Bid / ask</th><th>Band</th><th>Limits A / acct / global</th><th>Pauses</th><th /></tr></thead><tbody>{Object.entries(economy.desks).map(([id, desk]) => desk && <tr key={id}><td>{ITEM_NAME[id as ItemId]}</td><td className="font-mono">{fmt(desk.stock)} / {fmt(desk.stockCap)}</td><td className="font-mono">{fmt(desk.goldReserve)}</td><td className="font-mono">{fmt(desk.bid)} / {fmt(desk.ask)}</td><td className="font-mono">{desk.band ?? '--'}</td><td className="font-mono text-xs">{desk.limits.perAction} / {desk.limits.perAccount} / {desk.limits.global}</td><td className="max-w-56 text-[11px] text-faint">{desk.pause.sell && `NPC buy: ${desk.pause.sell}`}{desk.pause.sell && desk.pause.buy && <br />}{desk.pause.buy && `NPC sell: ${desk.pause.buy}`}</td><td><div className="flex gap-1"><Button size="sm" variant="danger" busy={busy === `pause-${id}-sell`} onClick={() => pauseDesk(id as GoldMarketItemId, 'sell')}>Pause buy</Button><Button size="sm" variant="danger" busy={busy === `pause-${id}-buy`} onClick={() => pauseDesk(id as GoldMarketItemId, 'buy')}>Pause sell</Button></div></td></tr>)}</tbody></table></div>
+    </Panel>
+
+    <div className="grid gap-4 xl:grid-cols-2">
+      <Panel className="p-5">
+        <SectionTitle right={<Badge tone="plain">24h delay</Badge>}>Policy proposal</SectionTitle>
+        <div className="mt-4 grid gap-3 sm:grid-cols-2"><label><span className="eyebrow mb-1.5 block">Dial</span><select className={inputClass} value={dial} onChange={(event) => { setDial(event.target.value); setPreview(null); setValue(''); }}>{ECONOMY_DIALS.map((entry) => <option key={entry.path} value={entry.path}>{entry.label}</option>)}</select></label>{selectedDial.kind !== 'split' && <label><span className="eyebrow mb-1.5 block">New value</span>{selectedDial.kind === 'boolean' ? <select className={inputClass} value={value} onChange={(event) => setValue(event.target.value)}><option value="">Choose</option><option value="true">Enabled</option><option value="false">Disabled</option></select> : <input className={cx(inputClass, 'font-mono')} inputMode="numeric" value={value} onChange={(event) => setValue(event.target.value)} />}</label>}</div>
+        {selectedDial.kind === 'split' && <div className="mt-3 grid grid-cols-3 gap-3"><NumberField label="Team / bps" value={split.teamBps} onChange={(teamBps) => setSplit((current) => ({ ...current, teamBps }))} /><NumberField label="Rune buy / bps" value={split.runeBps} onChange={(runeBps) => setSplit((current) => ({ ...current, runeBps }))} /><NumberField label="Treasury / bps" value={split.treasuryBps} onChange={(treasuryBps) => setSplit((current) => ({ ...current, treasuryBps }))} /></div>}
+        <p className="mt-2 text-xs text-faint">{selectedDial.note}</p>
+        <label className="mt-3 block"><span className="eyebrow mb-1.5 block">Public reason</span><textarea className={cx(inputClass, 'min-h-20 resize-y')} value={reason} onChange={(event) => setReason(event.target.value)} /></label>
+        <div className="mt-3 flex flex-wrap gap-2"><Button busy={busy === 'preview'} disabled={!valueReady} onClick={() => void doPreview()}>Preview</Button><Button variant="primary" busy={busy === 'propose'} disabled={!preview || !reason.trim()} onClick={doPropose}>Schedule</Button><Button variant="quiet" busy={busy === 'observe-gold'} disabled={!reason.trim()} onClick={() => void act('observe-gold', () => api.adminObserveGoldPolicy(reason.trim()), 'Weekly Gold target observation recorded.')}>Observe Gold target</Button></div>
+        {preview && <div className="mt-4 rounded-[3px] border border-element/25 bg-element/[0.04] p-3 text-xs"><b>{typeof preview.oldValue === 'object' ? JSON.stringify(preview.oldValue) : String(preview.oldValue)} → {typeof preview.newValue === 'object' ? JSON.stringify(preview.newValue) : String(preview.newValue)}</b><p className="mt-1 text-faint">Effective no earlier than {when(preview.effectiveAt)}. Gold target: {fmt(Number(preview.effect?.goldTargetBefore))} → {fmt(Number(preview.effect?.goldTargetAfter))}.</p></div>}
+      </Panel>
+      <Panel className="p-5">
+        <SectionTitle right={<Badge tone={economy.policy.emergency.paused ? 'bad' : 'good'}>{economy.policy.emergency.paused ? 'paused' : 'running'}</Badge>}>Circuit breakers</SectionTitle>
+        <p className="mt-2 text-xs text-faint">Emergency pause is immediate. Resume is deliberately unavailable without a delayed policy action.</p>
+        <Button className="mt-4" variant="danger" busy={busy === 'emergency'} disabled={!reason.trim() || economy.policy.emergency.paused} onClick={() => void act('emergency', () => api.adminEmergencyPauseEconomy(reason.trim()), 'All economy desks paused.')}>Emergency pause all</Button>
+        <div className="mt-5 border-t border-edge/50 pt-4"><div className="eyebrow">Authorized Gold release</div><div className="mt-2 grid grid-cols-[1fr_7rem] gap-2"><select className={inputClass} value={releaseItem} onChange={(event) => setReleaseItem(event.target.value as GoldMarketItemId)}>{Object.keys(economy.desks).map((id) => <option key={id} value={id}>{ITEM_NAME[id as ItemId]}</option>)}</select><input className={cx(inputClass, 'font-mono')} inputMode="numeric" value={releaseAmount} onChange={(event) => setReleaseAmount(event.target.value)} placeholder="Gold" /></div><Button className="mt-2 w-full" busy={busy === 'release-gold'} disabled={!releaseAmount || !reason.trim()} onClick={() => void act('release-gold', () => api.adminReleaseGold(releaseItem, asNumber(releaseAmount), reason.trim()), 'Authorized Gold released to the named desk.')}>Release to desk</Button></div>
+        <div className="mt-5 border-t border-edge/50 pt-4"><div className="eyebrow">Pending changes</div>{pending.length ? <div className="mt-2 space-y-2">{pending.map((change) => <div key={change.id} className="rounded-[3px] border border-edge/60 bg-void/40 p-3"><div className="flex items-start justify-between gap-3"><div><b className="text-sm">{change.path}</b><p className="mt-1 text-xs text-faint">{String(change.oldValue)} → {String(change.newValue)} · {when(change.effectiveAt)}</p><p className="mt-1 text-xs text-muted">{change.reason}</p></div><Button size="sm" disabled={Date.now() < change.effectiveAt} busy={busy === `apply-${change.id}`} onClick={() => void act(`apply-${change.id}`, () => api.adminApplyEconomyPolicy(change.id), 'Delayed policy applied.')}>Apply</Button></div></div>)}</div> : <p className="mt-2 text-xs text-faint">No pending policy changes.</p>}</div>
+      </Panel>
+    </div>
+  </div>;
+}
+
+function MiniMetric({ label, value }: { label: string; value: number }) {
+  return <div className="bg-void/55 p-3"><div className="text-[9px] uppercase tracking-wide text-faint">{label}</div><div className="mt-1 font-mono text-lg">{fmt(value)}</div></div>;
 }
 
 function UnlockPanel({ onDone }: { onDone: () => Promise<void> }) {

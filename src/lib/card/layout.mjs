@@ -136,26 +136,20 @@ const PANEL_INK = {
  * The same mapping `src/ui/art.ts` uses, repeated here because this module has
  * to run in the worker, where there is no React and no bundler — and because
  * the card is composited from the process's record, not from whatever the
- * screen happened to have loaded. Diamond borrows the topaz gem and both
- * scrolls share one drawing; that is how the app renders them too.
+ * screen happened to have loaded.
  */
 const ITEM_ART = {
   air_berry: 'art/berry-air.png',
   water_berry: 'art/berry-water.png',
   fire_berry: 'art/berry-fire.png',
   rock_berry: 'art/berry-rock.png',
-  ruby: 'art/gem-ruby.png',
-  emerald: 'art/gem-emerald.png',
-  topaz: 'art/gem-topaz.png',
-  diamond: 'art/gem-topaz.png',
   scroll: 'art/scroll.png',
-  legendary_scroll: 'art/scroll.png',
 };
 
 /** The order the satchel reads in, so a card is not a hash-order lottery. */
 const ITEM_ORDER = [
   'fire_berry', 'water_berry', 'air_berry', 'rock_berry',
-  'ruby', 'emerald', 'topaz', 'diamond', 'scroll', 'legendary_scroll',
+  'scroll',
 ];
 
 const ELEMENTS = new Set(['fire', 'water', 'air', 'rock']);
@@ -402,8 +396,14 @@ export function cardPlan(monster, opts = {}) {
   const level = Math.max(0, Math.round(Number(monster && monster.level) || 0));
   const ops = [];
 
-  ops.push(plate(`Monsters/cards/1-backgrounds/Background ${art}.png`));
-  ops.push(plate(portraitPlate(art)));
+  ops.push(plate(opts.backgroundAsset || `Monsters/cards/1-backgrounds/Background ${art}.png`));
+  if (opts.portraitAsset) {
+    // Studio portraits are normalized to the authoring spec's 320x448 canvas.
+    // Its bottom aligns with the card window and leaves symmetric side room.
+    ops.push({ op: 'image', asset: opts.portraitAsset, dx: 164, dy: 128 });
+  } else {
+    ops.push(plate(portraitPlate(art)));
+  }
   ops.push(plate(`Monsters/cards/2-cards-frame/Frame ${art}.png`));
   ops.push(plate(`Monsters/cards/3-elements-type/${art} Type.png`));
   ops.push(plate(`Monsters/cards/4-levels/Lvl ${art}.png`));

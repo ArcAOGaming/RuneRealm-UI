@@ -142,7 +142,6 @@ export function createRealmVista(
   }
   if (!renderer.getContext()) return null;
 
-  renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
   renderer.setClearColor(0x000000, 0);
   renderer.outputColorSpace = SRGBColorSpace;
   renderer.toneMapping = NoToneMapping;
@@ -332,6 +331,11 @@ export function createRealmVista(
   const resize = () => {
     const width = Math.max(1, Math.round(canvas.clientWidth));
     const height = Math.max(1, Math.round(canvas.clientHeight));
+    // Supersample the hero even on a 1x display. Cap the backing buffer by
+    // total pixels so a large/retina viewport does not exhaust its GL context.
+    const desiredRatio = Math.min((window.devicePixelRatio || 1) * 1.5, 2.5);
+    const budgetRatio = Math.sqrt(5_500_000 / (width * height));
+    renderer.setPixelRatio(Math.max(1, Math.min(desiredRatio, budgetRatio)));
     renderer.setSize(width, height, false);
     camera.aspect = width / height;
     camera.updateProjectionMatrix();
@@ -352,8 +356,17 @@ export function createRealmVista(
     if (visible && !frame && !disposed) frame = requestAnimationFrame(draw);
   };
   const onLost = (event: Event) => {
+    // Let the browser restore a transiently lost context. In development React
+    // deliberately remounts effects once; permanently abandoning this canvas
+    // there reduced the desired hero to its static sigil fallback.
     event.preventDefault();
     visible = false;
+  };
+  const onRestored = () => {
+    if (disposed) return;
+    visible = document.visibilityState !== 'hidden';
+    resize();
+    if (visible && !frame) frame = requestAnimationFrame(draw);
   };
 
   const draw = (now: number) => {
@@ -388,6 +401,7 @@ export function createRealmVista(
   window.addEventListener('pointermove', onPointer, { passive: true });
   document.addEventListener('visibilitychange', onVisibility);
   canvas.addEventListener('webglcontextlost', onLost);
+  canvas.addEventListener('webglcontextrestored', onRestored);
   resize();
   frame = requestAnimationFrame(draw);
 
@@ -399,13 +413,16 @@ export function createRealmVista(
     window.removeEventListener('pointermove', onPointer);
     document.removeEventListener('visibilitychange', onVisibility);
     canvas.removeEventListener('webglcontextlost', onLost);
+    canvas.removeEventListener('webglcontextrestored', onRestored);
     scene.traverse((object: any) => {
       object.geometry?.dispose?.();
       if (Array.isArray(object.material)) object.material.forEach((m: any) => m.dispose?.());
       else object.material?.dispose?.();
     });
     renderer.dispose();
-    renderer.forceContextLoss();
+    // Do not call forceContextLoss here. StrictMode immediately creates the
+    // replacement renderer on this same canvas, and a forced loss can outlive
+    // the cleanup that requested it, leaving the new hero blank.
     LIVE.delete(canvas);
   };
 

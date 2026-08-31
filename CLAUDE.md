@@ -80,3 +80,73 @@ npm run recover:verify # the 168 recovered players load and read back
 All three run on a live `~lua@5.3a` and cost nothing. `node backend/native/e2e.mjs`
 signs real ANS-104 items and is the only thing that exercises the real
 signature path — run it after any node, scheduler or `signer()` change.
+
+## Process shape is decided by three measured numbers
+
+Measured on a local node from HyperBEAM's own `computed_slot` log; reproduce
+with `backend/native/battle-fleet/hblab/` (see `backend/native/BATTLE_FLEET.md`
+for the tables).
+
+- **231 microseconds** — a real battle round in Luerl. Compute is free.
+- **~100 ms** — one message, end to end, whatever it does. Charged per message,
+  not per unit of work.
+- **~160 ms** — one extra cross-process hop. A process cannot send anything by
+  itself, so a hop is a slot on the sender, a push, and a slot on the receiver.
+
+Nothing here is a compute decision. **Splitting buys throughput and costs
+latency**; that is the only trade being made.
+
+**Condense by default.** Accounts, monsters, Rune, inventory, quests and the
+leaderboard belong to one authority process. Adding a domain to it costs
+231 us against a 100 ms message — effectively nothing. Taking one out costs
+~320 ms of hops per session. When in doubt, it goes in.
+
+**A leaderboard, or any derived state, is never sharded.** It is computed over
+everything, so N workers each maintaining a copy is N different leaderboards.
+Either the authority owns it, or it is computed from the authority on read.
+
+**Fan out only for session-shaped domains, and all three must hold:**
+
+1. the session's state is independent of account state while it runs;
+2. the client talks **directly** to the worker for the body of the session — a
+   manager assigns and never proxies, because proxying costs ~160 ms per action;
+3. there are exactly two authority boundaries **on the critical path** —
+   reserve in, settle out. An exactly-once settlement handshake costs more hops
+   than that (the battle fleet's is four), and those are counted separately
+   because they run after the player is done. Count them anyway.
+
+That is ~320 ms of hops amortised over the session's direct actions: at 1 action
+never split, at 5 it is marginal, at 10+ it is fine. A five-round bot battle is
+in the marginal band, so **the battle fleet is insurance against serialisation,
+not a latency win** — it makes an individual battle slower until the authority's
+queue is actually the constraint. That trade has been accepted deliberately for
+battles and hunts: ~1 s per session is worth not serialising them behind the
+account authority.
+
+Where we currently break these rules is listed in
+`backend/native/PROCESS_SHAPE_AUDIT.md`. Keep it current: adding a
+cross-process message is adding ~160 ms, and it belongs in that list.
+
+**Never spend a slot on a read.** A read comes from published state
+(`/<pid>~process@1.0/now/<key>`, kept current by a patch the handler emits), not
+from scheduling a message and waiting for a result.
+
+**Do not batch interactive actions.** Batching only helps where one user intent
+genuinely covers many state transitions — auto-resolved bot battles, admin
+loads, seeding, migrations. A player picks a move after seeing the last result,
+so a battle round is one message by definition, and no amount of batching
+changes that.
+
+## Language is not the lever
+
+Rust/WASM was built, deployed and measured against the Lua worker on a real
+node. It loses: 20 ms a slot against Lua's 5 ms, because every stock HyperBEAM
+builds WAMR in its slowest interpreter mode, and because the `json-iface@1.0`
+ABI floor alone (6 ms — a 280-byte module returning a constant) is above Luerl's
+entire slot. Module size is free; a JIT is unavailable (WAMR Fast JIT does not
+support the `WAMR_BUILD_MEMORY64=1` HyperBEAM requires).
+
+Keep `backend/native/battle-fleet-rust/` as a working second implementation of
+the protocol and do not seal it into the fleet. Do not port more Lua to another
+language on performance grounds without a measurement showing per-action compute
+is no longer a rounding error next to a 100 ms message.

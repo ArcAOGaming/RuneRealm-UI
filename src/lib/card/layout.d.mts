@@ -14,6 +14,13 @@ export interface CardOptions {
    * stored `count` when a fight starts. Defaults to the engine's own 3.
    */
   moveUses?: number;
+  /** Override only the scenery plate. Used by the local authoring studio. */
+  backgroundAsset?: string;
+  /**
+   * Override only the creature portrait with a normalized 320x448 transparent
+   * plate. The production default remains the released doge family.
+   */
+  portraitAsset?: string;
 }
 
 export interface CardPlanResult {

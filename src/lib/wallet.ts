@@ -88,16 +88,52 @@ function permawebWallet(): ArweaveWallet | null {
   return (window as Window & { permawebConnect?: ArweaveWallet }).permawebConnect ?? null;
 }
 
-function providerPreference(): WalletProviderId | null {
+/**
+ * `localStorage`, but never a throw.
+ *
+ * `typeof window !== 'undefined'` does not mean storage exists or may be read.
+ * Safari's private mode and any context with site data blocked raise on the
+ * ACCESS itself, and a non-browser host that defines `window` for its own
+ * reasons has no storage at all -- which is exactly what `e2e.mjs` does, since
+ * it needs somewhere to hang `arweaveWallet`.
+ *
+ * This matters far more than remembering a preference: `activeAddress` restores
+ * the wallet before every signed action, so a throw in here did not degrade a
+ * convenience, it failed the write. The e2e journey died at the first attack on
+ * `Cannot read properties of undefined (reading 'getItem')`, and a real player
+ * with site data blocked would have seen the same on every action.
+ *
+ * Forgetting which provider was used is the correct degraded behaviour: the
+ * connect flow asks again.
+ */
+function storage(): Storage | null {
   if (!inBrowser()) return null;
-  const value = window.localStorage.getItem(PROVIDER_KEY);
+  try {
+    return window.localStorage ?? null;
+  } catch {
+    return null;
+  }
+}
+
+function providerPreference(): WalletProviderId | null {
+  let value: string | null = null;
+  try {
+    value = storage()?.getItem(PROVIDER_KEY) ?? null;
+  } catch {
+    return null;
+  }
   return value === 'injected' || value === 'permaweb' || value === 'local' ? value : null;
 }
 
 function rememberProvider(provider: WalletProviderId | null) {
-  if (!inBrowser()) return;
-  if (provider) window.localStorage.setItem(PROVIDER_KEY, provider);
-  else window.localStorage.removeItem(PROVIDER_KEY);
+  const store = storage();
+  if (!store) return;
+  try {
+    if (provider) store.setItem(PROVIDER_KEY, provider);
+    else store.removeItem(PROVIDER_KEY);
+  } catch {
+    // A full or read-only quota must not fail the action that triggered it.
+  }
 }
 
 function openWalletDb(): Promise<IDBDatabase> {

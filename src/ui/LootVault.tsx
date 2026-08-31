@@ -38,7 +38,7 @@ import { cx } from './primitives';
 /**
  * A picture for a reward that has none.
  *
- * `ITEM_ART` covers the berries, the gems and the scrolls. It does not cover
+ * `ITEM_ART` covers the berries and scrolls. It does not cover
  * Runes — and Runes are not only a drop, they are the FLOOR: a box that rolls
  * nothing at all is topped up with one (see `Game.OpenLootbox` in game.lua). So
  * the one haul most likely to arrive with no art was the one that came up

@@ -1,5 +1,6 @@
 import { FRAMES, SHEET_SIZE } from './spriteAtlas';
 import { recolour } from './colorize';
+import type { CharacterOutfit, CharacterPiece } from './types';
 
 /**
  * The character creator's layer art.
@@ -121,17 +122,8 @@ if (CATEGORIES.length !== ORDER.length) {
 
 // The outfit --------------------------------------------------------------
 
-/** One category's state: which garment, and what colour it is dyed. */
-export type Piece = {
-  /** An option name from that category — "Beanie", "None". */
-  style: string;
-  /** `#rrggbb`. Ignored while `style` is `None`, but kept, so unequipping and
-      re-equipping a garment does not lose the colour it was dyed. */
-  color: string;
-};
-
-/** What the player has put together: category name -> piece. */
-export type Outfit = Record<string, Piece>;
+export type Piece = CharacterPiece;
+export type Outfit = CharacterOutfit;
 
 export const isNone = (style: string) => style.toLowerCase() === 'none';
 
@@ -156,7 +148,7 @@ const DEFAULT_COLOURS: Record<CategoryName, string> = {
 
 /** Everything set to `None` — where a new character starts. */
 export function emptyOutfit(): Outfit {
-  const out: Outfit = {};
+  const out = {} as Outfit;
   for (const c of CATEGORIES) {
     const none = c.options.find((o) => isNone(o.name));
     out[c.name] = {
@@ -178,7 +170,7 @@ export function emptyOutfit(): Outfit {
 export function randomOutfit(): Outfit {
   const base = Math.random() * 360;
   const spread = [0, 172, 28, 200, 14, 340];
-  const out: Outfit = {};
+  const out = {} as Outfit;
   CATEGORIES.forEach((c, i) => {
     const wearable = c.options.filter((o) => !isNone(o.name));
     const pick = wearable.length && Math.random() < 0.82

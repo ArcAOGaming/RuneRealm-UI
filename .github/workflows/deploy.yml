@@ -1,18 +1,12 @@
-name: Deploy Rune Realm to Permaweb
+name: Upload Rune Realm to Permaweb
 
 run-name: Permaweb release of ${{ github.sha }}
 
 # Phase two is deliberately manual. Contract redeployment rewrites the frontend
 # process graph first; an operator verifies and commits those ids before this
-# workflow publishes the site and updates ArNS.
+# workflow uploads the site. ArNS linking remains a separate manual operation.
 on:
   workflow_dispatch:
-    inputs:
-      undername:
-        description: ANT undername to update
-        required: true
-        default: runerealm
-        type: string
 
 concurrency:
   group: rune-realm-permaweb-production
@@ -25,9 +19,6 @@ jobs:
   deploy:
     runs-on: ubuntu-latest
     timeout-minutes: 30
-    env:
-      DEPLOY_UNDERNAME: ${{ inputs.undername || vars.DEPLOY_UNDERNAME || 'premium' }}
-      DEPLOY_ARNS_NAME: ${{ vars.DEPLOY_ARNS_NAME }}
     steps:
       - uses: actions/checkout@v4
         with:
@@ -49,7 +40,10 @@ jobs:
       - name: Verify native game process
         run: npm run test:lua:local
 
-      - name: Verify Rune and marketplace processes
+      - name: Verify Hunt process and game bridge
+        run: npm run test:hunt
+
+      - name: Verify Rune, quote, and AMM processes
         run: npm run test:marketplace:local
 
       - name: Verify fifty-wallet swarm bundle
@@ -62,14 +56,21 @@ jobs:
       - name: Validate Permaweb release configuration
         env:
           DEPLOY_KEY: ${{ secrets.DEPLOY_KEY }}
-          DEPLOY_ANT_PROCESS: ${{ secrets.DEPLOY_ANT_PROCESS_ID || secrets.ANT_PROCESS }}
         run: npm run deploy:site:check
 
-      - name: Upload bundle and update ArNS
+      - name: Upload bundle and create manifest
+        id: upload
         env:
           DEPLOY_KEY: ${{ secrets.DEPLOY_KEY }}
-          DEPLOY_ANT_PROCESS: ${{ secrets.DEPLOY_ANT_PROCESS_ID || secrets.ANT_PROCESS }}
         run: npm run deploy:site
+
+      - name: Print manifest handoff
+        env:
+          MANIFEST_ID: ${{ steps.upload.outputs.manifest_id }}
+        run: |
+          test -n "$MANIFEST_ID"
+          echo "MANIFEST_ID=$MANIFEST_ID"
+          echo "ArNS was not changed; link this manifest ID manually."
 
       - name: Preserve deployment receipt
         uses: actions/upload-artifact@v4

@@ -94,6 +94,17 @@ export function mountGame(
   });
   LIVE.set(parent, game);
 
+  // A handle on the live game, in development only.
+  //
+  // Everything interesting in a scene — the playback queue, a fighter's
+  // position, whether a promise is still outstanding — is unreachable from the
+  // DOM, so a scene that stalls can only be diagnosed by staring at it. This
+  // costs nothing in a production build, where `import.meta.env.DEV` folds to
+  // false and the branch is dropped.
+  if (import.meta.env.DEV) {
+    (window as unknown as { __phaser?: Phaser.Game }).__phaser = game;
+  }
+
   const apply = () => {
     const { clientWidth: cw, clientHeight: ch } = parent;
     if (!cw || !ch) return;

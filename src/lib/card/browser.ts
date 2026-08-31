@@ -19,6 +19,11 @@ import { assetsFor, cardPlan } from './layout.mjs';
 import type { CardOp, CardOptions } from './layout.mjs';
 import type { Monster } from '../types';
 
+export type BrowserCardOptions = CardOptions & {
+  /** Dev-studio URLs for authoring assets that are not in the Vite bundle. */
+  assetUrls?: Record<string, string>;
+};
+
 /**
  * Narrow on purpose, folder by folder.
  *
@@ -69,10 +74,11 @@ const URLS: Record<string, string> = Object.fromEntries(
 
 const loaded = new Map<string, Promise<HTMLImageElement>>();
 
-function image(asset: string): Promise<HTMLImageElement> {
-  let pending = loaded.get(asset);
+function image(asset: string, overrideUrl?: string): Promise<HTMLImageElement> {
+  const url = overrideUrl ?? URLS[asset];
+  const cacheKey = `${asset}\u0000${url ?? ''}`;
+  let pending = loaded.get(cacheKey);
   if (!pending) {
-    const url = URLS[asset];
     if (!url) return Promise.reject(new Error(`card asset not bundled: ${asset}`));
     pending = new Promise((resolve, reject) => {
       const img = new Image();
@@ -80,7 +86,7 @@ function image(asset: string): Promise<HTMLImageElement> {
       img.onerror = () => reject(new Error(`card asset failed to load: ${asset}`));
       img.src = url;
     });
-    loaded.set(asset, pending);
+    loaded.set(cacheKey, pending);
   }
   return pending;
 }
@@ -88,22 +94,28 @@ function image(asset: string): Promise<HTMLImageElement> {
 const rgba = ([r, g, b, a]: [number, number, number, number]) =>
   `rgba(${r},${g},${b},${(a / 255).toFixed(3)})`;
 
-/**
- * Draw `monster` onto `canvas`, which is resized to the card.
- *
- * Every plate is awaited before the first is drawn. Painting as they arrive
- * would put the frame under the portrait whenever the cache order changed, and
- * the ops are an ordered stack, not a set.
- */
-export async function drawCard(
-  canvas: HTMLCanvasElement, monster: Partial<Monster>, opts?: CardOptions,
-): Promise<void> {
+type PreparedCard = {
+  width: number;
+  height: number;
+  ops: CardOp[];
+  images: Map<string, HTMLImageElement>;
+};
+
+async function prepareCard(
+  monster: Partial<Monster>, opts?: BrowserCardOptions,
+): Promise<PreparedCard> {
   const { width, height, ops } = cardPlan(monster, opts);
   const images = new Map<string, HTMLImageElement>();
   await Promise.all(assetsFor(ops).map(async (asset) => {
-    images.set(asset, await image(asset));
+    images.set(asset, await image(asset, opts?.assetUrls?.[asset]));
   }));
+  return { width, height, ops, images };
+}
 
+function paint(
+  canvas: HTMLCanvasElement, width: number, height: number,
+  ops: CardOp[], images: Map<string, HTMLImageElement>,
+) {
   canvas.width = width;
   canvas.height = height;
   const ctx = canvas.getContext('2d');
@@ -111,7 +123,7 @@ export async function drawCard(
   ctx.imageSmoothingEnabled = false;
   ctx.clearRect(0, 0, width, height);
 
-  for (const op of ops as CardOp[]) {
+  for (const op of ops) {
     if (op.op === 'image') {
       const img = images.get(op.asset)!;
       const sw = op.sw ?? img.naturalWidth;
@@ -125,13 +137,73 @@ export async function drawCard(
 }
 
 /**
+ * Draw `monster` onto `canvas`, which is resized to the card.
+ *
+ * Every plate is awaited before the first is drawn. Painting as they arrive
+ * would put the frame under the portrait whenever the cache order changed, and
+ * the ops are an ordered stack, not a set.
+ */
+export async function drawCard(
+  canvas: HTMLCanvasElement, monster: Partial<Monster>, opts?: BrowserCardOptions,
+): Promise<void> {
+  const prepared = await prepareCard(monster, opts);
+  paint(canvas, prepared.width, prepared.height, prepared.ops, prepared.images);
+}
+
+export type CardAssemblyLayer = {
+  id: 'foundation' | 'portrait' | 'frame' | 'element' | 'level' | 'inscription';
+  label: string;
+  canvas: HTMLCanvasElement;
+};
+
+export type CardAssembly = {
+  /** The exact final face used by CardObject and by the mint preview. */
+  face: HTMLCanvasElement;
+  /** The same operations split into cinematic layers, still in paint order. */
+  layers: CardAssemblyLayer[];
+};
+
+/**
+ * Paint the real card once, plus transparent canvases for its assembly reveal.
+ *
+ * The first five operations are the five registered full-card plates emitted
+ * by `cardPlan`: scenery, portrait, frame, element and level. Everything after
+ * them is live record ink (name, stats and moves). Replaying these canvases in
+ * this order therefore lands on the same pixels as `drawCard`; the animation
+ * never maintains a second, approximate card layout of its own.
+ */
+export async function drawCardAssembly(
+  monster: Partial<Monster>, opts?: BrowserCardOptions,
+): Promise<CardAssembly> {
+  const prepared = await prepareCard(monster, opts);
+  const face = document.createElement('canvas');
+  paint(face, prepared.width, prepared.height, prepared.ops, prepared.images);
+
+  const groups: Array<{ id: CardAssemblyLayer['id']; label: string; ops: CardOp[] }> = [
+    { id: 'foundation', label: 'Scenery', ops: prepared.ops.slice(0, 1) },
+    { id: 'portrait', label: 'Portrait', ops: prepared.ops.slice(1, 2) },
+    { id: 'frame', label: 'Forged frame', ops: prepared.ops.slice(2, 3) },
+    { id: 'element', label: 'Element', ops: prepared.ops.slice(3, 4) },
+    { id: 'level', label: 'Level seal', ops: prepared.ops.slice(4, 5) },
+    { id: 'inscription', label: 'Living record', ops: prepared.ops.slice(5) },
+  ];
+
+  const layers = groups.map((group) => {
+    const canvas = document.createElement('canvas');
+    paint(canvas, prepared.width, prepared.height, group.ops, prepared.images);
+    return { id: group.id, label: group.label, canvas };
+  });
+  return { face, layers };
+}
+
+/**
  * The card as a PNG blob.
  *
  * Only for a local download. It is NOT what gets minted — the worker composites
  * from the process's own copy of the record, so a page cannot talk a card into
  * existence that the monster does not justify.
  */
-export async function cardBlob(monster: Partial<Monster>, opts?: CardOptions): Promise<Blob> {
+export async function cardBlob(monster: Partial<Monster>, opts?: BrowserCardOptions): Promise<Blob> {
   const canvas = document.createElement('canvas');
   await drawCard(canvas, monster, opts);
   return new Promise((resolve, reject) => {

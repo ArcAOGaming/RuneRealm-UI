@@ -1,4 +1,4 @@
-import { Element, ItemId, Move, Tuning } from './types';
+import { BattleStat, BerryItemId, Element, ItemId, Move, Tuning } from './types';
 
 /** "a Rockpup", but "an Airbud" and "an air companion". */
 export const article = (word: string) =>
@@ -69,13 +69,22 @@ export const ITEM_NAME: Record<ItemId, string> = {
   rune: 'Rune',
   scroll: 'Scroll',
   legendary_scroll: 'Legendary Scroll',
-  ruby: 'Ruby',
-  emerald: 'Emerald',
-  topaz: 'Topaz',
-  diamond: 'Diamond',
 };
 
-export const BERRY_FOR: Record<Element, ItemId> = {
+/**
+ * Arena berry maxing: intentionally strong for the first balance pass.
+ * TODO(balance): test +3 or a shorter duration once real session data exists.
+ */
+export const BATTLE_BERRIES: Array<{
+  id: BerryItemId; stat: BattleStat; amount: number; cost: number; note: string;
+}> = [
+  { id: 'fire_berry', stat: 'attack', amount: 5, cost: 3, note: '+5 attack for four battles' },
+  { id: 'rock_berry', stat: 'defense', amount: 5, cost: 3, note: '+5 defense for four battles' },
+  { id: 'air_berry', stat: 'speed', amount: 5, cost: 3, note: '+5 speed for four battles' },
+  { id: 'water_berry', stat: 'health', amount: 5, cost: 3, note: '+5 health for four battles' },
+];
+
+export const BERRY_FOR: Record<Element, BerryItemId> = {
   air: 'air_berry', water: 'water_berry', fire: 'fire_berry', rock: 'rock_berry',
 };
 

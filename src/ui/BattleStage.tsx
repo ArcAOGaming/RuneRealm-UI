@@ -18,6 +18,8 @@ export function BattleStage(props: {
   bare?: boolean;
   /** Fires once the last round has finished PLAYING, not when it resolved. */
   onSettled?: () => void;
+  /** Fires the instant a blow connects, for the page's own reaction to it. */
+  onImpact?: (side: 'challenger' | 'accepter', lethal: boolean) => void;
 }) {
   return (
     <Suspense

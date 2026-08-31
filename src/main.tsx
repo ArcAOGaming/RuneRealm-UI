@@ -13,8 +13,10 @@ import Factions from './screens/Factions';
 import Companion from './screens/Companion';
 import Arena from './screens/Arena';
 import Admin from './screens/Admin';
-import Customiser from './screens/Customiser';
 import Marketplace from './screens/Marketplace';
+import Recover from './screens/Recover';
+import Hunt from './screens/Hunt';
+import Collection from './screens/Collection';
 import { registerPwa } from './pwa';
 import { PwaInstallProvider } from './ui/PwaInstall';
 import './index.css';
@@ -46,10 +48,13 @@ function App() {
                     <Route path="/lore" element={<Lore />} />
                     <Route path="/factions" element={<Factions />} />
                     <Route path="/companion" element={<Companion />} />
+                    <Route path="/collection" element={<Collection />} />
+                    <Route path="/party" element={<Navigate to="/collection" replace />} />
                     <Route path="/arena" element={<Arena />} />
+                    <Route path="/hunt" element={<Hunt />} />
                     <Route path="/ranks" element={<Navigate to="/factions#ranks" replace />} />
-                    <Route path="/character" element={<Customiser />} />
                     <Route path="/market" element={<Marketplace />} />
+                    <Route path="/recover" element={<Recover />} />
                     <Route path="/admin" element={<Admin />} />
                     <Route path="*" element={<Navigate to="/" replace />} />
                   </Routes>

@@ -45,8 +45,9 @@ const FACTION_POLL_MS = 30_000;
  */
 const FALLBACK_TUNING: Tuning = {
   attackBase: 1, variance: 0.15, hpPerHealth: 12, shieldPerDefense: 4,
-  healPerPoint: 0.04, shieldRegen: 20, moveUses: 3, struggleDamage: 2,
+  healPerPoint: 0.04, shieldRegenShare: 0.2, moveUses: 3, struggleDamage: 2,
   baseHitChance: 0.7, minHitChance: 0.3, maxHitChance: 0.95,
+  criticalChance: 0.09, criticalMultiplier: 1.6,
 };
 
 /**
@@ -59,7 +60,7 @@ const FALLBACK_TUNING: Tuning = {
  */
 const blankPlayer = (address: string, unlocked = false): Player => ({
   address, exists: false, unlocked,
-  inventory: {}, lootboxes: [], battlesRemaining: 0,
+  inventory: {}, gold: 0, lootboxes: [], battlesRemaining: 0,
   wins: 0, losses: 0, questsCompleted: 0, joinedAt: 0, dailyReadyAt: 0,
 });
 

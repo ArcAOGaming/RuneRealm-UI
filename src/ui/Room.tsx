@@ -11,12 +11,24 @@
  * not reflow when the scene arrives.
  */
 import { Suspense, lazy } from 'react';
-import { Monster } from '../lib/types';
+import { ActivityReceipt, CharacterOutfit, Monster } from '../lib/types';
 import { cx } from './primitives';
 
 const RoomStage = lazy(() => import('./RoomStage'));
 
-export function Room({ monster, className }: { monster: Monster; className?: string }) {
+export function Room({
+  monster,
+  playerOutfit,
+  playerSpriteTxId,
+  activityReceipt,
+  className,
+}: {
+  monster: Monster;
+  playerOutfit?: CharacterOutfit;
+  playerSpriteTxId?: string;
+  activityReceipt?: ActivityReceipt;
+  className?: string;
+}) {
   return (
     <Suspense
       fallback={(
@@ -29,7 +41,13 @@ export function Room({ monster, className }: { monster: Monster; className?: str
         />
       )}
     >
-      <RoomStage monster={monster} className={className} />
+      <RoomStage
+        monster={monster}
+        playerOutfit={playerOutfit}
+        playerSpriteTxId={playerSpriteTxId}
+        activityReceipt={activityReceipt}
+        className={className}
+      />
     </Suspense>
   );
 }

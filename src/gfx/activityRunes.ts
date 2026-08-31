@@ -1,13 +1,13 @@
 /**
- * The activity runes — the three tokens turning behind the activity rows.
+ * The activity runes — the tokens turning behind the activity rows.
  *
  * The rows say what a thing costs and what it gives, which is the useful half.
- * This is the other half: three carved tokens, one per row, standing in the
+ * This is the other half: one carved token per row, standing in the
  * slot where a flat 16px SVG used to sit. They lean and catch the light, the
  * rune cut into each face burns in the companion's own element, and the one
  * you are about to click leans further and brightens.
  *
- * ONE canvas and ONE context for all three. A canvas per row is three WebGL
+ * ONE canvas and ONE context for all of them. A canvas per row is several WebGL
  * contexts on a page that already spends one on the aether and one on whatever
  * ceremony is open, and browsers start dropping the oldest at around sixteen —
  * which shows up as the FIRST thing on the page going black, not the last.
@@ -155,8 +155,8 @@ function emberCloud(count: number) {
   const seed = new Float32Array(count);
   for (let i = 0; i < count; i++) {
     // Golden-angle placement: evenly spread without ever lining up, and
-    // deterministic, so the three tokens are three different constellations
-    // rather than three copies of one.
+    // deterministic, so the tokens are different constellations rather than
+    // copies of one.
     const a = i * 2.39996;
     const r = 0.55 + ((i * 0.37) % 1) * 0.5;
     pos[i * 3] = Math.cos(a) * r;
@@ -440,7 +440,7 @@ export function createActivityRunes(
         token.spin += state.busy ? 0.13 : 0;
 
         // The lean. Clamped hard, and eased, so a pointer crossing the panel
-        // tips the three tokens in sequence like a row of set stones rather
+        // tips the tokens in sequence like a row of set stones rather
         // than swinging them at it.
         let leanX = 0;
         let leanY = 0;

@@ -10,12 +10,14 @@ export const STUDIO_TUNING: StudioTuning = {
   hpPerHealth: 12,
   shieldPerDefense: 4,
   healPerPoint: 0.04,
-  shieldRegen: 20,
+  shieldRegenShare: 0.2,
   moveUses: 3,
   struggleDamage: 2,
   baseHitChance: 0.7,
   minHitChance: 0.3,
   maxHitChance: 0.95,
+  criticalChance: 0.09,
+  criticalMultiplier: 1.6,
   roundCap: 50,
 };
 
@@ -169,6 +171,7 @@ function act(
     moveType: move.type,
     moveRarity: move.rarity,
     missed: false,
+    critical: false,
     shieldDamage: 0,
     healthDamage: 0,
     statsChanged: {},
@@ -186,7 +189,12 @@ function act(
     const multiplier = move.type in EFFECTIVENESS
       ? EFFECTIVENESS[move.type as Element][defender.elementType] : 1;
     const swing = 1 + ((rng() * 2) - 1) * tuning.variance;
-    const amount = Math.max(1, Math.floor(move.damage * (tuning.attackBase + attacker.attack) * multiplier * swing));
+    // Its own roll, after the swing, exactly as battle.lua takes it.
+    turn.critical = rng() < tuning.criticalChance;
+    const crit = turn.critical ? tuning.criticalMultiplier : 1;
+    const amount = Math.max(1, Math.floor(
+      move.damage * (tuning.attackBase + attacker.attack) * multiplier * swing * crit,
+    ));
     Object.assign(turn, damage(defender, amount));
     turn.superEffective = multiplier > 1;
     turn.notEffective = multiplier < 1;
@@ -238,10 +246,16 @@ export function advanceStudioBattle(
   battle.round = round;
   battle.turns = [...battle.turns, ...turns].slice(-tuning.roundCap * 2);
 
-  const struggleFloor = tuning.struggleDamage * (tuning.attackBase + 1);
+  // Only an untouched fighter recovers shield — see battle.lua. A miss is not
+  // a hit, and neither is a blow that dealt nothing.
+  const hit = new Set<Combatant['side']>();
+  for (const t of turns) {
+    if (t.missed || t.shieldDamage + t.healthDamage <= 0) continue;
+    hit.add(t.attacker === 'challenger' ? 'accepter' : 'challenger');
+  }
   for (const fighter of [a, b]) {
-    if (fighter.healthPoints <= 0) continue;
-    const regen = Math.min(Math.ceil(fighter.maxShield / tuning.shieldRegen), Math.max(0, struggleFloor - 1));
+    if (fighter.healthPoints <= 0 || hit.has(fighter.side)) continue;
+    const regen = Math.ceil(fighter.maxShield * tuning.shieldRegenShare);
     fighter.shield = Math.min(fighter.maxShield, fighter.shield + regen);
   }
 
