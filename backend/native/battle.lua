@@ -104,25 +104,6 @@ Battle.TUNING = {
   --- rounds with no end in sight. The only escape was forfeiting the whole
   --- paid session.
   roundCap = 50,
-
-  --- How many turn entries survive the trim in `resolveRound`.
-  ---
-  --- This is a LATENCY number, not a gameplay one, and it was the single most
-  --- expensive value in the process. It used to be `roundCap * 2` — a hundred
-  --- entries, about 62 KB — against a median fight of seven rounds, so almost
-  --- every fight carried a log far larger than it would ever fill.
-  ---
-  --- The log is not merely stored: `Battle.view` deep-clones it and the result
-  --- is JSON-encoded into the reply AND published again under `battle`, on
-  --- every message. Measured on live Luerl with a 50-player fixture, dropping
-  --- 100 -> 10 took `Battle.Attack` from 1276 ms to 578 ms of CPU per message
-  --- and the published `battle` key from 61,980 B to 8,723 B. That second
-  --- number matters twice, because published-state size is also what drives
-  --- the node's per-slot marshalling cost.
-  ---
-  --- Ten still shows a player the recent exchange round by round, which is
-  --- what the log is for; what is dropped is the far past of a long fight.
-  turnLogKeep = 10,
 }
 
 local T = Battle.TUNING
@@ -576,8 +557,22 @@ function Battle.resolveRound(battle, challengerMove, accepterMove)
   -- The log is published on every message and grows about a kilobyte a round,
   -- so only the recent history is kept. The full fight is still visible round
   -- by round as it happens; what is dropped is the far past of a long one.
-  -- See `turnLogKeep`: this bound is why an attack costs what it costs.
-  local keep = T.turnLogKeep
+  --
+  -- `roundCap * 2` is not a guess and must not be "optimised" down: a round
+  -- appends one entry PER COMBATANT, so a fight that runs to the cap produces
+  -- exactly this many. The bound therefore never fires in a legal fight -- it
+  -- is a safety net, and the log grows monotonically for the whole battle.
+  --
+  -- That monotonicity is load-bearing. Clients (and e2e) detect "a new round
+  -- resolved" by the log getting longer; a smaller keep makes it stop growing
+  -- mid-fight and the round reads as never having happened. Tried at 10 and it
+  -- broke the battle at round six, exactly when 6*2 crossed it.
+  --
+  -- The size this is blamed for is also worst-case only. A profiler run drives
+  -- one battle to fifty rounds and lands at ~62 KB; the median fight is seven
+  -- rounds, about fourteen entries and ~8.7 KB, which is what players actually
+  -- pay. Shrink the PER-ENTRY cost if this needs to be cheaper, not the count.
+  local keep = T.roundCap * 2
   if #battle.turns > keep then
     local trimmed = {}
     for i = #battle.turns - keep + 1, #battle.turns do
