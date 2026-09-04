@@ -4,7 +4,7 @@ import path from 'node:path';
 import process from 'node:process';
 import { fileURLToPath } from 'node:url';
 import { battleFleetConfigMatches, loadBattleFleetManifest } from './battle-fleet-config.mjs';
-import { sendMessage } from './hbclient.mjs';
+import { sendMessage, transportNode } from './hbclient.mjs';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.resolve(HERE, '..', '..');
@@ -12,6 +12,7 @@ const enabled = /^(1|true|yes)$/i.test(process.env.BATTLE_FLEET_ENABLED || '');
 if (!enabled) throw new Error('Set BATTLE_FLEET_ENABLED=1 to seal a battle fleet.');
 
 const node = (process.env.NODE_URL || 'https://schedule.forward.computer').replace(/\/$/, '');
+const requestNode = transportNode(node);
 const gameProcess = process.env.BATTLE_GAME_PROCESS || '';
 const manifestPath = process.env.BATTLE_FLEET_MANIFEST || '';
 const walletPath = process.env.HB_WALLET || path.join(ROOT, 'arweave-wallet-DA9qhP25.json');
@@ -41,13 +42,13 @@ async function readConfigureReply() {
     throw new Error(`Configure returned invalid slot ${slot}`);
   }
   for (let attempt = 0; attempt < 60; attempt++) {
-    const head = await fetch(`${node}/${gameProcess}~process@1.0/now/at-slot`, {
+    const head = await fetch(`${requestNode}/${gameProcess}~process@1.0/now/at-slot`, {
       headers: { accept: 'text/plain' },
     }).catch(() => null);
     const at = head?.ok ? Number((await head.text()).trim()) : Number.NaN;
     if (Number.isSafeInteger(at) && at >= numericSlot) {
       const response = await fetch(
-        `${node}/${gameProcess}~process@1.0/compute&slot=${numericSlot}/results/output/data`,
+          `${requestNode}/${gameProcess}~process@1.0/compute&slot=${numericSlot}/results/output/data`,
         { headers: { accept: 'application/json, text/plain' } },
       );
       if (response.ok) {
@@ -68,7 +69,7 @@ if (configureReply?.configured !== true) {
 
 let observed;
 for (let attempt = 0; attempt < 60; attempt++) {
-  const response = await fetch(`${node}/${gameProcess}~process@1.0/now/battlefleet`, {
+  const response = await fetch(`${requestNode}/${gameProcess}~process@1.0/now/battlefleet`, {
     headers: { accept: 'application/json, text/plain' },
   }).catch(() => null);
   if (response?.ok) {

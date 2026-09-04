@@ -9,7 +9,8 @@
       "Bash(npm run build:reality:*)",
       "Bash(npm run redeploy:*)",
       "Bash(node backend/native/redeploy.mjs:*)",
-      "Bash(npm run *)"
+      "Bash(npm run *)",
+      "Bash(python *)"
     ],
     "deny": [],
     "ask": []

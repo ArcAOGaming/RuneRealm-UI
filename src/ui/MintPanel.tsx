@@ -6,7 +6,7 @@
  * collection rather than being stranded by the migration.
  */
 import { useEffect, useState } from 'react';
-import { useGame } from '../state/GameProvider';
+import { useGame } from '../state/gameContext';
 import * as api from '../lib/game';
 import { assetHolder, assetImage, transferAsset } from '../lib/mint';
 import { GameError, MintedAsset, Player } from '../lib/types';

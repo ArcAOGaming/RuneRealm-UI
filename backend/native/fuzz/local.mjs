@@ -139,6 +139,7 @@ function bundle() {
     'package.loaded[".json"] = require("json")',
     'Owner = nil',
     'local C = (function()', read('constants.lua'), 'end)()',
+    read('monster-index.generated.lua'),
     'local jsonx = (function()', read('jsonenc.lua'), 'end)()',
     'local encode, jsonObject = jsonx.encode, jsonx.object',
     'Battle = (function()', read('battle.lua'), 'end)()',

@@ -1001,6 +1001,13 @@ impl Worker {
                 "loss"
             };
             let settlement_id = format!("{}-{}", self.config.worker_id, battle_id);
+            let opponent_entry_no = match record.battle.accepter.name.as_str() {
+                "FireFox" => Some(1),
+                "WaterDoge" => Some(4),
+                "Airbud" => Some(7),
+                "Rockpup" => Some(10),
+                _ => None,
+            };
             record.settlement = Some(FinalRecord {
                 id: settlement_id.clone(),
                 kind: FinalKind::Settlement,
@@ -1011,7 +1018,8 @@ impl Worker {
                     "ticket": record.ticket, "playerId": record.player_id, "result": result,
                     "winner": record.battle.winner, "rounds": record.battle.round,
                     "timedOut": record.battle.timed_out, "startedAt": record.battle.started_at,
-                    "endedAt": self.high_water_timestamp, "rewardPlan": record.reward_plan,
+                    "endedAt": self.high_water_timestamp, "opponentEntryNo": opponent_entry_no,
+                    "rewardPlan": record.reward_plan,
                 }),
                 fingerprint: None,
                 acknowledged: false,

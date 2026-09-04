@@ -71,6 +71,13 @@ export const Wind = (p: P) => (
 export const Mountain = (p: P) => (
   <svg {...base(p)}><path d={ELEMENT_PATH.rock} /></svg>
 );
+/** Untyped: an ordinary paw, cut as five small facets rather than magic. */
+export const Paw = (p: P) => (
+  <svg {...base(p)}>
+    <path d="M8.2 13.2 12 10.4l3.8 2.8 1.2 4.2-2.2 2.2H9.2L7 17.4Z" />
+    <path d="M5.2 7.2 7 5.4l1.8 1.8L7 9ZM9.7 4.8 12 2.8l2.3 2-2.3 2.4ZM15.2 7.2 17 5.4l1.8 1.8L17 9Z" />
+  </svg>
+);
 
 // Combat ---------------------------------------------------------------------
 
@@ -230,6 +237,20 @@ export const Info = (p: P) => (
     <path d="M11.1 7.2h1.8V9h-1.8Z" fill="currentColor" stroke="none" />
   </svg>
 );
+/**
+ * Being shown around. An octagonal bezel with a struck needle in it — a
+ * compass rose cut to the same rules as `Cog` and `Clock`, so the walkthrough's
+ * control does not arrive as the one round object in the header.
+ */
+export const Compass = (p: P) => (
+  <svg {...base(p)}>
+    <path d="M9.4 3.2h5.2l4.2 4.2v5.2l-4.2 4.2H9.4l-4.2-4.2V7.4Z" transform="translate(0 1.4)" />
+    {/* The needle takes most of the interior. A small one is correct at 96px
+        and a smudge at 16, which is the size this is actually used at. */}
+    <path d="m16.6 7.4-2.8 6.4-6.4 2.8 2.8-6.4Z" />
+  </svg>
+);
+
 /** Retry. An octagon with a bite out of it, and the arrowhead struck on. */
 export const Refresh = (p: P) => (
   <svg {...base(p)}>
@@ -238,8 +259,8 @@ export const Refresh = (p: P) => (
   </svg>
 );
 
-import { Element } from '../lib/types';
+import { Affinity } from '../lib/types';
 
-export const ELEMENT_ICON: Record<Element, (p: P) => JSX.Element> = {
-  fire: Flame, water: Droplet, air: Wind, rock: Mountain,
+export const ELEMENT_ICON: Record<Affinity, (p: P) => JSX.Element> = {
+  fire: Flame, water: Droplet, air: Wind, rock: Mountain, normal: Paw,
 };

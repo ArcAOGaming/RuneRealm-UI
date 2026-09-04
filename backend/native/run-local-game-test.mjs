@@ -16,6 +16,7 @@ const source = [
   'package.loaded[".json"] = require("json")',
   'Owner = nil',
   'local C = (function()', read('constants.lua'), 'end)()',
+  read('monster-index.generated.lua'),
   'local jsonx = (function()', read('jsonenc.lua'), 'end)()',
   'local encode, jsonObject = jsonx.encode, jsonx.object',
   'Battle = (function()', read('battle.lua'), 'end)()',
@@ -23,7 +24,7 @@ const source = [
   'BattleFleetConfig = nil',
   'BattleFleetAuthority = (function()', read('battle-fleet/authority.lua'), 'end)()',
   read('game.lua'), read('game_test.lua'),
-  'return gametest({}, {})',
+  'return gametest({}, { body = { gc = "on" } })',
 ].join('\n');
 
 const handle = await AoLoader(fs.readFileSync(WASM), {

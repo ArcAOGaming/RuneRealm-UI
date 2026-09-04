@@ -7,26 +7,13 @@
  * clicked, nothing happened, and there was nothing to go on.
  */
 import {
-  createContext, useCallback, useContext, useEffect, useMemo, useRef, useState,
+  useCallback, useEffect, useMemo, useRef, useState,
 } from 'react';
 import { Check, X, Info } from './icons';
+import { type ToastCtx as Ctx, ToastContext } from './toastContext';
 
 type Kind = 'success' | 'error' | 'info';
 type Toast = { id: number; kind: Kind; message: string };
-
-type Ctx = {
-  success: (message: string) => void;
-  error: (message: string) => void;
-  info: (message: string) => void;
-};
-
-const ToastContext = createContext<Ctx | null>(null);
-
-export function useToast(): Ctx {
-  const ctx = useContext(ToastContext);
-  if (!ctx) throw new Error('useToast must be used inside <ToastProvider>');
-  return ctx;
-}
 
 const LIFETIME: Record<Kind, number> = {
   success: 3200,

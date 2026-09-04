@@ -19,7 +19,7 @@
  * and the page simply has a plain dark background. Nothing here is load-bearing.
  */
 
-export type Element = 'fire' | 'water' | 'air' | 'rock' | 'arcane';
+export type Element = 'fire' | 'water' | 'air' | 'rock' | 'normal' | 'arcane';
 
 /** The chroma each element brings. Matches the CSS tokens in index.css. */
 const HUES: Record<Element, [number, number, number]> = {
@@ -28,6 +28,7 @@ const HUES: Record<Element, [number, number, number]> = {
   water: [0.24, 0.66, 1.0],
   air: [0.44, 0.9, 0.76],
   rock: [0.82, 0.64, 0.34],
+  normal: [0.48, 0.51, 0.58],
 };
 
 const VERT = `#version 300 es

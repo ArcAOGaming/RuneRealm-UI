@@ -23,9 +23,26 @@ export async function buildSwarmClient({ root, pid, node, outDir }) {
     '  retrySettlement as huntRetrySettlement, end as huntEnd }',
     `  from ${JSON.stringify(path.join(root, 'src', 'lib', 'hunt.ts').replace(/\\/g, '/'))};`,
     'export { send as rawSend, sendMessage as rawSendMessage, readSlot as rawReadSlot,',
-    '  readJSON as rawReadJSON, readState as rawReadState, pushSlotWithRetry as rawPushSlotWithRetry,',
+    '  readJSON as rawReadJSON, readState as rawReadState, deliverSlot as rawDeliverSlot,',
+    '  pendingDeliveries as rawPendingDeliveries,',
+    // The transport's own phase timings. The shipped app installs no observer
+    // and measures nothing; the swarm worker installs one so a run records
+    // where each signed write actually spent its time.
+    '  setTransportObserver,',
     '  AmbiguousWriteError, AcceptedWriteError, OutboxDeliveryError }',
     `  from ${JSON.stringify(path.join(root, 'src', 'lib', 'hyperbeam.ts').replace(/\\/g, '/'))};`,
+    // The Rune bridge and the AMM. These live in `marketplace.ts` because they
+    // address the TOKEN processes rather than the game, and leaving them out of
+    // this bundle is why the swarm has never touched either: the withdraw half
+    // of the bridge was only ever exercised by hand, and the pair had no bot
+    // able to fund it, price it or trade against it. Same rule as everything
+    // else here -- the app's own verbs, not a reimplementation.
+    'export { AMM_PROCESS, RUNE_PROCESS, QUOTE_PROCESS, MARKET_NODE, exchangeConfigured,',
+    '  readPool as readAmmPool, readSwaps as readAmmSwaps, readDeposit as readAmmDeposit,',
+    '  readTokenInfo, readTokenBalance, claimQuoteFaucet, depositRuneToGame, depositToken,',
+    '  swap as ammSwap, refundDeposit as ammRefundDeposit, addLiquidity as ammAddLiquidity,',
+    '  removeLiquidity as ammRemoveLiquidity, parseUnits, formatUnits, quoteFromPool }',
+    `  from ${JSON.stringify(path.join(root, 'src', 'lib', 'marketplace.ts').replace(/\\/g, '/'))};`,
   ].join('\n');
   await esbuild.build({
     stdin: { contents: entry, resolveDir: root, sourcefile: 'swarm-client.ts', loader: 'ts' },

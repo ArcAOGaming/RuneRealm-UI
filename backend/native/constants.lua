@@ -90,6 +90,7 @@ C.FACTIONS = {
     description = "Masters of the skies, the Sky Nomads harness wind and air to outmaneuver and outlast their opponents.",
     mascot = "XD4tSBeekM1ETZMflAANDfkW6pVWaQIXgSdSiwfwVqw",
     monster = {
+      entryNo = 7,
       name = "Airbud",
       image = "XD4tSBeekM1ETZMflAANDfkW6pVWaQIXgSdSiwfwVqw",
       sprite = "0_gQ7rNpxD8S4wZBE_DZs3adWfZMsBIuo8fwvH3SwL0",
@@ -102,6 +103,7 @@ C.FACTIONS = {
     description = "Mystical protectors of the deep, the Aqua Guardians command the essence of water to heal and empower their allies.",
     mascot = "w_-mPdemSXZ1G-Q6fMEu6wTDJYFnJM9XePjGf_ZChgo",
     monster = {
+      entryNo = 4,
       name = "WaterDoge",
       image = "w_-mPdemSXZ1G-Q6fMEu6wTDJYFnJM9XePjGf_ZChgo",
       sprite = "p90BYY1O3BS3VVzdZETr-hG6jkA3kwo8l0h3aQ2UFoc",
@@ -114,6 +116,7 @@ C.FACTIONS = {
     description = "Fearsome warriors of flame, the Inferno Blades unleash devastating fire-based attacks to overwhelm their foes.",
     mascot = "lnYr9oTtkRHiheQFwH4ns50mrQE6AQR-8Bvl4VfXb0o",
     monster = {
+      entryNo = 1,
       name = "FireFox",
       image = "lnYr9oTtkRHiheQFwH4ns50mrQE6AQR-8Bvl4VfXb0o",
       sprite = "wUo47CacsMRFFizJqUhSj75Rczg3f_MvHs4ytfPtCjQ",
@@ -126,6 +129,7 @@ C.FACTIONS = {
     description = "Immovable defenders, the Stone Titans use their unyielding strength to outlast and overpower their adversaries.",
     mascot = "WhdcUkIGYZG4M5kq00TnUwaIt5OCGz3Q4u6_fZNktvQ",
     monster = {
+      entryNo = 10,
       name = "Rockpup",
       image = "WhdcUkIGYZG4M5kq00TnUwaIt5OCGz3Q4u6_fZNktvQ",
       sprite = "Zt8LmHGVIziXhzjqBhEAWLuGetcDitFKbfaJROkyZks",
@@ -350,6 +354,39 @@ end
 
 --- Points awarded per level-up, all of which must be spent.
 C.LEVEL_UP_POINTS = 10
+--- At most this many of the ten into any one stat.
+---
+--- It was five, which is ten points across exactly two stats and nothing into
+--- the other two. That made an all-in build FREE: the two stats you skipped
+--- stayed at their level-zero value forever while the two you bought grew
+--- tenfold, and by level 20 the gap between them was the whole character.
+---
+--- Measured with `./run-balance.sh matrix20`, which plays every build against
+--- every other and reports win rates. At a cap of five the rows were 35% to
+--- 62% -- a pure defensive build won 3% of its games against a balanced one
+--- while being the build most new players reach for, and no combination of
+--- `speedSwing`, `defenseMitigationMax` or `attackPerStatPoint` moved it
+--- (swept; the best score was 173 against an ideal near zero). All those knobs
+--- can do is change WHICH extreme wins.
+---
+--- Three cannot be spent on fewer than four stats. A build keeps its identity
+--- -- the tank is still the one with the most defense -- but the stat it
+--- skipped is no longer a hole ten levels deep. Together with
+--- `Battle.TUNING.speedSwing = 0.3` the same matrix reports 44-56% for every
+--- build at levels 1, 10 and 20, which is the only configuration measured so
+--- far where all four are worth playing. Neither half works alone: the cap on
+--- its own hands the game to whoever bought speed (86% at level 20), and the
+--- speed fix on its own leaves the extremes where they were.
+---
+--- LEFT AT FIVE. The measurement is recorded, not applied -- balancing is a
+--- decision for playtesting, and this is the change testers would feel most.
+--- Compare the two with `./run-balance.sh matrix20` against
+--- `./run-balance.sh capmatrix20`.
+---
+--- If the extremes are worth keeping, the thing to move is where build
+--- identity comes from: evolutions, move pools and factions are content and
+--- can be balanced one at a time with the same matrix. A build whose identity
+--- is a stat left at zero cannot be.
 C.LEVEL_UP_MAX_PER_STAT = 5
 
 --- What a level-up costs, in Rune, for the level being ENTERED.
@@ -454,6 +491,56 @@ C.ECONOMY = {
   },
   proceeds = { teamBps = 5000, runeBps = 3000, treasuryBps = 2000 },
   amm = { maxSlippageBps = 100, maxWeeklyPoolBps = 500 },
+  --- Rune emission: a SCHEDULE, not a number somebody types.
+  ---
+  --- ECONOMY.md §2 names the one structural flaw in the old design: a per-wallet
+  --- faucet makes total emission `stipend x wallets x time`, and wallets are
+  --- free to create. §3.1 is the fix, and it is the reason every number here is
+  --- a global rather than a per-player rate:
+  ---
+  ---   mint a FIXED number of Rune per day globally and divide it among that
+  ---   day's claimants.
+  ---
+  --- A million bots then add not one Rune to supply; they dilute their own
+  --- share and everyone else's in exactly the proportion they added. That
+  --- property is destroyed the moment the pot is derived from the population,
+  --- so it never is. Growth changes each player's slice, never the total.
+  ---
+  --- Halving yearly because a supply schedule has to be knowable in advance --
+  --- "N per epoch, halving yearly" is something a holder can price, and
+  --- "1-3 per wallet per 20 hours, wallets unbounded" is not.
+  ---
+  --- THE NUMBER IS THE CALIBRATION, and it is not free to choose. 2000 per
+  --- 30 days is the figure `economy-sim.mjs` calibrates the anti-farm case
+  --- against: at $0.10 a Rune it puts a thousand hostile accounts at 4.9% of
+  --- their pass cost recovered over a full year. Ten times this number is ten
+  --- times that recovery and the farm becomes worth running, so moving it means
+  --- re-running `node backend/native/economy-sim.mjs` and looking at the recoup
+  --- column -- not just picking a rounder figure.
+  ---
+  --- The epoch is 30 DAYS rather than one, for two reasons that agree. It is
+  --- the window the simulation and `accountNet30Cap` both already use, and a
+  --- fixed pot divided among claimants has to stay integral: a daily pot of 67
+  --- Rune split across 200 players is zero each after integer division, which
+  --- is the same "the faucet pays nothing" bug in a new costume.
+  rune = {
+    emissionPerEpoch = 2000,
+    epochLength = 30 * 24 * 3600 * 1000,
+    halvingPeriod = 365 * 24 * 3600 * 1000,
+    -- After eight halvings the pot is 7 Rune an epoch; the floor takes over so
+    -- emission goes flat rather than asymptotically to zero.
+    maxHalvings = 8,
+    minEmissionPerEpoch = 100,
+    --- What an account too young to be weighted still receives, as a share of
+    --- one per-capita slice.
+    ---
+    --- Not charity: without it a new wallet earns nothing for its first seven
+    --- days, which is a dead first week for every honest player and no obstacle
+    --- at all to a farm that simply waits. It is paid out of the SAME fixed pot
+    --- as every other claim, so any number of newcomers dilutes the day rather
+    --- than inflating it.
+    newcomerFloorBps = 2500,
+  },
 }
 
 -- Minting -------------------------------------------------------------------

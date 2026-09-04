@@ -147,6 +147,7 @@ local function cleanMonster(raw)
   end
   local monster = {
     id = type(raw.id) == "string" and raw.id or nil,
+    entryNo = int(raw.entryNo, 0) > 0 and int(raw.entryNo, 0) or nil,
     name = type(raw.name) == "string" and string.sub(raw.name, 1, 80) or nil,
     image = type(raw.image) == "string" and raw.image or nil,
     sprite = type(raw.sprite) == "string" and raw.sprite or nil,
@@ -175,6 +176,44 @@ local function cleanMonster(raw)
   end
   if count == 0 then return nil, "monster must have moves" end
   return monster
+end
+
+--- The game authority sends the effective catchable slice of the Monster Index
+--- once when it opens a run. This Hunt worker owns random selection,
+--- but it cannot invent or re-enable an entry the game did not authorize.
+local function cleanMonsterIndex(raw)
+  if type(raw) ~= "table" then return nil, "Hunt Monster Index is missing" end
+  local pool, total, seen = {}, 0, {}
+  for index, value in ipairs(raw) do
+    local entryNo = type(value) == "table" and int(value.entryNo, 0) or 0
+    local affinity = type(value) == "table" and value.affinity or nil
+    local weight = type(value) == "table" and int(value.huntWeight, 0) or 0
+    if entryNo < 1 or entryNo > 1000000 or seen[entryNo]
+       or type(value.entryKey) ~= "string" or #value.entryKey < 1 or #value.entryKey > 96
+       or string.find(value.entryKey, "[^%w_%-]", 1)
+       or type(value.name) ~= "string" or #value.name < 1 or #value.name > 80
+       or type(C.MOVE_POOLS[affinity]) ~= "table"
+       or weight < 1 or weight > 100000 then
+      return nil, "Hunt Monster Index entry " .. tostring(index) .. " is invalid"
+    end
+    for _, moveName in ipairs({ value.basicMove, value.advancedMove }) do
+      if moveName ~= nil and (type(moveName) ~= "string" or not Battle.moveDef(moveName)) then
+        return nil, "Hunt Monster Index move is invalid"
+      end
+    end
+    seen[entryNo] = true
+    total = total + weight
+    if total > 10000000 then return nil, "Hunt Monster Index weight is too large" end
+    pool[#pool + 1] = {
+      entryNo = entryNo, entryKey = value.entryKey, name = value.name,
+      affinity = affinity,
+      starterFaction = type(value.starterFaction) == "string" and value.starterFaction or nil,
+      basicMove = value.basicMove, advancedMove = value.advancedMove,
+      huntWeight = weight,
+    }
+  end
+  if #pool < 1 or #pool > 1000 then return nil, "Hunt Monster Index must contain 1-1000 entries" end
+  return pool, total
 end
 
 local function reply(base, value, outbox)
@@ -233,6 +272,16 @@ local function openedMessage(record)
   }
 end
 
+local function seenEntryList(record)
+  local entries = {}
+  for rawEntryNo in pairs(record.seenEntries or {}) do
+    local entryNo = int(rawEntryNo, 0)
+    if entryNo > 0 then entries[#entries + 1] = entryNo end
+  end
+  table.sort(entries)
+  return entries
+end
+
 local function releaseMessage(record, reason)
   return {
     target = GAME_PROCESS,
@@ -242,6 +291,10 @@ local function releaseMessage(record, reason)
     ["run-id"] = record.runId,
     ["player-id"] = record.playerId,
     reason = reason or "left",
+    data = encode({
+      protocol = PROTOCOL, runId = record.runId, playerId = record.playerId,
+      seenEntries = seenEntryList(record), reason = reason or "left",
+    }),
   }
 end
 
@@ -286,12 +339,15 @@ end
 local function capturedMonster(wild, timestamp)
   local faction = factionForElement(wild.elementType)
   local art = ({ fire = "Fire", water = "Water", air = "Air", rock = "Earth" })[wild.elementType]
+    or "Normal"
   return {
+    entryNo = wild.entryNo,
     name = wild.name, image = wild.image, sprite = wild.sprite,
     holographic = true, background = art, border = art,
     faction = faction and faction.name or wild.faction,
     elementType = wild.elementType,
-    berryItem = faction and faction.berry or (wild.elementType .. "_berry"),
+    berryItem = faction and faction.berry or nil,
+    careMode = wild.elementType == "normal" and "any-berry" or "element-berry",
     attack = wild.attack, defense = wild.defense, speed = wild.speed, health = wild.health,
     energy = 50, happiness = 50, level = wild.level, exp = 0,
     nextLevelExp = C.requiredExp(wild.level),
@@ -300,6 +356,34 @@ local function capturedMonster(wild, timestamp)
     status = { type = "Home", since = timestamp, until_time = timestamp },
     bornAt = timestamp,
   }
+end
+
+
+local function chooseMonsterIndexEntry(record)
+  local roll = Battle.rand(1, record.monsterIndexWeight)
+  local cursor = 0
+  for _, entry in ipairs(record.monsterIndex) do
+    cursor = cursor + entry.huntWeight
+    if roll <= cursor then return entry end
+  end
+  return record.monsterIndex[#record.monsterIndex]
+end
+
+local function makeWild(entry, level)
+  local fallbackFaction = entry.starterFaction
+  if not fallbackFaction then
+    local faction = factionForElement(entry.affinity)
+    fallbackFaction = faction and faction.name or C.FACTIONS[1].name
+  end
+  local wild = Battle.makeOpponent(level, { faction = fallbackFaction, difficulty = 1 })
+  wild.entryNo = entry.entryNo
+  wild.name = entry.name
+  wild.elementType = entry.affinity
+  wild.faction = entry.starterFaction or "Wild"
+  wild.image = entry.entryKey
+  wild.sprite = entry.entryKey
+  wild.moves = Battle.rollMoves(entry.affinity)
+  return wild
 end
 
 local function catchChance(hunterLevel, wildLevel, runes)
@@ -326,6 +410,8 @@ Handlers["hunt.open"] = function(base, msg, timestamp)
   end
   local monster, monsterError = cleanMonster(payload.monster)
   if not monster then return fail(base, monsterError) end
+  local monsterIndex, monsterIndexWeightOrError = cleanMonsterIndex(payload.monsterIndex)
+  if not monsterIndex then return fail(base, monsterIndexWeightOrError) end
   local existing = State.runs[payload.runId]
   if existing then
     if existing.playerId ~= payload.playerId or existing.ticket ~= payload.ticket then
@@ -345,6 +431,8 @@ Handlers["hunt.open"] = function(base, msg, timestamp)
     monsterId = payload.monsterId, monster = monster, status = "roaming",
     openedAt = timestamp, encounterCount = 0, lastSearchAt = 0,
     seedMaterial = payload.runId .. "/" .. payload.ticket,
+    monsterIndex = monsterIndex, monsterIndexWeight = monsterIndexWeightOrError,
+    seenEntries = {},
     actionReceipts = {},
   }
   State.runs[record.runId] = record
@@ -375,8 +463,9 @@ Handlers["hunt.search"] = function(base, msg, timestamp)
   local low = math.max(0, record.monster.level - levelRange)
   local high = record.monster.level + levelRange
   local wildLevel = Battle.rand(low, high)
-  local faction = C.FACTIONS[Battle.rand(1, #C.FACTIONS)]
-  local wild = Battle.makeOpponent(wildLevel, { faction = faction.name, difficulty = 1 })
+  local wildEntry = chooseMonsterIndexEntry(record)
+  local wild = makeWild(wildEntry, wildLevel)
+  record.seenEntries[tostring(wildEntry.entryNo)] = true
   local encounterId = record.runId .. "-e" .. string.format("%d", record.encounterCount)
   record.encounter = capturedMonster(wild, timestamp)
   record.encounter.id = encounterId
@@ -477,6 +566,7 @@ Handlers["hunt.capture"] = function(base, msg, timestamp)
     runId = record.runId, playerId = record.playerId,
     encounterId = record.encounter.id, actionId = actionId,
     success = success, chance = chance, roll = roll, runeBid = runes,
+    seenEntries = seenEntryList(record),
     monster = success and record.encounter or nil,
   }
   record.settlement = {

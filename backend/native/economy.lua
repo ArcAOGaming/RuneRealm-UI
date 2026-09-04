@@ -103,11 +103,40 @@ local function newDesks()
     { uptoBps = 8000, bid = 175, ask = 400 },
     { uptoBps = 10000, bid = 100, ask = 300 },
   }
+  --- Rune priced in Gold. Repriced 2026-08-31 from 1000/2000; see below.
+  ---
+  --- The old top band said one Rune was 250 berries, and nothing in the design
+  --- supported that number. Three independent checks all put it an order of
+  --- magnitude lower:
+  ---
+  --- * THE DESK'S OWN RESERVE. It was given 200,000 Gold. At a bid of 1000 that
+  ---   buys 200 Rune -- a tenth of ONE epoch's global emission (2,000). A
+  ---   reserve that cannot absorb a tenth of a month is not a reserve, and
+  ---   whoever sized it was not imagining 1000.
+  --- * THE DESIGN'S OWN CONSTANTS. `gold.perQualifiedPlayer` is 1000, so a
+  ---   qualified player is meant to hold ~1000 Gold; `runeRewards.accountNet30Cap`
+  ---   is 20, so they earn ~20 Rune a month. If a month's earnings are roughly a
+  ---   steady-state balance, 1000 Gold = 20 Rune, and one Rune is 50 Gold. At
+  ---   1000 a player's ENTIRE intended Gold holding was worth a single Rune, and
+  ---   their monthly Rune was worth twenty times all the Gold they should have
+  ---   had -- so Gold stopped mattering and everything would have been priced in
+  ---   Rune.
+  --- * SCARCITY. `C.LOOT_TABLE` drops 16 berry-units per box (four berries at
+  ---   800/1000 for 5 each). Rune is capped at 20 per account per 30 days and
+  ---   2,000 globally per epoch. That abundance ratio prices a Rune near 24
+  ---   berries, about 96 Gold.
+  ---
+  --- 60/120 sits between the two derivations and keeps the ~2x spread the other
+  --- desks use. It also makes the 200,000 reserve cover ~3,300 Rune, which is
+  --- over an epoch of emission -- a reserve that can actually do its job.
+  ---
+  --- Anchored to real money at the intended $0.10 a Rune, this puts Gold at
+  --- about $0.0017 and a berry at just under a cent.
   local runePrices = {
-    { uptoBps = 1000, bid = 1000, ask = 2000 },
-    { uptoBps = 3000, bid = 900, ask = 1700 },
-    { uptoBps = 6000, bid = 800, ask = 1500 },
-    { uptoBps = 10000, bid = 650, ask = 1250 },
+    { uptoBps = 1000, bid = 60, ask = 120 },
+    { uptoBps = 3000, bid = 54, ask = 102 },
+    { uptoBps = 6000, bid = 48, ask = 90 },
+    { uptoBps = 10000, bid = 39, ask = 75 },
   }
   local berryLimits = { perAction = 100, perAccount = 250, global = 500 }
   local scrollLimits = { perAction = 5, perAccount = 10, global = 25 }
@@ -178,9 +207,16 @@ function M.newState()
         reason = "Exact qualified-active definition is an open launch decision",
       },
       runeRewards = {
-        enabled = false,
+        -- Emission is decided by `C.ECONOMY.rune` and the clock. `enabled` is
+        -- an operator brake, not the default state, and `epochBudget` and
+        -- `newcomerFloor` are DERIVED -- recomputed on every claim by
+        -- `M.emissionBudget`. They are stored only so the published view can
+        -- show what the schedule currently says.
+        enabled = true,
+        haltedByOperator = false,
+        genesisAt = 0,
         epochBudget = 0,
-        epochLength = DAY,
+        epochLength = (C.ECONOMY.rune or {}).epochLength or (30 * DAY),
         accountNet30Cap = 20,
         newcomerFloor = 0,
         reserveBalance = 0,
@@ -188,7 +224,7 @@ function M.newState()
         bondEnabled = false,
         bondAmount = 5,
         unbondDelay = 30 * DAY,
-        reason = "Global Rune emission and weighting are open launch decisions",
+        reason = "Emission follows the published schedule in C.ECONOMY.rune",
       },
       passes = {
         genesisSealed = false,
@@ -293,7 +329,16 @@ local function validAddress(value)
     and string.match(value, "^[%w_%-]+$") ~= nil
 end
 
-function M.ensurePass(state, player, address, timestamp, origin)
+--- Give an unlocked account its Eternal Pass, and count it once.
+---
+--- `counted` says the grant has ALREADY been tallied and this call is only
+--- building the account's copy of it. That is the game process's allow-list:
+--- `Admin.Unlock` admits a wallet as a string and tallies the pass there, and
+--- the record is minted later, on the wallet's first real action. Without this
+--- the same pass would be counted twice -- once when it was granted and again
+--- whenever its owner got round to playing -- and `passQuote` prices the next
+--- pass off that number.
+function M.ensurePass(state, player, address, timestamp, origin, counted)
   state = M.ensureState(state)
   if not player then return nil end
   if type(player.pass) ~= "table" and player.unlocked then
@@ -308,10 +353,12 @@ function M.ensurePass(state, player, address, timestamp, origin)
       bond = 0,
       unbond = nil,
     }
-    local passes = state.policy.passes
-    passes.lifetimePassCount = int(passes.lifetimePassCount, 0) + 1
-    if player.pass.origin == "legacy" then passes.legacyCount = int(passes.legacyCount, 0) + 1 end
-    if player.pass.origin == "promised" then passes.promisedCount = int(passes.promisedCount, 0) + 1 end
+    if not counted then
+      local passes = state.policy.passes
+      passes.lifetimePassCount = int(passes.lifetimePassCount, 0) + 1
+      if player.pass.origin == "legacy" then passes.legacyCount = int(passes.legacyCount, 0) + 1 end
+      if player.pass.origin == "promised" then passes.promisedCount = int(passes.promisedCount, 0) + 1 end
+    end
   elseif type(player.pass) == "table" then
     player.pass.accountId = player.pass.accountId or address
     player.pass.controller = player.pass.controller or address
@@ -658,6 +705,55 @@ local function candidateQualified(state, timestamp)
   return total
 end
 
+--- The global daily emission, decided by the schedule and nothing else.
+---
+--- This used to be `policy.epochBudget`: a flat number, defaulting to 0, that a
+--- human had to propose and apply before the faucet paid anybody anything. It
+--- was not a warm-up and it was not an economic result -- it was an unmade
+--- decision sitting in the config, and every worship in every deployment paid
+--- exactly zero because of it.
+---
+--- The engine owns it now. `C.ECONOMY.rune` carries a genesis rate and a
+--- halving period, this reads the clock, and nothing about emission requires a
+--- policy message ever again.
+---
+--- The pot is FIXED per day and deliberately does not scale with the player
+--- count -- see the note in `constants.lua` and ECONOMY.md §3.1. Deriving it
+--- per-player the way Gold derives its target would reintroduce precisely the
+--- sybil flaw the whole design exists to close.
+---
+--- `genesisAt` is stamped on first use rather than at spawn so that a migrated
+--- process starts its schedule when it starts paying, not at some epoch it
+--- inherited from a predecessor's export.
+function M.emissionBudget(state, timestamp)
+  local policy = state.policy.runeRewards
+  local cfg = C.ECONOMY.rune or {}
+  local now = int(timestamp, 0)
+  if int(policy.genesisAt, 0) <= 0 then policy.genesisAt = now end
+  local elapsed = math.max(0, now - int(policy.genesisAt, 0))
+  local period = math.max(1, int(cfg.halvingPeriod, 365 * DAY))
+  local halvings = math.min(int(cfg.maxHalvings, 8), elapsed // period)
+  local budget = int(cfg.emissionPerEpoch, 2000)
+  for _ = 1, halvings do budget = budget // 2 end
+  budget = math.max(int(cfg.minEmissionPerEpoch, 0), budget)
+  return budget, halvings
+end
+
+--- How many accounts the day's pot is divided between.
+---
+--- `qualifiedActive` is only adopted while the qualification rule is switched
+--- on, and that rule is itself an open launch decision -- so reading it alone
+--- left the divisor at zero, `math.max(1, 0)` made it one, and the first
+--- claimant of the day would have taken the ENTIRE global pot. The candidate
+--- count is computed either way; fall back to it so the split is always against
+--- the real population.
+local function emissionPopulation(state)
+  local gold = state.policy.gold
+  local adopted = int(gold.qualifiedActive, 0)
+  if adopted > 0 then return adopted end
+  return math.max(1, int(gold.candidateQualifiedActive, 0))
+end
+
 function M.claimRuneReward(state, player, address, timestamp)
   state = M.ensureState(state)
   candidateQualified(state, timestamp)
@@ -669,10 +765,21 @@ function M.claimRuneReward(state, player, address, timestamp)
      and int(player.pass and player.pass.bond, 0) < int(policy.bondAmount, 0) then
     return 0, "Full Rune reward eligibility requires the configured Rune bond"
   end
-  if not policy.enabled or int(policy.epochBudget, 0) <= 0 then
-    return 0, policy.reason or "Global Rune rewards are paused"
+  -- The only remaining stop is the emergency brake. `enabled` is kept as an
+  -- explicit override for an operator who has to halt the faucet in an
+  -- incident, but it no longer DEFAULTS the faucet off: the schedule decides.
+  if state.policy.emergency and state.policy.emergency.paused == true then
+    return 0, state.policy.emergency.reason or "The economy is paused"
   end
-  local epochId = timestamp // int(policy.epochLength, DAY)
+  if policy.enabled == false and policy.haltedByOperator == true then
+    return 0, policy.reason or "Rune rewards are halted"
+  end
+  local budget = M.emissionBudget(state, timestamp)
+  -- Published so the view and the client can read the schedule's current
+  -- answer. Derived every claim; never an input.
+  policy.epochBudget = budget
+  if budget <= 0 then return 0, "The emission schedule has run to zero" end
+  local epochId = timestamp // math.max(1, int((C.ECONOMY.rune or {}).epochLength, 30 * DAY))
   if not policy.currentEpoch or int(policy.currentEpoch.id, -1) ~= epochId then
     policy.currentEpoch = { id = epochId, spent = 0, claims = {} }
   end
@@ -686,13 +793,22 @@ function M.claimRuneReward(state, player, address, timestamp)
   end
   local ageDays = firstDay and (timestamp // DAY - firstDay) or 0
   local weightBps = ageDays >= 30 and BPS or (ageDays >= 7 and 5000 or 0)
-  if weightBps == 0 and int(policy.newcomerFloor, 0) <= 0 then
-    return 0, "Account has not matured through qualifying play"
+  local population = emissionPopulation(state)
+  local perCapita = budget // population
+  -- The newcomer floor is DERIVED from the same pot, not configured. An account
+  -- too young to be weighted still gets a slice of one per-capita share, and
+  -- because it comes out of `remainingEpoch` like every other claim, any number
+  -- of newcomers dilutes the day rather than inflating it.
+  local floorShare = (perCapita * int((C.ECONOMY.rune or {}).newcomerFloorBps, 2500)) // BPS
+  policy.newcomerFloor = floorShare
+  local share = (budget * weightBps) // (population * BPS)
+  if share <= 0 then share = floorShare end
+  -- A pot that cannot pay one whole Rune to a matured account is not a
+  -- rounding problem to paper over; say so rather than silently paying zero.
+  if share <= 0 then
+    return 0, "The day's emission is fully shared out"
   end
-  local population = math.max(1, int(state.policy.gold.qualifiedActive, 0))
-  local share = (int(policy.epochBudget, 0) * weightBps) // (population * BPS)
-  if share <= 0 then share = int(policy.newcomerFloor, 0) end
-  local remainingEpoch = int(policy.epochBudget, 0) - int(policy.currentEpoch.spent, 0)
+  local remainingEpoch = budget - int(policy.currentEpoch.spent, 0)
 
   local issued30, consumed30 = 0, 0
   for _, flow in ipairs(activity.runeFlow or {}) do
@@ -704,9 +820,13 @@ function M.claimRuneReward(state, player, address, timestamp)
   end
   local accountRemaining = int(policy.accountNet30Cap, 20) + consumed30 - issued30
   local amount = math.max(0, math.min(share, remainingEpoch, accountRemaining))
+  -- Record the claim only when it actually paid. `claims[address]` is the
+  -- once-per-epoch gate and `0` is TRUTHY in Lua, so writing a zero here
+  -- locked the wallet out of the faucet for the whole 30-day epoch on the
+  -- first claim that happened to be capped to nothing.
+  if amount <= 0 then return 0, "Rune reward caps leave no available amount" end
   policy.currentEpoch.claims[address] = amount
   policy.currentEpoch.spent = int(policy.currentEpoch.spent, 0) + amount
-  if amount <= 0 then return 0, "Rune reward caps leave no available amount" end
   return amount, nil
 end
 
@@ -1447,6 +1567,20 @@ end
 
 function M.publicView(state, withdrawals, deposits, timestamp)
   state = M.ensureState(state)
+  -- Refresh the derived emission figures before publishing them.
+  --
+  -- They are recomputed on every claim, but a process nobody has claimed on yet
+  -- would publish the zeros it was initialised with -- which is exactly the
+  -- "the faucet is broken" reading this whole change exists to remove. The
+  -- schedule has an answer at every instant; publish that answer.
+  do
+    local budget = M.emissionBudget(state, timestamp)
+    local policy = state.policy.runeRewards
+    policy.epochBudget = budget
+    local population = emissionPopulation(state)
+    policy.newcomerFloor =
+      ((budget // population) * int((C.ECONOMY.rune or {}).newcomerFloorBps, 2500)) // BPS
+  end
   local assets = {}
   local markets = {}
   for _, item in ipairs(ITEM_IDS) do
@@ -1546,8 +1680,11 @@ local ALLOWED_CHANGES = {
   ["gold.expansionEnabled"] = { delay = true, boolean = true },
   ["emergency.paused"] = { delay = true, boolean = true },
   ["qualification.enabled"] = { delay = true, boolean = true },
+  -- An operator brake for an incident, not the emission setting. Halting also
+  -- requires `runeRewards.haltedByOperator`, so a stale `enabled = false`
+  -- inherited from a pre-schedule export cannot silently keep the faucet shut.
   ["runeRewards.enabled"] = { delay = true, boolean = true },
-  ["runeRewards.epochBudget"] = { delay = true, min = 0, max = 1000000 },
+  ["runeRewards.haltedByOperator"] = { delay = true, boolean = true },
   ["runeRewards.bondEnabled"] = { delay = true, boolean = true },
   ["runeRewards.bondAmount"] = { delay = true, min = 0, max = 1000000 },
   ["runeRewards.unbondDelay"] = { delay = true, min = DAY, max = 365 * DAY },

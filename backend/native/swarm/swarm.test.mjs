@@ -122,14 +122,19 @@ const originalSetTimeout = globalThis.setTimeout;
 const originalWallet = globalThis.arweaveWallet;
 try {
   /*
-   * `at-slot` names the last completed slot. An idle process can remain exactly
-   * at the requested slot indefinitely, so equality must go straight to the
-   * cached result without waiting for a future player action.
+   * The happy path is ONE request: the compute pull is both the request for
+   * computation and the read of its reply. `at-slot` is a recovery-only signal
+   * and must never be probed first — on an idle process it is stale by
+   * construction, and on a stock node it makes `now` compute, doubling the work
+   * of every write. The `setTimeout` trap below also proves the completed slot
+   * returns without ever waiting for a future player action.
    */
   const reads = [];
   globalThis.fetch = async (url) => {
     reads.push(String(url));
-    if (String(url).endsWith('/now/at-slot')) return new Response('7');
+    if (String(url).endsWith('/now/at-slot')) {
+      throw new Error('the happy path must not probe the cached head before pulling its slot');
+    }
     if (String(url).includes('/compute&slot=7/')) {
       return new Response(JSON.stringify({ ok: true, slot: 7 }));
     }
@@ -144,7 +149,9 @@ try {
     }),
     { ok: true, slot: 7 },
   );
-  assert.equal(reads.length, 2, 'an idle completed slot needs one head read and one cached reply read');
+  assert.equal(reads.length, 1, 'a completed slot needs one compute read');
+  assert.match(reads[0], /\/compute&slot=7\/results\/output\/data$/,
+    'the single happy-path request is the slot\'s own compute pull');
 
   globalThis.setTimeout = originalSetTimeout;
 
@@ -168,7 +175,7 @@ try {
     }),
     { ok: true, slot: 7 },
   );
-  assert.equal(headPolls, 1, 'a pending slot gets one cheap head check');
+  assert.equal(headPolls, 0, 'a pending slot is never probed first');
   assert.equal(computeRequests, 1, 'a pending slot is pulled immediately exactly once');
 
   computeRequests = 0;
@@ -200,14 +207,19 @@ try {
 
   computeRequests = 0;
   headPolls = 0;
+  let injectedBusyPulls = 0;
+  let injectedUnparsableHeads = 0;
   globalThis.fetch = async (url) => {
     const target = String(url);
     if (target.endsWith('/now/at-slot')) {
       headPolls += 1;
-      return new Response(headPolls === 1 ? '6' : 'not-a-slot');
+      if (headPolls === 1) return new Response('6');
+      injectedUnparsableHeads += 1;
+      return new Response('not-a-slot');
     }
     if (target.includes('/compute&slot=7/')) {
       computeRequests += 1;
+      injectedBusyPulls += 1;
       return new Response('busy', { status: 503 });
     }
     throw new Error(`unexpected exhausted-recovery request: ${target}`);
@@ -218,8 +230,12 @@ try {
     }),
     /one compute request/,
   );
+  assert.equal(injectedBusyPulls, 1,
+    'the 503 on the compute pull must actually be served, or this tests nothing');
+  assert.equal(injectedUnparsableHeads, 2,
+    'the unparsable cached head must actually be served on every poll after the first');
   assert.equal(computeRequests, 1, 'recovery never repeats an uncomputed-slot request');
-  assert.equal(headPolls, 4, 'recovery polling remains bounded');
+  assert.equal(headPolls, 3, 'recovery polling remains bounded');
 
   const preReadAbort = new AbortController();
   const preReadReason = new Error('cancel read before it starts');
@@ -240,13 +256,17 @@ try {
   const delayedReadAbort = new AbortController();
   const delayedReadReason = new DOMException('read recovery timed out', 'TimeoutError');
   headPolls = 0;
+  let cancelledBusyPulls = 0;
   globalThis.fetch = async (url) => {
     const target = String(url);
     if (target.endsWith('/now/at-slot')) {
       headPolls += 1;
       return new Response('6');
     }
-    if (target.includes('/compute&slot=7/')) return new Response('busy', { status: 503 });
+    if (target.includes('/compute&slot=7/')) {
+      cancelledBusyPulls += 1;
+      return new Response('busy', { status: 503 });
+    }
     throw new Error(`unexpected cancelled-recovery request: ${target}`);
   };
   const cancelledRecovery = api.rawReadSlot(7, {
@@ -255,7 +275,9 @@ try {
   });
   originalSetTimeout(() => delayedReadAbort.abort(delayedReadReason), 10);
   await assert.rejects(cancelledRecovery, (error) => error === delayedReadReason);
-  assert.equal(headPolls, 2, 'cancellation interrupts recovery before another cached poll');
+  assert.equal(cancelledBusyPulls, 1,
+    'the failed compute pull that puts this read into recovery must actually be served');
+  assert.equal(headPolls, 1, 'cancellation interrupts recovery before another cached poll');
 
   const signedItems = [];
   globalThis.arweaveWallet = {
@@ -338,7 +360,19 @@ try {
   let computedReply = { ok: true };
   let computeStatus = 200;
   let reportedHead = null;
-  let abortHeadController = null;
+  /*
+   * Cancels the correlated reply READ, mid-flight, on a write that the
+   * scheduler has already durably accepted.
+   *
+   * This used to be keyed on `now/at-slot`, because `readSlot` probed the
+   * cached head before pulling its own slot. It no longer does — the happy path
+   * is one request, the compute pull — so that key silently stopped injecting
+   * anything and the three blocks below stopped testing the accepted-but-unread
+   * contract. `abortedReadPulls` is asserted at each of them so a future change
+   * to the request shape fails loudly instead of quietly passing.
+   */
+  let abortReadController = null;
+  let abortedReadPulls = 0;
   const pushStatuses = [];
   let publishedPlayerReply = null;
   let publishedPlayerReplies = [];
@@ -367,13 +401,14 @@ try {
       return new Response('', { status: 200, headers: { slot: String(scheduledSlot), id: `id-${scheduledSlot}` } });
     }
     if (target.endsWith('/now/at-slot')) {
-      if (abortHeadController) {
-        abortHeadController.abort();
-        throw abortHeadController.signal.reason;
-      }
       return new Response(String(reportedHead ?? scheduledSlot));
     }
     if (target.includes('/compute&slot=')) {
+      if (abortReadController) {
+        abortedReadPulls += 1;
+        abortReadController.abort();
+        throw abortReadController.signal.reason;
+      }
       return new Response(JSON.stringify(computedReply), { status: computeStatus });
     }
     if (target.includes('/push&slot=')) {
@@ -419,22 +454,74 @@ try {
   assert.equal(pushes.length, beforeFleetGating + 2,
     'outbox gating must use the last canonical Action field that was actually signed');
 
-  pushStatuses.push(503, 200);
-  await api.rawSend([{ name: 'ACTION', value: 'RuNe.WiThDrAw' }], {
+  // A push is NEVER retried. Measured on the live node: re-pushing an
+  // already-delivered game slot re-executes the outbox and mints again
+  // (totalsupply 233 -> 234 -> 235 across two re-pushes, no second in-game
+  // deduction), which is how a soak turned 80 deducted Rune into 224 minted.
+  // A failed delivery is therefore reported, never re-attempted.
+  const beforeSinglePush = pushes.length;
+  pushStatuses.push(503);
+  await assert.rejects(
+    api.rawSend([{ name: 'ACTION', value: 'RuNe.WiThDrAw' }], {
+      process: 'P'.repeat(43), node: 'https://node.test',
+    }),
+    (error) => error.name === 'OutboxDeliveryError' && error.pushStatus === 503,
+  );
+  assert.equal(pushes.length, beforeSinglePush + 1,
+    'a failed required delivery is pushed exactly once - a retry is a second mint');
+  assert.match(pushes[beforeSinglePush].target, /push&slot=16$/);
+
+  // The bug this file exists to pin: on the live node a withdrawal whose mint
+  // LANDED answers the push with HTTP 500 every single time (the node crashes
+  // caching the push result, after both hops are delivered). A confirmation
+  // read of the recipient's token balance is the verdict; the status is not.
+  const beforeConfirmed500 = pushes.length;
+  let confirmReads = 0;
+  pushStatuses.push(500);
+  const confirmedWithdrawal = await api.rawSend([{ name: 'Action', value: 'Rune.Withdraw' }], {
     process: 'P'.repeat(43), node: 'https://node.test',
-    deliveryOptions: { attempts: 3, delayMs: 0 },
+    deliveryOptions: {
+      confirmIntervalMs: 0,
+      confirm: async () => { confirmReads += 1; return confirmReads >= 2; },
+    },
   });
-  assert.equal(pushes.length, beforeFleetGating + 4, 'Rune.Withdraw retries a transient required-delivery failure');
-  assert.match(pushes[beforeFleetGating + 2].target, /push&slot=16$/);
+  assert.deepEqual(confirmedWithdrawal, computedReply,
+    'a 500 push whose delivery is confirmed must return the reply, not an error');
+  assert.equal(pushes.length, beforeConfirmed500 + 1,
+    'a confirmed delivery still pushes exactly once');
+  assert.ok(confirmReads >= 2, 'the confirmation read is polled until it proves delivery');
+
+  // And the other half: a 200 push proves nothing when a confirm exists, so an
+  // unconfirmed delivery is still a loud, non-retryable failure.
+  const beforeUnconfirmed200 = pushes.length;
+  pushStatuses.push(200);
+  await assert.rejects(
+    api.rawSend([{ name: 'Action', value: 'Rune.Withdraw' }], {
+      process: 'P'.repeat(43), node: 'https://node.test',
+      deliveryOptions: {
+        confirmIntervalMs: 0, confirmTimeoutMs: 1, confirm: async () => false,
+      },
+    }),
+    (error) => error.name === 'OutboxDeliveryError'
+      && error.confirmed === false
+      && /do not retry the game action/i.test(error.message),
+  );
+  assert.equal(pushes.length, beforeUnconfirmed200 + 1,
+    'an unconfirmed delivery is reported, not re-pushed');
 
   computedReply = { error: 'not enough runes' };
   const rejected = await api.rawSend([{ name: 'Action', value: 'Rune.Withdraw' }], {
     process: 'P'.repeat(43), node: 'https://node.test',
   });
   assert.deepEqual(rejected, { error: 'not enough runes' });
-  assert.equal(pushes.length, beforeFleetGating + 4,
+  assert.equal(pushes.length, beforeUnconfirmed200 + 1,
     'a rejected withdrawal cannot have an outbox and must preserve its real handler reply');
 
+  // The pull 503s and the cached head is pinned one slot BEHIND the slot this
+  // write is about to be given (`scheduledSlot` increments inside the schedule
+  // branch), so recovery polls a head that never catches up and exhausts. The
+  // `one compute request` match on the cause is what proves that: the message
+  // for a head that DID catch up reads `Could not read the cached reply`.
   computedReply = { ok: true };
   reportedHead = scheduledSlot;
   computeStatus = 503;
@@ -443,7 +530,6 @@ try {
     api.rawSend([{ name: 'Action', value: 'Rune.Withdraw' }], {
       process: 'P'.repeat(43), node: 'https://node.test',
       readOptions: { attempts: 1, delayMs: 0 },
-      deliveryOptions: { attempts: 1, delayMs: 0 },
     }),
     (error) => error.name === 'AcceptedWriteError'
       && error.accepted === true
@@ -459,12 +545,12 @@ try {
 
   computeStatus = 200;
   reportedHead = null;
-  abortHeadController = new AbortController();
+  abortReadController = new AbortController();
+  const abortedPullsBeforeReadAbort = abortedReadPulls;
   const pushesBeforeReadAbort = pushes.length;
   await assert.rejects(
     api.rawSend([{ name: 'Action', value: 'Rune.Withdraw' }], {
-      process: 'P'.repeat(43), node: 'https://node.test', signal: abortHeadController.signal,
-      deliveryOptions: { attempts: 1, delayMs: 0 },
+      process: 'P'.repeat(43), node: 'https://node.test', signal: abortReadController.signal,
     }),
     (error) => error.name === 'AcceptedWriteError'
       && error.slot === scheduledSlot
@@ -472,26 +558,28 @@ try {
       && error.cause?.name === 'AbortError'
       && /do not retry/i.test(error.message),
   );
+  assert.equal(abortedReadPulls, abortedPullsBeforeReadAbort + 1,
+    'the caller abort must actually land on the reply pull, or this asserts nothing');
   assert.equal(pushes.length, pushesBeforeReadAbort + 1,
     'caller abort after scheduling does not strand a withdrawal outbox');
-  abortHeadController = null;
+  abortReadController = null;
 
   reportedHead = null;
   const pushesBeforeExhaustion = pushes.length;
-  pushStatuses.push(503, 503);
+  pushStatuses.push(503);
   await assert.rejects(
     api.rawSend([{ name: 'Action', value: 'Rune.Withdraw' }], {
       process: 'P'.repeat(43), node: 'https://node.test',
-      deliveryOptions: { attempts: 2, delayMs: 0 },
     }),
     (error) => error.name === 'OutboxDeliveryError'
       && error.action === 'rune.withdraw'
       && error.slot === scheduledSlot
       && error.completed === true
+      && error.confirmed === null
       && /do not retry the game action/i.test(error.message),
   );
-  assert.equal(pushes.length, pushesBeforeExhaustion + 2,
-    'an exhausted required delivery is bounded and observable');
+  assert.equal(pushes.length, pushesBeforeExhaustion + 1,
+    'a failed required delivery is observable after exactly one push');
 
   const pushesBeforeFleetLeave = pushes.length;
   computedReply = {
@@ -518,15 +606,23 @@ try {
   assert.equal(pushes.length, pushesBeforeFleetLeave + 2,
     'the cross-process-capable leave contract remains safe on monolith empty outboxes');
 
-  abortHeadController = new AbortController();
+  abortReadController = new AbortController();
+  const abortedPullsBeforeUnreadLeave = abortedReadPulls;
   const pushesBeforeUnreadFleetLeave = pushes.length;
   await assert.rejects(
     api.leaveArena(),
     (error) => error.name === 'AcceptedWriteError' && error.action === 'battle.leave',
   );
+  // Two, not one: `send` answers a failed reply read with one patient re-read
+  // before giving up, and this caller passes no signal of its own, so the
+  // recovery read is not short-circuited by cancellation and pulls again. The
+  // count stays exact rather than becoming a lower bound, so a change to the
+  // request shape that stopped injecting here still fails loudly.
+  assert.equal(abortedReadPulls, abortedPullsBeforeUnreadLeave + 2,
+    'the unread Battle.Leave must actually have had its reply pull cancelled');
   assert.equal(pushes.length, pushesBeforeUnreadFleetLeave + 1,
     'accepted unread Battle.Leave still delivers a possible cancellation outbox');
-  abortHeadController = null;
+  abortReadController = null;
 
   // A page reload validates the authority route against the sealed manifest,
   // reads the assigned worker cache, and reconstructs player.battle. The next
@@ -590,12 +686,18 @@ try {
   // exact accepted slot and returns the settled authority account rather than
   // rethrowing AcceptedWriteError.
   publishedPlayerReply = { address: playerAddress, battlesRemaining: 3, wins: 1 };
-  abortHeadController = new AbortController();
+  abortReadController = new AbortController();
+  const abortedPullsBeforeUnreadTerminal = abortedReadPulls;
   const pushesBeforeUnreadTerminal = pushes.length;
   const acceptedTerminal = await api.attack(
     terminalRoute.battleId, 'struggle', 7, 'attack-terminal-unread',
   );
-  abortHeadController = null;
+  abortReadController = null;
+  // Two for the same reason as the unread Battle.Leave above: the first pull
+  // and `send`'s one patient re-read.
+  assert.equal(abortedReadPulls, abortedPullsBeforeUnreadTerminal + 2,
+    'the terminal round\'s reply pull must actually be cancelled — otherwise this '
+    + 'exercises the ordinary computed-reply path, not the accepted-unread one');
   assert.equal(acceptedTerminal.wins, 1);
   assert.equal(acceptedTerminal.result, 'win');
   assert.equal(pushes.length, pushesBeforeUnreadTerminal + 1,
@@ -622,29 +724,23 @@ try {
   await assert.rejects(api.startBotBattle(1), /rejected.*safe to try/i,
     'OpenRejected is detected from authority cache instead of waiting for a nonexistent worker key');
 
-  const hungTimers = new Map();
-  let hungTimerId = 0;
+  // A push socket that never settles is still bounded. The real ceiling is 90 s
+  // - a live push measured 11.7-27.5 s and aborting one early is what strands a
+  // withdrawal - so this drives the same guard with an explicit tiny window.
   let hungPushSignal;
   globalThis.fetch = async (_url, init = {}) => {
     hungPushSignal = init.signal;
-    return new Promise(() => {});
+    return new Promise((_resolve, reject) => {
+      init.signal?.addEventListener('abort', () => reject(init.signal.reason), { once: true });
+    });
   };
-  const hungPush = api.rawPushSlotWithRetry(99, {
-    process: 'P'.repeat(43), node: 'https://node.test', attempts: 1,
-    attemptTimeoutMs: 10, overallTimeoutMs: 100,
-    setTimer: (fn, ms) => {
-      const id = ++hungTimerId;
-      hungTimers.set(id, { fn, ms });
-      return id;
-    },
-    clearTimer: (id) => hungTimers.delete(id),
+  const hungPush = await api.rawDeliverSlot(99, {
+    process: 'P'.repeat(43), node: 'https://node.test', timeoutMs: 10,
   });
-  while (![...hungTimers.values()].some((timer) => timer.ms === 10)) await Promise.resolve();
-  [...hungTimers.values()].find((timer) => timer.ms === 10).fn();
-  assert.equal(await hungPush, false,
-    'a push fetch that never settles is bounded by its independent attempt timeout');
+  assert.deepEqual(hungPush,
+    { delivered: false, confirmed: null, status: null, responded: false },
+    'a push fetch that never settles is bounded and reports that nothing was delivered');
   assert.equal(hungPushSignal.aborted, true, 'the timed-out push fetch is aborted');
-  assert.equal(hungTimers.size, 0, 'push retry clears its attempt and overall timers');
 } finally {
   globalThis.fetch = originalFetch;
   globalThis.setTimeout = originalSetTimeout;

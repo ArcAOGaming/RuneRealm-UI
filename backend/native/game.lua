@@ -30,6 +30,43 @@ local json = require(".json")
 -- only on redeploy, which is why deploy-game.mjs re-seeds the paid list.
 
 Players = Players or {}          -- address -> player record
+
+--- Wallets ADMITTED to a closed deployment that have not materialised a record
+--- yet: a set of address strings, and deliberately nothing else.
+---
+---   address -> pass origin ("legacy" | "promised" | "test")
+---
+--- `Admin.Unlock` used to call `getPlayer`, which MINTS a full account -- about
+--- six live Lua tables, unlocked and empty in every other respect, kept for the
+--- life of the process. That is what seeding the 168-address paid list, or a
+--- bot fleet, does to a fresh deployment.
+---
+--- It matters because Luerl's `collectgarbage("collect")` -- the last statement
+--- of `compute`, and unavoidable, see the note there -- is **O(live tables²)
+--- and blind to bytes**. `SLOT_LATENCY_INVESTIGATION.md` measured it: the same
+--- payload costs 23,599 ms to collect held as nested tables and 0.3 ms held as
+--- strings, and every doubling of the TABLE count costs 4x. So an admitted
+--- wallet that never plays is charged to every message from every player,
+--- quadratically, forever. Held as one string in this set it costs nothing at
+--- any size.
+---
+--- The entry is the grant. An address is in here XOR it has a record: the
+--- moment `getPlayer` materialises the account the pass moves onto the record
+--- and the entry is removed, so the two can never disagree about who is
+--- admitted and nothing has to reconcile them.
+---
+--- `User.Info` already answered an unknown wallet with a blank record and
+--- `exists = false`; it now also reports `unlocked` from this set, which is
+--- what routes an admitted wallet past the "no access" screen before it has
+--- ever signed a state-changing action.
+Unlocked = Unlocked or {}
+--- How many entries `Unlocked` holds. Maintained at the three places that can
+--- change it rather than counted, because it is published on nearly every
+--- message and walking the set there would put an O(admitted) loop back on the
+--- action path. `rebuildTelemetryTotals` recounts it, so drift heals on the
+--- same bulk actions that repair every other cache here.
+UnlockedPending = UnlockedPending or 0
+
 --- Lifetime offerings per faction — the Alter's faction-vs-faction tally.
 --- Recovered from the old process: it was 709/1381/620/786 when it stopped.
 Offerings = Offerings or {}
@@ -155,6 +192,14 @@ TelemetryFullRebuilds = TelemetryFullRebuilds or 0
 AdminAudit = AdminAudit or {}
 AdminAuditSeq = AdminAuditSeq or 0
 
+--- Sparse owner-controlled presentation and availability overrides for the
+--- generated Monster Index. Permanent identity (entry number, key, line,
+--- stage and affinity) stays in the generated catalog and can only change in a
+--- tested deployment. A rename or channel toggle therefore costs one small
+--- override instead of rewriting every companion that points at the entry.
+MonsterIndexOverrides = MonsterIndexOverrides or {}  -- tostring(entryNo) -> patch
+MonsterIndexRevision = MonsterIndexRevision or 1
+
 --- Gold, fungible-item, loot-box, order-book, shop and policy state.
 --- EconomyEngine is compiled into this process by every deploy/test bundler;
 --- it is not a fourth economy process and never adds a cross-process hop.
@@ -231,6 +276,105 @@ end
 local function int(v, default)
   local n = num(v, default)
   return math.tointeger(n) or default
+end
+
+-- Monster Index ------------------------------------------------------------
+
+local MONSTER_INDEX_STATES = {
+  planned = true, ["art-in-progress"] = true, testing = true,
+  live = true, retired = true,
+}
+
+local function monsterIndexBase(entryNo)
+  return C.MONSTER_INDEX_BY_NO and C.MONSTER_INDEX_BY_NO[int(entryNo, 0)] or nil
+end
+
+--- One effective catalog row. Only the deliberately mutable fields are read
+--- from the sparse override; structural identity always comes from generated
+--- source so an admin typo cannot move #001 into another evolution line.
+local function monsterIndexEntry(entryNo)
+  local base = monsterIndexBase(entryNo)
+  if not base then return nil end
+  local out = {}
+  for key, value in pairs(base) do out[key] = value end
+  local override = MonsterIndexOverrides[tostring(base.entryNo)]
+  if type(override) == "table" then
+    for _, key in ipairs({ "name", "state", "starter", "huntCatchable",
+                           "huntWeight", "artRevision" }) do
+      if override[key] ~= nil then out[key] = override[key] end
+    end
+  end
+  return out
+end
+
+local function monsterIndexView()
+  local entries = {}
+  for _, base in ipairs(C.MONSTER_INDEX or {}) do
+    entries[#entries + 1] = monsterIndexEntry(base.entryNo)
+  end
+  return {
+    schemaVersion = int(C.MONSTER_INDEX_SCHEMA_VERSION, 1),
+    catalogHash = C.MONSTER_INDEX_CATALOG_HASH,
+    revision = int(MonsterIndexRevision, 1),
+    nextEntryNo = int(C.MONSTER_INDEX_NEXT_NO, #entries + 1),
+    entries = entries,
+  }
+end
+
+local function legacyMonsterIndexEntry(monster)
+  if type(monster) ~= "table" then return nil end
+  for _, entry in ipairs(C.MONSTER_INDEX or {}) do
+    if entry.stage == 1 and entry.state == "live"
+       and entry.affinity == monster.elementType
+       and (entry.name == monster.name
+         or entry.starterFaction == monster.faction) then
+      return entry
+    end
+  end
+  return nil
+end
+
+local function normaliseMonsterIndexIdentity(monster)
+  if type(monster) ~= "table" then return monster end
+  local entry = monsterIndexEntry(monster.entryNo)
+  if not entry then
+    entry = legacyMonsterIndexEntry(monster)
+    if entry then monster.entryNo = entry.entryNo end
+  end
+  return monster
+end
+
+local function markMonsterIndexSeen(player, entryNo)
+  local number = int(entryNo, 0)
+  if not player or not monsterIndexBase(number) then return false end
+  player.seenEntries = player.seenEntries or {}
+  local key = tostring(number)
+  if player.seenEntries[key] then return false end
+  player.seenEntries[key] = true
+  return true
+end
+
+--- Move the same companion instance through every currently-live evolution it
+--- has earned. Missing art/data simply leaves it at the last live form; when a
+--- form is released later, a high-level companion catches up without losing
+--- stats, history, ownership, status, or its per-account id.
+local function resolveEvolution(monster)
+  normaliseMonsterIndexIdentity(monster)
+  local guard = 0
+  while guard < 3 do
+    guard = guard + 1
+    local current = monsterIndexEntry(monster.entryNo)
+    if not current or not current.evolvesTo or not current.evolvesAtLevel
+       or int(monster.level, 0) < int(current.evolvesAtLevel, 1000000) then
+      break
+    end
+    local nextEntry = monsterIndexEntry(current.evolvesTo)
+    if not nextEntry or nextEntry.state ~= "live" or nextEntry.assetReady ~= true then break end
+    monster.entryNo = nextEntry.entryNo
+    monster.name = nextEntry.name or nextEntry.workingName or monster.name
+    monster.elementType = nextEntry.affinity
+  end
+  return monster
 end
 
 --- Split on commas without gmatch("[^,%s]+"), which raises "bad argument" on
@@ -441,6 +585,11 @@ local function newPlayer(address, timestamp)
     --- hold nothing" is a rule anyone can satisfy again on demand. This is a
     --- fact about the account's history, and history does not un-happen.
     adopted = false,
+    -- Permanent discovery only. Current ownership is derived from the records
+    -- the wallet holds now, so selling the last copy returns an entry to the
+    -- gray "seen" state instead of leaving a historical completion behind.
+    seenEntries = {},
+    seenEntriesVersion = 1,
     inventory = {},
     -- Gold is monetary plumbing, not an inventory item and never leaves this
     -- process. Keeping it separate prevents a generic item transfer from
@@ -470,18 +619,61 @@ local function newPlayer(address, timestamp)
   }
 end
 
+--- Admit an address without minting a record. Costs one string.
+local function admitPending(address, origin)
+  if type(address) ~= "string" or address == "" then return false end
+  local fresh = Unlocked[address] == nil
+  if fresh then UnlockedPending = int(UnlockedPending, 0) + 1 end
+  Unlocked[address] = origin or "legacy"
+  return fresh
+end
+
+--- Drop a pending admission, returning the origin it carried. Called when the
+--- account materialises (the record takes over) and by `Admin.Lock`.
+local function forgetPending(address)
+  local origin = Unlocked[address]
+  if origin == nil then return nil end
+  Unlocked[address] = nil
+  UnlockedPending = math.max(0, int(UnlockedPending, 0) - 1)
+  return origin
+end
+
 local function getPlayer(address, timestamp)
   if not address then return nil end
   local p = Players[address]
+  -- The pass origin an admitted-but-unmaterialised wallet was carrying, and
+  -- only on the message that materialises it.
+  local admitted = nil
   if not p then
     p = newPlayer(address, timestamp)
+    -- First real action by a wallet that was admitted without a record. The
+    -- allow-list entry hands its grant to the account and stops existing.
+    admitted = forgetPending(address)
+    if admitted then p.unlocked = true end
     Players[address] = p
   end
   -- Every account leaves this function in the roster shape, including one
   -- restored from a pre-roster snapshot or the legacynet export.
   p = ensureRoster(p)
-  EconomyEngine.ensurePass(EconomyState, p, address, timestamp)
+  -- `counted` is the sixth argument: the pass was tallied when the wallet was
+  -- admitted, so minting the record's copy of it here must not tally it again.
+  EconomyEngine.ensurePass(EconomyState, p, address, timestamp, admitted,
+                           admitted ~= nil)
   return p
+end
+
+--- The signer's own record for an action that is about to CHANGE it.
+---
+--- The handlers that read `Players[address]` directly do so deliberately: a
+--- failed or unauthorised action must not leave an account behind. That is
+--- still true, and an admitted wallet acting for the first time is not that
+--- case -- it is entitled to act, so it materialises here. A wallet with
+--- neither a record nor an admission still gets `nil`, and `requireAccess`
+--- turns that into the same refusal it always did.
+local function actingPlayer(address, timestamp)
+  if type(address) ~= "string" or address == "" then return nil end
+  if Players[address] == nil and Unlocked[address] == nil then return nil end
+  return getPlayer(address, timestamp)
 end
 
 local function itemCount(player, item)
@@ -519,26 +711,61 @@ end
 --- Battle.* handlers. It has to: the client keeps the fight in the login reply,
 --- so if `User.Login` omits it, a reload — or any refresh — loses the battle,
 --- drops the player back to the lobby, and the only way out is a forfeit.
---- Put the full move definitions back on a companion, in place.
+--- A published companion carries its COMPACT moves and nothing more.
 ---
---- Companions are STORED with only the uses remaining per move (see
---- `Battle.compactMoves`). Every path that hands one to a client goes through
---- here, because the client draws the card and the move list from these
---- fields. Only ever called on a copy -- hydrating a stored record would put
---- the duplication straight back.
-local function withMoves(m)
+--- Companions are stored as `{ count = n }` per move (see
+--- `Battle.compactMoves`), and this used to expand them back into the full
+--- nine-field definitions on the way out -- which put the entire duplication
+--- straight back into the one place it is most expensive, the published map the
+--- node marshals five times on every single message. 499 bytes of every
+--- 1,007-byte companion were a verbatim copy of `C.MOVE_POOLS`, multiplied by
+--- every companion of every player, paid by every player on every action.
+---
+--- The definitions are published once under `catalog.movePools` and the client
+--- joins names against them. `Battle.combatant` still hydrates internally,
+--- because the engine resolves a round against real numbers; nothing about the
+--- fight changed. This is only about what crosses the wire.
+---
+--- Kept as a named no-op-shaped helper so the three view sites still read as
+--- "this is where a companion becomes client-facing", and so re-hydrating is a
+--- deliberate edit rather than an accident.
+local function forClient(m)
+  if type(m) == "table" then
+    normaliseMonsterIndexIdentity(m)
+    local entry = monsterIndexEntry(m.entryNo)
+    if entry then
+      if m.nameMode ~= "custom" then
+        m.name = entry.name or entry.workingName or m.name
+      end
+      m.elementType = entry.affinity or m.elementType
+      m.entryKey = entry.entryKey
+      m.evolutionStage = entry.stage
+    end
+  end
   if type(m) == "table" and type(m.moves) == "table" then
-    m.moves = Battle.hydrateMoves(m.moves)
+    m.moves = Battle.compactMoves(m.moves)
   end
   return m
+end
+
+--- A companion snapshot for a consumer that has no catalog to join against.
+---
+--- The mint queue is the one outward door that is not read by the browser: an
+--- off-process worker composites a card from each move's type. It gets the
+--- expanded shape, and it is the ONLY place that still does. The queue drains,
+--- so this is O(mints in flight) rather than O(players) and does not put the
+--- duplication back into the published map.
+local function mintPayload(m)
+  local snapshot = Battle.clone(m)
+  if type(snapshot) == "table" and type(snapshot.moves) == "table" then
+    snapshot.moves = Battle.hydrateMoves(snapshot.moves)
+  end
+  return snapshot
 end
 
 local function playerView(player)
   local v = Battle.clone(player)
   if C.PUBLIC_ACCESS == true then v.unlocked = true end
-  if v.monster then
-    v.monster.nextLevelExp = C.requiredExp(v.monster.level or 0)
-  end
   -- An empty Lua table is ambiguous; the client expects a list here.
   v.lootboxes = v.lootboxes or {}
   v.inventory = v.inventory or {}
@@ -550,18 +777,40 @@ local function playerView(player)
   -- the kind of thing that works in every test and breaks on the first player.
   v.assets = jsonObject(v.assets or {})
   -- The active slot and the collection, both keyed by monster id, both objects for
-  -- the same reason `assets` is. `monster` above stays the active one, so a
-  -- client that only knows about a single companion keeps working.
+  -- the same reason `assets` is.
   v.monsters = jsonObject(v.monsters or {})
   v.collection = jsonObject(v.collection or {})
-  -- `v` is a deep clone, so the roster entry and the `monster` mirror are two
-  -- separate tables here and both have to be filled in.
-  withMoves(v.monster)
+  local seen = {}
+  for rawEntryNo, value in pairs(v.seenEntries or {}) do
+    local entryNo = value == true and int(rawEntryNo, 0) or int(value, 0)
+    if entryNo > 0 then seen[#seen + 1] = entryNo end
+  end
+  table.sort(seen)
+  v.seenEntries = seen
+  v.seenEntriesVersion = 1
+  -- `monster` is a MIRROR of `monsters[activeId]` and is still published.
+  --
+  -- In the store the two are literally the same Lua table, so the mirror costs
+  -- nothing in the heap -- and its full size in every publication, because the
+  -- JSON encoder has no idea they are one object and writes it twice. That is
+  -- ~530 bytes of every published record and it breaks the publish-once rule in
+  -- CLAUDE.md knowingly: `activeId` is published beside it and a client could
+  -- index one by the other, but `.monster` has 75 readers in `src/` and 166
+  -- assertions in `game_test.lua`, against 8% of a record that the compact-move
+  -- change above already cut by 45%. Tracked in `PROCESS_SHAPE_AUDIT.md`; the
+  -- cheap half was taken first on purpose.
+  --
+  -- `v` is a deep clone, so the roster entry and the mirror are two separate
+  -- tables here and both have to be filled in.
+  if v.monster then
+    v.monster.nextLevelExp = C.requiredExp(v.monster.level or 0)
+    forClient(v.monster)
+  end
   for _, m in pairs(v.monsters) do
     m.nextLevelExp = C.requiredExp(m.level or 0)
-    withMoves(m)
+    forClient(m)
   end
-  for _, m in pairs(v.collection) do withMoves(m) end
+  for _, m in pairs(v.collection) do forClient(m) end
   -- Narrowed, not passed through. Luerl's numbers are floats, so publishing the
   -- constant directly writes `1.00000000000` into every player record forever.
   v.rosterMax = int(C.ROSTER.max, 1)
@@ -620,23 +869,35 @@ local ART_BY_ELEMENT = {
   fire = "Fire", water = "Water", air = "Air", rock = "Earth",
 }
 
-local function createMonster(factionName, timestamp)
-  local faction = C.FACTION_BY_NAME[factionName]
-  if not faction then return nil end
-  local stats = rollStartingStats()
-  local art = ART_BY_ELEMENT[faction.element] or "Fire"
+local BERRY_BY_AFFINITY = {
+  fire = "fire_berry", water = "water_berry",
+  air = "air_berry", rock = "rock_berry",
+}
+
+local function createMonsterFromEntry(entryNo, timestamp, suppliedStats)
+  local entry = monsterIndexEntry(entryNo)
+  if not entry or entry.state ~= "live" or entry.assetReady ~= true then return nil end
+  local stats = suppliedStats or rollStartingStats()
+  local art = ART_BY_ELEMENT[entry.affinity] or "Normal"
+  local faction = entry.starterFaction and C.FACTION_BY_NAME[entry.starterFaction] or nil
   return {
-    name = faction.monster.name,
-    image = faction.monster.image,
-    sprite = faction.monster.sprite,
+    entryNo = entry.entryNo,
+    nameMode = "species",
+    name = entry.name or entry.workingName,
+    -- Legacy transaction ids remain on the four released starters. New
+    -- clients resolve art by entryNo; these fields stay as compatibility
+    -- fallbacks for deployments and clients from before the Monster Index.
+    image = faction and faction.monster.image or entry.entryKey,
+    sprite = faction and faction.monster.sprite or entry.entryKey,
     -- Appearance. Every companion is holographic for now; the field exists so
     -- that stops being true without a migration.
     holographic = true,
     background = art,
     border = art,
-    faction = faction.name,
-    elementType = faction.element,
-    berryItem = faction.berry,
+    faction = entry.starterFaction or "Wild",
+    elementType = entry.affinity,
+    berryItem = BERRY_BY_AFFINITY[entry.affinity],
+    careMode = entry.affinity == "normal" and "any-berry" or "element-berry",
     attack = stats.attack,
     defense = stats.defense,
     speed = stats.speed,
@@ -648,10 +909,16 @@ local function createMonster(factionName, timestamp)
     totalTimesFed = 0,
     totalTimesPlay = 0,
     totalTimesQuest = 0,
-    moves = Battle.rollMoves(faction.element),
+    moves = Battle.rollMoves(entry.affinity),
     status = { type = "Home", since = timestamp or 0, until_time = timestamp or 0 },
     bornAt = timestamp or 0,
   }
+end
+
+local function createMonster(factionName, timestamp)
+  local faction = C.FACTION_BY_NAME[factionName]
+  if not faction then return nil end
+  return createMonsterFromEntry(faction.monster.entryNo, timestamp)
 end
 
 --- Rebuild the exact wild creature authorised by the Hunt process as a normal
@@ -660,10 +927,12 @@ end
 --- bad deployment cannot write an unusable record into a player's collection.
 local function createCapturedMonster(raw, timestamp)
   if type(raw) ~= "table" then return nil, "Captured monster is missing" end
-  local faction = C.FACTION_BY_NAME[raw.faction or ""]
-  if not faction or faction.element ~= raw.elementType then
-    return nil, "Captured monster has an invalid faction"
+  local entry = monsterIndexEntry(raw.entryNo)
+  if not entry or entry.state ~= "live" or entry.assetReady ~= true
+     or entry.huntCatchable ~= true or int(entry.huntWeight, 0) < 1 then
+    return nil, "Captured monster has an invalid Monster Index entry"
   end
+  if raw.elementType ~= entry.affinity then return nil, "Captured monster affinity does not match its entry" end
   local function stat(name, minimum, maximum)
     local value = int(raw[name], nil)
     if not value or value < minimum or value > maximum then return nil end
@@ -689,14 +958,14 @@ local function createCapturedMonster(raw, timestamp)
   end
   if moveCount == 0 then return nil, "Captured monster has no moves" end
 
-  local monster = createMonster(faction.name, timestamp)
+  local monster = createMonsterFromEntry(entry.entryNo, timestamp, {
+    attack = attack, defense = defense, speed = speed, health = health,
+  })
+  if not monster then return nil, "Captured monster entry is unavailable" end
   monster.level = level
   monster.attack, monster.defense = attack, defense
   monster.speed, monster.health = speed, health
   monster.moves = moves
-  monster.name = faction.monster.name
-  monster.image = faction.monster.image
-  monster.sprite = faction.monster.sprite
   return monster
 end
 
@@ -766,6 +1035,8 @@ local function addToRoster(p, monster)
     return nil, "You already have an active companion"
   end
   monster.id = monster.id or nextMonsterId(p)
+  normaliseMonsterIndexIdentity(monster)
+  markMonsterIndexSeen(p, monster.entryNo)
   p.monsters[monster.id] = monster
   if not p.activeId then setActive(p, monster.id) end
   return monster
@@ -783,6 +1054,8 @@ end
 local function addToCollection(p, monster)
   p.collection = p.collection or {}
   monster.id = monster.id or nextMonsterId(p)
+  normaliseMonsterIndexIdentity(monster)
+  markMonsterIndexSeen(p, monster.entryNo)
   p.collection[monster.id] = monster
   return monster
 end
@@ -854,6 +1127,13 @@ end
 --- MISSING field, so a companion granted a non-default background keeps it.
 local function withAppearance(monster)
   if type(monster) ~= "table" then return monster end
+  normaliseMonsterIndexIdentity(monster)
+  if monster.nameMode == nil then
+    local baseEntry = monsterIndexBase(monster.entryNo)
+    monster.nameMode = baseEntry
+      and (monster.name == baseEntry.name or monster.name == baseEntry.workingName)
+      and "species" or "custom"
+  end
   local art = ART_BY_ELEMENT[monster.elementType] or "Fire"
   if monster.background == nil then monster.background = art end
   if monster.border == nil then monster.border = art end
@@ -877,14 +1157,36 @@ function ensureRoster(p)
   p.arenaCharm = nil
   p.monsters = p.monsters or {}
   p.collection = p.collection or {}
+  if int(p.seenEntriesVersion, 0) < 1 then
+    local seen = {}
+    for rawEntryNo, value in pairs(p.seenEntries or {}) do
+      local entryNo = value == true and int(rawEntryNo, 0) or int(value, 0)
+      if monsterIndexBase(entryNo) then seen[tostring(entryNo)] = true end
+    end
+    p.seenEntries = seen
+    p.seenEntriesVersion = 1
+  else
+    p.seenEntries = p.seenEntries or {}
+  end
   p.monsterSeq = int(p.monsterSeq, 0)
   -- Appearance is backfilled across BOTH halves, not just the folded record.
   -- An account can arrive already in the roster shape and still predate the
   -- look — a migration from a deployment that had the roster but not the art —
   -- and a collection is exactly where an unlooked-at companion hides.
-  for _, m in pairs(p.monsters) do withAppearance(m) end
-  for _, m in pairs(p.collection) do withAppearance(m) end
+  for _, m in pairs(p.monsters) do
+    withAppearance(m); markMonsterIndexSeen(p, m.entryNo)
+  end
+  for _, m in pairs(p.collection) do
+    withAppearance(m); markMonsterIndexSeen(p, m.entryNo)
+  end
   if p.monster then withAppearance(p.monster) end
+  for _, record in pairs(p.assets or {}) do
+    local snapshot = type(record) == "table" and record.monster or nil
+    if snapshot then
+      normaliseMonsterIndexIdentity(snapshot)
+      markMonsterIndexSeen(p, snapshot.entryNo)
+    end
+  end
   -- `adopted` did not exist before adoption became once-per-account-ever, so
   -- `nil` here means "written by an older build" and `false` means "this
   -- account was created since and genuinely has not adopted". Only the first
@@ -988,7 +1290,15 @@ H["User.Info"] = function(base, msg, timestamp)
     -- account is the first thing the client sees, and handing it a three-field
     -- object instead of a player made the header crash on `inventory.rune`
     -- before anything rendered. An unknown player is a player with nothing.
-    local blank = playerView(newPlayer(address, timestamp))
+    --
+    -- `unlocked` still has to be the truth. An admitted wallet holds a pass and
+    -- no record until it acts, and this reply is the ONLY thing standing
+    -- between it and the "no access" screen -- `readAuthorityPlayer` finds no
+    -- `player-<address>` key for an account that does not exist yet, and the
+    -- client falls back to exactly this call.
+    local empty = newPlayer(address, timestamp)
+    if Unlocked[address] ~= nil then empty.unlocked = true end
+    local blank = playerView(empty)
     blank.exists = false
     return reply(base, blank)
   end
@@ -1004,58 +1314,176 @@ H["User.Login"] = H["User.Info"]
 --- player count is a key that eventually cannot be published at all.
 local FACTION_ROSTER_PUBLISHED = 50
 
+--- Derived rankings and tallies, kept up to date instead of recounted.
+---
+--- `factionStats()` and `leaderboard()` used to walk every account and build a
+--- table per account, on EVERY action whose `ACTION_DIRTY` entry sets
+--- `aggregates` -- which is most of the game. `run-scale-guard.sh` measured it:
+--- one `Monster.Feed` visited 40 accounts at 20 players and 240 at 120. At ten
+--- thousand players that is twenty thousand records read and twenty thousand
+--- tables allocated to answer one feed, and then a `collectgarbage("collect")`
+--- whose cost is quadratic in the heap that just grew by all of it.
+---
+--- This is the same treatment `rebuildTelemetryTotals` already has, and it
+--- hangs off the same delta: `syncTelemetryTotals` already knows exactly which
+--- accounts a message touched, and already rebuilds everything rather than risk
+--- drift when it finds one it could not predict.
+---
+--- The bounded sets are correct because rank only ever RISES in play. `level`
+--- and `wins` are the sort keys and nothing in normal play lowers either, so a
+--- member of the top N can only be pushed down by someone else climbing, and a
+--- non-member can only arrive by climbing. Anything that can lower a score or
+--- remove an account -- `Admin.SetStats`, `Admin.AdjustAll`, `Admin.RemoveUser`,
+--- `Admin.Load` -- is a bulk action that already forces a full rebuild.
+--- `noteAggregateRebuild` is the catch-all for the rest: when in doubt, rebuild.
+
+--- Kept wider than it publishes so ties and churn have slack.
+local AGGREGATE_KEEP = FACTION_ROSTER_PUBLISHED + 25
+
+FactionAggregates = FactionAggregates or nil
+FactionRosters = FactionRosters or nil
+LeaderboardTop = LeaderboardTop or nil
+AggregateRebuilds = AggregateRebuilds or 0
+
+--- Everything the two derived views need from one account, and nothing else.
+--- Deliberately flat and scalar: these rows are held for the ranked members and
+--- must not become another reference to a live companion.
+local function aggregateRow(address, p)
+  if not p then return nil end
+  local m = p.monster
+  return {
+    id = address,
+    faction = p.faction,
+    level = m and int(m.level, 0) or 0,
+    exp = m and int(m.exp, 0) or 0,
+    timesFed = m and int(m.totalTimesFed, 0) or 0,
+    timesPlay = m and int(m.totalTimesPlay, 0) or 0,
+    timesQuest = m and int(m.totalTimesQuest, 0) or 0,
+    wins = int(p.wins, 0),
+    hasMonster = m ~= nil,
+  }
+end
+
+--- The leaderboard's order, and the faction roster's, in one place. Ranking by
+--- address last makes it total, so the board cannot reshuffle between two
+--- publications that saw the same scores.
+local function outranks(x, y)
+  if x.level ~= y.level then return x.level > y.level end
+  if x.wins ~= y.wins then return x.wins > y.wins end
+  return x.id < y.id
+end
+
+--- Put `row` in its place in a bounded, sorted set, or drop it.
+local function rankInto(set, row, keep)
+  for i = #set, 1, -1 do
+    if set[i].id == row.id then table.remove(set, i) end
+  end
+  if row then
+    local at = #set + 1
+    for i = 1, #set do
+      if outranks(row, set[i]) then at = i break end
+    end
+    table.insert(set, at, row)
+  end
+  for i = #set, keep + 1, -1 do set[i] = nil end
+end
+
+local function emptyFactionTotals()
+  return { members = 0, monsters = 0, totalLevel = 0, fed = 0, played = 0, quested = 0 }
+end
+
+--- Add or subtract one account's contribution. `sign` is 1 or -1.
+local function applyFactionTotals(row, sign)
+  if not row or not row.faction then return end
+  local totals = FactionAggregates and FactionAggregates[row.faction]
+  if not totals then return end
+  totals.members = totals.members + sign
+  if row.hasMonster then
+    totals.monsters = totals.monsters + sign
+    totals.totalLevel = totals.totalLevel + sign * row.level
+    totals.fed = totals.fed + sign * row.timesFed
+    totals.played = totals.played + sign * row.timesPlay
+    totals.quested = totals.quested + sign * row.timesQuest
+  end
+end
+
+--- The one full walk. Paid after a redeploy, an `Admin.Load`, a bulk admin
+--- action, or anything that could have lowered a rank -- and never on the
+--- ordinary action path.
+local function rebuildAggregates()
+  AggregateRebuilds = int(AggregateRebuilds, 0) + 1
+  FactionAggregates = {}
+  FactionRosters = {}
+  for _, faction in ipairs(C.FACTIONS) do
+    FactionAggregates[faction.name] = emptyFactionTotals()
+    FactionRosters[faction.name] = {}
+  end
+  LeaderboardTop = {}
+  for address, p in pairs(Players) do
+    local row = aggregateRow(address, p)
+    applyFactionTotals(row, 1)
+    if row.faction and FactionRosters[row.faction] then
+      rankInto(FactionRosters[row.faction], row, AGGREGATE_KEEP)
+    end
+    if row.hasMonster then rankInto(LeaderboardTop, row, AGGREGATE_KEEP) end
+  end
+end
+
+local function ensureAggregates()
+  if type(FactionAggregates) ~= "table" or type(LeaderboardTop) ~= "table"
+     or type(FactionRosters) ~= "table" then
+    rebuildAggregates()
+  end
+end
+
+--- Fold one account's change in, or give up and rebuild.
+---
+--- Giving up is not a failure mode, it is the safety net: a bounded top-N
+--- cannot know who should take the place of a member whose score FELL, because
+--- the replacement is one of the accounts it deliberately does not hold. Every
+--- caller that can lower a score is a bulk or admin action, so the rebuild is
+--- rare -- and a stale ranking would be a correctness bug that nothing detects.
+local function applyAggregateDelta(address, old, new)
+  ensureAggregates()
+  local fell = old and new and (new.level < old.level or new.wins < old.wins)
+  local vanished = old and not new
+  local switchedFaction = old and new and old.faction ~= new.faction and old.faction ~= nil
+  if fell or vanished or switchedFaction then
+    rebuildAggregates()
+    return
+  end
+  applyFactionTotals(old, -1)
+  applyFactionTotals(new, 1)
+  if new then
+    if new.faction and FactionRosters[new.faction] then
+      rankInto(FactionRosters[new.faction], new, AGGREGATE_KEEP)
+    end
+    if new.hasMonster then rankInto(LeaderboardTop, new, AGGREGATE_KEEP) end
+  end
+end
+
 --- The four factions with live membership stats. Also published whole, so the
 --- faction screen normally costs no signature at all.
 local function factionStats()
-  local rows, byName = {}, {}
-  for _, faction in ipairs(C.FACTIONS) do
-    local row = {
-      faction = faction, members = {}, monsters = 0, totalLevel = 0,
-      fed = 0, played = 0, quested = 0,
-    }
-    rows[#rows + 1] = row
-    byName[faction.name] = row
-  end
-
-  -- One world pass, rather than one pass per faction. This is a hot derived
-  -- key and adding a faction must not add another complete player-table scan.
-  for address, p in pairs(Players) do
-    local row = byName[p.faction]
-    if row then
-      local entry = { id = address, level = 0, timesFed = 0, timesPlay = 0, timesQuest = 0 }
-      if p.monster then
-        row.monsters = row.monsters + 1
-        entry.level = p.monster.level or 0
-        entry.timesFed = p.monster.totalTimesFed or 0
-        entry.timesPlay = p.monster.totalTimesPlay or 0
-        entry.timesQuest = p.monster.totalTimesQuest or 0
-        row.totalLevel = row.totalLevel + entry.level
-        row.fed = row.fed + entry.timesFed
-        row.played = row.played + entry.timesPlay
-        row.quested = row.quested + entry.timesQuest
-      end
-      entry.wins = p.wins or 0
-      row.members[#row.members + 1] = entry
-    end
-  end
-
+  ensureAggregates()
   local out = {}
-  for _, row in ipairs(rows) do
-    local faction, members = row.faction, row.members
-    table.sort(members, function(x, y) return x.level > y.level end)
-    -- The published roster is the top of the faction, not all of it.
-    --
-    -- `factions` is read with no wallet and republished whenever anything
-    -- changes, and it carried a row for EVERY member: at a few hundred players
-    -- that was already twenty-two kilobytes, and it grows with the game
-    -- without limit. `memberCount` below is taken before the cut and stays
-    -- exact, so the numbers on the faction screen are unaffected -- only the
-    -- length of the scrolling roster under them is.
-    local memberTotal = #members
-    if memberTotal > FACTION_ROSTER_PUBLISHED then
-      local top = {}
-      for i = 1, FACTION_ROSTER_PUBLISHED do top[i] = members[i] end
-      members = top
+  for _, faction in ipairs(C.FACTIONS) do
+    local row = FactionAggregates[faction.name] or emptyFactionTotals()
+    -- The published roster is the top of the faction, not all of it, and it is
+    -- already held in rank order -- so this copies at most fifty rows instead of
+    -- building one per account and sorting the world. `memberCount` comes from
+    -- the running tally and stays exact, so the numbers on the faction screen
+    -- are unaffected; only the length of the scrolling roster is bounded.
+    local ranked = (FactionRosters and FactionRosters[faction.name]) or {}
+    local memberTotal = row.members
+    local members = {}
+    for i = 1, math.min(FACTION_ROSTER_PUBLISHED, #ranked) do
+      local entry = ranked[i]
+      members[i] = {
+        id = entry.id, level = entry.level, wins = entry.wins,
+        timesFed = entry.timesFed, timesPlay = entry.timesPlay,
+        timesQuest = entry.timesQuest,
+      }
     end
     out[#out + 1] = {
       name = faction.name,
@@ -1063,6 +1491,7 @@ local function factionStats()
       description = faction.description,
       mascot = faction.mascot,
       berry = faction.berry,
+      monsterEntryNo = faction.monster.entryNo,
       monsterName = faction.monster.name,
       monsterImage = faction.monster.image,
       memberCount = memberTotal,
@@ -1239,6 +1668,12 @@ local function operationalStats(timestamp)
   end
   stats.completedBattles = int(BattlesCompleted, 0)
   for _ in pairs(Assets) do stats.mintedAssets = stats.mintedAssets + 1 end
+  -- Wallets holding a pass that have never played, so they have no record for
+  -- the walk above to find. Reported SEPARATELY and deliberately: `players` and
+  -- `unlocked` are counts of accounts, the incremental telemetry cache is
+  -- asserted against them field for field, and quietly folding admissions into
+  -- either would make two numbers that must agree disagree.
+  stats.pendingUnlocked = int(UnlockedPending, 0)
   return stats
 end
 
@@ -1507,7 +1942,7 @@ local function listingView(listing)
     price = int(listing.price, 0),
     listedAt = int(listing.listedAt, 0),
     -- Cloned before hydrating: the listing itself stays compact in escrow.
-    monster = withMoves(Battle.clone(listing.monster)),
+    monster = forClient(Battle.clone(listing.monster)),
   }
 end
 
@@ -1621,6 +2056,7 @@ H["Market.Buy"] = function(base, msg, timestamp)
     buyer = address,
     price = price,
     soldAt = timestamp,
+    entryNo = monster.entryNo,
     name = monster.name,
     element = monster.elementType,
     level = int(monster.level, 0),
@@ -1720,6 +2156,10 @@ H["Pass.ClaimPromise"] = function(base, msg, timestamp)
   if int(policy.unassignedPromiseSlots, 0) <= 0 then return fail(base, "No promised pass slots remain") end
   if int(policy.promiseClaimDeadline, 0) <= timestamp then return fail(base, "The promised-pass claim window has closed") end
   if Players[address] and Players[address].pass then return fail(base, "This account already has a pass") end
+  -- An admitted wallet holds a pass that has already been granted and counted;
+  -- it just has not minted the record yet. Claiming an unassigned promise slot
+  -- on top of that would burn a finite slot for a pass its owner already has.
+  if Unlocked[address] ~= nil then return fail(base, "This account already has a pass") end
   local claimId = msg.ClaimId
   if type(claimId) ~= "string" or #claimId < 16 or #claimId > 128 then
     return fail(base, "ClaimId must be a public one-use promise reference")
@@ -1737,7 +2177,7 @@ end
 
 H["Pass.SetRecovery"] = function(base, msg, timestamp)
   local address = signer(msg)
-  local p = address and Players[address]
+  local p = actingPlayer(address, timestamp)
   local denied = requireAccess(base, p)
   if denied then return denied end
   local recovery = msg.Recovery
@@ -1761,6 +2201,11 @@ H["Pass.Recover"] = function(base, msg, timestamp)
     return fail(base, "NewController must be a 43-character address")
   end
   if Players[newAddress] then return fail(base, "The new controller already has an account") end
+  -- Same rule for an address that is admitted but not materialised: rotating a
+  -- record onto it would leave one wallet holding two granted passes.
+  if Unlocked[newAddress] ~= nil then
+    return fail(base, "The new controller already has an account")
+  end
 
   local moved, problem = EconomyEngine.rotateAccount(
     EconomyState, Players, oldAddress, newAddress, timestamp)
@@ -1790,7 +2235,7 @@ end
 
 H["Pass.Bond"] = function(base, msg, timestamp)
   local address = signer(msg)
-  local p = address and Players[address]
+  local p = actingPlayer(address, timestamp)
   local denied = requireAccess(base, p)
   if denied then return denied end
   local policy = EconomyState.policy.runeRewards
@@ -1808,7 +2253,7 @@ end
 
 H["Pass.BeginUnbond"] = function(base, msg, timestamp)
   local address = signer(msg)
-  local p = address and Players[address]
+  local p = actingPlayer(address, timestamp)
   local denied = requireAccess(base, p)
   if denied then return denied end
   local pass = EconomyEngine.ensurePass(EconomyState, p, address, timestamp)
@@ -1823,7 +2268,7 @@ end
 
 H["Pass.CompleteUnbond"] = function(base, msg, timestamp)
   local address = signer(msg)
-  local p = address and Players[address]
+  local p = actingPlayer(address, timestamp)
   local denied = requireAccess(base, p)
   if denied then return denied end
   local pass = EconomyEngine.ensurePass(EconomyState, p, address, timestamp)
@@ -1883,13 +2328,28 @@ H["Monster.Play"] = function(base, msg, timestamp)
   if m.energy < cfg.energyCost then return fail(base, "Not enough energy") end
   -- A companion loaded from a snapshot may have no berry recorded; fall back to
   -- its element's rather than indexing a nil item name.
-  local item = m.berryItem
+  local item = msg.Item or m.berryItem
   if not item or not C.ITEMS[item] then
     local faction = C.FACTION_BY_NAME[m.faction or ""]
     item = faction and faction.berry or nil
   end
   if not item then return fail(base, "Your companion has no berry to play with") end
-  if not spend(p, item, 1) then return fail(base, "You have no " .. C.ITEMS[item].name) end
+  -- `item` is caller-supplied, so validate it the way Monster.Feed does:
+  -- unconditionally. Gating the section check on "any-berry" meant every
+  -- element-affinity companion -- which is all of the live ones -- would spend
+  -- whatever the caller named, including `rune` or `legendary_scroll`, and an
+  -- item spend is permanent.
+  local info = C.ITEMS[item]
+  if not info or info.section ~= "berry" then
+    return fail(base, "'" .. tostring(item) .. "' is not a berry")
+  end
+  -- Deliberately NOT requiring item == m.berryItem. berryItem is set from the
+  -- FACTION berry on a migrated companion (see p.monster.berryItem assignment
+  -- in the legacy path), which need not match its element, so an element match
+  -- here would refuse Play for migrated players. Any berry is accepted; that
+  -- this relaxes the old "own berry only" sink is an economics change to make
+  -- deliberately, not a safety one.
+  if not spend(p, item, 1) then return fail(base, "You have no " .. info.name) end
 
   m.energy = m.energy - cfg.energyCost
   m.status = { type = "Play", since = timestamp, until_time = timestamp + cfg.duration }
@@ -2012,6 +2472,7 @@ H["Monster.LevelUp"] = function(base, msg, timestamp)
   m.defense = m.defense + d
   m.speed = m.speed + s
   m.health = m.health + h
+  resolveEvolution(m)
   -- A level-up refreshes the move roster, so a build is not locked to whatever
   -- four moves it happened to roll at adoption.
   if (m.level % 3) == 0 then
@@ -2586,15 +3047,39 @@ local function huntMessage(action, route, data)
   return message
 end
 
+local function huntMonsterIndexPool()
+  local pool = {}
+  for _, baseEntry in ipairs(C.MONSTER_INDEX or {}) do
+    local entry = monsterIndexEntry(baseEntry.entryNo)
+    if entry and entry.state == "live" and entry.assetReady == true
+       and entry.huntCatchable == true and int(entry.huntWeight, 0) > 0 then
+      pool[#pool + 1] = {
+        entryNo = entry.entryNo,
+        entryKey = entry.entryKey,
+        name = entry.name or entry.workingName,
+        affinity = entry.affinity,
+        starterFaction = entry.starterFaction,
+        basicMove = entry.basicMove,
+        advancedMove = entry.advancedMove,
+        huntWeight = int(entry.huntWeight, 0),
+      }
+    end
+  end
+  return pool
+end
+
 --- Freeze one roster companion and open its authoritative roaming session.
 --- Naming MonsterId is what makes Hunt an action available to every owned
 --- roster monster rather than only whichever one happened to be active.
 local function openHuntReply(base, p, route, monster)
   local v = playerView(p)
+  local pool = huntMonsterIndexPool()
+  if #pool == 0 then return fail(base, "No Monster Index entries are currently catchable") end
   return huntReply(base, v, { hunt = huntMessage("Hunt.Open", route, {
     protocol = HUNT_PROTOCOL, runId = route.runId, ticket = route.ticket,
     playerId = route.playerId, monsterId = route.monsterId,
-    monster = withMoves(Battle.clone(monster)),
+    monster = forClient(Battle.clone(monster)),
+    monsterIndex = pool,
   }) })
 end
 
@@ -2633,6 +3118,9 @@ H["Hunt.Begin"] = function(base, msg, timestamp)
   local entryCosts = huntEntryCosts()
   local entryProblem = huntEntryProblem(p, entryCosts)
   if entryProblem then return fail(base, entryProblem) end
+  if #huntMonsterIndexPool() == 0 then
+    return fail(base, "No Monster Index entries are currently catchable")
+  end
 
   local nextSequence = HuntSeq + 1
   local assigned = assignHuntProcess(nextSequence)
@@ -2696,6 +3184,9 @@ H["Hunt.Released"] = function(base, msg, timestamp)
   if not payload then return fail(base, why) end
   local p, address, runId, denied = huntRunFor(base, msg, payload)
   if denied then return fail(base, denied) end
+  for _, entryNo in ipairs(type(payload.seenEntries) == "table" and payload.seenEntries or {}) do
+    markMonsterIndexSeen(p, entryNo)
+  end
   if p.hunt and p.hunt.runId == runId then
     local monster = findMonster(p, p.hunt.monsterId)
     if monster and monster.status and monster.status.type == "Hunt" then
@@ -2750,6 +3241,10 @@ H["Hunt.Settle"] = function(base, msg, timestamp)
      or roll < 1 or roll > 100 or success ~= (roll <= chance) then
     return fail(base, "Capture roll is invalid")
   end
+  for _, entryNo in ipairs(type(payload.seenEntries) == "table" and payload.seenEntries or {}) do
+    markMonsterIndexSeen(p, entryNo)
+  end
+  if type(payload.monster) == "table" then markMonsterIndexSeen(p, payload.monster.entryNo) end
   if itemCount(p, "rune") < runeBid then
     return fail(base, "You do not hold enough Runes for that capture bid")
   end
@@ -2765,7 +3260,7 @@ H["Hunt.Settle"] = function(base, msg, timestamp)
   local receipt = {
     settlementId = settlementId, runId = runId, playerId = address,
     success = success, chance = chance, roll = roll, runesSpent = runeBid,
-    monster = captured and withMoves(Battle.clone(captured)) or nil,
+    monster = captured and forClient(Battle.clone(captured)) or nil,
     settledAt = timestamp,
   }
   HuntSettlements[settlementId] = receipt
@@ -3446,6 +3941,7 @@ H["Battle.Start"] = function(base, msg, timestamp)
   -- message that ends a battle still has to carry its own turn log.
   pruneBattles(timestamp)
   p.activeBattleId = id
+  markMonsterIndexSeen(p, opponent.entryNo)
 
   local v = playerView(p)
   v.battle = Battle.view(b)
@@ -3509,6 +4005,7 @@ H["Battle.Fleet.Settle"] = function(base, msg, timestamp)
   local effect, duplicate = FLEET_AUTHORITY.settle(
     BattleFleetAuthorityState, payload, source, timestamp)
   if not effect then return fail(base, duplicate) end
+  markMonsterIndexSeen(p, effect.opponentEntryNo)
   if duplicate ~= true then fleetSettle(p, effect, timestamp) end
   touchAlso(effect.playerId)
   local v = playerView(p)
@@ -3648,6 +4145,12 @@ H["Battle.Accept"] = function(base, msg, timestamp)
   b.status = "battling"
   b.pendingMoves = {}
   p.activeBattleId = id
+  markMonsterIndexSeen(p, b.challenger and b.challenger.entryNo)
+  local challengerPlayer = Players[b.challengerAddress]
+  if challengerPlayer then
+    markMonsterIndexSeen(challengerPlayer, b.accepter and b.accepter.entryNo)
+    touchAlso(b.challengerAddress)
+  end
 
   local v = playerView(p)
   v.battle = Battle.view(b)
@@ -3800,7 +4303,47 @@ end
 
 -- Leaderboard ---------------------------------------------------------------
 
+--- The board, from the maintained ranking.
+---
+--- `limit` is now capped at `AGGREGATE_KEEP`. It used to be able to return every
+--- account, which is the same unbounded-derived-key problem the published board
+--- was already cut to fifty to avoid -- a caller asking for ten thousand rows
+--- would have sorted and cloned ten thousand companions to answer one message.
+--- The published key is unaffected: it asks for fifty and gets fifty.
 local function leaderboard(limit)
+  ensureAggregates()
+  local want = math.min(limit or 50, AGGREGATE_KEEP)
+  local out = {}
+  -- `LeaderboardTop` is already in rank order, so this touches `want` accounts
+  -- rather than every account. The full record is fetched only for the rows
+  -- that actually make the board: fifty lookups, not a walk, and the deep clone
+  -- is still paid only by the rows published.
+  for i = 1, math.min(want, #LeaderboardTop) do
+    local ranked = LeaderboardTop[i]
+    local p = Players[ranked.id]
+    if p and p.monster then
+      local m = forClient(Battle.clone(p.monster))
+      m.nextLevelExp = C.requiredExp(m.level or 0)
+      out[#out + 1] = {
+        address = ranked.id,
+        faction = p.faction,
+        name = p.monster.name,
+        element = p.monster.elementType,
+        level = int(p.monster.level, 0),
+        exp = int(p.monster.exp, 0),
+        wins = int(p.wins, 0),
+        losses = int(p.losses, 0),
+        quests = int(p.questsCompleted, 0),
+        monster = m,
+      }
+    end
+  end
+  return out
+end
+
+--- The pre-index leaderboard, kept for `Admin.*` paths that legitimately want a
+--- board computed from the world rather than from the maintained top-N.
+local function leaderboardByScan(limit)
   local rows = {}
   for address, p in pairs(Players) do
     if p.monster then
@@ -3839,7 +4382,7 @@ local function leaderboard(limit)
   local out = {}
   for i = 1, math.min(limit or 50, #rows) do
     local row = rows[i]
-    local m = withMoves(Battle.clone(row.source))
+    local m = forClient(Battle.clone(row.source))
     m.nextLevelExp = C.requiredExp(m.level or 0)
     -- `source` is scaffolding and must not reach the client; `monster` is the
     -- field the board has always published and its shape is unchanged.
@@ -3902,7 +4445,7 @@ end
 --- real AR for every job it picks up.
 H["Monster.Mint"] = function(base, msg, timestamp)
   local address = signer(msg)
-  local p = address and Players[address]
+  local p = actingPlayer(address, timestamp)
   local denied = requireAccess(base, p)
   if denied then return denied end
 
@@ -3928,9 +4471,14 @@ H["Monster.Mint"] = function(base, msg, timestamp)
     seq = MintSeq,
     address = address,
     requestedAt = timestamp,
-    -- The worker renders a card off this and needs each move's type, so the
-    -- queue carries the full shape. It is a wire payload, not stored state.
-    monster = withMoves(Battle.clone(m)),
+    -- HYDRATED, deliberately, and the only place left that is.
+    --
+    -- Every other outward door hands a companion to the browser, which joins
+    -- move names against `catalog.movePools`. This one hands it to an
+    -- off-process mint worker that composites a card from each move's type and
+    -- has no catalog to join against. It is a wire payload, not stored state,
+    -- and the queue is drained -- so it is O(mints in flight), not O(players).
+    monster = mintPayload(m),
   }
   -- Freezing it is what stops the same companion being minted twice, and stops
   -- a quest finishing into a record that no longer exists.
@@ -3947,7 +4495,7 @@ end
 --- only returns through `Admin.Deposited`.
 H["Monster.Deposit"] = function(base, msg, timestamp)
   local address = signer(msg)
-  local p = address and Players[address]
+  local p = actingPlayer(address, timestamp)
   local denied = requireAccess(base, p)
   if denied then return denied end
   if not C.MINT.enabled then
@@ -4073,6 +4621,74 @@ H["Admin.Snapshot"] = function(base, msg, timestamp)
   local denied = requireOwner(base, msg)
   if denied then return denied end
   return reply(base, adminSnapshotView(timestamp, true))
+end
+
+--- Rename or change the operational channels of one numbered Monster Index
+--- entry. Structural identity never appears in this payload: entryNo, key,
+--- line, stage, affinity and evolution links are generated from the separate
+--- asset repository and require the normal tested deployment path.
+H["Admin.MonsterIndex.Update"] = function(base, msg)
+  local denied = requireOwner(base, msg)
+  if denied then return denied end
+  local entryNo = int(msg.EntryNo, 0)
+  local baseEntry = monsterIndexBase(entryNo)
+  if not baseEntry then return fail(base, "No such Monster Index entry") end
+  local ok, patch = pcall(json.decode, bodyOf(msg) ~= "" and bodyOf(msg) or "{}")
+  if not ok or type(patch) ~= "table" then return fail(base, "Body must be a JSON object") end
+
+  local current = MonsterIndexOverrides[tostring(entryNo)] or {}
+  local nextOverride = {}
+  for key, value in pairs(current) do nextOverride[key] = value end
+
+  if patch.name ~= nil then
+    if type(patch.name) ~= "string" or #patch.name < 1 or #patch.name > 80 then
+      return fail(base, "name must be 1-80 characters")
+    end
+    nextOverride.name = patch.name
+  end
+  if patch.state ~= nil then
+    if type(patch.state) ~= "string" or not MONSTER_INDEX_STATES[patch.state] then
+      return fail(base, "state is invalid")
+    end
+    if patch.state == "live" and baseEntry.assetReady ~= true then
+      return fail(base, "All required runtime assets must be approved before release")
+    end
+    nextOverride.state = patch.state
+  end
+  if patch.artRevision ~= nil then
+    if type(patch.artRevision) ~= "string" or #patch.artRevision < 1 or #patch.artRevision > 64
+       or string.find(patch.artRevision, "[^%w_%-]", 1) then
+      return fail(base, "artRevision must be 1-64 letters, numbers, underscores or dashes")
+    end
+    nextOverride.artRevision = patch.artRevision
+  end
+  if patch.starter ~= nil then nextOverride.starter = patch.starter == true end
+  if patch.huntCatchable ~= nil then nextOverride.huntCatchable = patch.huntCatchable == true end
+  if patch.huntWeight ~= nil then
+    local weight = int(patch.huntWeight, -1)
+    if weight < 0 or weight > 100000 then return fail(base, "huntWeight must be 0-100000") end
+    nextOverride.huntWeight = weight
+  end
+
+  local state = nextOverride.state or baseEntry.state
+  local starter = nextOverride.starter
+  if starter == nil then starter = baseEntry.starter end
+  local catchable = nextOverride.huntCatchable
+  if catchable == nil then catchable = baseEntry.huntCatchable end
+  local weight = nextOverride.huntWeight
+  if weight == nil then weight = int(baseEntry.huntWeight, 0) end
+  if state ~= "live" and (starter or catchable or weight > 0) then
+    return fail(base, "Only a live entry can be a starter or Hunt encounter")
+  end
+  if starter and not baseEntry.starterFaction then
+    return fail(base, "Only a faction-linked entry can be a starter")
+  end
+  if catchable and weight < 1 then return fail(base, "A catchable entry needs positive huntWeight") end
+  if not catchable and weight ~= 0 then return fail(base, "A non-catchable entry must have huntWeight 0") end
+
+  MonsterIndexOverrides[tostring(entryNo)] = nextOverride
+  MonsterIndexRevision = int(MonsterIndexRevision, 1) + 1
+  return reply(base, monsterIndexView())
 end
 
 local function economyAdminBody(base, msg)
@@ -4231,6 +4847,30 @@ H["Admin.Pass.ConfigureGenesis"] = function(base, msg, timestamp)
   local sealed, problem = EconomyEngine.configureGenesis(
     EconomyState, Players, signer(msg), body, timestamp)
   if problem then return fail(base, problem) end
+
+  -- The seal recounts the genesis manifest by walking the player table, which
+  -- is the whole truth only while every admitted wallet has a record. It no
+  -- longer does: an address on the allow-list holds a granted pass and has
+  -- never played. Fold those back in, or sealing would permanently forget the
+  -- paid list -- `genesisPassCount` is the denominator every future pass price
+  -- is scaled against, and this manifest cannot be re-sealed.
+  local pendingLegacy, pendingPromised = 0, 0
+  for _, origin in pairs(Unlocked) do
+    if origin == "promised" then pendingPromised = pendingPromised + 1
+    else pendingLegacy = pendingLegacy + 1 end
+  end
+  if pendingLegacy > 0 or pendingPromised > 0 then
+    local passes = EconomyState.policy.passes
+    passes.legacyCount = int(passes.legacyCount, 0) + pendingLegacy
+    passes.promisedCount = int(passes.promisedCount, 0) + pendingPromised
+    passes.genesisPassCount =
+      int(passes.genesisPassCount, 0) + pendingLegacy + pendingPromised
+    passes.lifetimePassCount = math.max(int(passes.lifetimePassCount, 0),
+      int(passes.legacyCount, 0) + int(passes.promisedCount, 0))
+    sealed.legacy = int(sealed.legacy, 0) + pendingLegacy
+    sealed.promised = int(sealed.promised, 0) + pendingPromised
+    sealed.genesisPassCount = int(passes.genesisPassCount, 0)
+  end
   return reply(base, { genesis = sealed, quote = EconomyEngine.passQuote(EconomyState) })
 end
 
@@ -4315,6 +4955,8 @@ H["Admin.UpdatePlayer"] = function(base, msg, timestamp)
         p.monster.elementType = faction.element
         p.monster.berryItem = faction.berry
         p.monster.name = faction.monster.name
+        p.monster.entryNo = faction.monster.entryNo
+        p.monster.nameMode = "species"
         p.monster.image = faction.monster.image
         p.monster.sprite = faction.monster.sprite
         p.monster.moves = Battle.rollMoves(faction.element)
@@ -4348,7 +4990,10 @@ H["Admin.UpdatePlayer"] = function(base, msg, timestamp)
     local m = p.monster
     if not m then return fail(base, "This player has no companion") end
     local mp = patch.monster
-    if mp.name ~= nil then m.name = tostring(mp.name) end
+    if mp.name ~= nil then
+      m.name = tostring(mp.name)
+      m.nameMode = "custom"
+    end
     for _, field in ipairs({ "level", "exp", "totalTimesFed", "totalTimesPlay", "totalTimesQuest" }) do
       if mp[field] ~= nil then m[field] = math.max(0, int(mp[field], m[field] or 0)) end
     end
@@ -4595,20 +5240,46 @@ H["Admin.Unlock"] = function(base, msg, timestamp)
     return fail(base, "Pass origin must be legacy, promised, or test")
   end
 
+  -- Admitting is not the same as materialising, and this is the whole point of
+  -- the `Unlocked` set at the top of this file.
+  --
+  -- This used to call `getPlayer`, which mints a full account for every address
+  -- on the list: ~6 live Lua tables that the collect at the end of EVERY
+  -- message then sweeps, quadratically, forever. Seeding the 168-address paid
+  -- list cost 168 accounts nobody had played; a bot fleet costs more. An
+  -- address string costs nothing at any size.
+  --
+  -- A wallet that ALREADY has a record keeps taking the record path -- the flag
+  -- lives on the account once the account exists, and the two are never both
+  -- true of the same address.
   local added, already = 0, 0
   for _, address in ipairs(addresses) do
-    local p = getPlayer(address, timestamp)
-    -- Named whether or not the flag moved: `getPlayer` MINTS a record for an
-    -- address that had none, and that record has to be published before its
-    -- owner can see anything at all.
-    touchAlso(address)
-    if p.unlocked then
-      already = already + 1
-    else
-      p.unlocked = true
+    local p = Players[address]
+    if p then
+      if p.unlocked then
+        already = already + 1
+      else
+        p.unlocked = true
+        added = added + 1
+      end
+      EconomyEngine.ensurePass(EconomyState, p, address, timestamp, origin)
+      -- Only a record can be published; the flag just moved, so republish it.
+      touchAlso(address)
+    elseif admitPending(address, origin) then
+      -- The pass is granted HERE, so it is counted here. `getPlayer` mints the
+      -- account's copy of it later with `counted` set, so nothing is tallied
+      -- twice and `passQuote` prices off the same number it always did.
+      local passes = EconomyState.policy.passes
+      passes.lifetimePassCount = int(passes.lifetimePassCount, 0) + 1
+      if origin == "legacy" then
+        passes.legacyCount = int(passes.legacyCount, 0) + 1
+      elseif origin == "promised" then
+        passes.promisedCount = int(passes.promisedCount, 0) + 1
+      end
       added = added + 1
+    else
+      already = already + 1
     end
-    EconomyEngine.ensurePass(EconomyState, p, address, timestamp, origin)
   end
   return reply(base, { added = added, alreadyUnlocked = already, total = added + already })
 end
@@ -4616,10 +5287,19 @@ end
 H["Admin.Lock"] = function(base, msg)
   local denied = requireOwner(base, msg)
   if denied then return denied end
-  local p = Players[msg.PlayerId]
-  if not p then return fail(base, "No such player") end
+  local target = msg.PlayerId
+  local p = target and Players[target]
+  if not p then
+    -- An admitted wallet that never played has no record to clear, and a
+    -- revocation that could not reach it would be a revocation that silently
+    -- did nothing the moment `Admin.Unlock` stopped minting accounts.
+    if target and forgetPending(target) then
+      return reply(base, { locked = target })
+    end
+    return fail(base, "No such player")
+  end
   p.unlocked = false
-  return reply(base, { locked = msg.PlayerId })
+  return reply(base, { locked = target })
 end
 
 H["Admin.Grant"] = function(base, msg, timestamp)
@@ -4795,6 +5475,8 @@ H["Admin.Export"] = function(base, msg)
       -- Once per account, EVER — so it has to survive the account moving to a
       -- new process, or every redeploy would hand out a free companion.
       adopted = p.adopted == true,
+      seenEntries = jsonObject(Battle.clone(p.seenEntries or {})),
+      seenEntriesVersion = 1,
       pass = p.pass,
       inventory = p.inventory,
       gold = math.max(0, int(p.gold, 0)),
@@ -4825,6 +5507,8 @@ H["Admin.Export"] = function(base, msg)
     exported.checkins = jsonObject(Battle.clone(Checkins))
     exported.metrics = metricsView()
     exported.audit = Battle.clone(AdminAudit)
+    exported.monsterIndexOverrides = jsonObject(Battle.clone(MonsterIndexOverrides))
+    exported.monsterIndexRevision = int(MonsterIndexRevision, 1)
     -- Lifetime, and no longer derivable from the battle table it used to live
     -- in. A redeploy that dropped it would restart the count at zero.
     exported.battlesCompleted = int(BattlesCompleted, 0)
@@ -4845,6 +5529,23 @@ H["Admin.Export"] = function(base, msg)
     exported.withdrawSeq = int(WithdrawSeq, 0)
     exported.deposits = Battle.clone(Deposits)
     exported.runeToken = RuneToken
+
+    -- The allow-list, which is NOT covered by the player rows above.
+    --
+    -- An admitted wallet that has never played has no record, so it appears in
+    -- no page of this export. Dropping it in a redeploy would lock out every
+    -- paid holder who had not logged into the old process yet -- which is
+    -- exactly the failure `Admin.Load` exists to prevent, arriving from the one
+    -- direction the row-by-row rules cannot see.
+    --
+    -- Strings, so the whole list rides on page zero: 168 addresses is ~7 KB
+    -- against a page of players that is already tens of them.
+    local admitted = {}
+    for admittedAddress, admittedOrigin in pairs(Unlocked) do
+      admitted[#admitted + 1] = { address = admittedAddress, origin = admittedOrigin }
+    end
+    table.sort(admitted, function(x, y) return x.address < y.address end)
+    exported.unlockedAddresses = admitted
   end
   return reply(base, exported)
 end
@@ -4858,7 +5559,7 @@ end
 --- instead of only the active one.
 local function restoreMonster(m, timestamp)
   if type(m) ~= "table" then return nil end
-  for _, field in ipairs({ "attack", "defense", "speed", "health", "energy",
+  for _, field in ipairs({ "entryNo", "attack", "defense", "speed", "health", "energy",
                            "happiness", "level", "exp", "totalTimesFed",
                            "totalTimesPlay", "totalTimesQuest", "bornAt" }) do
     if m[field] ~= nil then m[field] = int(m[field], 0) end
@@ -4911,6 +5612,47 @@ H["Admin.Load"] = function(base, msg, timestamp)
   if denied then return denied end
   local ok, payload = pcall(json.decode, bodyOf(msg) ~= "" and bodyOf(msg) or "{}")
   if not ok or type(payload) ~= "table" then return fail(base, "Body must be JSON") end
+  if type(payload.monsterIndexOverrides) == "table" then
+    for rawEntryNo, raw in pairs(payload.monsterIndexOverrides) do
+      local entryNo = int(rawEntryNo, 0)
+      local baseEntry = monsterIndexBase(entryNo)
+      if baseEntry and type(raw) == "table" then
+        local restored = {}
+        if type(raw.name) == "string" and #raw.name >= 1 and #raw.name <= 80 then
+          restored.name = raw.name
+        end
+        if type(raw.state) == "string" and MONSTER_INDEX_STATES[raw.state]
+           and (raw.state ~= "live" or baseEntry.assetReady == true) then
+          restored.state = raw.state
+        end
+        if type(raw.artRevision) == "string" and #raw.artRevision >= 1
+           and #raw.artRevision <= 64
+           and not string.find(raw.artRevision, "[^%w_%-]", 1) then
+          restored.artRevision = raw.artRevision
+        end
+        if type(raw.starter) == "boolean" then restored.starter = raw.starter end
+        if type(raw.huntCatchable) == "boolean" then restored.huntCatchable = raw.huntCatchable end
+        local weight = int(raw.huntWeight, -1)
+        if weight >= 0 and weight <= 100000 then restored.huntWeight = weight end
+
+        local state = restored.state or baseEntry.state
+        local starter = restored.starter
+        if starter == nil then starter = baseEntry.starter end
+        local catchable = restored.huntCatchable
+        if catchable == nil then catchable = baseEntry.huntCatchable end
+        local huntWeight = restored.huntWeight
+        if huntWeight == nil then huntWeight = int(baseEntry.huntWeight, 0) end
+        if state == "live"
+           and (not starter or baseEntry.starterFaction)
+           and ((catchable and huntWeight > 0) or (not catchable and huntWeight == 0)) then
+          MonsterIndexOverrides[tostring(entryNo)] = restored
+        elseif not starter and not catchable and huntWeight == 0 then
+          MonsterIndexOverrides[tostring(entryNo)] = restored
+        end
+      end
+    end
+    MonsterIndexRevision = math.max(int(MonsterIndexRevision, 1), int(payload.monsterIndexRevision, 1))
+  end
   if type(payload.economy) == "table" then
     local imported, economyProblem = EconomyEngine.importState(EconomyState, payload.economy)
     if economyProblem then return fail(base, economyProblem) end
@@ -5073,6 +5815,43 @@ H["Admin.Load"] = function(base, msg, timestamp)
     end
   end
 
+  -- The allow-list. Restored BEFORE the player rows, so that a row for an
+  -- address the same payload also admits materialises the account and hands the
+  -- admission over in one pass rather than leaving both standing.
+  --
+  -- Purely additive, like every other rule in this handler: a payload that
+  -- carries no allow-list does not empty the one this process holds, and an
+  -- address that already has a record is not admitted a second time. A restore
+  -- may never take something away, and an admission is the only thing an
+  -- account that has never played actually owns.
+  local admittedRows = payload.unlockedAddresses
+  if type(admittedRows) == "table" then
+    for _, entry in pairs(admittedRows) do
+      local admittedAddress, admittedOrigin = nil, "legacy"
+      if type(entry) == "string" then
+        admittedAddress = entry
+      elseif type(entry) == "table" and type(entry.address) == "string" then
+        admittedAddress = entry.address
+        if type(entry.origin) == "string" then admittedOrigin = entry.origin end
+      end
+      if admittedAddress and admittedAddress ~= ""
+         and Players[admittedAddress] == nil
+         and admitPending(admittedAddress, admittedOrigin) then
+        -- Counted here for the same reason `Admin.Unlock` counts: the grant is
+        -- the admission. A payload that also carries the economy section
+        -- overwrites the whole pass policy afterwards, exactly as it already
+        -- does for the passes the player rows below mint.
+        local passes = EconomyState.policy.passes
+        passes.lifetimePassCount = int(passes.lifetimePassCount, 0) + 1
+        if admittedOrigin == "promised" then
+          passes.promisedCount = int(passes.promisedCount, 0) + 1
+        else
+          passes.legacyCount = int(passes.legacyCount, 0) + 1
+        end
+      end
+    end
+  end
+
   local rows = payload.players or payload
   local loaded = 0
   for _, row in pairs(rows) do
@@ -5152,6 +5931,12 @@ H["Admin.Load"] = function(base, msg, timestamp)
       -- account. It is sticky: a row that does not mention it cannot un-adopt
       -- somebody, or a redeploy would hand every player a free companion.
       if row.adopted then p.adopted = true end
+      if type(row.seenEntries) == "table" then
+        for rawEntryNo, value in pairs(row.seenEntries) do
+          local entryNo = value == true and int(rawEntryNo, 0) or int(value, 0)
+          markMonsterIndexSeen(p, entryNo)
+        end
+      end
 
       -- Re-point the mirror. `setActive` is the only place `p.monster` is
       -- written, precisely so the two can never be different objects.
@@ -5242,6 +6027,15 @@ H["Admin.Load"] = function(base, msg, timestamp)
       loaded = loaded + 1
     end
   end
+  -- Listings are custody outside the player's collection. A seller still saw
+  -- and owned that form before listing it, so a migration that restores the
+  -- market must restore that discovery even when the companion is no longer
+  -- present in their holding.
+  for _, listing in pairs(Market) do
+    local seller = type(listing) == "table" and Players[listing.seller] or nil
+    local monster = type(listing) == "table" and listing.monster or nil
+    if seller and monster then markMonsterIndexSeen(seller, monster.entryNo) end
+  end
   return reply(base, { loaded = loaded, players = (function()
     local n = 0
     for _ in pairs(Players) do n = n + 1 end
@@ -5263,7 +6057,8 @@ end
 --- one until there is a way to earn them. It is also how the seed data puts a
 --- collection in front of the test wallets.
 ---
---- `Faction` picks the creature. `Into` is "roster" or "collection", and it
+--- `EntryNo` picks any live Monster Index form; `Faction` remains the compatibility
+--- path for the four starters. `Into` is "roster" or "collection", and it
 --- defaults to the collection because a grant should not silently displace
 --- whatever the player is actually raising.
 H["Admin.CreateMonster"] = function(base, msg, timestamp)
@@ -5277,15 +6072,23 @@ H["Admin.CreateMonster"] = function(base, msg, timestamp)
   local p = getPlayer(address, timestamp)
   if not p then return fail(base, "No such player") end
 
+  local entryNo = int(msg.EntryNo, 0)
   local factionName = msg.Faction or p.faction
-  local monster = createMonster(factionName, timestamp)
+  local monster = entryNo > 0
+    and createMonsterFromEntry(entryNo, timestamp)
+    or createMonster(factionName, timestamp)
   if not monster then
-    return fail(base, "'" .. tostring(factionName) .. "' is not a faction")
+    return fail(base, entryNo > 0
+      and ("Monster Index entry #" .. tostring(entryNo) .. " is not live")
+      or ("'" .. tostring(factionName) .. "' is not a faction"))
   end
 
   -- Cosmetics may be dictated, so the seed can put a non-default background or
   -- a non-holographic card in front of the client without a second verb.
-  if msg.Name then monster.name = tostring(msg.Name) end
+  if msg.Name then
+    monster.name = tostring(msg.Name)
+    monster.nameMode = "custom"
+  end
   if msg.Background then monster.background = tostring(msg.Background) end
   if msg.Border then monster.border = tostring(msg.Border) end
   if msg.Holographic ~= nil then
@@ -5420,6 +6223,7 @@ H["Admin.Minted"] = function(base, msg, timestamp)
     state = "minted",
     mintedAt = timestamp,
     seq = job.seq,
+    entryNo = m.entryNo,
     name = m.name,
     element = m.elementType,
     faction = m.faction,
@@ -5600,6 +6404,7 @@ local TRACKED_MUTATIONS = {
   ["Admin.CreateMonster"] = "adminActions",
   ["Admin.DeleteMonster"] = "adminActions",
   ["Admin.MoveMonster"] = "adminActions",
+  ["Admin.MonsterIndex.Update"] = "adminActions",
   ["Market.List"] = "listingsCreated",
   ["Market.Cancel"] = "listingsCancelled",
   ["Market.Buy"] = "sales",
@@ -5722,6 +6527,12 @@ local function rebuildTelemetryTotals()
     if b.status ~= "ended" then totals.activeBattles = totals.activeBattles + 1 end
   end
   totals.completedBattles = int(BattlesCompleted, 0)
+  -- `UnlockedPending` is maintained incrementally so publishing it never walks
+  -- the set. This is the same self-healing recount every other cache here gets
+  -- on a bulk action, and the only place the allow-list is ever iterated.
+  local pending = 0
+  for _ in pairs(Unlocked) do pending = pending + 1 end
+  UnlockedPending = pending
   TelemetryTotals = totals
   return totals
 end
@@ -5824,11 +6635,17 @@ local function captureTelemetryDelta(action, actor, target, tags)
   local before = {
     addresses = addresses,
     players = {},
+    -- The faction tallies and the two ranked boards ride on this same delta.
+    -- They need a different set of fields from the telemetry gauges, but the
+    -- SAME answer to "which accounts could this message change", which is the
+    -- part that is hard to get right and is already right here.
+    aggregates = {},
     battles = {},
     battleSeq = int(BattleSeq, 0),
   }
   for address in pairs(addresses) do
     before.players[address] = telemetryPlayer(Players[address])
+    before.aggregates[address] = aggregateRow(address, Players[address])
   end
   for id in pairs(battleIds) do
     local b = Battles[id]
@@ -5838,14 +6655,21 @@ local function captureTelemetryDelta(action, actor, target, tags)
 end
 
 local function syncTelemetryTotals(before)
-  if not before then return ensureTelemetryTotals() end
-  if before.full then return rebuildTelemetryTotals() end
+  if not before then ensureAggregates() return ensureTelemetryTotals() end
+  if before.full then rebuildAggregates() return rebuildTelemetryTotals() end
 
   -- A handler found an indirect recipient we could not derive before it ran.
   -- We cannot subtract that record's old contribution, so rebuild once rather
   -- than allowing a silent aggregate drift.
   for address in pairs(alsoTouched) do
-    if not before.addresses[address] then return rebuildTelemetryTotals() end
+    if not before.addresses[address] then
+      rebuildAggregates()
+      return rebuildTelemetryTotals()
+    end
+  end
+
+  for address, old in pairs(before.aggregates) do
+    applyAggregateDelta(address, old, aggregateRow(address, Players[address]))
   end
 
   local totals = ensureTelemetryTotals()
@@ -5889,6 +6713,8 @@ local function auditSummary(action, tags)
   elseif action == "Admin.Unlock" then return "Access granted"
   elseif action == "Admin.RemoveUser" then return "Player removed"
   elseif action == "Admin.AdjustAll" then return "All companions adjusted"
+  elseif action == "Admin.MonsterIndex.Update" then
+    return "Monster Index entry " .. tostring(tags.EntryNo or "updated")
   elseif action == "Admin.Load" then return "State loaded"
   end
   return action
@@ -6132,7 +6958,9 @@ local ACTION_DIRTY = {
   ["admin.sethuntprocess"] = {},
   ["admin.settlewithdrawal"] = { bridge = true, users = true },
   ["admin.unlock"] = { users = true },
-  ["admin.lock"] = {},
+  -- `users` because a revocation can now remove an ADMISSION rather than clear
+  -- a flag on a record, and the admission count is published beside it.
+  ["admin.lock"] = { users = true },
   ["admin.grant"] = { users = true },
   ["admin.setstats"] = { aggregates = true },
   ["admin.removeuser"] = { aggregates = true, challenges = true, users = true },
@@ -6143,6 +6971,7 @@ local ACTION_DIRTY = {
   ["admin.createmonster"] = { aggregates = true, users = true },
   ["admin.deletemonster"] = { aggregates = true },
   ["admin.movemonster"] = { aggregates = true, users = true },
+  ["admin.monsterindex.update"] = {},
   ["admin.minted"] = { aggregates = true, mint = true, assets = true },
   ["admin.mintfailed"] = { aggregates = true, mint = true },
   ["admin.deposited"] = { aggregates = true, deposit = true, assets = true },
@@ -6306,11 +7135,11 @@ function compute(base, req, opts)
     if target and Players[target] then touched = target end
   end
 
-  -- A normal player mutation publishes the same player twice: the singleton
-  -- `/now/player` compatibility key and the stable `/now/player-<address>` key.
-  -- `playerView` deep-clones the roster/collection and hydrates every compact
-  -- move, then JSON encoding walks it all again. Build that identical string
-  -- once per touched address instead of paying twice on every write.
+  -- One encode per touched address, reused by every publication below.
+  --
+  -- `playerView` deep-clones the roster and the collection and JSON encoding
+  -- walks all of it again, so an address that is published more than once in a
+  -- single message pays that walk once.
   local encodedPlayerViews = {}
   local function encodedPlayerView(address)
     local cached = encodedPlayerViews[address]
@@ -6320,8 +7149,27 @@ function compute(base, req, opts)
     encodedPlayerViews[address] = cached
     return cached
   end
+
+  -- The singleton `/now/player` RECORD is no longer written; `playerid` is.
+  --
+  -- `player` held whichever player the process computed last, so it answered
+  -- with a stranger's record the moment anybody else was playing, and nothing
+  -- has read it since `player-<address>` existed -- `readAuthorityPlayer` in
+  -- `src/lib/game.ts` is the only reader of a player record and it is
+  -- addressed. What it did do was add a second full copy of a ~7 KB record to a
+  -- published map the node marshals five times per message, on every write,
+  -- forever. See the published-state rule in CLAUDE.md.
+  --
+  -- `playerid` stays: 43 bytes, and it is the only published statement of WHICH
+  -- account a message was about. That is what the admin-target regression is
+  -- asserted against -- an `Admin.Grant` published the owner instead of the
+  -- target once the owner had a record of their own.
+  --
+  -- The stale `player` value is deliberately not overwritten with "null". The
+  -- key is absent from a fresh spawn's `base` and stays absent, a redeploy
+  -- spawns a fresh base, and writing four bytes to bury it on the live process
+  -- would cost a key on every message to say nothing.
   if touched and Players[touched] then
-    result.player = encodedPlayerView(touched)
     result.playerid = touched
   end
 
@@ -6462,6 +7310,12 @@ function compute(base, req, opts)
   if dirty.challenges or result.challenges == nil then
     result.challenges = encode(openChallenges())
   end
+  -- Numbered creature identity and the small mutable availability overlay.
+  -- Artist briefs and filesystem paths stay in RuneRealm-Assets; this public
+  -- view is only what gameplay and a deployed client need to agree on.
+  if action == "Admin.MonsterIndex.Update" or result.monsterindex == nil then
+    result.monsterindex = encode(monsterIndexView())
+  end
 
   -- Constants, written once and then never again.
   --
@@ -6484,6 +7338,15 @@ function compute(base, req, opts)
       elements = C.ELEMENTS,
       tuning = Battle.TUNING,
       effectiveness = C.EFFECTIVENESS,
+      -- The move definitions, published ONCE, so that nothing else ever has to
+      -- publish them again. A stored move is `{ count = n }` and every other
+      -- field on it -- type, rarity, damage, attack, speed, defense, health --
+      -- is a verbatim copy of the entry here. Companions, leaderboard rows and
+      -- hunt views all carry the compact form and the client joins against this
+      -- table. See the published-state rule in CLAUDE.md: a companion was 1,007
+      -- bytes of which 499 were this constant, repeated once per companion in
+      -- the process, in a map the node marshals five times on every message.
+      movePools = C.MOVE_POOLS,
       -- Published so the client can price a level-up from the process rather
       -- than hardcoding the rule. HANDOFF §5.23 is the reason: the client drew
       -- HP as `health * 10` against an engine using 12, and a move's damage as
@@ -6496,6 +7359,11 @@ function compute(base, req, opts)
         -- cost = ceil(targetLevel / levelsPerRune)
         levelsPerRune = 4,
         costItem = "rune",
+      },
+      monsterIndex = {
+        schemaVersion = int(C.MONSTER_INDEX_SCHEMA_VERSION, 1),
+        catalogHash = C.MONSTER_INDEX_CATALOG_HASH,
+        nextEntryNo = int(C.MONSTER_INDEX_NEXT_NO, 1),
       },
     })
   end
@@ -6672,7 +7540,20 @@ function compute(base, req, opts)
     result.assetcount = string.format("%d", assetCount)
   end
 
-  if dirty.users or result.users == nil then
+  -- `users` counts ACCOUNTS, and that is now a deliberate statement rather than
+  -- an accident of `Admin.Unlock` minting one per admitted wallet.
+  --
+  -- Every other consumer of a population number already means materialised
+  -- records: `Stats.players`, the telemetry gauges asserted against it, the
+  -- leaderboard's denominator and `factionStats`'s membership all count what is
+  -- in `Players`, and an admitted wallet has no faction, no companion and no
+  -- rank to contribute to any of them. Folding admissions into `users` alone
+  -- would make it the one number that disagreed with all of those.
+  --
+  -- So the allow-list gets its own key instead of being hidden inside this one.
+  -- It is what tells an operator the paid list actually landed, on a free
+  -- unsigned GET, now that a seeded list no longer moves `users` at all.
+  if dirty.users or result.users == nil or result.allowlisted == nil then
     local playerCount
     if telemetryTotals then
       playerCount = int(telemetryTotals.players, 0)
@@ -6681,6 +7562,7 @@ function compute(base, req, opts)
       for _ in pairs(Players) do playerCount = playerCount + 1 end
     end
     result.users = string.format("%d", playerCount)
+    result.allowlisted = string.format("%d", int(UnlockedPending, 0))
   end
 
   -- Always publish the action, even on failure. Without it the client waits out

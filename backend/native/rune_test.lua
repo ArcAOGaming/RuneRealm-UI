@@ -390,9 +390,21 @@ local function run(base, req)
        notice and notice.Reference == "w42", notice and notice.Reference)
     ok("and the amount actually minted",
        notice and notice.Quantity == "12", notice and notice.Quantity)
-    -- The holder still gets their own notice; this is an addition, not a swap.
-    ok("the recipient is still credited-noticed",
-       outbox and outbox["credit-notice"] ~= nil, outbox and json.encode(outbox))
+    -- Mint deliberately emits NO credit-notice, and this asserts the absence
+    -- so it cannot be re-added by someone reading the token standard.
+    --
+    -- Mint always pays a PLAYER WALLET, and a wallet is not a process. Pushing
+    -- a wallet-targeted message answers 404, that sub-message lands in the push
+    -- result map, and normalising it for the cache dies in hb_cache:write -- so
+    -- every push of a SUCCESSFUL withdrawal returned HTTP 500 after both hops
+    -- had already landed. The client read the 500 as failure and retried, and a
+    -- retry re-runs Mint: a measured 80 Rune deducted in-game became 224 minted.
+    -- Credit-Notice is only ever consumed by the AMM, and only from a Transfer
+    -- whose target IS a process. Transfer still emits it; Mint must not.
+    ok("mint emits no wallet-targeted credit-notice",
+       outbox and outbox["credit-notice"] == nil, outbox and json.encode(outbox))
+    ok("and the mint-notice is the only outbox entry",
+       outbox and next(outbox, next(outbox)) == nil, outbox and json.encode(outbox))
   end
 
   -- A delivery is signed by the SCHEDULER, not by the sending process ---------

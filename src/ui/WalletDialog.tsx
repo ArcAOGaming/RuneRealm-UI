@@ -1,14 +1,16 @@
-import { useEffect, useState, type ReactNode } from 'react';
+import { useEffect, useId, useState, type ReactNode } from 'react';
 import {
   downloadLocalWallet, walletAvailability, type WalletAvailability,
   type WalletConnection, type WalletProviderId,
 } from '../lib/wallet';
 import { shortAddress } from '../lib/format';
-import { Arrow, Check, Lock } from './icons';
+import { Arrow, Check, Compass, Lock } from './icons';
 import { Button, cx, Spinner } from './primitives';
 import { Dialog } from './Dialog';
-import { type InstallResult, usePwaInstall } from './PwaInstall';
+import { type InstallResult } from './PwaInstall';
+import { usePwaInstall } from './pwaInstallContext';
 import { PERMAWEB_OS_LOGO } from './brandAssets';
+import { useTour } from './tourContext';
 
 export function WalletDialog({
   onClose, onChoose, busyProvider, createdWallet, onContinue, connected, onDisconnect,
@@ -24,6 +26,7 @@ export function WalletDialog({
   const [availability, setAvailability] = useState<WalletAvailability | null>(null);
   const [backedUp, setBackedUp] = useState(false);
   const [installHelp, setInstallHelp] = useState<'ios' | 'browser' | null>(null);
+  const { start: startTour, pageKey } = useTour();
 
   useEffect(() => {
     let live = true;
@@ -35,13 +38,13 @@ export function WalletDialog({
     const localProvider = /browser|local/i.test(connected.providerName ?? '');
     const permawebProvider = /permawebos/i.test(connected.providerName ?? '');
     return (
-      <Dialog title="Wallet" onClose={onClose} busy={busyProvider !== null} className="max-w-sm">
+      <Dialog title="Wallet" onClose={onClose} busy={busyProvider !== null} size="sm">
         <div className="pt-4">
           <div className="flex items-center gap-3 rounded-[3px] border border-good/35 bg-good/[0.07] p-3">
             <BrandFrame compact>
               {localProvider
                 ? <LocalWalletLogo />
-                : permawebProvider ? <PermawebOsLogo /> : <WanderLogo markOnly />}
+                : permawebProvider ? <PermawebOsLogo /> : <WanderLogo />}
             </BrandFrame>
             <div className="min-w-0 flex-1">
               <div className="flex items-center gap-1.5 text-sm font-semibold text-ink">
@@ -55,9 +58,16 @@ export function WalletDialog({
             <Check className="h-4 w-4 text-good" />
           </div>
 
-          <div className="mt-3">
+          <div className="mt-3 space-y-2">
             <InstallOption onHelp={setInstallHelp} />
             {installHelp && <InstallHelp platform={installHelp} />}
+            {/* The one place a returning player can ask to be shown around
+                again. It lives beside Install rather than on the companion
+                screen because this dialog is the only thing in the chrome that
+                is reachable from every page and is not itself a destination —
+                and because somebody who is lost is already clicking on their
+                own address looking for a way out. */}
+            <TourOption page={pageKey} onStart={() => { onClose(); startTour(); }} />
           </div>
 
           <Button className="mt-3 w-full" size="sm" variant="danger" onClick={onDisconnect}>
@@ -70,7 +80,7 @@ export function WalletDialog({
 
   if (createdWallet) {
     return (
-      <Dialog title="Local wallet ready" onClose={onContinue} className="max-w-sm">
+      <Dialog title="Local wallet ready" onClose={onContinue} size="sm">
         <div className="pt-4">
           <div className="flex items-center gap-3 rounded-[3px] border border-good/35 bg-good/[0.07] p-3">
             <BrandFrame compact><LocalWalletLogo /></BrandFrame>
@@ -117,12 +127,12 @@ export function WalletDialog({
   const busy = busyProvider !== null;
 
   return (
-    <Dialog title="Enter Rune Realm" onClose={onClose} busy={busy} className="max-w-sm">
+    <Dialog title="Enter Rune Realm" onClose={onClose} busy={busy} size="sm">
       <div className="pt-4">
         <div className="grid grid-cols-3 gap-2">
           <ProviderTile
             label="Wander"
-            mark="ARCONNECT"
+            mark="EXTENSION"
             status={!availability ? 'CHECKING' : extension?.available ? 'READY' : 'GET'}
             statusTone={extension?.available ? 'good' : 'plain'}
             disabled={!availability || busy}
@@ -130,7 +140,7 @@ export function WalletDialog({
             onClick={extension?.available ? () => onChoose('injected') : undefined}
             href={availability && !extension?.available ? 'https://www.wander.app/download' : undefined}
             title={extension?.available ? `Connect with ${extension.name}` : 'Install Wander wallet'}
-            icon={<WanderLogo markOnly />}
+            icon={<WanderLogo />}
           />
 
           <ProviderTile
@@ -215,6 +225,49 @@ function InstallOption({ onHelp }: { onHelp: (platform: 'ios' | 'browser' | null
   );
 }
 
+/**
+ * Same row as Install, so the two "things you can do here" read as a pair.
+ *
+ * This is the backstop, not the front door — the guide in the header is on the
+ * page you are actually confused about. It is here as well because somebody
+ * lost is already clicking on their own address looking for a way out, and
+ * because this dialog is the one piece of chrome reachable from every page that
+ * is not itself a destination.
+ *
+ * It names the page it would tour. "Review tutorial" on the market page, when
+ * pressing it walks you round the market, is a promise about the wrong thing.
+ */
+function TourOption({ page, onStart }: { page: string | null; onStart: () => void }) {
+  const here = page && page !== 'companion';
+  return (
+    <button
+      type="button"
+      onClick={onStart}
+      title={here ? 'Walk through this page' : 'Walk through the game again'}
+      className={cx(
+        'flex w-full items-center gap-3 rounded-[3px] border border-edge bg-raised/45 p-2.5 text-left',
+        'transition-colors hover:border-element/60 hover:bg-raised/80',
+      )}
+    >
+      <span className="grid h-8 w-8 shrink-0 place-items-center rounded-[3px] border border-rune/20 bg-void/50 text-rune">
+        <Compass className="h-5 w-5" />
+      </span>
+      <span className="min-w-0 flex-1">
+        <span className="block text-sm font-semibold text-ink">
+          {here ? 'Tour this page' : 'Review tutorial'}
+        </span>
+        {/* Not a step count: the walkthrough drops the steps whose subject is
+            not on this screen, so the same list is nine steps on a laptop and
+            eight on a phone, where the daily countdown chip is not shown. */}
+        <span className="block font-mono text-[9px] uppercase tracking-[0.14em] text-faint">
+          WALKTHROUGH
+        </span>
+      </span>
+      <Arrow className="h-4 w-4 text-faint" />
+    </button>
+  );
+}
+
 function InstallHelp({ platform }: { platform: 'ios' | 'browser' }) {
   return (
     <div className="mt-2 rounded-[3px] border border-element/30 bg-element/[0.06] p-3 text-xs leading-5 text-muted">
@@ -290,18 +343,66 @@ function BrandFrame({
   );
 }
 
-/** Wander's exact published SVG; ArConnect was renamed Wander. */
-function WanderLogo({ markOnly = false }: { markOnly?: boolean }) {
+/**
+ * Wander's mark, drawn here rather than fetched.
+ *
+ * These three paths and their gradients are lifted verbatim from Wander's own
+ * published logo (the crown, without the wordmark beside it), so it is still
+ * their artwork and not an approximation of it.
+ *
+ * It used to be two `<img>` tags pointing at a Twitter avatar CDN and a Webflow
+ * bucket, which is three things wrong at once. This app is DEPLOYED TO THE
+ * PERMAWEB: a page that is meant to keep working forever cannot have the icon
+ * on its connect button hosted by somebody else's marketing site, and the whole
+ * point of an Arweave build is that it does not rot when a URL moves. It also
+ * meant a network round trip — and a visibly empty box until it landed — for a
+ * 56px icon, and it told the CDN's owner about every player who opened the
+ * wallet dialog.
+ *
+ * Drawn as vectors it is sharp at any size, transparent on the panel's own
+ * ground instead of carrying a white plate, and costs nothing.
+ *
+ * The gradient ids are per-instance. Two of these can be on screen at once and
+ * duplicate ids in one document resolve to whichever came first — which is how
+ * a mark ends up filled from a gradient that has been unmounted.
+ */
+function WanderLogo() {
+  const id = useId();
+  const g = (n: number) => `wander-${id}-${n}`;
   return (
-    <img
+    <svg
       aria-hidden="true"
-      alt=""
-      src={markOnly
-        ? 'https://pbs.twimg.com/profile_images/1887976393213984768/GRlEX0dS.png'
-        : 'https://cdn.prod.website-files.com/678ff8951ddaa7a4b0b3ea22/678ffafb1e6148b3ad1b5d67_main%20logo.svg'}
-      className="h-full w-full object-contain"
-      decoding="async"
-    />
+      viewBox="0 0 58 28"
+      className="h-full w-full"
+      fill="none"
+      xmlns="http://www.w3.org/2000/svg"
+    >
+      <path
+        fillRule="evenodd"
+        clipRule="evenodd"
+        d="M39.7903 14.0136L29.499 0.964308C29.0655 0.401696 28.6403 0.309813 28.1746 0.914092L17.8675 13.9924L27.8436 23.009L28.8124 2.35127L29.7812 23.009L39.7903 14.0136Z"
+        fill={`url(#${g(0)})`}
+      />
+      <path
+        d="M47.0982 27.5L57.5574 5.18035C57.7818 4.69144 57.246 4.20289 56.7798 4.47132L41.1404 13.4603L30.9749 24.9122L47.0982 27.5Z"
+        fill={`url(#${g(1)})`}
+      />
+      <path
+        d="M10.5119 27.5L0.0526943 5.18035C-0.171667 4.69144 0.364134 4.20289 0.830313 4.47132L16.4697 13.4603L26.6353 24.9122L10.5119 27.5Z"
+        fill={`url(#${g(2)})`}
+      />
+      <defs>
+        <linearGradient id={g(0)} x1="28.7517" y1="23.009" x2="28.7517" y2="0.5" gradientUnits="userSpaceOnUse">
+          <stop stopColor="#6B57F9" /><stop offset="1" stopColor="#9787FF" />
+        </linearGradient>
+        <linearGradient id={g(1)} x1="35.135" y1="18.4187" x2="49.1781" y2="26.3958" gradientUnits="userSpaceOnUse">
+          <stop stopColor="#6B57F9" /><stop offset="1" stopColor="#9787FF" />
+        </linearGradient>
+        <linearGradient id={g(2)} x1="22.4751" y1="18.4187" x2="8.43201" y2="26.3958" gradientUnits="userSpaceOnUse">
+          <stop stopColor="#6B57F9" /><stop offset="1" stopColor="#9787FF" />
+        </linearGradient>
+      </defs>
+    </svg>
   );
 }
 

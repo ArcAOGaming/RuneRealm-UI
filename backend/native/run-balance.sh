@@ -9,6 +9,7 @@ HERE="$(cd "$(dirname "$0")" && pwd)"
 BUNDLE="$(mktemp)"; trap 'rm -f "$BUNDLE"' EXIT
 {
   echo "local C = (function()"; cat "$HERE/constants.lua"; echo "end)()"
+  cat "$HERE/monster-index.generated.lua"
   echo "Battle = (function()"; cat "$HERE/battle.lua"; echo "end)()"
   echo "Battle.configure(C)"
   cat "$HERE/balance.lua"

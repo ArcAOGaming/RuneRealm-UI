@@ -17,6 +17,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { Agent } from 'undici';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const NODE = process.argv[2] || process.env.LUA_NODE || 'https://alpha.neo.zephyrdev.xyz';
@@ -125,10 +126,15 @@ local function run(base, req)
       end
 
       if not why then
+        -- A served move is just its uses remaining now; the eight fields that
+        -- never vary are published once under catalog.movePools. So the damage
+        -- a restored roster has to carry is looked up in the pool by name --
+        -- the same join src/lib/game.ts does at the read boundary.
         local n, damaging = 0, false
-        for _, move in pairs(m.moves or {}) do
+        for name, move in pairs(m.moves or {}) do
           n = n + 1
-          if (move.damage or 0) > 0 then damaging = true end
+          local def = Battle.moveDef(name)
+          if ((move.damage or (def and def.damage)) or 0) > 0 then damaging = true end
         end
         if n ~= 4 or not damaging then
           badMoves[#badMoves + 1] = row.address .. " moves=" .. n .. " damaging=" .. tostring(damaging)
@@ -215,6 +221,7 @@ const bundle = [
   // full runtime instead -- it registers `.json` the same way.
   read(process.env.HYPER_AOS ? path.basename(process.env.HYPER_AOS) : 'json.lua'),
   'local C = (function()',     read('constants.lua'), 'end)()',
+  read('monster-index.generated.lua'),
   'local jsonx = (function()', read('jsonenc.lua'),   'end)()',
   'local encode, jsonObject = jsonx.encode, jsonx.object',
   'Battle = (function()',      read('battle.lua'),    'end)()',
@@ -239,17 +246,28 @@ console.log(`rows:   ${JSON.parse(payload).players.length}\n`);
 const timeoutSec = Number(process.env.LUA_TEST_TIMEOUT || 900);
 const controller = new AbortController();
 const timer = setTimeout(() => controller.abort(), timeoutSec * 1000);
+// Node's global fetch has an independent five-minute headers timeout. The Lua
+// verifier is intentionally allowed fifteen minutes above, so align Undici's
+// transport limits with that explicit budget instead of timing out early while
+// the node is still computing a valid response.
+const dispatcher = new Agent({
+  headersTimeout: timeoutSec * 1000,
+  bodyTimeout: timeoutSec * 1000,
+});
 let res;
+let text;
 try {
   res = await fetch(`${NODE}/~lua@5.3a/verifylegacy`, {
     method: 'POST',
     headers: { 'content-type': 'application/lua' },
     body: bundle,
     signal: controller.signal,
+    dispatcher,
   });
+  text = await res.text();
 } finally {
   clearTimeout(timer);
+  await dispatcher.close();
 }
-const text = await res.text();
 console.log(text.trim());
 process.exit(/\b0 failed\b/.test(text) ? 0 : 1);

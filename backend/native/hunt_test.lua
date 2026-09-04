@@ -24,9 +24,21 @@ function hunttest(base)
   local starter = Battle.makeOpponent(5, { faction = "Inferno Blades" })
   starter.id = "m1"
   starter.attack, starter.defense, starter.speed, starter.health = 100, 30, 30, 100
+  local catchable = {}
+  for _, entry in ipairs(C.MONSTER_INDEX or {}) do
+    if entry.state == "live" and entry.huntCatchable and entry.huntWeight > 0 then
+      catchable[#catchable + 1] = {
+        entryNo = entry.entryNo, entryKey = entry.entryKey,
+        name = entry.name, affinity = entry.affinity,
+        starterFaction = entry.starterFaction,
+        basicMove = entry.basicMove, advancedMove = entry.advancedMove,
+        huntWeight = entry.huntWeight,
+      }
+    end
+  end
   local open = {
     protocol = "runerealm-hunt/1", runId = "h1", ticket = "ticket_h1",
-    playerId = ALICE, monsterId = "m1", monster = starter,
+    playerId = ALICE, monsterId = "m1", monster = starter, monsterIndex = catchable,
   }
 
   local r = send({ Action = "Hunt.Open", ["from-process"] = "EVILxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx" }, open)
@@ -47,6 +59,9 @@ function hunttest(base)
   ok("one of four released creatures appeared",
     r and r.encounter and C.FACTION_BY_NAME[r.encounter.faction] ~= nil,
     r and r.encounter and r.encounter.faction)
+  ok("encounter carries a stable Monster Index number",
+    r and r.encounter and C.MONSTER_INDEX_BY_NO[r.encounter.entryNo] ~= nil,
+    r and r.encounter and r.encounter.entryNo)
   ok("encounter carries card progression metadata",
     r and r.encounter and r.encounter.nextLevelExp == C.requiredExp(r.encounter.level),
     r and r.encounter and r.encounter.nextLevelExp)
@@ -139,13 +154,18 @@ function hunttest(base)
   })
   ok("player can end the hunt", r and r.status == "ended", r and r.status)
   ok("ending releases the game lock", base.results.outbox and base.results.outbox.released ~= nil)
+  local releasePayload = base.results.outbox and base.results.outbox.released
+    and json.decode(base.results.outbox.released.data or "{}")
+  ok("one terminal Hunt boundary carries every discovered entry",
+    releasePayload and releasePayload.seenEntries and #releasePayload.seenEntries >= 1,
+    releasePayload and releasePayload.seenEntries and #releasePayload.seenEntries)
 
   -- A loss is terminal too, but retains the distinct status so the client can
   -- show its defeat screen. It must not keep the wallet locked out forever.
   HuntState.runs.h1.status = "lost"
   local nextOpen = {
     protocol = "runerealm-hunt/1", runId = "h2", ticket = "ticket_h2",
-    playerId = ALICE, monsterId = "m1", monster = starter,
+    playerId = ALICE, monsterId = "m1", monster = starter, monsterIndex = catchable,
   }
   r = send({ Action = "Hunt.Open", ["from-process"] = GAME }, nextOpen)
   ok("a player can start a later hunt after a loss", r and r.status == "roaming",

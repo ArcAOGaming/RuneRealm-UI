@@ -1,0 +1,43 @@
+diff --git a/src/preloaded/process/dev_scheduler_server.erl b/src/preloaded/process/dev_scheduler_server.erl
+index 02407654b..b42f89d98 100644
+--- a/src/preloaded/process/dev_scheduler_server.erl
++++ b/src/preloaded/process/dev_scheduler_server.erl
+@@ -264,15 +264,29 @@ do_assign(State, Message, ReplyPID) ->
+             ),
+             ?event(writes_complete),
+             ?event(uploading_message),
+-            hb_client_remote:upload(Message, Opts),
+-            hb_client_remote:upload(Assignment, Opts),
+-            ?event(uploads_complete),
+-            maybe_inform_recipient(
+-                remote_confirmation,
+-                ReplyPID,
+-                Message,
+-                Assignment,
+-                State
++            % Uploading to the bundler is a network round trip (~370ms to
++            % up.arweave.net). Run inline it blocks this process's scheduling
++            % loop, so slot N+1 cannot be assigned until slot N has been
++            % uploaded: writes cap at ~2.7/s per process however many callers
++            % are waiting, and past ~25 concurrent writers the queue exceeds
++            % ?DEFAULT_TIMEOUT and `schedule' answers 500. Permanence is not
++            % something a caller waits on, so it runs off the loop. Slot order
++            % is unaffected -- it is assigned synchronously above. The local
++            % cache write stays inline, so `local_confirmation' keeps its
++            % meaning, and `remote_confirmation' still fires after upload.
++            spawn(
++                fun() ->
++                    hb_client_remote:upload(Message, Opts),
++                    hb_client_remote:upload(Assignment, Opts),
++                    ?event(uploads_complete),
++                    maybe_inform_recipient(
++                        remote_confirmation,
++                        ReplyPID,
++                        Message,
++                        Assignment,
++                        State
++                    )
++                end
+             )
+         end,
+     case hb_opts:get(scheduling_mode, sync, Opts) of

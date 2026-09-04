@@ -532,7 +532,7 @@ $env:NODE_URL = "https://schedule.forward.computer"
 $env:HB_WALLET = "$PWD\arweave-wallet-DA9qhP25.json"
 $env:SKIP_SMOKE = "1"
 Remove-Item Env:BATTLE_FLEET_MANIFEST -ErrorAction SilentlyContinue
-npm run deploy:process -- --no-seed-legacy --no-paid --no-env
+npm run deploy:process -- --no-env   # blank by default: no legacy, no paid list
 $env:BATTLE_GAME_PROCESS = (Get-Content .\live-process.txt -First 1).Trim()
 ```
 

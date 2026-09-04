@@ -2,12 +2,22 @@
 /**
  * Hostile-account calibration for ECONOMY_MARKETPLACE_PLAN.md sections 8.7-8.9.
  *
- * This is policy simulation, not a price oracle. Values are deliberately CLI
- * inputs because global Rune emission, qualified-player weighting, the bond,
- * and maximum NPC subsidy remain open launch decisions.
+ * This is policy simulation, not a price oracle. Prices stay CLI inputs -- a
+ * Rune is worth whatever it is worth on the day.
+ *
+ * `globalRunePer30Days` is NOT one of those any more. Global emission used to
+ * be an open launch decision, which in practice meant `epochBudget` defaulted
+ * to zero and the faucet paid nothing on every deployment ever made. The
+ * contract owns the schedule now -- `C.ECONOMY.rune.emissionPerEpoch` in
+ * `constants.lua` -- and this file's default MUST be the same number, because
+ * the anti-farm case in section 8.9 is a statement about that number and
+ * nothing else. `assertScheduleMatchesContract` below fails the run if they
+ * drift, so the calibration cannot quietly stop describing what ships.
  */
 import assert from 'node:assert/strict';
-import { pathToFileURL } from 'node:url';
+import fs from 'node:fs';
+import path from 'node:path';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 
 export const DEFAULTS = Object.freeze({
   passPriceUsd: 25,
@@ -18,6 +28,32 @@ export const DEFAULTS = Object.freeze({
   genesisPassCount: 168,
   bondRune: 5,
 });
+
+
+/**
+ * The contract is the source of truth for emission; this file only models it.
+ *
+ * Read the number straight out of `constants.lua` rather than trusting a copy.
+ * Parsing Lua with a regex is crude, but the alternative is two numbers that
+ * agree today and quietly stop agreeing the first time somebody edits one --
+ * and the whole anti-farm conclusion below is a claim about that number.
+ */
+export function contractEmissionPerEpoch() {
+  const here = path.dirname(fileURLToPath(import.meta.url));
+  const source = fs.readFileSync(path.join(here, 'constants.lua'), 'utf8');
+  const found = /emissionPerEpoch\s*=\s*(\d+)/.exec(source);
+  if (!found) throw new Error('constants.lua does not define C.ECONOMY.rune.emissionPerEpoch');
+  return Number(found[1]);
+}
+
+export function assertScheduleMatchesContract() {
+  const contract = contractEmissionPerEpoch();
+  assert.equal(DEFAULTS.globalRunePer30Days, contract,
+    `this simulation models ${DEFAULTS.globalRunePer30Days} Rune per epoch but the `
+    + `contract emits ${contract}; the anti-farm calibration below describes a `
+    + 'schedule that is not the one shipping');
+  return contract;
+}
 
 const argv = process.argv.slice(2);
 const option = (name, fallback) => {
@@ -147,4 +183,7 @@ function report() {
 }
 
 selfTest();
-if (import.meta.url === pathToFileURL(process.argv[1]).href) report();
+if (import.meta.url === pathToFileURL(process.argv[1]).href) {
+  assertScheduleMatchesContract();
+  report();
+}

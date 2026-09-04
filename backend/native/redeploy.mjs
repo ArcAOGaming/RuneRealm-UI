@@ -6,10 +6,11 @@
  *
  * Options:
  *   NODE_URL=https://…      node to deploy onto (default: the current one)
- *   --from <pid>            migrate from this process (default: the current one)
- *   --fresh                 do NOT migrate; legacy restore only
- *   --blank                 do not migrate, do not restore legacy players, and
- *                           do not unlock the paid list; nothing but the bots
+ *   --seed                  FINAL BUILD ONLY: migrate the current process,
+ *                           restore the legacynet players, unlock the paid list
+ *   --from <pid>            migrate from this process (implies --seed)
+ *   --fresh                 --seed without the migration: legacy + paid only
+ *   --blank                 accepted, and already the default
  *   --migrate-node <url>    node hosting --from, when moving between nodes
  *   --game-only             skip the token
  *   --no-market             deploy only the game and Rune bridge
@@ -23,9 +24,9 @@
  *   --quote-denomination N  decimals for --quote (default 6)
  *   --fee-bps N             AMM fee in basis points (default 30)
  *   --site                  upload the final build and print its manifest id
- *   --public-access         let any wallet create an account and play
- *   --free                  alias for --public-access (test deployments)
- *   --no-free               force Eternal Pass access, even if PUBLIC_ACCESS is set
+ *   --free / --public-access  explicit free sign-up — already the default
+ *   --paid-access           gate sign-up behind the Eternal Pass allow-list
+ *   --no-free               alias for --paid-access
  *   --with-bots             validate the 50-wallet swarm and grant it access
  *   --no-hunt               skip the hunt fleet
  *   --hunt-size N           hunt workers to spawn (default 3)
@@ -47,7 +48,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { spawn } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
-import { sendMessage, jwkToAddress } from './hbclient.mjs';
+import { sendMessage, jwkToAddress, transportNode } from './hbclient.mjs';
 import { listBurners } from './burners.mjs';
 import { PROFILES } from './swarm/profiles.mjs';
 
@@ -66,16 +67,44 @@ const live = fs.existsSync(liveFile)
   : [];
 
 const NODE = process.env.NODE_URL || live[1] || 'https://schedule.forward.computer';
+const REQUEST_NODE = transportNode(NODE);
 const WALLET = process.env.HB_WALLET || path.join(ROOT, 'arweave-wallet-DA9qhP25.json');
-const from = (flag('--fresh') || flag('--blank')) ? null : (opt('--from', null) || live[0] || null);
-const resume = flag('--resume');
-const freeEnabled = flag('--free') || flag('--public-access');
-const freeDisabled = flag('--no-free') || flag('--no-public-access');
-if (freeEnabled && freeDisabled) {
-  throw new Error('Choose one access mode: --free or --no-free, not both');
+/**
+ * A deployment carries NOTHING unless this run says so.
+ *
+ * The default used to be the opposite: migrate whatever `live-process.txt`
+ * points at, restore the 168 legacynet players, unlock the paid list. That is
+ * right exactly once — the build that actually launches — and wrong every other
+ * time. Each test deploy re-loaded real accounts onto a throwaway process,
+ * measured its own numbers on top of someone else's history, and gave the next
+ * migration one more half-finished deployment to chain from.
+ *
+ * So seeding is a deliberate act: `--seed` (or `SEED_DATA=1`). Asking for a
+ * specific source with `--from` is the same request said more precisely, and
+ * implies it. `--fresh` seeds the players without chaining the migration.
+ */
+const explicitFrom = opt('--from', null);
+const seedData = flag('--seed')
+  || flag('--seed-data')
+  || flag('--fresh')
+  || !!explicitFrom
+  || /^(1|true|yes|on)$/i.test(process.env.SEED_DATA || '');
+if (seedData && flag('--blank')) {
+  throw new Error('Choose one: --seed (final build) or --blank (the default), not both');
 }
-const publicAccess = freeDisabled ? false : (
-  freeEnabled || /^(1|true|yes)$/i.test(process.env.PUBLIC_ACCESS || '')
+const from = (!seedData || flag('--fresh'))
+  ? null
+  : (explicitFrom || live[0] || null);
+const resume = flag('--resume');
+// Free sign-up is the default; the Eternal Pass gate is asked for by name. See
+// the note in deploy.mjs — a process nobody can join is not a safe default.
+const freeEnabled = flag('--free') || flag('--public-access');
+const freeDisabled = flag('--no-free') || flag('--no-public-access') || flag('--paid-access');
+if (freeEnabled && freeDisabled) {
+  throw new Error('Choose one access mode: --free (the default) or --paid-access, not both');
+}
+const publicAccess = freeEnabled ? true : !(
+  freeDisabled || /^(0|false|no|off)$/i.test(process.env.PUBLIC_ACCESS || '')
 );
 const withBots = flag('--with-bots')
   || /^(1|true|yes)$/i.test(process.env.SWARM_BOTS || '');
@@ -130,12 +159,17 @@ if (flag('--plan')) {
   console.log('Rune Realm full deployment plan (no writes):');
   console.log(`  node         ${NODE}`);
   console.log(`  wallet       ${path.basename(WALLET)} (${fs.existsSync(WALLET) ? 'present' : 'MISSING'}; contents are never printed)`);
-  console.log(`  migrate from ${from ?? (flag('--blank')
-    ? '(blank — no migration, no legacy restore)'
-    : '(fresh — legacy restore only)')}`);
+  console.log(`  seed data    ${seedData
+    ? 'ON (--seed: legacy players + paid allow-list) — FINAL BUILD'
+    : 'OFF (blank process; --seed turns it on)'}`);
+  console.log(`  migrate from ${from ?? (seedData
+    ? '(--fresh — legacy restore only, no migration)'
+    : '(nothing — blank deployment)')}`);
   console.log(`  quote        ${customQuote || 'new TEST-RELIC faucet token'}`);
   console.log(`  AMM fee      ${feeBps} bps`);
-  console.log(`  free flag    ${publicAccess ? 'ON (new wallets may join)' : 'OFF (Eternal Pass allow-list)'}`);
+  console.log(`  sign-up      ${publicAccess
+    ? 'FREE (any wallet may join) — the default'
+    : 'PAID (--paid-access: Eternal Pass allow-list)'}`);
   console.log(`  test bots    ${withBots
     ? `${botRoster.available}/${botRoster.expected} wallets ready; ${publicAccess ? 'admitted by free mode' : 'allow-list after spawn'}`
     : 'not enrolled'}`);
@@ -221,7 +255,7 @@ async function readKey(pid, key, { attempts = 40, delayMs = 3000 } = {}) {
   let last = '(no answer)';
   for (let i = 0; i < attempts; i++) {
     try {
-      const r = await fetch(`${NODE}/${pid}~process@1.0/now/${key}`, {
+      const r = await fetch(`${REQUEST_NODE}/${pid}~process@1.0/now/${key}`, {
         headers: { accept: 'text/plain' },
         signal: AbortSignal.timeout(30000),
       });
@@ -234,6 +268,55 @@ async function readKey(pid, key, { attempts = 40, delayMs = 3000 } = {}) {
     await new Promise((res) => setTimeout(res, delayMs));
   }
   throw new Error(`could not read ${key} from ${pid}: ${last}`);
+}
+
+/**
+ * Send a message and WAIT FOR ITS OWN SLOT to compute, returning its reply.
+ *
+ * Every verification in this file used to be "send, then `readKey` the value it
+ * should have changed", and that is wrong on HyperBEAM in a way that looks like
+ * a broken deploy. Compute is pull-based: a scheduled message does not run
+ * until somebody asks for a slot at or past it, and `readKey` returns the first
+ * non-empty answer it gets. So when the key ALREADY EXISTS — `player-<address>`
+ * written by the migration, `minter` written by the previous deploy — the read
+ * comes back instantly with the stale value, the check fails, and the deploy
+ * aborts on a message that was fine and simply had not been asked for yet.
+ *
+ * Both of those actually happened on the 2026-08-31 redeploy, one stage apart.
+ * Asking for the message's own slot is what forces it to run; after that the
+ * published keys are current and `readKey` means what it says.
+ *
+ * The reply is also CHECKED here. The old code ignored it, so a handler that
+ * refused outright was indistinguishable from one that had not run.
+ */
+async function sendAndSettle(pid, message, label, { attempts = 60, delayMs = 2000 } = {}) {
+  const sent = await sendMessage({ node: NODE, jwk, process: pid, ...message });
+  const slot = sent && (sent.slot ?? sent.Slot);
+  if (slot === undefined || slot === null) {
+    throw new Error(`${label} did not report a compute slot; it cannot be verified`);
+  }
+  let body = '';
+  for (let i = 0; i < attempts; i++) {
+    const r = await fetch(
+        `${REQUEST_NODE}/${pid}~process@1.0/compute&slot=${slot}/results/output/data`,
+      { headers: { accept: 'text/plain' }, signal: AbortSignal.timeout(30000) },
+    ).catch(() => null);
+    if (r && r.ok) {
+      const text = (await r.text()).trim();
+      // An HTML body at status 200 is "key absent", never a reply. See CLAUDE.md.
+      if (text && !/^<!DOCTYPE html|^<html/i.test(text)) { body = text; break; }
+    }
+    await new Promise((done) => setTimeout(done, delayMs));
+  }
+  if (!body) throw new Error(`${label} slot ${slot} never returned a reply`);
+  let reply;
+  try {
+    reply = JSON.parse(body);
+  } catch {
+    throw new Error(`${label} returned a non-JSON reply: ${body.slice(0, 160)}`);
+  }
+  if (reply && reply.error) throw new Error(`${label} was refused: ${reply.error}`);
+  return reply;
 }
 
 const readLive = () => fs.readFileSync(liveFile, 'utf8').trim().split(/\r?\n/);
@@ -288,14 +371,14 @@ if (flag('--skip-checks')) {
     [path.join(HERE, 'run-marketplace-test.sh'), liveTestNode]);
   // Only when the legacy players are actually part of this deployment.
   //
-  // `--blank` passes `--no-seed-legacy`, so nothing restores them and the check
-  // verifies a body of state this process will never hold. It is also the
-  // single slowest thing in the preflight — one request that loads 168 players
-  // and reads every one back on Luerl — so a test deployment was paying minutes
-  // to prove something about a file it does not use. It still runs, and still
-  // gates, for any deploy that does restore them.
-  if (flag('--blank')) {
-    console.log('skipping recovered-player verification: --blank restores no legacy players');
+  // Without `--seed` nothing restores them, so the check would verify a body of
+  // state this process will never hold. It is also the single slowest thing in
+  // the preflight — one request that loads 168 players and reads every one back
+  // on Luerl — so a test deployment was paying minutes to prove something about
+  // a file it does not use. It still runs, and still gates, for any deploy that
+  // does restore them.
+  if (!seedData) {
+    console.log('skipping recovered-player verification: a blank deploy restores none');
   } else {
     await runCommand('live recovered-player verification', process.execPath,
       [path.join(HERE, 'verify-legacy.mjs'), liveTestNode]);
@@ -315,24 +398,24 @@ owner = jwkToAddress(jwk);
 
 console.log(`node   ${NODE}`);
 console.log(`owner  ${owner}`);
-console.log(`from   ${from ?? '(fresh — legacy restore only)'}`);
+console.log(`from   ${from ?? (seedData ? '(fresh — legacy restore only)' : '(nothing — blank)')}`);
 
 rule('2/8  the game process');
 const gameArgs = [];
 if (from) gameArgs.push('--migrate-from', from);
-// A TEST deployment starts empty on purpose.
+// A deployment starts empty on purpose, and says so out loud either way.
 //
-// `--fresh` only stops the migration; the 168 recovered legacynet players are
-// still restored, because for a real deployment they are the point. For a test
-// they are 168 accounts of someone else's history sitting underneath whatever
-// the run is measuring, and carrying them forward every time is how a chain of
-// half-finished migrations starts.
+// Blank is the default: create nothing but the process, let the 50 burners be
+// seeded into it if `--with-bots` asks, and leave `legacy-players.json`
+// untouched on disk as the thing it is — the origin, restored ONCE when the
+// game actually launches, onto a process that is not a test.
 //
-// `--blank` is the other intent: create nothing but the process, let the 50
-// burners be seeded into it, and leave `legacy-players.json` untouched on disk
-// as the thing it is — the origin, restored ONCE when the game actually
-// launches, onto a process that is not a test.
-if (flag('--blank')) gameArgs.push('--no-seed-legacy', '--no-paid');
+// `--seed` is that launch. It restores the 168 recovered legacynet players and
+// unlocks the paid list; `--fresh` is the same minus the chained migration.
+// Both are passed explicitly rather than left to `deploy.mjs`'s own defaults,
+// so the intent of this run is visible in the child's argv.
+if (seedData) gameArgs.push('--seed-legacy', '--paid-list');
+else gameArgs.push('--no-seed-legacy', '--no-paid');
 // Moving between nodes: the old process must be read from ITS node, not the one
 // being deployed to. `deploy.mjs` infers this from the previous
 // `live-process.txt` pairing, which is right for the ordinary case — but a
@@ -341,7 +424,24 @@ const migrateNode = opt('--migrate-node', null);
 if (migrateNode) gameArgs.push('--migrate-node', migrateNode);
 if (flag('--no-env')) gameArgs.push('--no-env');
 let game;
-let reuseGame = resume && !flag('--fresh') && !flag('--blank') && isId(live[0]) && live[1] === NODE;
+// `--resume` may only pick up a process that was born the way this run asks
+// for. A blank run must never adopt a process that was migrated or restored
+// into, and a `--seed` run must never call a blank process seeded — so the
+// previous deployment's own record decides, and a record that predates the
+// `seeded` field decides nothing.
+const priorState = (() => {
+  try {
+    return JSON.parse(fs.readFileSync(path.join(HERE, 'deployment-state.json'), 'utf8'));
+  } catch { return null; }
+})();
+let reuseGame = resume && isId(live[0]) && live[1] === NODE
+  && priorState?.processes?.game === live[0]
+  && typeof priorState?.seeded === 'boolean'
+  && priorState.seeded === seedData;
+if (resume && !reuseGame && isId(live[0]) && live[1] === NODE) {
+  console.log(`resume: ${live[0]} was not recorded as a ${seedData ? 'seeded' : 'blank'} `
+    + 'deployment; deploying a new game process');
+}
 if (reuseGame) {
   // Public access is process policy, not frontend decoration. Never reuse a
   // process compiled in the opposite mode just because --resume was supplied.
@@ -377,7 +477,7 @@ if ((access.publicAccess === true) !== publicAccess) {
   throw new Error(`game access is ${access.publicAccess === true ? 'free' : 'closed'}, `
     + `expected ${publicAccess ? 'free' : 'closed'}`);
 }
-console.log(`       free flag ${publicAccess ? 'ON' : 'OFF'}`);
+console.log(`       sign-up ${publicAccess ? 'FREE' : 'PAID (Eternal Pass)'}`);
 
 if (withBots) {
   if (publicAccess) {
@@ -387,11 +487,12 @@ if (withBots) {
     await run('burners.mjs', ['unlock', String(botRoster.expected)], { GAME_PROCESS: game });
   }
   console.log('       funding test-only Rune/Scroll minimums for economic play');
-  await sendMessage({
-    node: NODE, jwk, process: game, action: 'Admin.Economy.FundTestBots',
+  await sendAndSettle(game, {
+    action: 'Admin.Economy.FundTestBots',
     tags: { Action: 'Admin.Economy.FundTestBots' },
     data: JSON.stringify({ addresses: botRoster.addresses, rune: 25, scroll: 5 }),
-  });
+  }, 'test-bot funding');
+  // The handler has run, so the published record is the funded one.
   const fundedSample = JSON.parse(await readKey(game, `player-${botRoster.addresses[0]}`));
   if (Number(fundedSample?.inventory?.rune ?? 0) < 25
       || Number(fundedSample?.inventory?.scroll ?? 0) < 5) {
@@ -427,19 +528,19 @@ console.log(`\ntoken  ${token}`);
 rule('4/8  wiring the game and Rune together');
 
 console.log('naming the game as the only minter');
-await sendMessage({
-  node: NODE, jwk, process: token, action: 'Admin.SetMinter',
+await sendAndSettle(token, {
+  action: 'Admin.SetMinter',
   tags: { Action: 'Admin.SetMinter', Minter: game },
-});
+}, 'Admin.SetMinter');
 const minter = await readKey(token, 'minter');
 if (minter !== game) throw new Error(`token minter is "${minter}", expected ${game}`);
 console.log(`  token.minter    = ${minter}`);
 
 console.log('telling the game where the token is');
-await sendMessage({
-  node: NODE, jwk, process: game, action: 'Admin.SetRuneToken',
+await sendAndSettle(game, {
+  action: 'Admin.SetRuneToken',
   tags: { Action: 'Admin.SetRuneToken', RuneToken: token },
-});
+}, 'Admin.SetRuneToken');
 const wired = await readKey(game, 'runetoken');
 if (wired !== token) throw new Error(`game runetoken is "${wired}", expected ${token}`);
 console.log(`  game.runetoken  = ${wired}`);
@@ -605,6 +706,10 @@ const deployment = {
   },
   build: 'passed',
   publicAccess,
+  // What this process was given at birth, so `--resume` can tell whether the
+  // recorded game process is the one this run is asking for.
+  seeded: seedData,
+  seededFrom: from,
   testBots: {
     enabled: withBots,
     walletCount: withBots ? botRoster.expected : 0,
@@ -629,8 +734,6 @@ if (quote) console.log(`QUOTE  ${quote}`);
 console.log(`NODE   ${NODE}`);
 console.log(`FREE   ${publicAccess ? 'ON' : 'OFF'}`);
 if (withBots) console.log(`BOTS   ${botRoster.expected} ready`);
-console.log('\nThe bridge is open but UNPROVEN until one withdrawal has been made:');
-console.log(`  a player sends Rune.Withdraw, then`);
+console.log(`
+BRIDGE ready. Verify supply moved with:`);
 console.log(`  curl "${NODE}/${token}~process@1.0/now/totalsupply"`);
-console.log('  moving off 0 means the mint was delivered. Staying at 0 with a');
-console.log('  pending row in the game queue means it was not.');

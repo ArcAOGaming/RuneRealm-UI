@@ -30,7 +30,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { spawnProcess, sendMessage, jwkToAddress } from './hbclient.mjs';
+import { spawnProcess, sendMessage, jwkToAddress, transportNode } from './hbclient.mjs';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.resolve(HERE, '..', '..');
@@ -43,6 +43,7 @@ const live = (() => {
 
 const GAME = process.env.GAME_PROCESS || live[0];
 const NODE = process.env.NODE_URL || live[1] || 'https://schedule.forward.computer';
+const REQUEST_NODE = transportNode(NODE);
 const WALLET = process.env.HB_WALLET || path.join(ROOT, 'arweave-wallet-DA9qhP25.json');
 const wire = !process.argv.includes('--no-wire');
 
@@ -85,7 +86,7 @@ const readKey = async (pid, key, { attempts = 6, delayMs = 1000 } = {}) => {
   let status = 0;
   for (let i = 0; i < attempts; i++) {
     try {
-      const r = await fetch(`${NODE}/${pid}~process@1.0/now/${key}`, { headers: { accept: 'text/plain' } });
+      const r = await fetch(`${REQUEST_NODE}/${pid}~process@1.0/now/${key}`, { headers: { accept: 'text/plain' } });
       if (r.ok) return (await r.text()).trim();
       status = r.status;
       if (r.status !== 404 && r.status < 500) break;

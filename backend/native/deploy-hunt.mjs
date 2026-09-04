@@ -3,7 +3,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import process from 'node:process';
 import { fileURLToPath } from 'node:url';
-import { jwkToAddress, sendMessage, spawnProcess } from './hbclient.mjs';
+import { jwkToAddress, sendMessage, spawnProcess, transportNode } from './hbclient.mjs';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.resolve(HERE, '..', '..');
@@ -24,6 +24,7 @@ const gameProcess = process.env.HUNT_GAME_PROCESS || process.env.VITE_GAME_PROCE
 const gameNode = (process.env.HUNT_GAME_NODE || process.env.VITE_HB_NODE || live[1]
   || 'https://schedule.forward.computer').replace(/\/$/, '');
 const huntNode = (process.env.HUNT_NODE || process.env.NODE_URL || gameNode).replace(/\/$/, '');
+const gameRequestNode = transportNode(gameNode);
 if (!/^[A-Za-z0-9_-]{43}$/.test(gameProcess || '')) {
   throw new Error('Set HUNT_GAME_PROCESS or deploy the game first so live-process.txt names it.');
 }
@@ -32,6 +33,7 @@ const config = `HuntConfig = { enabled = true, gameProcess = ${JSON.stringify(ga
 const lua = [
   read(process.env.HYPER_AOS ? path.basename(process.env.HYPER_AOS) : 'json.lua'),
   'local C = (function()', read('constants.lua'), 'end)()',
+  read('monster-index.generated.lua'),
   'local jsonx = (function()', read('jsonenc.lua'), 'end)()',
   'local encode, jsonObject = jsonx.encode, jsonx.object',
   'Battle = (function()', read('battle.lua'), 'end)()',
@@ -92,7 +94,7 @@ for (let attempt = 0; attempt < 40; attempt += 1) {
     // undefined and this check could never pass, even on a perfectly wired
     // deployment. It reported a false failure twice before anyone read the
     // published key by hand.
-    const response = await fetch(`${gameNode}/${gameProcess}~process@1.0/now/huntconfig`, {
+    const response = await fetch(`${gameRequestNode}/${gameProcess}~process@1.0/now/huntconfig`, {
       headers: { accept: 'text/plain' },
     });
     const text = response.ok ? (await response.text()).trim() : '';

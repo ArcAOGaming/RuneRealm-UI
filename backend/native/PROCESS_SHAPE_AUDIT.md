@@ -94,6 +94,13 @@ The client needed no change at all: `HuntRoute` already carried `processId` and
   entry so single-process deployments and existing exports keep working;
 - `Hunt.Begin` assigns a worker by run sequence -- deterministic, so a replayed
   begin lands on the same worker instead of opening a second run elsewhere;
+- that existing `Hunt.Open` boundary now carries the compact effective
+  catchable Monster Index pool once per run. The worker can weight encounters but
+  cannot invent or re-enable an entry; this adds no hop and keeps mutable
+  release policy at the game authority;
+- discoveries accumulate inside the worker and return on the existing
+  `Hunt.Settle`/`Hunt.Released` boundaries. Recording every sighting therefore
+  adds no per-search cross-process message;
 - `huntMessage` targets **the run's** worker, not the global. Without this the
   fleet would exist and every player would still be routed to worker one;
 - `Hunt.Opened`, `Hunt.Released` and `Hunt.Settle` require the sender to be the
@@ -147,3 +154,65 @@ this is a case where the hop cost is simply the price of the domain being real.
 A companion sale is now zero hops: one action inside the authority. The hops
 that remain are the Rune deposit/withdraw saga against the token processes,
 which is still unmeasured and is the next thing to count.
+
+## Published-state size — the other axis, and the one that was degrading
+
+Hops are not the only thing a slot is charged for. HyperBEAM's `dev_lua:compute/4`
+loads, encodes, Luerl-decodes, decodes back and rewrites the **whole published
+map** on every message, whatever the message did — five full passes over
+everything the process has ever published. See the "Every message pays for all
+published state" rule in `CLAUDE.md` for the source-level walkthrough.
+
+That makes any key that grows with the player count a tax on every action by
+every player. The 2026-08-31 soak measured it: median successful action 7.6 s
+early in the run, 18.5 s by the end of 5,061 actions.
+
+**Measured on the live process** (`IAPvo71Vwa…`, 29 wallets, 332 KB total):
+
+| key | bytes | shape |
+|---|---|---|
+| `player-<address>` × 29 | 202,000 | **O(wallets)** — ~7.0 KB each, never evicted |
+| `leaderboard` | 61,127 | O(1), capped at 50 rows, but each row embedded a whole companion |
+| `markethistory` | 20,026 | O(1), trimmed to 100 on insert — correct already |
+| `battle` | 16,955 | O(1) |
+| `economy` | 14,418 | O(1) |
+| `player` (singleton) | 10,149 | a second full copy of a record nothing read |
+| `factions` | 7,750 | O(1), capped at 50 members |
+
+### Fixed
+
+- **Compact moves on every outward door.** Companions were stored compactly and
+  re-expanded in `playerView`, `leaderboard`, listings, hunt captures. 499 bytes
+  of every 1,007-byte companion were a verbatim copy of `C.MOVE_POOLS`. The pool
+  is now published once as `catalog.movePools` and `src/lib/game.ts` joins names
+  against it at the read boundary. The mint queue is the one deliberate
+  exception — an off-process card worker with no catalog to join against, and it
+  drains, so it is O(mints in flight).
+- **The `player` singleton is no longer written.** It held whichever wallet the
+  process computed last; `readAuthorityPlayer` reads `player-<address>` and
+  nothing reads the singleton. `playerid` stays — 43 bytes, and it is what the
+  admin-target regression is asserted against.
+
+Result, measured against that same live snapshot: **6,965 B → 4,691 B per
+wallet (33% off the growing part)**, 332 KB → 236 KB total (29%).
+
+### Known and NOT fixed
+
+- **`monster` mirrors `monsters[activeId]` in every published record.** In the
+  store they are the same Lua table; the JSON encoder does not know that and
+  writes it twice. ~530 B per record after the move fix — 8%. `activeId` is
+  published beside it, so a client could index one by the other, but `.monster`
+  has 75 readers in `src/` and 166 assertions in `game_test.lua`. Deferred
+  deliberately, not overlooked.
+- **`player-<address>` is still unbounded and still the slope.** Nothing evicts
+  a wallet that stopped playing, and no byte-shaving changes the shape of the
+  curve — at 4.7 KB a wallet, 500 wallets is 2.3 MB marshalled five times per
+  message. Eviction needs a policy decision first, because a cold wallet that
+  loses its key can no longer read its own account without signing, which is the
+  exact wallet prompt the addressed key was introduced to remove.
+- **`leaderboard` rows still embed a whole companion** (~700 B each after the
+  move fix, 50 rows). The client draws the full card from them; dropping it
+  means either a smaller card or 50 extra reads to draw one screen.
+
+Adding a published key that grows with the player count belongs in this list the
+same way a cross-process message does.

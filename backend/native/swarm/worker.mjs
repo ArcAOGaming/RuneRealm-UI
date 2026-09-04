@@ -3,6 +3,7 @@ import { parentPort, workerData } from 'node:worker_threads';
 import { pathToFileURL } from 'node:url';
 import { installWalletShim, jwkToAddress } from '../ans104.mjs';
 import { structuredErrorFields } from './error-fields.mjs';
+import { makeBridge } from './bridge.mjs';
 
 if (!parentPort) throw new Error('swarm worker must run in a worker thread');
 
@@ -18,6 +19,25 @@ const api = await import(
     + `?wallet=${encodeURIComponent(workerData.profile.wallet)}&run=${workerData.runId}`
 );
 const profile = workerData.profile;
+
+/**
+ * Phase timings for the signed writes this actor made, collected per command.
+ *
+ * One worker command is often several signed writes — a tick can refresh, join
+ * a faction and then act — so a single duration for the command cannot say
+ * which write was slow, or whether the time went to signing, to the scheduler
+ * accepting the item, or to reading the computed reply back. The transport
+ * reports each write here and the buffer is drained onto the command's result,
+ * which puts them in the run's events.jsonl beside everything else.
+ */
+let transportBuffer = [];
+api.setTransportObserver((timing) => { transportBuffer.push(timing); });
+
+function drainTransport() {
+  const collected = transportBuffer;
+  transportBuffer = [];
+  return collected;
+}
 
 function hashSeed(text) {
   let value = 2166136261;
@@ -40,6 +60,10 @@ function mulberry32(seed) {
 }
 
 const random = mulberry32(hashSeed(`${workerData.seed}:${profile.wallet}`));
+
+// The Rune bridge and the AMM pair, built against the same client and the
+// same wallet as every other verb this actor calls.
+const bridge = makeBridge({ api, address, result, random });
 let lastPlayer = null;
 let tradePlan = null;
 
@@ -71,6 +95,21 @@ async function market() {
 async function economy() {
   try {
     return await api.rawReadJSON('economy') ?? null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * The AMM pair, read unsigned.
+ *
+ * Null on a deployment with no exchange wired, which is a normal state for a
+ * --blank or --no-market deploy rather than a failure.
+ */
+async function ammPool() {
+  if (!api.exchangeConfigured()) return null;
+  try {
+    return await api.readAmmPool();
   } catch {
     return null;
   }
@@ -551,12 +590,23 @@ async function tick() {
   const rosterMax = player.rosterMax ?? 1;
   const idleInRoster = Object.values(player.monsters ?? {})
     .filter((m) => m.status?.type === 'Home');
-  const [listings, economyView] = await Promise.all([market(), economy()]);
+  const [listings, economyView, pool] = await Promise.all([market(), economy(), ammPool()]);
   const mine = Object.values(listings).filter((entry) => entry.seller === address);
   const affordable = Object.values(listings)
     .filter((entry) => entry.seller !== address && Number(entry.price) <= runes);
   const intelligence = tradeIntelligence(player, economyView);
   const runeReserve = targetHolding(player, 'rune');
+
+  // The bridge and the pair are only reachable on a deployment that actually
+  // has them wired. A blank or --no-market deploy leaves the ids unset, and an
+  // actor should skip those verbs there rather than sign a message at a
+  // placeholder process id.
+  const exchangeReady = api.exchangeConfigured();
+  // The wallet-side TEST-RUNE balance -- what a settled withdrawal produced,
+  // and the only thing `deposit` can burn back into the game.
+  const tokenBalance = exchangeReady
+    ? Number(await api.readTokenBalance(api.RUNE_PROCESS, address).catch(() => 0)) || 0
+    : 0;
 
   add('daily', (player.dailyReadyAt ?? 0) <= Date.now());
   add('loot', (player.lootboxes?.length ?? 0) > 0 && status === 'Home');
@@ -597,6 +647,18 @@ async function tick() {
   add('shop_trade', Boolean(intelligence?.excess.length || intelligence?.needs.length));
   add('arbitrage', Boolean(tradePlan || intelligence?.arbitrage.length));
 
+  // The Rune bridge and the AMM pair.
+  //
+  // `withdraw` spends the game balance, so it is held above the same reserve
+  // every other Rune sink respects -- an actor that bridged itself broke would
+  // stop questing and fighting and drop out of every other measurement here.
+  // `deposit` is gated on actually holding the token, which only a settled
+  // withdrawal produces, so the pair naturally runs in order the first time.
+  add('withdraw', runes > runeReserve + 1 && exchangeReady);
+  add('deposit', tokenBalance > 0 && exchangeReady);
+  add('liquidity', exchangeReady);
+  add('trade', exchangeReady);
+
   // Deliberately illegal. See `probe` below.
   add('probe', true);
 
@@ -607,6 +669,60 @@ async function tick() {
       && runes - levelRuneCost >= runeReserve) {
     player = await api.levelUp(profile.statPlan);
     return result('monster.level-up', player, { allocation: profile.statPlan });
+  }
+
+  // Bootstrapping beats sampling.
+  //
+  // `trade` needs reserves and `goods_take`/`arbitrage` need a resting order,
+  // so until somebody opens each market NONE of those actions can do anything
+  // -- and the actions that would open them are ordinary weighted candidates
+  // competing with twenty others. Measured over a twelve-minute fifty-wallet
+  // run: one p2p order placed, zero liquidity added, and every one of the four
+  // swap attempts skipped for want of reserves. The pricing was never the
+  // problem; the market simply never got opened.
+  //
+  // So an actor that CAN open an empty market does that first, exactly the way
+  // a pending level-up and a half-finished arbitrage already jump the queue.
+  // Once the market exists this is inert, because the condition is emptiness.
+  const poolEmpty = exchangeReady && pool?.configured && !pool.paused
+    && (Number(pool.reserveBase ?? 0) <= 0 || Number(pool.reserveQuote ?? 0) <= 0);
+  // Opening the pair is a FLEET bootstrap, not a role preference, so this
+  // deliberately ignores `weights.liquidity`. Thirty-seven of the fifty actors
+  // carry a weight of zero for it -- a sane steady-state choice, and the reason
+  // an empty pool stayed empty: the wallets that bridged were mostly not the
+  // wallets permitted to provide. While there are no reserves at all, anyone
+  // holding spare Rune should be willing to open the market. Once reserves
+  // exist this whole branch is unreachable and the weights govern again.
+  if (poolEmpty) {
+    // The pair is TEST-RUNE against TEST-RELIC, and only ONE of those can be
+    // conjured: the quote token has a public faucet, the base token does not.
+    // TEST-RUNE exists solely as the output of a settled `Rune.Withdraw`, so an
+    // actor holding none can fund the quote side, fund nothing on the base side
+    // and skip -- which is what eleven straight attempts did, every one of them
+    // reporting `base=0 quote=2000000`.
+    //
+    // So bridge first and add liquidity on a later tick, once the mint has
+    // settled. That makes the cycle self-sufficient per wallet instead of
+    // depending on the same actor happening to roll withdraw before liquidity.
+    if (tokenBalance <= 0) {
+      if (runes > runeReserve + 1) {
+        return bridge.withdraw(player, Math.min(2, runes - runeReserve));
+      }
+      return result('amm.liquidity.skipped', player, {
+        reason: 'no TEST-RUNE and no spare game Rune to bridge for it',
+      });
+    }
+    return bridge.liquidity(player);
+  }
+  // An item this actor holds spare that nobody is offering at any price. The
+  // maker prices it against the NPC desk, so the first order lands one Gold
+  // inside the shop rather than at a number pulled out of the air.
+  const unquoted = (intelligence?.excess ?? []).filter(({ item, quantity }) =>
+    quantity > 0 && !(economyView?.market?.[item]?.bestAsk > 0)
+    && (economyView?.desks?.[item]?.ask ?? 0) > 0);
+  if (unquoted.length > 0 && (profile.weights.goods_make ?? 0) > 0 && (player.gold ?? 0) >= 1) {
+    return economicAction('goods_make', player, economyView,
+      { ...intelligence, excess: unquoted });
   }
 
   const action = tradePlan && intelligence ? 'arbitrage' : weightedChoice(candidates);
@@ -668,6 +784,16 @@ async function tick() {
     detail = { monsterId: id, recipient };
   } else if (['goods_make', 'goods_take', 'goods_cancel', 'shop_trade', 'arbitrage'].includes(action)) {
     return economicAction(action, player, economyView, intelligence);
+  } else if (action === 'withdraw') {
+    // One at a time. A withdrawal is a queued mint, and the point is to watch
+    // the queue drain rather than to move a large balance.
+    return bridge.withdraw(player, Math.min(2, runes - runeReserve));
+  } else if (action === 'deposit') {
+    return bridge.deposit(player, Math.min(2, tokenBalance));
+  } else if (action === 'liquidity') {
+    return bridge.liquidity(player);
+  } else if (action === 'trade') {
+    return bridge.trade(player);
   } else if (action === 'probe') {
     return probe(player, listings);
   } else {
@@ -948,7 +1074,7 @@ parentPort.on('message', (message) => {
       parentPort.postMessage({
         id: message.id,
         ok: true,
-        value: { ...value, durationMs: Date.now() - started },
+        value: { ...value, durationMs: Date.now() - started, transport: drainTransport() },
       });
     } catch (error) {
       parentPort.postMessage({
@@ -959,6 +1085,9 @@ parentPort.on('message', (message) => {
           name: error?.name ?? 'Error',
           message: errorMessage(error),
           durationMs: Date.now() - started,
+          // A failed command still made signed writes, and the timings of the
+          // ones that failed are the point of measuring at all.
+          transport: drainTransport(),
         },
       });
     }

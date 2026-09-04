@@ -10,10 +10,10 @@
  * unless it is named in rollupOptions.input, and it is not.
  */
 import { createRoot } from 'react-dom/client';
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import '../index.css';
 import {
-  ActivityReceipt, Battle, Combatant, Element, Monster,
+  ActivityReceipt, Battle, Combatant, Element, LootResult, Monster,
 } from '../lib/types';
 import RoomStage from '../ui/RoomStage';
 import BattleStageImpl from '../ui/BattleStageImpl';
@@ -25,8 +25,10 @@ import { CaptureChoice } from '../screens/Hunt';
 import { Shell } from '../ui/Shell';
 import { ToastProvider } from '../ui/Toast';
 import { MemoryRouter } from 'react-router-dom';
-import { GameContext } from '../state/GameProvider';
+import { GameContext } from '../state/gameContext';
 import { arenaNames, homeNames, playNames, questRoutes } from './assets';
+import { LootVault } from '../ui/LootVault';
+import { LOOTBOX_TIER } from '../lib/format';
 import PLAYER_SHEET from '../assets/BASE.png?url';
 
 const SPRITES = [
@@ -36,7 +38,12 @@ const SPRITES = [
   'Zt8LmHGVIziXhzjqBhEAWLuGetcDitFKbfaJROkyZks',
 ];
 
+const ENTRY_BY_ELEMENT: Record<Element, number> = {
+  fire: 1, water: 4, air: 7, rock: 10,
+};
+
 const monster = (element: Element, sprite: string, status: string): Monster => ({
+  entryNo: ENTRY_BY_ELEMENT[element],
   name: 'Doge', image: '', sprite, faction: 'Sky Nomads', elementType: element,
   berryItem: `${element}_berry`, attack: 5, defense: 5, speed: 5, health: 5,
   energy: 80, happiness: 80, level: 4, exp: 10, nextLevelExp: 40,
@@ -46,6 +53,7 @@ const monster = (element: Element, sprite: string, status: string): Monster => (
 } as Monster);
 
 const fighter = (side: 'challenger' | 'accepter', element: Element, sprite: string): Combatant => ({
+  entryNo: ENTRY_BY_ELEMENT[element],
   side, address: side, name: side === 'challenger' ? 'Yours' : 'Theirs', image: '',
   sprite, faction: '', elementType: element, level: 5,
   attack: 6, defense: 6, speed: 6, health: 6,
@@ -365,9 +373,11 @@ function CompanionPage() {
   };
   return (
     <GameContext.Provider value={value as never}>
-      <MemoryRouter initialEntries={['/companion']}>
-        <Shell><Companion /></Shell>
-      </MemoryRouter>
+      <ToastProvider>
+        <MemoryRouter initialEntries={['/companion']}>
+          <Shell><Companion /></Shell>
+        </MemoryRouter>
+      </ToastProvider>
     </GameContext.Provider>
   );
 }
@@ -453,9 +463,11 @@ function CollectionPage() {
   };
   return (
     <GameContext.Provider value={value as never}>
-      <MemoryRouter initialEntries={['/collection']}>
-        <Shell><Collection /></Shell>
-      </MemoryRouter>
+      <ToastProvider>
+        <MemoryRouter initialEntries={['/collection']}>
+          <Shell><Collection /></Shell>
+        </MemoryRouter>
+      </ToastProvider>
     </GameContext.Provider>
   );
 }
@@ -501,6 +513,67 @@ function CapturePage() {
           <CaptureChoice hunter={hunter} wild={wild} tuning={tuning} onRun={() => {}} />
         </div>
       </GameContext.Provider>
+    </ToastProvider>
+  );
+}
+
+/**
+ * The chest, on demand.
+ *
+ * Every previous look at this prop cost a real loot box on a real process, so
+ * the five tiers had never been seen side by side and had drifted into being
+ * the same crate with a different glow. `?page=vault` builds one per click,
+ * against fabricated spoils, and `?tier=` picks which.
+ */
+function VaultPage() {
+  const [run, setRun] = useState<{ id: number; tier: number } | null>(null);
+  const [result, setResult] = useState<LootResult | null>(null);
+  const next = useRef(0);
+
+  const openTier = (tier: number) => {
+    next.current += 1;
+    setResult(null);
+    setRun({ id: next.current, tier });
+    // The real screen opens the chest first and answers second; so does this.
+    window.setTimeout(() => setResult({
+      rarity: tier,
+      rewards: [
+        { item: 'fire_berry', name: 'Fire Berry', amount: 3 },
+        { item: 'rune', name: 'Rune', amount: tier * 2 },
+        { item: 'water_berry', name: 'Water Berry', amount: 1 },
+      ],
+    } as never), 1400);
+  };
+
+  return (
+    <ToastProvider>
+      <div className="min-h-screen bg-void p-6">
+        <h1 className="font-display text-lg font-semibold">Loot vault</h1>
+        <p className="mt-1 text-[13px] text-faint">
+          Each button builds a fresh ceremony. Open several in a row: the chest
+          has to animate every time, not just the first.
+        </p>
+        <div className="mt-4 flex flex-wrap gap-2">
+          {LOOTBOX_TIER.map((name, tier) => (name ? (
+            <button
+              key={name}
+              type="button"
+              onClick={() => openTier(tier)}
+              className="rounded-[3px] border border-edge bg-raised/60 px-3 py-2 text-[13px] text-muted hover:text-ink"
+            >
+              {tier} · {name}
+            </button>
+          ) : null))}
+        </div>
+      </div>
+      {run && (
+        <LootVault
+          key={run.id}
+          rarity={run.tier}
+          result={result}
+          onClose={() => { setRun(null); setResult(null); }}
+        />
+      )}
     </ToastProvider>
   );
 }
@@ -552,6 +625,7 @@ createRoot(document.getElementById('root')!).render(
   page === 'arena' ? <ArenaPage />
     : page === 'companion' ? <CompanionPage />
       : page === 'collection' || page === 'party' ? <CollectionPage />
+      : page === 'vault' ? <VaultPage />
       : page === 'capture' ? <CapturePage />
       : page === 'acquisition' ? <AcquisitionPage />
         : <App />,

@@ -1,7 +1,7 @@
 /** One chosen companion, with every other owned card kept in the collection. */
 import { useCallback, useState } from 'react';
 import { Navigate } from 'react-router-dom';
-import { useGame } from '../state/GameProvider';
+import { useGame } from '../state/gameContext';
 import * as api from '../lib/game';
 import type { Monster } from '../lib/types';
 import { CardPreview } from '../ui/CardPreview';
@@ -10,8 +10,9 @@ import {
   CollectionCardSwap, renderCollectionSwapFace, type CollectionSwapRequest,
 } from '../ui/CollectionCardSwap';
 import { Dialog } from '../ui/Dialog';
+import { CharacterDialog } from '../ui/character/CharacterDialog';
 import {
-  Badge, Button, Empty, Panel, SectionTitle, Skeleton, cx,
+  Button, Empty, Panel, Skeleton, cx,
 } from '../ui/primitives';
 import { Sparkle, Users } from '../ui/icons';
 
@@ -25,6 +26,7 @@ export default function Collection() {
   const [swap, setSwap] = useState<CollectionSwapRequest | null>(null);
   const [preparingSwap, setPreparingSwap] = useState(false);
   const [preferredSlot, setPreferredSlot] = useState<{ id: string; index: number } | null>(null);
+  const [editingCharacter, setEditingCharacter] = useState(false);
   const revealIntro = useCallback(() => setIntroVisible(true), []);
   const finishIntro = useCallback(() => {
     setIntroVisible(true);
@@ -132,12 +134,33 @@ export default function Collection() {
 
       <div className={cx(
         'collection-workspace relative z-[1] grid min-h-0 flex-1 gap-3',
-        'grid-rows-[minmax(11rem,.62fr)_minmax(0,1.38fr)] lg:grid-cols-[minmax(18rem,.72fr)_minmax(0,2.28fr)] lg:grid-rows-1',
+        /*
+          Stacked, the companion row takes what it NEEDS and the collection
+          takes the rest.
+
+          It used to be `minmax(11rem,.62fr)`, which on a phone resolves to
+          about 190px — less than the card (184px) plus its gap and the Edit
+          character button under it. The panel is `overflow-hidden`, so what
+          the row could not fit it cut: the card lost its nameplate off the top
+          and the button was sliced in half at the bottom.
+        */
+        'grid-rows-[auto_minmax(0,1fr)] lg:grid-cols-[minmax(18rem,.72fr)_minmax(0,2.28fr)] lg:grid-rows-1',
         introVisible && 'is-ready',
       )}>
+        {/* No headings over either column.
+
+            They used to carry "Companion / Active" and "Collection / 7" — four
+            labels for two things the cards already say, on a page whose whole
+            height is the cards. The one control that was up there is now IN the
+            companion panel, where the companion is. */}
         <section className="flex min-h-0 flex-col">
-          <SectionTitle right={<Badge tone="element">Active</Badge>}>Companion</SectionTitle>
-          {active ? <ActiveCompanion monster={active} swapping={swapping(active.id)} /> : (
+          {active ? (
+            <ActiveCompanion
+              monster={active}
+              swapping={swapping(active.id)}
+              onEditCharacter={() => setEditingCharacter(true)}
+            />
+          ) : (
             <Panel className="min-h-0 flex-1">
               <Empty icon={<Sparkle />} title="Choose your companion">
                 Select any card below to bring that companion into the room.
@@ -147,7 +170,6 @@ export default function Collection() {
         </section>
 
         <section className="flex min-h-0 flex-col">
-          <SectionTitle right={<Badge>{stored.length}</Badge>}>Collection</SectionTitle>
           <Panel className="flex min-h-0 flex-1 flex-col overflow-hidden p-0">
             {stored.length ? (
               <div className="collection-scroll min-h-0 flex-1 overflow-y-auto p-3 sm:p-4">
@@ -172,6 +194,13 @@ export default function Collection() {
         </section>
       </div>
 
+      {editingCharacter && (
+        <CharacterDialog
+          element={active?.elementType}
+          onClose={() => setEditingCharacter(false)}
+        />
+      )}
+
       {selected && (
         <Dialog
           title={`Switch to ${selected.name}?`}
@@ -194,22 +223,37 @@ export default function Collection() {
   );
 }
 
-function ActiveCompanion({ monster, swapping }: { monster: Monster; swapping: boolean }) {
+function ActiveCompanion({ monster, swapping, onEditCharacter }: {
+  monster: Monster;
+  swapping: boolean;
+  onEditCharacter: () => void;
+}) {
   return (
     <Panel
       data-element={monster.elementType}
-      className="collection-active-card relative flex min-h-0 flex-1 items-center justify-center overflow-hidden p-3 sm:p-4 lg:p-6"
+      className="collection-active-card relative flex min-h-0 flex-1 flex-col items-center justify-center gap-3 overflow-hidden p-3 sm:p-4 lg:p-6"
       glow
     >
       <div
         className={cx(
-          'collection-card-target w-[7rem] shrink-0 sm:w-[9rem] lg:w-full lg:max-w-[21rem]',
+          'collection-card-target w-[9rem] shrink-0 sm:w-[11rem] lg:w-full lg:max-w-[21rem]',
           swapping && 'is-swapping',
         )}
         data-collection-card-target={monster.id}
       >
         <CardPreview monster={monster} eager className="w-full" />
       </div>
+      {/* The trainer, under their companion. This was a 11px link in a heading
+          nobody looked at; it is the only action on this half of the page, so
+          it gets to look like one. */}
+      <Button
+        variant="ghost"
+        onClick={onEditCharacter}
+        icon={<Sparkle className="h-4 w-4" />}
+        className="shrink-0"
+      >
+        Edit character
+      </Button>
     </Panel>
   );
 }

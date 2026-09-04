@@ -44,6 +44,8 @@ type StudioRecord = {
   sourceWidth?: number;
   sourceHeight?: number;
   providerMeta?: Record<string, unknown>;
+  entryNo?: number;
+  assetSlot?: 'portrait' | 'world' | 'basicAttack' | 'advancedAttack';
 };
 
 type StudioKind =
@@ -194,6 +196,30 @@ function studioPaths(root: string) {
   };
 }
 
+function monsterIndexCatalog(root: string) {
+  const file = path.join(root, 'RuneRealm-Assets', 'monster-index', 'catalog.json');
+  if (!fs.existsSync(file)) throw new Error('Monster Index catalog is unavailable.');
+  const catalog = JSON.parse(fs.readFileSync(file, 'utf8'));
+  if (!catalog || !Array.isArray(catalog.entries)) throw new Error('Monster Index catalog is malformed.');
+  return { file, catalog };
+}
+
+function monsterIndexAssignment(root: string, body: Record<string, unknown>) {
+  if (body.entryNo === undefined || body.entryNo === null || body.entryNo === '') return {};
+  const entryNo = asInt(body.entryNo, 0, 1, 1_000_000);
+  const slots = new Set(['portrait', 'world', 'basicAttack', 'advancedAttack']);
+  const assetSlot = String(body.assetSlot ?? '');
+  if (body.kind !== undefined && body.kind !== 'creature-portrait' && body.kind !== 'creature-sheet') {
+    throw new Error('Only creature portraits or sheets can be assigned to a Monster Index entry.');
+  }
+  const { catalog } = monsterIndexCatalog(root);
+  if (!catalog.entries.some((entry: { entryNo?: unknown }) => Number(entry.entryNo) === entryNo)) {
+    throw new Error(`Monster #${String(entryNo).padStart(3, '0')} does not exist in the Monster Index.`);
+  }
+  if (!slots.has(assetSlot)) throw new Error('Choose a valid Monster Index asset slot.');
+  return { entryNo, assetSlot: assetSlot as StudioRecord['assetSlot'] };
+}
+
 function readRegistry(root: string): StudioRecord[] {
   const { registry } = studioPaths(root);
   if (!fs.existsSync(registry)) return [];
@@ -250,6 +276,26 @@ function assertKind(value: unknown): StudioKind {
 }
 
 function destination(root: string, record: StudioRecord) {
+  if (record.entryNo) {
+    const { catalog } = monsterIndexCatalog(root);
+    const entry = catalog.entries.find((value: { entryNo?: unknown }) => Number(value.entryNo) === record.entryNo);
+    if (!entry) throw new Error(`Monster #${record.entryNo} is not reserved in the Monster Index.`);
+    const folder = `${String(record.entryNo).padStart(3, '0')}-${entry.entryKey}`;
+    const base = `RuneRealm-Assets/monster-index/entries/${folder}`;
+    let relative: string;
+    if (record.kind === 'creature-portrait' || record.assetSlot === 'portrait') {
+      relative = `${base}/portrait/portrait.png`;
+    } else if (record.kind === 'creature-sheet' || record.assetSlot === 'world') {
+      relative = `${base}/animations/world.png`;
+    } else if (record.assetSlot === 'basicAttack') {
+      relative = `${base}/animations/basic.png`;
+    } else if (record.assetSlot === 'advancedAttack') {
+      relative = `${base}/animations/advanced.png`;
+    } else {
+      relative = `${base}/sources/${slug(record.name)}.png`;
+    }
+    return path.join(root, ...relative.split('/'));
+  }
   const name = `${slug(record.name)}.png`;
   const layer = record.kind.replace('side-scroller-', '');
   const relative: Record<StudioKind, string> = {
@@ -1099,6 +1145,7 @@ export function studioPlugin(root: string, env: StudioEnv): Plugin {
           }
           if (req.method === 'POST' && requestUrl.pathname === '/__studio/generate') {
             const body = await jsonBody(req);
+            const assignment = monsterIndexAssignment(workspace, body);
             const kind = assertKind(body.kind);
             if (kind === 'creature-animation') {
               return sendJson(res, 400, { error: 'Create animation from an approved creature draft.' });
@@ -1160,6 +1207,7 @@ export function studioPlugin(root: string, env: StudioEnv): Plugin {
                 ...result.meta,
                 ...('processing' in prepared ? prepared.processing : {}),
               },
+              ...assignment,
             };
             const rows = readRegistry(workspace);
             rows.unshift(record);
@@ -1258,6 +1306,7 @@ export function studioPlugin(root: string, env: StudioEnv): Plugin {
                 matteRemoved: cleaned.removed,
                 cardPreviewPath: posix(path.relative(workspace, cardPreview)),
               },
+              ...monsterIndexAssignment(workspace, body),
             };
             rows.unshift(record);
             writeRegistry(workspace, rows);
@@ -1707,6 +1756,7 @@ export function studioPlugin(root: string, env: StudioEnv): Plugin {
                 rigCanvasWidth: sourceSize.width,
                 rigCanvasHeight: sourceSize.height,
               },
+              ...monsterIndexAssignment(workspace, body),
             };
             rows.unshift(record);
             writeRegistry(workspace, rows);
@@ -1789,6 +1839,9 @@ export function studioPlugin(root: string, env: StudioEnv): Plugin {
                 matteRemovedFrames: cleanedFrames.filter((frame) => frame.removed).length,
                 sourceTransparentPct: Math.min(...cleanedFrames.map((frame) => alphaStats(frame.png).transparentPct)),
               },
+              entryNo: portrait.entryNo,
+              assetSlot: motionKey === 'attack-basic' ? 'basicAttack'
+                : motionKey === 'attack-advanced' ? 'advancedAttack' : portrait.assetSlot,
             };
             rows.unshift(record);
             writeRegistry(workspace, rows);
@@ -1847,6 +1900,8 @@ export function studioPlugin(root: string, env: StudioEnv): Plugin {
               transparent: true, seed: portrait.seed, createdAt: new Date().toISOString(),
               stagedPath: posix(path.relative(workspace, sheet)), theme: portrait.theme,
               revision: 1, providerMeta: { model: 'local-template-assembly', paidGeneration: false, cellSize },
+              entryNo: portrait.entryNo,
+              assetSlot: portrait.entryNo ? 'world' : undefined,
             };
             rows.unshift(record);
             writeRegistry(workspace, rows);
@@ -1858,7 +1913,11 @@ export function studioPlugin(root: string, env: StudioEnv): Plugin {
             const rows = readRegistry(workspace);
             const record = rows.find((row) => row.id === body.id);
             if (!record || record.status !== 'pending') return sendJson(res, 404, { error: 'Pending asset not found.' });
-            const staged = path.resolve(workspace, ...record.stagedPath.split('/'));
+            const cardPreviewRel = typeof record.providerMeta?.cardPreviewPath === 'string'
+              ? record.providerMeta.cardPreviewPath : undefined;
+            const approvedPortraitSource = record.entryNo && record.assetSlot === 'portrait' && cardPreviewRel
+              ? cardPreviewRel : record.stagedPath;
+            const staged = path.resolve(workspace, ...approvedPortraitSource.split('/'));
             const dest = destination(workspace, record);
             if (!inside(workspace, staged) || !inside(workspace, dest) || !fs.existsSync(staged)) {
               return sendJson(res, 400, { error: 'The staged asset is invalid.' });
@@ -1869,8 +1928,6 @@ export function studioPlugin(root: string, env: StudioEnv): Plugin {
               source: path.resolve(workspace, ...record.sourcePath.split('/')),
               target: path.join(path.dirname(dest), '_sources', path.basename(dest)),
             } : undefined;
-            const cardPreviewRel = typeof record.providerMeta?.cardPreviewPath === 'string'
-              ? record.providerMeta.cardPreviewPath : undefined;
             const cardPreviewCopy = cardPreviewRel ? {
               source: path.resolve(workspace, ...cardPreviewRel.split('/')),
               target: path.join(path.dirname(dest), '_previews', path.basename(dest)),
@@ -1938,6 +1995,22 @@ export function studioPlugin(root: string, env: StudioEnv): Plugin {
             record.status = 'approved';
             record.approvedAt = new Date().toISOString();
             record.approvedPath = posix(path.relative(workspace, dest));
+            if (record.entryNo && record.assetSlot) {
+              const { file, catalog } = monsterIndexCatalog(workspace);
+              const entry = catalog.entries.find((value: { entryNo?: unknown }) => Number(value.entryNo) === record.entryNo);
+              if (!entry?.assets?.[record.assetSlot]) {
+                throw new Error(`Monster #${record.entryNo} has no ${record.assetSlot} slot in the Monster Index.`);
+              }
+              const monsterIndexRoot = path.join(workspace, 'RuneRealm-Assets', 'monster-index');
+              entry.assets[record.assetSlot] = {
+                status: 'approved', path: posix(path.relative(monsterIndexRoot, dest)),
+              };
+              if (record.assetSlot !== 'portrait' && entry.assets.runtimeAtlas) {
+                entry.assets.runtimeAtlas.status = 'planned';
+              }
+              if (entry.availability?.state === 'planned') entry.availability.state = 'art-in-progress';
+              fs.writeFileSync(file, `${JSON.stringify(catalog, null, 2)}\n`);
+            }
             writeRegistry(workspace, rows);
             return sendJson(res, 200, { job: record });
           }

@@ -484,10 +484,19 @@ H["Mint"] = function(base, msg)
       TotalSupply = asString(TotalSupply),
     }) },
     outbox = {
-      ["credit-notice"] = {
-        target = to, Action = "Credit-Notice",
-        Sender = from, Quantity = asString(amount), ["X-Reason"] = "withdraw",
-      },
+      -- NO `credit-notice` here, deliberately.
+      --
+      -- Mint always pays a PLAYER WALLET, and a wallet is not a process. The
+      -- node answers a push of a wallet-targeted message with
+      -- `404 Could not access target process!`, that sub-message lands in the
+      -- push result map, and normalising THAT map for the cache dies in
+      -- `hb_cache:write/2` -- so every push of a successful withdrawal
+      -- returned HTTP 500 *after* both hops had already landed. The client
+      -- read that 500 as failure and retried, and a retry re-runs this
+      -- handler: 80 Rune deducted in-game became 224 Rune minted.
+      --
+      -- `Credit-Notice` is only ever consumed by the AMM (amm.lua), and only
+      -- from a `Transfer` whose target IS a process. Transfer still emits it.
       -- Tell the minter it happened.
       --
       -- The game deducts a player's in-game runes and asks for the mint in the

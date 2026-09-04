@@ -1,0 +1,10 @@
+{
+  "node": "http://localhost:8734",
+  "policy": "hot",
+  "shards": [
+    "4Rsw6MiwAT3l4IecsJWgGvW8ndUVrDHz6I1vMzSDgqo",
+    "Ec5I3mcrdMpBJuB_VhxG5cxgnPgM7pQoRAtJSHtyJfQ",
+    "5TDZquC75nDbv78Z4gYbWVXcm6UUJWPXRPfcJ3sWTJI",
+    "p1V974NoKeFRXC1ifM_LHwXPe7FC1ipdq-TosmaVhwM"
+  ]
+}

@@ -3,7 +3,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import process from 'node:process';
 import { fileURLToPath } from 'node:url';
-import { spawnProcess, spawnWasmProcess, sendMessage } from '../hbclient.mjs';
+import { spawnProcess, spawnWasmProcess, sendMessage, transportNode } from '../hbclient.mjs';
 import { buildWorkerSource } from './bundle.mjs';
 import {
   assertNoAmbiguousSpawnIntents, atomicWriteManifest, prepareManifest,
@@ -25,6 +25,7 @@ if (!/^(1|true|yes)$/i.test(process.env.BATTLE_FLEET_ENABLED || '')) {
 const resume = process.argv.includes('--resume');
 const replace = process.argv.includes('--replace');
 const node = process.env.NODE_URL || 'https://schedule.forward.computer';
+const requestNode = transportNode(node);
 const walletPath = process.env.HB_WALLET || path.join(ROOT, 'arweave-wallet-DA9qhP25.json');
 const gameProcess = process.env.BATTLE_GAME_PROCESS || '';
 
@@ -100,7 +101,7 @@ async function readStatus(workerProcessId, worker) {
   for (let attempt = 0; attempt < 30; attempt++) {
     try {
       const response = await fetch(
-        `${node}/${workerProcessId}~process@1.0/now/fleetstatus`,
+          `${requestNode}/${workerProcessId}~process@1.0/now/fleetstatus`,
         { headers: { accept: 'application/json, text/plain' } },
       );
       const body = (await response.text()).trim();
@@ -128,7 +129,7 @@ async function readImmutableField(workerProcessId, field) {
   for (let attempt = 0; attempt < 30; attempt++) {
     try {
       const response = await fetch(
-        `${node}/${workerProcessId}~process@1.0/now/process/${field}`,
+          `${requestNode}/${workerProcessId}~process@1.0/now/process/${field}`,
         { headers: { accept: 'application/json, text/plain' } },
       );
       const body = (await response.text()).trim();

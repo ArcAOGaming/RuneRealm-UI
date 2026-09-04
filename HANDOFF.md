@@ -9,7 +9,9 @@ platform facts), then [README.md](README.md). If you are touching the interface,
 [DESIGN.md](DESIGN.md) is the design system: the mark, the colour rule, the
 shape language, the hand-built icons, and what the four graphics renderers are
 each for. If you are writing story, quests, regions, enemies or public lore,
-[LORE.md](LORE.md) is the canon source.
+[LORE.md](LORE.md) is the canon source. If you are adding, evolving, naming,
+illustrating, releasing or making a wild creature catchable,
+[MONSTER_INDEX.md](MONSTER_INDEX.md) is the catalog and asset map.
 
 If you are touching Gold, item trading, the game shop, Rune economic policy,
 paid packs, or the marketplace process shape, read
@@ -144,9 +146,19 @@ npm run recover:build    # map the snapshot into Admin.Load rows
 npm run recover:verify   # load all 168 on a public ~lua@5.3a node, free
 ```
 
-**Every deploy restores them from now on.** `legacy-players.json` is committed
-and `deploy.mjs` seeds it by default — no flag — so a redeploy never again hands
-a legacynet player an empty account. `--no-seed-legacy` opts out.
+**They are restored once, by the final build.** `legacy-players.json` is
+committed, and the restore is opt-in: `npm run deploy:contracts:final`
+(`--seed`), or `deploy.mjs --seed-legacy` on its own. Every other deployment is
+blank — no legacy restore, no paid allow-list, no migration — because these 168
+accounts are real, and re-loading them onto each throwaway test process is both
+a lie about that process's numbers and one more half-finished migration for the
+next one to chain from.
+
+The two deployment defaults, together: **zero accounts, free sign-up.** A new
+process holds nothing and anyone may join it. `--seed` is the flag that fills
+it, and `--paid-access` is the flag that gates it — one for the launch build,
+one for the day registration closes, and neither of them something you get by
+forgetting.
 
 `--migrate-from` skips accounts that exist but were never played. `Admin.Unlock`
 calls `getPlayer`, so seeding a paid list mints an empty record for every

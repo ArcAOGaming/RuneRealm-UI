@@ -48,11 +48,81 @@ Battle.TUNING = {
   baseHitChance = 0.70,
   minHitChance = 0.30,
   maxHitChance = 0.95,
+  --- How far the speed stat may move the hit chance, as a SHARE of the gap
+  --- between the two fighters rather than as a count of stat points.
+  ---
+  --- The original modifier was `diff * 0.08` upward and `diff * 0.10` down,
+  --- clamped at +0.25 and -0.40. Both clamps are reached at a gap of four
+  --- points, which means two things and both of them are wrong once a player is
+  --- past level one:
+  ---
+  ---   * speed is a DEAD stat above the fourth point. Speed 5 and speed 100
+  ---     are the same number against a speed-1 opponent, so every point after
+  ---     the fourth buys nothing but the turn order.
+  ---   * and it is a SWITCH. A build that bought no speed sits pinned at the
+  ---     0.30 floor while the one that did sits at 0.95 -- a 3.2x swing in
+  ---     landed damage, larger than the 2.4x that a 60-point attack lead
+  ---     delivers. It is the single biggest reason a defensive build won 3% of
+  ---     its level-20 games against a balanced one.
+  ---
+  --- A share is smooth and has no saturation point, so the fifth point of speed
+  --- is worth something at level 20 the way it is at level 1, and the extremes
+  --- stop being a coin flip.
+  ---
+  --- OFF, and this is the one lever here that is arguably a bug rather than a
+  --- preference: at zero, every speed point after the fourth buys nothing. The
+  --- measured value is 0.3 -- with a per-stat cap of three
+  --- (`C.LEVEL_UP_MAX_PER_STAT`) that pair is the only configuration where all
+  --- four builds sit at 44-56% in `./run-balance.sh matrix20`. Neither half
+  --- works alone; see the note on the constant.
+  speedSwing = 0,
 
   --- damage = move.damage * (attackBase + attacker.attack)
   --- `attackBase` is small on purpose: attack has to MULTIPLY, or a stat point
   --- stops mattering by level 10.
   attackBase = 1,
+  --- A FLOOR under the attack stat, so that damage grows with a companion even
+  --- when its owner never buys attack.
+  ---
+  --- Health and defense are multiplied on the way into a fight -- twelve HP and
+  --- four shield per point -- and a player is handed ten points at every level.
+  --- Damage is multiplied by nothing except the attack stat itself, so a build
+  --- that spends all ten on health and defense grows an HP pool by 160 a level
+  --- against damage that never grows at all. Two of those meet and neither can
+  --- finish the other: measured at a 43-round median and a 100% exhaustion rate
+  --- at level 20, which is both rosters spent and the rest of the fight decided
+  --- by struggling at two damage a swing. That is the fight players report as
+  --- unwinnable, and it is what these two exist to end.
+  ---
+  --- There are two ways to express the floor and only one of them is safe.
+  ---
+  --- `attackPerLevel` keys it on the LEVEL. It fixes PvP and destroys the bot
+  --- ladder, because a player is handed ten points a level while
+  --- `Battle.makeOpponent` builds a bot on `10 + level*2` -- about 210 points
+  --- against 50 at level 20. A floor sized for the player's pool one-shots the
+  --- bot's: measured at 50% first-round knockouts at level 10. It stays at
+  --- zero, and stays at all only because the measurement is worth reproducing.
+  ---
+  --- `attackPerStatPoint` keys it on the fighter's OWN stat budget, frozen in
+  --- `Battle.combatant` before a move's +attack rider can feed back into it. It
+  --- is therefore large exactly where the health pools are large, which makes
+  --- it correct on both curves at once. At 0.2, together with the shield regen
+  --- below, every build matchup lands at a 4-14 round median and the level-10
+  --- tank mirror drops from 29 rounds to 14.
+  ---
+  --- Zero reproduces the pre-2026-08-31 behaviour for either. Re-measure with
+  --- `./run-balance.sh players` and `./run-balance.sh balance`.
+  attackPerLevel = 0,
+  attackPerStatPoint = 0.2,
+  --- The budget the floor is measured FROM, not from zero.
+  ---
+  --- Every companion in the game -- a starter, a capture, a bot at level 0 --
+  --- begins on ten points. Sizing the floor against the whole budget therefore
+  --- tripled damage at level 1, where the health pools are 33 points deep, and
+  --- put 18% of bot fights on the ladder at a first-round knockout. Measured
+  --- against how far a companion has GROWN, the floor is nothing at level 1 and
+  --- forty at a level-20 player, which is the whole point of it.
+  attackBudgetBaseline = 10,
   variance = 0.15,          -- +/- this fraction on every swing
 
   --- Critical hits.
@@ -70,13 +140,46 @@ Battle.TUNING = {
   criticalChance = 0.09,
   criticalMultiplier = 1.6,
 
+  --- How much of a swing the defense stat takes off, at most.
+  ---
+  --- Attack and defense are not symmetrical and never were. Attack MULTIPLIES:
+  --- it applies to every swing a fighter gives, so its value grows with the
+  --- length of the fight. Health and defense buy a POOL, which is spent once.
+  --- Over a twelve-swing fight that makes an attack point worth about four
+  --- health points, and the win-rate matrix says so out loud -- a pure
+  --- defensive build won 8% of its level-10 games against a balanced one and 3%
+  --- at level 20, while being the build most new players reach for.
+  ---
+  --- Raising `hpPerHealth` does not fix that. It scales both builds' pools by
+  --- the same factor and leaves the ratio exactly where it was; all it buys is
+  --- longer fights. The only thing that changes the ratio is giving the
+  --- defensive stats something that multiplies too, which is this.
+  ---
+  --- Measured against the SHARE of a fighter's stat budget that sits in
+  --- defense rather than against the raw number, so it is level-free by
+  --- construction and does not need re-tuning every time the level cap moves.
+  --- A build with half its points in defense earns the whole reduction; one
+  --- with a fifth earns two fifths of it. Zero disables the mechanic.
+  defenseMitigationMax = 0,
+  --- The share of its budget a fighter needs in defense to earn the whole
+  --- reduction. Half is what an all-in defensive build actually reaches, the
+  --- other half having gone to health.
+  defenseMitigationFullShare = 0.5,
+
   hpPerHealth = 12,         -- max HP = health stat * this
   shieldPerDefense = 4,     -- max shield = defense stat * this
   healPerPoint = 0.04,      -- one health point on a move = this share of max HP
   --- What a shield recovers at the end of a round in which its owner was NOT
   --- hit, as a share of its cap. Take a single point of damage and you recover
   --- nothing that round.
-  shieldRegenShare = 0.20,
+  ---
+  --- A share of the CAP is a share of a number that grows with the defense
+  --- stat, so this is the one recovery in the game that gets stronger the less
+  --- it is needed: at 0.20 a level-20 defensive build recovered 82 shield a
+  --- round, which is more than most swings against it removed. Lowered to 0.08
+  --- alongside the attack floor above -- the pair is what the `players` profile
+  --- was measured against, and neither of them alone clears the tank mirror.
+  shieldRegenShare = 0.08,
 
   --- How many times each move can be used, as a multiple of its printed count.
   --- The printed counts total about eight uses across a four-move set, which a
@@ -245,12 +348,22 @@ Battle.effectiveness = effectiveness
 --- Faster attackers land more; slower ones are punished harder than they are
 --- rewarded, which is what makes the speed stat worth buying.
 local function hitChance(attackerSpeed, defenderSpeed)
-  local diff = math.max(0, attackerSpeed or 0) - math.max(0, defenderSpeed or 0)
+  local a = math.max(0, attackerSpeed or 0)
+  local d = math.max(0, defenderSpeed or 0)
   local modifier
-  if diff > 0 then
-    modifier = math.min(0.25, diff * 0.08)
+  if T.speedSwing > 0 then
+    -- The gap as a share of the two speeds together: -1 when the attacker has
+    -- none of the speed in the fight, +1 when it has all of it, and every
+    -- point in between actually moves it.
+    local total = a + d
+    modifier = total > 0 and ((a - d) / total) * T.speedSwing or 0
   else
-    modifier = math.max(-0.40, diff * 0.10)
+    local diff = a - d
+    if diff > 0 then
+      modifier = math.min(0.25, diff * 0.08)
+    else
+      modifier = math.max(-0.40, diff * 0.10)
+    end
   end
   local chance = T.baseHitChance + modifier
   return math.max(T.minHitChance, math.min(T.maxHitChance, chance))
@@ -272,6 +385,8 @@ function Battle.combatant(monster, side, address)
   m.shield = m.maxShield
   -- Base stats are kept so the client can show how far a buff has drifted.
   m.baseAttack, m.baseDefense, m.baseSpeed = m.attack, m.defense, m.speed
+  -- Everything the companion has been given, frozen before the fight moves it.
+  m.statBudget = (m.attack or 0) + (m.defense or 0) + (m.speed or 0) + (m.health or 0)
   -- The fighter gets the FULL moves, rebuilt from the pools. This is the door
   -- combat comes through -- `act` reads damage, type and rarity off what is
   -- here -- and it is a copy, which is what keeps a fight from draining the
@@ -396,6 +511,27 @@ local function applyStatChanges(user, move)
   return changed
 end
 
+--- The constant a move's power is multiplied against, before the attack stat.
+--- See `TUNING.attackPerLevel` for why it is not simply `attackBase`.
+local function attackFloor(attacker)
+  local level = math.max(0, math.tointeger(attacker.level) or 0)
+  -- The budget is read from the stats the fighter ENTERED with, so a move's own
+  -- +attack rider cannot feed back into the floor and compound itself.
+  local budget = math.max(0,
+    (math.tointeger(attacker.statBudget) or 0) - T.attackBudgetBaseline)
+  return T.attackBase + T.attackPerLevel * level + T.attackPerStatPoint * budget
+end
+
+--- What fraction of a swing survives the defender's defense stat.
+--- One when the mechanic is off, so the multiplication is a no-op.
+local function mitigation(defender)
+  if T.defenseMitigationMax <= 0 then return 1.0 end
+  local budget = math.max(1, math.tointeger(defender.statBudget) or 1)
+  local full = math.max(0.01, T.defenseMitigationFullShare)
+  local share = math.min(1.0, ((defender.defense or 0) / budget) / full)
+  return 1.0 - T.defenseMitigationMax * share
+end
+
 --- One monster acts. Returns the log entry the client renders.
 local function act(attacker, defender, move)
   if move.count ~= math.maxinteger then
@@ -430,14 +566,14 @@ local function act(attacker, defender, move)
     local mult = effectiveness(move.type, defender.elementType)
     -- Attack multiplies rather than adds, so a stat point stays worth something
     -- at level 20. Variance is a flat percentage band for the same reason.
-    local raw = move.damage * (T.attackBase + (attacker.attack or 0))
+    local raw = move.damage * (attackFloor(attacker) + (attacker.attack or 0))
     local swing = 1.0 + (rand(0, 200) - 100) / 100 * T.variance
     -- The crit roll is its own roll, taken after the swing is known to land.
     -- Folding it into `variance` would have made every swing slightly bigger
     -- instead of one swing in eleven much bigger, which is the whole point.
     entry.critical = rand(1, 100) <= math.floor(T.criticalChance * 100)
     local crit = entry.critical and T.criticalMultiplier or 1.0
-    local damage = math.max(1, math.floor(raw * mult * swing * crit))
+    local damage = math.max(1, math.floor(raw * mult * swing * crit * mitigation(defender)))
     entry.shieldDamage, entry.healthDamage = applyDamage(defender, damage)
     entry.superEffective = mult > 1.0
     entry.notEffective = mult < 1.0
@@ -611,6 +747,7 @@ function Battle.makeOpponent(playerLevel, opts)
   end
 
   local monster = {
+    entryNo = faction.monster.entryNo,
     name = faction.monster.name,
     image = faction.monster.image,
     sprite = faction.monster.sprite,

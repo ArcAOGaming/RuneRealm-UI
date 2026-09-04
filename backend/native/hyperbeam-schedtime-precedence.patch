@@ -1,0 +1,12 @@
+--- a/src/preloaded/process/dev_scheduler_server.erl	2026-09-02 22:37:16.967641821 +0000
++++ b/src/preloaded/process/dev_scheduler_server.erl	2026-09-02 22:37:17.011641838 +0000
+@@ -166,7 +166,8 @@
+ server(State) ->
+     receive
+         {schedule, Message, Reply, AbortTime} ->
+-            case SchedTime = scheduler_time() > AbortTime of
++            SchedTime = scheduler_time(),
++            case SchedTime > AbortTime of
+                 true ->
+                     % Ignore scheduling requests if they are too old. The
+                     % `abort-time' signals to us that the client has already

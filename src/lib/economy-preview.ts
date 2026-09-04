@@ -1,4 +1,6 @@
-import type { EconomyAssetLedger, EconomyDesk, EconomyMarketStats, EconomyView, GoldMarketItemId } from './types';
+import type {
+  EconomyAssetLedger, EconomyDesk, EconomyFill, EconomyMarketStats, EconomyView, GoldMarketItemId,
+} from './types';
 
 const items: GoldMarketItemId[] = [
   'air_berry', 'water_berry', 'fire_berry', 'rock_berry',
@@ -63,7 +65,7 @@ export function economyPreview(): EconomyView {
       { id: 'O71', seq: 71, account: 'DA9qhP25ZPz6MHIhO-7aNHDN3LsTAL7yCKYIkqr13Z8', side: 'sell', item: 'fire_berry', price: 8, quantity: 20, remaining: 12, createdAt: Date.now() - 900000, expiresAt: Date.now() + 20 * 86400000 },
       { id: 'O72', seq: 72, account: 'BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB', side: 'buy', item: 'fire_berry', price: 6, quantity: 30, remaining: 30, createdAt: Date.now() - 600000, expiresAt: Date.now() + 21 * 86400000 },
     ],
-    fills: [],
+    fills: previewFills(),
     market: {
       air_berry: market(5, 8), water_berry: market(5, 9), fire_berry: market(6, 8),
       rock_berry: market(4, 7), scroll: market(240, 410), legendary_scroll: market(1200, 1750), rune: market(980, 1460),
@@ -95,4 +97,41 @@ export function economyPreview(): EconomyView {
       launch: 2500, growth: 2500, security: 2400, next: 2500,
       genesisPassCount: 168, lifetimePassCount: 168, purchaseEnabled: false },
   };
+}
+
+/**
+ * A week of plausible fills, so the trading floor's charts have something to
+ * draw in `?economy-preview`. A random walk seeded off the index rather than
+ * `Math.random`, because a preview that redraws differently every render is
+ * useless for judging the chart.
+ */
+function previewFills(): EconomyFill[] {
+  const day = 86_400_000;
+  const now = Date.now();
+  const seeds: Array<[GoldMarketItemId, number]> = [
+    ['fire_berry', 7], ['water_berry', 6], ['air_berry', 6], ['rock_berry', 5],
+    ['scroll', 320], ['rune', 1180],
+  ];
+  const rows: EconomyFill[] = [];
+  let id = 0;
+  for (const [item, base] of seeds) {
+    let price = base;
+    for (let step = 0; step < 26; step += 1) {
+      // Deterministic wobble: a sine pair with coprime periods reads as noise.
+      const drift = Math.sin(step * 0.7 + base) * 0.06 + Math.sin(step * 1.9) * 0.035;
+      price = Math.max(1, Math.round(price * (1 + drift)));
+      id += 1;
+      rows.push({
+        id: `F${id}`, item, buyOrder: `O${id}`, sellOrder: `O${id + 500}`,
+        buyer: 'DA9qhP25ZPz6MHIhO-7aNHDN3LsTAL7yCKYIkqr13Z8',
+        seller: 'BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB',
+        maker: 'BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB',
+        taker: 'DA9qhP25ZPz6MHIhO-7aNHDN3LsTAL7yCKYIkqr13Z8',
+        price, quantity: 1 + (step % 4), gross: price * (1 + (step % 4)),
+        fee: Math.max(1, Math.round(price * 0.02)),
+        filledAt: now - (7 * day) + (step * (7 * day)) / 26,
+      });
+    }
+  }
+  return rows;
 }

@@ -21,7 +21,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { spawnProcess, sendMessage, jwkToAddress } from './hbclient.mjs';
+import { spawnProcess, sendMessage, jwkToAddress, transportNode } from './hbclient.mjs';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.resolve(HERE, '..', '..');
@@ -35,6 +35,7 @@ const runeLive = readLines('rune-process.txt');
 const GAME = process.env.GAME_PROCESS || gameLive[0];
 const RUNE = process.env.RUNE_TOKEN || runeLive[0];
 const NODE = process.env.NODE_URL || runeLive[1] || gameLive[1] || 'https://hyperbeam.tylerw.ai';
+const REQUEST_NODE = transportNode(NODE);
 const WALLET = process.env.HB_WALLET || path.join(ROOT, 'arweave-wallet-DA9qhP25.json');
 const QUOTE_TICKER = process.env.QUOTE_TICKER || 'TEST-RELIC';
 const QUOTE_DENOMINATION = Number(process.env.QUOTE_DENOMINATION || 6);
@@ -69,7 +70,7 @@ async function readKey(pid, key, { attempts = 10, delayMs = 1000 } = {}) {
   const route = key.startsWith('compute&') ? key : `now/${key}`;
   for (let i = 0; i < attempts; i++) {
     try {
-      const res = await fetch(`${NODE}/${pid}~process@1.0/${route}`, {
+      const res = await fetch(`${REQUEST_NODE}/${pid}~process@1.0/${route}`, {
         headers: { accept: 'text/plain' },
       });
       if (res.ok) return (await res.text()).trim();

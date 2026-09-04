@@ -410,11 +410,17 @@ async function sendAll(rows, describe, build, limit = 5) {
   let sent = 0;
   let refused = 0;
   let next = 0;
+  let maxSlot = -1;
   const worker = async () => {
     while (next < rows.length) {
       const row = rows[next++];
       try {
-        await sendMessage({ node, process: pid, ...build(row) });
+        const receipt = await sendMessage({ node, process: pid, ...build(row) });
+        // `hbclient` returns the slot as it came off the HTTP header, so it is
+        // a STRING. `Number.isInteger('42')` is false, which silently left the
+        // high-water mark at -1 and skipped the compute pull below entirely.
+        const slot = Number(receipt && (receipt.slot ?? receipt.Slot));
+        if (Number.isInteger(slot) && slot > maxSlot) maxSlot = slot;
         sent += 1;
         if (sent % 10 === 0) console.log(`  ${sent}/${rows.length}`);
       } catch (error) {
@@ -424,7 +430,7 @@ async function sendAll(rows, describe, build, limit = 5) {
     }
   };
   await Promise.all(Array.from({ length: Math.min(limit, rows.length) }, worker));
-  return { sent, refused };
+  return { sent, refused, maxSlot };
 }
 
 console.log('swearing (which adopts)...');
@@ -477,6 +483,30 @@ console.log(`\n${done} grant(s) scheduled, ${failed} could not be sent`);
 // result. A seeding run that cannot verify itself is a seeding run that will be
 // discovered to have failed by the swarm, an hour later, on a process that
 // cannot be corrected.
+// Pull compute to the LAST slot this run scheduled, before reading anything.
+//
+// Compute on HyperBEAM is pull-based: a scheduled message does not execute
+// until somebody asks for a slot at or past it. `player-<address>` is written by
+// every message that touches a wallet, so it answers INSTANTLY with whatever
+// that wallet looked like BEFORE this run — and the verification below then
+// reports a correctly seeded fleet as unseeded. That happened twice, and both
+// times re-reading after the head caught up showed 50/50.
+//
+// Asking for the highest slot this run scheduled is what makes the node execute
+// everything up to it. One request; the reply itself is not interesting.
+const lastSlot = Math.max(oaths.maxSlot ?? -1, grants.maxSlot ?? -1);
+if (lastSlot >= 0) {
+  console.log(`\npulling compute to slot ${lastSlot}...`);
+  for (let attempt = 0; attempt < 40; attempt += 1) {
+    const res = await fetch(
+      `${node}/${pid}~process@1.0/compute&slot=${lastSlot}/results/output/data`,
+      { headers: { accept: 'text/plain' }, signal: AbortSignal.timeout(45_000) },
+    ).catch(() => null);
+    if (res && res.ok) break;
+    await new Promise((done) => setTimeout(done, 2_000));
+  }
+}
+
 console.log('\nverifying...');
 const after = await readAll(arrivals.map((a) => a.burner.address));
 

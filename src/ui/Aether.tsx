@@ -6,31 +6,11 @@
  * lands, and set the element through the provider.
  */
 import {
-  createContext, useCallback, useContext, useEffect, useMemo, useRef, useState,
+  useCallback, useEffect, useMemo, useRef, useState,
 } from 'react';
+import { type AetherCtx as Ctx, AetherContext } from './aetherContext';
 import { useLocation } from 'react-router-dom';
 import { AetherHandle, Element as AetherElement, mountAether } from '../gfx/aether';
-
-type Ctx = {
-  /** Ripple the field outward from a point in viewport pixels. */
-  shock: (x: number, y: number) => void;
-  /** Ripple from an element's centre. Cheaper to call from a handler. */
-  shockFrom: (el: Element | null | undefined) => void;
-  setElement: (element: AetherElement) => void;
-  /** False when WebGL2 is unavailable — screens can skip decorative extras. */
-  active: boolean;
-};
-
-const AetherContext = createContext<Ctx | null>(null);
-
-export function useAether(): Ctx {
-  return useContext(AetherContext) ?? {
-    shock: () => {},
-    shockFrom: () => {},
-    setElement: () => {},
-    active: false,
-  };
-}
 
 export function AetherProvider({ children }: { children: React.ReactNode }) {
   const { pathname } = useLocation();

@@ -336,9 +336,19 @@ function battle_fleet_test()
   -- Drain keeps active fights alive and refuses new assignments ------------
 
   local drainPayload = opening("drain")
+  -- A battle that cannot end, so drain has something active to keep alive.
+  --
+  -- This used to say `attack = 0` and rely on that meaning "deals no damage".
+  -- It no longer does: `TUNING.attackPerStatPoint` puts a floor under damage
+  -- sized against the fighter's whole stat budget, so a companion with 300
+  -- points and no attack hits for plenty and this battle ended on its first
+  -- swing -- taking the cancel assertions below with it. A moveset with no
+  -- damaging move in it is the intent stated directly, and it cannot be
+  -- retuned out from under the test.
   drainPayload.monster.attack = 0
   drainPayload.monster.defense = 100
   drainPayload.monster.health = 100
+  drainPayload.monster.moves = { ["Iron Skin"] = { count = 5 } }
   local drainOpened = open(drainPayload)
   ok("long-running battle opens before drain", drainOpened.error == nil, drainOpened.error)
   response = hmac(OWNER, { Action = "Fleet.Drain", Drain = "true" })

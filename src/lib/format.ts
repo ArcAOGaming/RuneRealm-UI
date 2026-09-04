@@ -1,4 +1,4 @@
-import { BattleStat, BerryItemId, Element, ItemId, Move, Tuning } from './types';
+import { Affinity, BattleStat, BerryItemId, Element, ItemId, Move, Tuning } from './types';
 
 /** "a Rockpup", but "an Airbud" and "an air companion". */
 export const article = (word: string) =>
@@ -21,8 +21,8 @@ export function countdown(ms: number): string {
 export const pct = (value: number, max: number) =>
   max <= 0 ? 0 : Math.max(0, Math.min(100, (value / max) * 100));
 
-export const ELEMENT_LABEL: Record<Element, string> = {
-  fire: 'Fire', water: 'Water', air: 'Air', rock: 'Rock',
+export const ELEMENT_LABEL: Record<Affinity, string> = {
+  fire: 'Fire', water: 'Water', air: 'Air', rock: 'Rock', normal: 'Untyped',
 };
 
 /** Mirrors C.EFFECTIVENESS in backend/native/constants.lua. */
@@ -37,14 +37,39 @@ const ELEMENTS: Element[] = ['fire', 'water', 'air', 'rock'];
 export const isElement = (t: string): t is Element => (ELEMENTS as string[]).includes(t);
 
 /** How a move of this type will land on that element, or null if it is neutral. */
-export function matchup(moveType: Move['type'], against?: Element | null):
+export function matchup(moveType: Move['type'], against?: Affinity | null):
   { multiplier: number; label: string } | null {
-  if (!against || !isElement(moveType)) return null;
+  if (!against || against === 'normal' || !isElement(moveType)) return null;
   const multiplier = EFFECTIVENESS[moveType][against];
   if (multiplier > 1) return { multiplier, label: 'Super effective' };
   if (multiplier < 1) return { multiplier, label: 'Not very effective' };
   return null;
 }
+
+/**
+ * Whatever is added to the attack stat before a move's power multiplies it.
+ *
+ * `attackBase` alone is 1. The two floors on top of it are why a defensive
+ * build still scales: see `attackFloor` in battle.lua. The budget is the four
+ * stats, frozen when the fight started — a combatant carries that frozen
+ * number, and a companion sitting outside a fight has not frozen one, so it is
+ * summed from what it has right now.
+ */
+export const attackFloor = (fighter: Fighter, tuning: Tuning) => {
+  const budget = fighter.statBudget
+    ?? (fighter.attack + fighter.defense + fighter.speed + fighter.health);
+  // Measured from the ten points every companion starts on, not from zero.
+  const grown = Math.max(0, budget - (tuning.attackBudgetBaseline ?? 0));
+  return tuning.attackBase
+    + (tuning.attackPerLevel ?? 0) * (fighter.level ?? 0)
+    + (tuning.attackPerStatPoint ?? 0) * grown;
+};
+
+/** Anything with the four stats: a companion, or a combatant mid-fight. */
+export type Fighter = {
+  attack: number; defense: number; speed: number; health: number;
+  level?: number; statBudget?: number;
+};
 
 /**
  * What a move will actually hit for, computed the way the engine computes it.
@@ -53,9 +78,12 @@ export function matchup(moveType: Move['type'], against?: Element | null):
  * game. The engine multiplies by the attacker's ATTACK stat, so that number was
  * right only at attack 4 and — worse — never moved when a player spent points
  * into Attack, which made the stat look like it did nothing.
+ *
+ * It takes the whole fighter rather than its attack stat because the floor
+ * above is sized against all four stats.
  */
-export const moveDamage = (move: Move, attack: number, tuning: Tuning) =>
-  Math.max(1, Math.floor(move.damage * (tuning.attackBase + attack)));
+export const moveDamage = (move: Move, fighter: Fighter, tuning: Tuning) =>
+  Math.max(1, Math.floor(move.damage * (attackFloor(fighter, tuning) + fighter.attack)));
 
 /** Max HP for a health stat, from the engine's own constant. */
 export const maxHealth = (health: number, tuning: Tuning) =>

@@ -20,11 +20,11 @@
  * to print a number the engine does not agree with.
  */
 import { useMemo } from 'react';
-import { useGame } from '../state/GameProvider';
+import { useGame } from '../state/gameContext';
 import { Monster, Move, Player, Tuning } from '../lib/types';
 import { Badge, Bar, Panel, cx } from './primitives';
 import { Bolt, Clock, ELEMENT_ICON, Heart, Shield, Sword } from './icons';
-import { ELEMENT_LABEL, maxHealth, moveDamage, shortAddress } from '../lib/format';
+import { ELEMENT_LABEL, Fighter, maxHealth, moveDamage, shortAddress } from '../lib/format';
 import { CardPreview } from './CardPreview';
 import { Sigil } from './Sigil';
 
@@ -58,15 +58,15 @@ export function MoveList({ monster }: { monster: Monster }) {
   return (
     <div className="space-y-2">
       {entries.map(([name, move]) => (
-        <MoveRow key={name} name={name} move={move} attack={monster.attack} tuning={tuning} />
+        <MoveRow key={name} name={name} move={move} fighter={monster} tuning={tuning} />
       ))}
     </div>
   );
 }
 
 function MoveRow({
-  name, move, attack, tuning,
-}: { name: string; move: Move; attack: number; tuning: Tuning }) {
+  name, move, fighter, tuning,
+}: { name: string; move: Move; fighter: Fighter; tuning: Tuning }) {
   const riders = (['attack', 'defense', 'speed', 'health'] as const)
     .map((k) => [k, move[k]] as const)
     .filter(([, v]) => v !== 0);
@@ -86,7 +86,7 @@ function MoveRow({
       <div className="mt-1.5 flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px]">
         <span className="uppercase tracking-wide text-faint">{move.type}</span>
         {move.damage > 0 && (
-          <span className="text-bad">{moveDamage(move, attack, tuning)} dmg</span>
+          <span className="text-bad">{moveDamage(move, fighter, tuning)} dmg</span>
         )}
         {riders.map(([k, v]) => (
           <span key={k} className={v > 0 ? 'text-good' : 'text-warn'}>

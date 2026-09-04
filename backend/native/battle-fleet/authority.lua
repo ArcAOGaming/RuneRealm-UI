@@ -417,6 +417,7 @@ function Authority.settle(state, payload, sourceWorkerProcessId, timestamp)
   if payload.result ~= "win" and payload.result ~= "loss" then return nil, "invalid battle result" end
   local outcome = {
     result = payload.result, rounds = payload.rounds, timedOut = payload.timedOut == true,
+    opponentEntryNo = math.tointeger(tonumber(payload.opponentEntryNo)),
   }
   if reservation.compact then
     if reservation.kind ~= "settlement" or reservation.finalId ~= settlementId then
@@ -424,7 +425,8 @@ function Authority.settle(state, payload, sourceWorkerProcessId, timestamp)
     end
     if reservation.outcome.result ~= outcome.result
        or reservation.outcome.rounds ~= outcome.rounds
-       or reservation.outcome.timedOut ~= outcome.timedOut then
+       or reservation.outcome.timedOut ~= outcome.timedOut
+       or reservation.outcome.opponentEntryNo ~= outcome.opponentEntryNo then
       return nil, "conflicting duplicate settlement"
     end
     return copy(reservation.effect), true
@@ -433,6 +435,7 @@ function Authority.settle(state, payload, sourceWorkerProcessId, timestamp)
     settlementId = settlementId, reservationId = reservation.reservationId,
     battleId = reservation.battleId, playerId = reservation.playerId,
     result = payload.result, rounds = payload.rounds, timedOut = payload.timedOut == true,
+    opponentEntryNo = outcome.opponentEntryNo,
     rewardPlan = copy(reservation.rewardPlan or {}),
   }
   compactFinal(state, reservation, "settlement", settlementId, effect, timestamp, outcome)

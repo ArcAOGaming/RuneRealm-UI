@@ -64,7 +64,7 @@ function combatant(monster: Monster, side: Combatant['side'], tuning: StudioTuni
     address: side === 'challenger' ? 'studio-challenger' : 'bot',
     name: monster.name,
     image: monster.image,
-    sprite: monster.sprite || SPRITE[monster.elementType],
+    sprite: monster.sprite || SPRITE[monster.elementType === 'normal' ? 'fire' : monster.elementType],
     faction: monster.faction,
     elementType: monster.elementType,
     level: monster.level,
@@ -186,7 +186,7 @@ function act(
     return turn;
   }
   if (move.damage > 0) {
-    const multiplier = move.type in EFFECTIVENESS
+    const multiplier = move.type in EFFECTIVENESS && defender.elementType !== 'normal'
       ? EFFECTIVENESS[move.type as Element][defender.elementType] : 1;
     const swing = 1 + ((rng() * 2) - 1) * tuning.variance;
     // Its own roll, after the swing, exactly as battle.lua takes it.

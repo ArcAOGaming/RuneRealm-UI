@@ -7,11 +7,13 @@
  * row is playing, its y coordinate is decreasing on the same frame.
  */
 import Phaser from 'phaser';
-import { FRAME, ROW, STAND_FRAME, homeUrl, rowFrames, sheetUrl } from './assets';
+import { homeUrl } from './assets';
 import { reducedMotion } from './boot';
+import { MonsterMotion, MonsterRig, monsterRig } from './MonsterRig';
 
 export type RoomInit = {
   sprite: string;
+  entryNo?: number;
   backdrop: string;
   /** Dimmed and still because the companion is away at the arena. */
   away?: boolean;
@@ -19,7 +21,6 @@ export type RoomInit = {
   element?: [number, number, number];
 };
 
-const WALK_FPS = 8;
 const SPEED = 31; // art pixels per second
 const BACK_Y = 121;
 const FRONT_Y = 181;
@@ -28,8 +29,8 @@ const ARRIVAL_EPSILON = 1.2;
 type Mode = 'idle' | 'walk';
 type Facing = 'left' | 'right' | 'up' | 'down';
 
-const WALK_ANIMATION: Record<Facing, keyof typeof ROW> = {
-  left: 'walkLeft', right: 'walkRight', up: 'walkUp', down: 'walkDown',
+const WALK_ANIMATION: Record<Facing, MonsterMotion> = {
+  left: 'walk.left', right: 'walk.right', up: 'walk.up', down: 'walk.down',
 };
 
 export class RoomScene extends Phaser.Scene {
@@ -48,6 +49,7 @@ export class RoomScene extends Phaser.Scene {
   private nextEmote = 0;
   private feedingSince = 0;
   private feedingUntil = 0;
+  private rig!: MonsterRig;
 
   constructor() {
     super(RoomScene.KEY);
@@ -55,35 +57,25 @@ export class RoomScene extends Phaser.Scene {
 
   init(data: RoomInit) {
     this.init_ = data;
+    this.rig = monsterRig({ entryNo: data.entryNo, sprite: data.sprite });
     this.still = !!data.away || reducedMotion();
   }
 
   preload() {
     this.load.image('backdrop', homeUrl(this.init_.backdrop));
-    this.load.spritesheet('pet', sheetUrl(this.init_.sprite), {
-      frameWidth: FRAME.w, frameHeight: FRAME.h,
-    });
+    this.rig.preload(this, 'pet');
   }
 
   create() {
     const { width: W, height: H } = this.scale;
     this.add.image(0, 0, 'backdrop').setOrigin(0, 0).setDisplaySize(W, H);
 
-    for (const [name, row] of Object.entries(ROW)) {
-      if (this.anims.exists(name)) continue;
-      this.anims.create({
-        key: name,
-        frames: this.anims.generateFrameNumbers('pet', { frames: rowFrames(row) }),
-        frameRate: name === 'idle' || name === 'emote' ? 7 : WALK_FPS,
-        repeat: name === 'idle' || name === 'emote' ? 0 : -1,
-      });
-    }
+    this.rig.register(this, 'pet', 'room-pet');
 
     this.position.set(W / 2, FRONT_Y - 5);
     this.target.copy(this.position);
-    this.shadow = this.add.ellipse(this.position.x, this.position.y + 1, 30, 7, 0x000000, 0.34);
-    this.pet = this.add.sprite(this.position.x, this.position.y, 'pet', STAND_FRAME)
-      .setOrigin(0.5, 1);
+    this.shadow = this.rig.createShadow(this, this.position.x, this.position.y);
+    this.pet = this.rig.createSprite(this, 'pet', this.position.x, this.position.y);
 
     if (this.init_.away) {
       this.pet.setAlpha(0.45);
@@ -110,11 +102,17 @@ export class RoomScene extends Phaser.Scene {
     this.feedingSince = now;
     this.feedingUntil = now + (this.still ? 500 : 1800);
     this.until = this.feedingUntil + 500;
-    this.emoting = true;
-    this.pet.play('emote', true);
-    this.pet.once(Phaser.Animations.Events.ANIMATION_COMPLETE, () => {
+    if (this.still) {
       this.emoting = false;
-      this.setStandingFrame();
+      this.rig.hold(this.pet, this.facing);
+      return;
+    }
+    this.emoting = true;
+    this.rig.once(this.pet, 'room-pet', 'emote', {
+      onComplete: () => {
+        this.emoting = false;
+        this.setStandingFrame();
+      },
     });
   }
 
@@ -203,7 +201,7 @@ export class RoomScene extends Phaser.Scene {
     }
 
     if (this.still) {
-      this.pet.anims.stop();
+      this.rig.hold(this.pet, this.facing);
       this.applyPose(0);
       return;
     }
@@ -262,12 +260,17 @@ export class RoomScene extends Phaser.Scene {
     if (!moving && this.mode === 'idle') {
       if (!this.emoting && now > this.nextEmote) {
         this.nextEmote = now + 7000 + Math.random() * 9000;
-        this.emoting = true;
-        this.pet.play(Math.random() < 0.5 ? 'idle' : 'emote');
-        this.pet.once(Phaser.Animations.Events.ANIMATION_COMPLETE, () => {
-          this.emoting = false;
+        if (Math.random() < 0.5) {
           this.setStandingFrame();
-        });
+        } else {
+          this.emoting = true;
+          this.rig.once(this.pet, 'room-pet', 'emote', {
+            onComplete: () => {
+              this.emoting = false;
+              this.setStandingFrame();
+            },
+          });
+        }
       } else if (!this.emoting) {
         this.setStandingFrame();
       }
@@ -278,33 +281,24 @@ export class RoomScene extends Phaser.Scene {
 
   private applyPose(jump: number, moving = false) {
     const perspective = Phaser.Math.Clamp((this.position.y - BACK_Y) / (FRONT_Y - BACK_Y), 0, 1);
-    const scale = Phaser.Math.Linear(0.76, 1, perspective);
+    const scale = Phaser.Math.Linear(0.76, 1, perspective) * this.rig.render.worldScale;
     this.pet.setPosition(this.position.x, this.position.y - jump).setScale(scale);
     this.pet.setDepth(Math.round(this.position.y));
     this.shadow
-      .setPosition(this.position.x, this.position.y + 1)
-      .setSize((moving ? 25 : 29) * scale, (moving ? 5.5 : 7) * scale)
+      .setPosition(this.position.x, this.position.y + this.rig.render.shadow.offsetY)
+      .setSize((moving ? 0.86 : 1) * this.rig.render.shadow.width * scale,
+        (moving ? 0.79 : 1) * this.rig.render.shadow.height * scale)
       .setDepth(Math.round(this.position.y) - 1)
       .setAlpha(this.init_.away ? 0.15 : 0.34 * (1 - jump / 14));
   }
 
   private setStandingFrame() {
     if (!this.pet || this.emoting) return;
-    this.pet.anims.stop();
-    this.pet.setFlipX(false);
-    if (this.facing === 'up' || this.facing === 'down') {
-      this.pet.setFrame(rowFrames(ROW[this.facing === 'up' ? 'walkUp' : 'walkDown'])[1]);
-    } else {
-      // The sheet's true neutral pose faces right; flipping it is correct for
-      // a still left pose. Walking uses the authored left row and is not flipped.
-      this.pet.setFrame(STAND_FRAME).setFlipX(this.facing === 'left');
-    }
+    this.rig.hold(this.pet, this.facing);
   }
 
-  private play(key: keyof typeof ROW) {
+  private play(key: MonsterMotion) {
     this.pet.setFlipX(false);
-    if (this.pet.anims.currentAnim?.key !== key || !this.pet.anims.isPlaying) {
-      this.pet.play(key);
-    }
+    this.rig.loop(this.pet, 'room-pet', key);
   }
 }

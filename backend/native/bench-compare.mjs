@@ -36,10 +36,42 @@ import { fileURLToPath } from 'node:url';
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.resolve(HERE, '..', '..');
 
-// Only the contract sources move between revisions. `profile_compute.lua` is
-// deliberately NOT in this list: it is the measuring instrument, and swapping
+// What `PROFILE_SRC` has to contain, read out of the profiler itself.
+//
+// This list used to be written out by hand -- game.lua, battle.lua,
+// constants.lua, jsonenc.lua -- and the profiler then grew two more `readSrc`
+// calls, for `economy.lua` and `monster-index.generated.lua`. Nothing tied the
+// two together, so the scratch directory was silently incomplete and every run
+// of this tool died on `ENOENT ... monster-index.generated.lua` from inside a
+// child process, i.e. as a stack trace about a temp path rather than as
+// "bench-compare is out of date". Deriving the list means a future `readSrc`
+// cannot break it the same way.
+//
+// `profile_compute.lua` is deliberately NOT reachable this way: it is read with
+// `read`, not `readSrc`, because it is the measuring instrument, and swapping
 // the instrument with the subject would make the comparison meaningless.
-const SOURCES = ['game.lua', 'battle.lua', 'constants.lua', 'jsonenc.lua'];
+const PROFILER = path.join(HERE, 'run-local-profile.mjs');
+const REQUIRED = [...new Set(
+  Array.from(fs.readFileSync(PROFILER, 'utf8').matchAll(/\breadSrc\(\s*['"]([^'"]+)['"]/g),
+    (match) => match[1]),
+)];
+if (REQUIRED.length === 0) {
+  throw new Error(`no readSrc(...) calls found in ${PROFILER}; this tool cannot tell `
+    + 'which sources to check out. Fix the pattern here rather than guessing.');
+}
+
+// Of those, the ones that are actually under version control move between
+// revisions. Anything else -- `monster-index.generated.lua` is the case that
+// exists -- is GENERATED and untracked, so no revision has a copy to check out
+// and it is this checkout's in both halves, exactly like the probe, the 168
+// recovered players and the AOS module. Copying it rather than checking it out
+// is the whole reason the comparison stays honest: only the code under
+// measurement moves.
+const tracked = new Set(execFileSync('git', ['ls-files', '--', 'backend/native'],
+  { cwd: ROOT, encoding: 'utf8', maxBuffer: 64 * 1024 * 1024 })
+  .split('\n').map((line) => line.trim().replace(/^backend\/native\//, '')).filter(Boolean));
+const SOURCES = REQUIRED.filter((name) => tracked.has(name));
+const FIXTURES = REQUIRED.filter((name) => !tracked.has(name));
 
 const argv = process.argv.slice(2);
 const opt = (name, fallback) => {
@@ -54,17 +86,43 @@ if (!Number.isSafeInteger(rounds) || rounds < 1 || rounds > 25) {
   throw new Error('--rounds must be an integer from 1 to 25');
 }
 
+/** The commit that first added a source, so a too-old revision can be named. */
+function firstCommitAdding(name) {
+  try {
+    return execFileSync('git',
+      ['log', '--diff-filter=A', '--format=%h %s', '--', `backend/native/${name}`],
+      { cwd: ROOT, encoding: 'utf8', maxBuffer: 8 * 1024 * 1024 })
+      .trim().split('\n').pop().trim();
+  } catch {
+    return null;
+  }
+}
+
 function checkout(revision) {
   const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'runerealm-bench-'));
   for (const name of SOURCES) {
     let content;
     try {
       content = execFileSync('git', ['show', `${revision}:backend/native/${name}`],
-        { cwd: ROOT, maxBuffer: 64 * 1024 * 1024 });
+        { cwd: ROOT, maxBuffer: 64 * 1024 * 1024, stdio: ['ignore', 'pipe', 'ignore'] });
     } catch {
-      throw new Error(`${revision} has no backend/native/${name}; pick a revision that does.`);
+      // A module that did not exist yet -- `economy.lua` arrived partway
+      // through this history. Standing this checkout's copy in was tried and is
+      // wrong: `economy.lua` reads `C.ECONOMY`, the revision's own
+      // `constants.lua` predates that key, and the bundle dies on
+      // "attempt to index a nil value (field 'ECONOMY')" from inside a child
+      // process. Two revisions whose bundles are not the same SHAPE cannot be
+      // compared, and saying which revision is the boundary is more use than
+      // either a substitution or "pick a revision that does".
+      const added = firstCommitAdding(name);
+      throw new Error(`${revision} predates backend/native/${name}, which the profiler's `
+        + `bundle requires.\n  Comparable revisions start at: ${added || '(unknown)'}\n  `
+        + `git log --diff-filter=A -- backend/native/${name}`);
     }
     fs.writeFileSync(path.join(directory, name), content);
+  }
+  for (const name of FIXTURES) {
+    fs.copyFileSync(path.join(HERE, name), path.join(directory, name));
   }
   return directory;
 }
@@ -89,7 +147,12 @@ const revision = execFileSync('git', ['rev-parse', '--short', against],
   { cwd: ROOT, encoding: 'utf8' }).trim();
 
 process.stderr.write(`\ncomparing ${against} (${revision}) against the working tree\n`);
-process.stderr.write(`${players} players, ${samples} messages/type, ${rounds} interleaved rounds\n\n`);
+process.stderr.write(`${players} players, ${samples} messages/type, ${rounds} interleaved rounds\n`);
+process.stderr.write(`moving: ${SOURCES.join(', ')}\n`);
+if (FIXTURES.length > 0) {
+  process.stderr.write(`this checkout's in both halves (generated, untracked): ${FIXTURES.join(', ')}\n`);
+}
+process.stderr.write('\n');
 
 const runs = { before: [], after: [] };
 try {

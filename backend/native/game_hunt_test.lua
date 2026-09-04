@@ -92,6 +92,7 @@ function gamehunttest(base)
 
   local beforeRunes = r.inventory.rune
   local encounter = Battle.makeOpponent(2, { faction = "Aqua Guardians" })
+  encounter.entryNo = 4
   encounter.faction = "Aqua Guardians"
   local payload = {
     protocol = "runerealm-hunt/1", settlementId = runId .. "-capture-1",
@@ -122,6 +123,12 @@ function gamehunttest(base)
   local collectionCount = 0
   for _ in pairs(r.collection or {}) do collectionCount = collectionCount + 1 end
   ok("successful capture mints into collection", collectionCount == 1, collectionCount)
+  local sawWater = false
+  for _, entryNo in ipairs(r.seenEntries or {}) do
+    if entryNo == 4 then sawWater = true end
+  end
+  ok("a Hunt encounter remains seen in the player Monster Index", sawWater,
+    r.seenEntries and json.encode(r.seenEntries))
   ok("settlement acknowledges Hunt", base.results.outbox and base.results.outbox.acknowledgement ~= nil)
 
   r = send(nil, {

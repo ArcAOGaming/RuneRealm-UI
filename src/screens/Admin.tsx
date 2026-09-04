@@ -7,7 +7,7 @@
  * factions, history and exact player edits — instead of a pile of blind forms.
  */
 import { Suspense, lazy, useCallback, useEffect, useMemo, useState } from 'react';
-import { useGame } from '../state/GameProvider';
+import { useGame } from '../state/gameContext';
 import * as api from '../lib/game';
 import { GAME_OWNER } from '../lib/hyperbeam';
 import {
@@ -25,14 +25,15 @@ import {
 } from '../ui/icons';
 import { MonsterCard } from '../ui/MonsterCard';
 import { extractAddresses, ITEM_NAME, shortAddress } from '../lib/format';
-import { useToast } from '../ui/Toast';
+import { useToast } from '../ui/toastContext';
 import SwarmMonitor from './admin/SwarmMonitor';
 import { SWARM_ADDRESSES, SWARM_WALLETS } from '../data/swarm-wallets';
 import { economyPreview } from '../lib/economy-preview';
 
-type Tab = 'overview' | 'economy' | 'swarm' | 'players' | 'operations' | 'tracking' | 'visualize' | 'create';
+type Tab = 'overview' | 'economy' | 'swarm' | 'players' | 'operations' | 'tracking' | 'monster-index' | 'visualize' | 'create';
 
 const Studio = lazy(() => import('./admin/Studio'));
+const MonsterIndexAdmin = lazy(() => import('./admin/MonsterIndex'));
 
 const ITEMS: ItemId[] = [
   'rune', 'fire_berry', 'water_berry', 'air_berry', 'rock_berry',
@@ -120,7 +121,7 @@ export default function Admin() {
   const [tab, setTab] = useState<Tab>(() => {
     if (import.meta.env.DEV) {
       const saved = window.sessionStorage.getItem('runerealm-admin-tab');
-      if (saved === 'visualize' || saved === 'create') return saved;
+      if (saved === 'monster-index' || saved === 'visualize' || saved === 'create') return saved;
       return 'visualize';
     }
     return 'overview';
@@ -133,10 +134,10 @@ export default function Admin() {
   const swarmPreview = useMemo(() => isSwarmPreview ? makeSwarmPreviewSnapshot() : null, [isSwarmPreview]);
 
   const isOwner = address === GAME_OWNER;
-  const isLocalStudio = import.meta.env.DEV && (tab === 'visualize' || tab === 'create');
+  const isLocalStudio = import.meta.env.DEV && (tab === 'monster-index' || tab === 'visualize' || tab === 'create');
 
   const load = useCallback(async (force = false) => {
-    if (import.meta.env.DEV && (tab === 'visualize' || tab === 'create')) {
+    if (import.meta.env.DEV && (tab === 'monster-index' || tab === 'visualize' || tab === 'create')) {
       setLoading(false);
       return;
     }
@@ -169,7 +170,7 @@ export default function Admin() {
 
   useEffect(() => { void load(); }, [load]);
   useEffect(() => {
-    if (import.meta.env.DEV && (tab === 'visualize' || tab === 'create')) {
+    if (import.meta.env.DEV && (tab === 'monster-index' || tab === 'visualize' || tab === 'create')) {
       window.sessionStorage.setItem('runerealm-admin-tab', tab);
     }
   }, [tab]);
@@ -196,9 +197,9 @@ export default function Admin() {
   if (isLocalStudio) {
     return (
       <div className="admin-console animate-rise space-y-4" data-element="arcane">
-        <LocalStudioTabs tab={tab as 'visualize' | 'create'} onChange={setTab} canOpenProcess={Boolean(address)} />
+        <LocalStudioTabs tab={tab as 'monster-index' | 'visualize' | 'create'} onChange={setTab} canOpenProcess={Boolean(address)} />
         <Suspense fallback={<Panel className="p-6"><Skeleton className="h-72 w-full" /></Panel>}>
-          <Studio mode={tab as 'visualize' | 'create'} />
+          {tab === 'monster-index' ? <MonsterIndexAdmin /> : <Studio mode={tab as 'visualize' | 'create'} />}
         </Suspense>
       </div>
     );
@@ -245,6 +246,11 @@ export default function Admin() {
           )}
           {tab === 'operations' && <Operations snapshot={snapshot} onChanged={load} />}
           {tab === 'tracking' && <Tracking snapshot={snapshot} />}
+          {tab === 'monster-index' && (
+            <Suspense fallback={<Panel className="p-6"><Skeleton className="h-72 w-full" /></Panel>}>
+              <MonsterIndexAdmin />
+            </Suspense>
+          )}
           {(tab === 'visualize' || tab === 'create') && import.meta.env.DEV && (
             <Suspense fallback={<Panel className="p-6"><Skeleton className="h-72 w-full" /></Panel>}>
               <Studio mode={tab} />
@@ -257,9 +263,10 @@ export default function Admin() {
 }
 
 function LocalStudioTabs({ tab, onChange, canOpenProcess }: {
-  tab: 'visualize' | 'create'; onChange: (tab: Tab) => void; canOpenProcess: boolean;
+  tab: 'monster-index' | 'visualize' | 'create'; onChange: (tab: Tab) => void; canOpenProcess: boolean;
 }) {
   const tabs: Array<{ id: Tab; label: string; note: string }> = [
+    { id: 'monster-index', label: 'Monster Index', note: 'numbered entries' },
     { id: 'visualize', label: 'Visualize', note: 'assets + balance' },
     { id: 'create', label: 'Create', note: 'generate + approve' },
   ];
@@ -335,6 +342,7 @@ function CommandTabs({ tab, onChange, snapshot }: {
     { id: 'players', label: 'Players', note: fmt(snapshot.players.length) },
     { id: 'operations', label: 'Operations', note: `${snapshot.battles.length} live` },
     { id: 'tracking', label: 'Tracking', note: `${Object.keys(snapshot.metrics.daily).length} days` },
+    { id: 'monster-index', label: 'Monster Index', note: 'entries + Hunt' },
   ];
   if (import.meta.env.DEV) tabs.push(
     { id: 'visualize', label: 'Visualize', note: 'assets + balance' },
@@ -892,6 +900,8 @@ function EconomyAdmin({ economy, onChanged }: {
       <Kpi icon={<Check />} label="Invariants" value={economy.invariants.ok ? 1 : 0} note={economy.invariants.ok ? 'All equations exact' : 'Affected desks paused'} />
     </section>
 
+    <GoldFloat gold={economy.gold} />
+
     {!economy.invariants.ok && <div className="rounded-[3px] border border-bad/45 bg-bad/[0.06] px-4 py-3 text-sm text-ink"><b>Accounting mismatch.</b> Inspect the differences below before resuming any desk.</div>}
     <Panel className="p-5">
       <SectionTitle right={<Badge tone={economy.policy.passes.genesisSealed ? 'good' : 'warn'}>{economy.policy.passes.genesisSealed ? 'genesis sealed' : 'pre-launch only'}</Badge>}>Eternal Pass policy</SectionTitle>
@@ -941,6 +951,50 @@ function EconomyAdmin({ economy, onChanged }: {
       </Panel>
     </div>
   </div>;
+}
+
+/**
+ * Where the Gold actually is.
+ *
+ * `issued` and `outstanding` were both on the board and neither answered the
+ * only question anyone asks: how much of it is in play. Gold has exactly one
+ * source — the launch allocation — and no verb mints more, so the four buckets
+ * below are the whole supply, and the first of them is the entire circulating
+ * float. `player + escrow + shop + locked == issued - burned` is the invariant
+ * the process refuses to run without; this is that equation, drawn.
+ */
+function GoldFloat({ gold }: { gold: EconomyView['gold'] }) {
+  const buckets = [
+    { key: 'player', label: 'In players’ hands', value: gold.player, tone: 'bg-good' },
+    { key: 'escrow', label: 'Locked in open orders', value: gold.escrow, tone: 'bg-arcane' },
+    { key: 'shop', label: 'Shop desk reserves', value: gold.shop, tone: 'bg-rune' },
+    { key: 'locked', label: 'Policy-locked', value: gold.locked, tone: 'bg-edge' },
+  ];
+  const total = Math.max(1, buckets.reduce((sum, row) => sum + row.value, 0));
+  const share = (value: number) => `${(value / total * 100).toFixed(value / total < 0.01 ? 2 : 1)}%`;
+  return (
+    <Panel className="p-5">
+      <SectionTitle right={<Badge tone="plain">{fmt(gold.issued - gold.burned)} outstanding</Badge>}>
+        Where the Gold is
+      </SectionTitle>
+      <div className="flex h-2.5 overflow-hidden rounded-[2px] border border-edge/60" role="presentation">
+        {buckets.map((row) => (
+          <div key={row.key} className={row.tone} style={{ width: `${row.value / total * 100}%` }}
+               title={`${row.label}: ${fmt(row.value)}`} />
+        ))}
+      </div>
+      <div className="mt-3 grid gap-px overflow-hidden rounded-[3px] border border-edge/60 bg-edge/60 sm:grid-cols-2 lg:grid-cols-4">
+        {buckets.map((row) => (
+          <MiniMetric key={row.key} label={`${row.label} / ${share(row.value)}`} value={row.value} />
+        ))}
+      </div>
+      <p className="mt-3 text-xs leading-relaxed text-faint">
+        No verb mints Gold; the launch allocation is all there will be until expansion is
+        enabled. It reaches a player only when a shop desk buys an item from them or another
+        player&rsquo;s order fills, so the first bucket is the entire circulating float.
+      </p>
+    </Panel>
+  );
 }
 
 function MiniMetric({ label, value }: { label: string; value: number }) {

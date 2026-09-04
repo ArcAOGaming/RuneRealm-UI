@@ -147,6 +147,7 @@ end
 const luaSource = (count) => [
   'package.loaded[".json"] = require("json")',
   'local C = (function()', readNative('constants.lua'), 'end)()',
+  readNative('monster-index.generated.lua'),
   'local jsonx = (function()', readNative('jsonenc.lua'), 'end)()',
   'local encode, jsonObject = jsonx.encode, jsonx.object',
   'Battle = (function()', readNative('battle.lua'), 'end)()',

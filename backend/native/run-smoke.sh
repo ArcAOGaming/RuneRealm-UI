@@ -24,6 +24,7 @@ trap 'rm -f "$BUNDLE"' EXIT
 {
   cat "$AOS"
   echo "local C = (function()";      cat "$HERE/constants.lua"; echo "end)()"
+  cat "$HERE/monster-index.generated.lua"
   echo "local jsonx = (function()";  cat "$HERE/jsonenc.lua";   echo "end)()"
   echo "local encode, jsonObject = jsonx.encode, jsonx.object"
   echo "Battle = (function()";       cat "$HERE/battle.lua";    echo "end)()"

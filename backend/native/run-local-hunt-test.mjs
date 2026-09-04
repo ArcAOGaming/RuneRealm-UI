@@ -12,6 +12,7 @@ const read = (name) => fs.readFileSync(path.join(HERE, name), 'utf8');
 const common = [
   'package.loaded[".json"] = require("json")',
   'local C = (function()', read('constants.lua'), 'end)()',
+  read('monster-index.generated.lua'),
   'local jsonx = (function()', read('jsonenc.lua'), 'end)()',
   'local encode, jsonObject = jsonx.encode, jsonx.object',
   'Battle = (function()', read('battle.lua'), 'end)()',

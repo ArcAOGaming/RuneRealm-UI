@@ -22,25 +22,28 @@
  * mid-fight survivable — before, a refresh dropped the battle, bounced the
  * player to the lobby, and the only way out was a forfeit.
  */
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { Link, Navigate } from 'react-router-dom';
-import { useGame } from '../state/GameProvider';
+import { useGame } from '../state/gameContext';
+import { usePoll } from '../state/usePoll';
 import * as api from '../lib/game';
-import { Battle, BerryItemId, Combatant, Move, Tuning, Turn } from '../lib/types';
+import { Battle, BerryItemId } from '../lib/types';
 import {
   Button, Panel, SectionTitle, Skeleton, Spinner, cx,
 } from '../ui/primitives';
 import {
-  Droplet, Flame, Heart, Mountain, Refresh, Shield, Sword, Trophy, Users, Wind, X,
+  Refresh, Sword, Trophy, Users, X,
 } from '../ui/icons';
 import {
-  BATTLE_BERRIES, countdown, ITEM_NAME, matchup, moveDamage, shortAddress,
+  BATTLE_BERRIES, countdown, ITEM_NAME, shortAddress,
 } from '../lib/format';
 import { BattleStage } from '../ui/BattleStage';
-import { MoveBadge, hasMoveBadge } from '../ui/MoveBadge';
-import { MoveTiles } from '../ui/MoveTiles';
-import { useAether } from '../ui/Aether';
+// The move grid and the round log are shared with Hunt, which fights the exact
+// same battle through the exact same engine — see ui/BattleMoves.tsx.
+import { MoveChooser, RoundLog } from '../ui/BattleMoves';
+import { useAether } from '../ui/aetherContext';
 import { ITEM_ART } from '../ui/art';
+import { useTourSteps, type TourStep } from '../ui/tourContext';
 
 /** How often to check whether the other player has done something. */
 const PVP_POLL_MS = 2500;
@@ -63,7 +66,59 @@ export default function Arena() {
 
 // Entering ------------------------------------------------------------------
 
+/**
+ * The two walkthroughs this screen has, and why it is two.
+ *
+ * Before you pay, the questions are what it costs and what berry maxing does.
+ * Once you are in a session they are completely different questions — how many
+ * fights are left, who you can fight, and what leaving does to the ones you
+ * paid for. The tour drops steps whose target is not on screen, so both lists
+ * could be one; they are kept apart because a five-step list where three are
+ * always missing is not a thing anybody can read and check.
+ *
+ * **Both lists are part of the arena's rules.** The Rune price, the session
+ * size, the energy and happiness gates and the berry-maxing bonus are all
+ * stated here in words. Change any of them in `constants.lua` or in the entry
+ * handler and these sentences are part of that change.
+ */
+const ENTRANCE_TOUR: TourStep[] = [
+  {
+    target: '[data-tour="arena-cost"]',
+    title: 'What it costs',
+    body: 'One Rune buys a session of four battles — the fights inside it are free. Your companion also needs 25 energy and 25 happiness to be let in.',
+  },
+  {
+    target: '[data-tour="arena-berries"]',
+    title: 'Berry maxing',
+    body: 'Optional, and spent now: three matching berries buy +5 to one stat for all four fights. It never touches your companion’s permanent build.',
+  },
+  {
+    target: '[data-tour="arena-enter"]',
+    title: 'Then you are in',
+    body: 'The Rune is taken here, once. A session lasts until its four battles are used or you leave the arena.',
+  },
+];
+
+const LOBBY_TOUR: TourStep[] = [
+  {
+    target: '[data-tour="arena-session"]',
+    title: 'Your session',
+    body: 'Battles left, and this session’s record. Leaving forfeits whatever is left of it — the Rune is not refunded.',
+  },
+  {
+    target: '[data-tour="arena-trainer"]',
+    title: 'Fight a trainer',
+    body: 'An opponent built to match your level, from a random faction. A harder one gets a bigger stat budget and is worth more.',
+  },
+  {
+    target: '[data-tour="arena-open"]',
+    title: 'Or another player',
+    body: 'Post a challenge and wait, or take one that is already open. Both sides spend a battle from their own session.',
+  },
+];
+
 function Entrance() {
+  useTourSteps('arena-entrance', ENTRANCE_TOUR);
   const { player, run, isPending } = useGame();
   const [berry, setBerry] = useState<BerryItemId | undefined>();
   const monster = player!.monster!;
@@ -91,13 +146,13 @@ function Entrance() {
           free — fight a trainer, or challenge another player.
         </p>
 
-        <div className="mx-auto mt-5 grid max-w-xs grid-cols-3 gap-3 text-left">
+        <div data-tour="arena-cost" className="mx-auto mt-5 grid max-w-xs grid-cols-3 gap-3 text-left">
           <Cost label="Rune" have={runes} need={1} />
           <Cost label="Energy" have={monster.energy} need={25} />
           <Cost label="Happiness" have={monster.happiness} need={25} />
         </div>
 
-        <div className="mt-6 border-t border-rune/12 pt-5 text-left">
+        <div data-tour="arena-berries" className="mt-6 border-t border-rune/12 pt-5 text-left">
           <SectionTitle right={<span className="text-[11px] text-faint">optional · eat 3</span>}>
             Berry maxing
           </SectionTitle>
@@ -147,6 +202,7 @@ function Entrance() {
         {blocked && <p className="mt-4 text-[13px] text-warn">{blocked}</p>}
 
         <Button
+          data-tour="arena-enter"
           className="mt-6" size="lg" variant="primary"
           disabled={!!blocked} busy={isPending('enter')}
           onClick={() => run('enter', () => api.enterArena(berry), 'Four battles are yours.')}
@@ -173,23 +229,27 @@ function Cost({ label, have, need }: { label: string; have: number; need: number
 // Lobby ---------------------------------------------------------------------
 
 function Lobby() {
+  useTourSteps('arena-lobby', LOBBY_TOUR);
   const { player, run, isPending, busy, address, challenges, refreshChallenges } = useGame();
   const [difficulty, setDifficulty] = useState(1);
   const [refreshing, setRefreshing] = useState(false);
 
-  // Free, unsigned, and safe on a timer — this is published state.
-  useEffect(() => {
-    void refreshChallenges();
-    const timer = setInterval(() => { void refreshChallenges(); }, 10_000);
-    return () => clearInterval(timer);
-  }, [refreshChallenges]);
+  // Free and unsigned, but not free of a CONNECTION: a bare interval issued a
+  // new read every ten seconds whether or not the last one had answered, and
+  // on a slow node those stack up on the screen a player is about to click a
+  // battle button on. One at a time, next one scheduled from the end of the
+  // last, and nothing at all while a write is in flight.
+  usePoll((signal) => refreshChallenges(signal), {
+    intervalMs: 10_000, maxIntervalMs: 60_000, leading: true,
+    paused: () => busy,
+  });
 
   const open = (challenges ?? []).filter((c) => c.challenger !== address);
   const remaining = player!.battlesRemaining;
 
   return (
     <div className="animate-rise space-y-4">
-      <Panel className="p-5">
+      <Panel data-tour="arena-session" className="p-5">
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div>
             <h1 className="text-xl font-semibold tracking-tight">The arena</h1>
@@ -215,7 +275,7 @@ function Lobby() {
       </Panel>
 
       <div className="arena-lobby-grid grid gap-4 lg:grid-cols-2">
-        <Panel className="p-5">
+        <Panel data-tour="arena-trainer" className="p-5">
           <SectionTitle>Fight a trainer</SectionTitle>
           <p className="text-[13px] leading-relaxed text-muted">
             An opponent is generated to match your level, from a random faction.
@@ -256,7 +316,7 @@ function Lobby() {
           </Button>
         </Panel>
 
-        <Panel className="p-5">
+        <Panel data-tour="arena-open" className="p-5">
           <SectionTitle right={
             <Button
               size="sm" variant="quiet" busy={refreshing}
@@ -340,15 +400,7 @@ function FleetBattleRecovery() {
   const hydration = player!.battleFleetHydration;
   const cancelling = route.status === 'cancel-pending' || hydration === 'cancel-pending';
 
-  useEffect(() => {
-    let inFlight = false;
-    const timer = setInterval(async () => {
-      if (inFlight) return;
-      inFlight = true;
-      try { await refresh(); } finally { inFlight = false; }
-    }, PVP_POLL_MS);
-    return () => clearInterval(timer);
-  }, [refresh]);
+  usePoll(() => refresh(), { intervalMs: PVP_POLL_MS, maxIntervalMs: 20_000 });
 
   const detail = cancelling
     ? 'Cancellation was delivered. Waiting for the assigned worker to confirm it before restoring your session credit.'
@@ -394,26 +446,14 @@ function AwaitingChallenger() {
   const battleId = player!.battle!.id;
   const [taken, setTaken] = useState(false);
 
-  useEffect(() => {
-    let cancelled = false;
-    let inFlight = false;
-    const timer = setInterval(async () => {
-      if (inFlight) return;
-      inFlight = true;
-      try {
-        const published = await api.readBattle().catch(() => null);
-        if (cancelled || !published || published.id !== battleId) return;
-        if (published.status !== 'pending') {
-          setTaken(true);
-          clearInterval(timer);
-          void refresh();
-        }
-      } finally {
-        inFlight = false;
-      }
-    }, PVP_POLL_MS);
-    return () => { cancelled = true; clearInterval(timer); };
-  }, [battleId, refresh]);
+  usePoll(async (signal) => {
+    const published = await api.readBattle({ signal });
+    if (signal.aborted || !published || published.id !== battleId) return;
+    if (published.status !== 'pending') {
+      setTaken(true);
+      void refresh();
+    }
+  }, { intervalMs: PVP_POLL_MS, maxIntervalMs: 20_000, enabled: !taken });
 
   return (
     <div className="mx-auto max-w-lg animate-rise">
@@ -444,7 +484,7 @@ function AwaitingChallenger() {
 // The fight -----------------------------------------------------------------
 
 function BattleView() {
-  const { player, address, tuning, refresh } = useGame();
+  const { player, address, tuning, refresh, run, isPending, busy } = useGame();
 
   // Local, seeded from the player record. A PvP poll can advance this without a
   // signed round trip; every action of your own replaces it wholesale.
@@ -539,11 +579,19 @@ function BattleView() {
         ) : (
           <>
             <MoveChooser
-              battle={battle} me={me} them={them}
+              me={me} them={them}
               // Every move is locked once the fight is decided, but the grid
               // stays in place while the last blow plays — swapping it for the
               // outcome mid-swing is the jump this avoids.
-              disabled={waiting || over} waiting={waiting} tuning={tuning}
+              disabled={waiting || over} busy={busy} tuning={tuning}
+              isPending={(name) => isPending(`attack:${name}`)}
+              // The round is sent so a click made for this round cannot land on
+              // the next one — a double-click used to pick your following move
+              // for you.
+              onMove={(name) => run(
+                `attack:${name}`, () => api.attack(battle.id, name, battle.round),
+              )}
+              footer={waiting ? <WaitingOnOpponent battle={battle} /> : undefined}
             />
             <RoundLog turns={battle.turns} youAre={me.side} />
           </>
@@ -618,301 +666,26 @@ function usePvpWatch(
 ) {
   const { id, round, kind } = battle;
 
-  useEffect(() => {
-    if (!waiting || kind !== 'pvp') return;
-    let cancelled = false;
-    // One read at a time. A published read settles in about 90ms when the node
-    // is idle but takes 20-45 SECONDS while it works through a write backlog,
-    // and an unguarded 2.5s interval queues those without bound — each one
-    // holding a connection, on exactly the screen where the node is busiest.
-    let inFlight = false;
-    const timer = setInterval(async () => {
-      if (inFlight) return;
-      inFlight = true;
-      try {
-        const published = await api.readBattle().catch(() => null);
-        if (cancelled || !published || published.id !== id) return;
-        if (published.round > round || published.status === 'ended') {
-          setBattle(published);
-          if (published.status === 'ended') void refresh();
-        }
-      } finally {
-        inFlight = false;
-      }
-    }, PVP_POLL_MS);
-    return () => { cancelled = true; clearInterval(timer); };
-  }, [waiting, kind, id, round, setBattle, refresh]);
+  // One read at a time, and the next one scheduled from the end of the last. A
+  // published read settles in about 90ms when the node is idle but takes 20-45
+  // SECONDS while it works through a write backlog, so a fixed 2.5s interval is
+  // an arrival rate an order of magnitude above the service rate — an unbounded
+  // queue, each entry holding one of six connections, on exactly the screen
+  // where the node is busiest. The read is also aborted the moment the round
+  // moves on or the screen unmounts.
+  usePoll(async (signal) => {
+    const published = await api.readBattle({ signal });
+    if (signal.aborted || !published || published.id !== id) return;
+    if (published.round > round || published.status === 'ended') {
+      setBattle(published);
+      if (published.status === 'ended') void refresh();
+    }
+  }, {
+    intervalMs: PVP_POLL_MS, maxIntervalMs: 20_000,
+    enabled: waiting && kind === 'pvp',
+  });
 }
 
-/**
- * A move, dressed as its type.
- *
- * Colour and glyph come from the move's own type, so a roster reads as a set of
- * things before it reads as a list of words — which is the point of a four-move
- * hand you pick from under pressure. `boost`, `heal` and `normal` are not
- * elements and get their own three.
- */
-const MOVE_LOOK: Record<
-  string,
-  { Icon: (p: { className?: string }) => JSX.Element; tint: string; ring: string }
-> = {
-  fire: { Icon: Flame, tint: 'text-ember', ring: 'border-ember/45 bg-ember/10' },
-  water: { Icon: Droplet, tint: 'text-tide', ring: 'border-tide/45 bg-tide/10' },
-  air: { Icon: Wind, tint: 'text-gale', ring: 'border-gale/45 bg-gale/10' },
-  rock: { Icon: Mountain, tint: 'text-stone', ring: 'border-stone/45 bg-stone/10' },
-  boost: { Icon: Shield, tint: 'text-arcane', ring: 'border-arcane/45 bg-arcane/10' },
-  heal: { Icon: Heart, tint: 'text-good', ring: 'border-good/45 bg-good/10' },
-  normal: { Icon: Sword, tint: 'text-muted', ring: 'border-edge bg-raised/40' },
-};
-
-/**
- * What a move's stat riders are called.
- *
- * `+1s` meant nothing on a cell you read under pressure — it could as easily
- * have been seconds or shield. Three letters fit, so three letters it is, and
- * the full word goes in the cell's hover text.
- */
-const STAT_SHORT = {
-  attack: 'atk', defense: 'def', speed: 'spd', health: 'hp',
-} as const;
-
-const STAT_WORD = {
-  attack: 'attack', defense: 'defense', speed: 'speed', health: 'health',
-} as const;
-
-/**
- * Both rosters, side by side, with nothing explaining them.
- *
- * The headings are gone. "Your move", "what you are up against" and "one move
- * is one full round" were three lines of caption over eight buttons that say
- * what they are, on a screen with no height to spare — and which side is which
- * is already obvious from which one you can press.
- *
- * Neither column scrolls. Four moves is the whole roster, so eight cells fit
- * the band by construction; an inner scrollbar here only ever meant something
- * was mis-sized.
- */
-function MoveChooser({
-  battle, me, them, disabled, waiting, tuning,
-}: {
-  battle: Battle; me: Combatant; them: Combatant;
-  disabled: boolean; waiting: boolean; tuning: Tuning;
-}) {
-  const { run, isPending, busy } = useGame();
-  const mine = useMemo(
-    () => Object.entries(me.moves ?? {}).sort(([a], [b]) => a.localeCompare(b)),
-    [me.moves],
-  );
-  const theirs = useMemo(
-    () => Object.entries(them.moves ?? {}).sort(([a], [b]) => a.localeCompare(b)),
-    [them.moves],
-  );
-  const anyLeft = mine.some(([, m]) => (m.count ?? 0) > 0);
-
-  const swing = useCallback(
-    // The round is sent so a click made for this round cannot land on the next
-    // one — a double-click used to pick your following move for you.
-    (name: string) => run(`attack:${name}`, () => api.attack(battle.id, name, battle.round)),
-    [run, battle.id, battle.round],
-  );
-
-  return (
-    <Panel className="battle-moves min-h-0 p-2">
-      {/* One lit field behind both rosters — see gfx/moveTiles.ts. The buttons
-          are real buttons on top of it; the objects are only ever underneath. */}
-      <MoveTiles className="grid min-h-0 grid-cols-1 items-stretch gap-x-3 gap-y-2 sm:grid-cols-2">
-      {anyLeft ? (
-        <div className="grid min-h-0 grid-cols-2 gap-1.5">
-          {mine.map(([name, move]) => (
-            <MoveButton
-              key={name} name={name} move={move}
-              attack={me.attack} tuning={tuning}
-              against={them.elementType}
-              busy={isPending(`attack:${name}`)}
-              disabled={disabled || (move.count ?? 0) <= 0 || busy}
-              onClick={() => swing(name)}
-            />
-          ))}
-        </div>
-      ) : (
-        <div className="flex items-center gap-3">
-          <p className="text-[11px] leading-tight text-muted">
-            Every move is spent. All that is left is to struggle.
-          </p>
-          <Button
-            size="sm" variant="danger"
-            disabled={disabled || busy}
-            busy={isPending('attack:struggle')}
-            onClick={() => swing('struggle')}
-          >
-            Struggle
-          </Button>
-        </div>
-      )}
-
-      {/* Theirs. Dimmed as a set and not focusable, so "you cannot press these"
-          is carried by how they look rather than by a caption. */}
-      <div className="grid min-h-0 grid-cols-2 gap-1.5 border-l border-edge/40 pl-3 opacity-55">
-        {theirs.map(([name, move]) => (
-          <MoveButton
-            key={name} name={name} move={move}
-            attack={them.attack} tuning={tuning}
-            against={me.elementType}
-            busy={false} disabled readOnly
-            onClick={() => {}}
-          />
-        ))}
-      </div>
-
-        {waiting && (
-          <div className="col-span-full flex justify-end">
-            <WaitingOnOpponent battle={battle} />
-          </div>
-        )}
-      </MoveTiles>
-    </Panel>
-  );
-}
-
-function MoveButton({
-  name, move, attack, tuning, against, busy, disabled, readOnly, onClick,
-}: {
-  name: string; move: Move; attack: number; tuning: Tuning;
-  against: Combatant['elementType'];
-  busy: boolean; disabled: boolean; readOnly?: boolean; onClick: () => void;
-}) {
-  const spent = (move.count ?? 0) <= 0;
-  const match = matchup(move.type, against);
-  const look = MOVE_LOOK[move.type] ?? MOVE_LOOK.normal;
-  const { Icon } = look;
-  const riders = (['attack', 'defense', 'speed', 'health'] as const)
-    .map((k) => [k, move[k]] as const)
-    .filter(([, v]) => v !== 0);
-  const hit = move.damage > 0 ? moveDamage(move, attack, tuning) : 0;
-
-  /**
-   * What the numbers on this cell actually DO, spelled out.
-   *
-   * Every rider on every move in the game applies to whoever USED it — there is
-   * no move anywhere that debuffs an opponent — and two of the four do
-   * something other than what their name suggests:
-   *
-   *  - `defense` also moves your SHIELD, by `shieldPerDefense` points per
-   *    point, immediately. So `-2 def` is not two of anything coming off your
-   *    health; it is eight points of shield gone now.
-   *  - `health` is a percentage of YOUR OWN pool, not a flat number — four
-   *    percent of max HP per point. A cost can bring you to one HP and never
-   *    below it.
-   *
-   * None of that fits on a cell you read under pressure, so the cell keeps the
-   * short forms and the sentence lives here, on hover.
-   */
-  const healPct = (v: number) => Math.abs(Math.round(v * tuning.healPerPoint * 100));
-  const explain = [
-    move.damage > 0
-      ? `${move.damage} power x (${tuning.attackBase} + ${attack} attack) = about ${hit} damage, before type and luck`
-      : null,
-    ...riders.map(([k, v]) => {
-      const sign = v > 0 ? '+' : '';
-      if (k === 'defense') {
-        const shield = Math.abs(v) * tuning.shieldPerDefense;
-        return `${sign}${v} defense to you, and ${v > 0 ? '+' : '-'}${shield} shield right now`;
-      }
-      if (k === 'health') {
-        return v > 0
-          ? `heals you ${healPct(v)}% of your max health`
-          : `costs you ${healPct(v)}% of your max health (never fatal)`;
-      }
-      return `${sign}${v} ${STAT_WORD[k]} to you, for the rest of the fight`;
-    }),
-    match ? match.label : null,
-    `${move.count ?? 0} uses left`,
-  ].filter(Boolean).join('\n');
-
-  return (
-    <button
-      onClick={onClick}
-      disabled={disabled}
-      title={explain}
-      // The opponent's roster is information, not a control: it must not be
-      // reachable by keyboard as if it were pressable.
-      tabIndex={readOnly ? -1 : undefined}
-      aria-disabled={readOnly || undefined}
-      // Read by MoveTiles to place and light the object underneath. Written as
-      // attributes rather than held in state because hover must not re-render
-      // eight buttons on every pointer move.
-      data-move-tile=""
-      data-type={move.type}
-      data-spent={spent ? '1' : '0'}
-      data-muted={readOnly ? '1' : '0'}
-      className={cx(
-        'relative flex items-center gap-1.5 rounded-[3px] border px-1.5 py-1 text-left',
-        'transition-[transform,opacity] duration-150 disabled:cursor-default',
-        // The border is the fallback when there is no WebGL; MoveTiles clears
-        // it once the lit objects are behind these.
-        spent
-          ? 'border-edge/30 opacity-40'
-          : readOnly
-            ? `${look.ring} bg-transparent`
-            : `${look.ring} bg-transparent active:translate-y-px`,
-      )}
-    >
-      {/* The move's own badge, out of the card art, when there is one. The
-          type glyph is the fallback for a move whose plate was never drawn —
-          see ui/MoveBadge.tsx. */}
-      {hasMoveBadge(name) ? (
-        <MoveBadge name={name} size={20} className={spent ? 'opacity-70' : undefined} />
-      ) : (
-        <Icon className={cx('h-4 w-4 shrink-0', spent ? 'text-faint' : look.tint)} />
-      )}
-
-      <span className="min-w-0 flex-1">
-        <span className="block truncate text-[12px] font-medium leading-tight">
-          {name}
-        </span>
-        <span className="flex flex-wrap items-baseline gap-x-1.5 text-[10px] leading-tight">
-          {move.damage > 0 && (
-            <span className="text-bad">
-              {hit}<span className="ml-0.5 text-[8px] uppercase text-bad/70">dmg</span>
-            </span>
-          )}
-          {riders.map(([k, v]) => (
-            <span key={k} className={v > 0 ? 'text-good' : 'text-warn'}>
-              {v > 0 ? '+' : ''}{v}
-              <span className="ml-0.5 text-[8px] uppercase opacity-70">{STAT_SHORT[k]}</span>
-            </span>
-          ))}
-        </span>
-      </span>
-
-      {/* Uses, and under them the matchup. Both are facts about this move
-          against THIS opponent, and stacking them puts the two things you
-          check last in one place at the edge of the cell rather than leaving
-          "weak" adrift in a row of stat riders it has nothing to do with. */}
-      <span className="flex shrink-0 flex-col items-end gap-0.5">
-        <span className={cx(
-          'rounded-[2px] bg-black/70 px-1 py-px font-mono text-[10px]',
-          'font-semibold leading-none text-white/90 tabular-nums',
-        )}>
-          {busy ? <Spinner className="h-3 w-3" /> : `x${move.count ?? 0}`}
-        </span>
-        {/* `matchup` returns null when neutral, so having a value IS the news.
-            Its own label is a sentence — too long for a cell this size. */}
-        {match && (
-          <span
-            className={cx(
-              'rounded-[2px] bg-black/60 px-1 py-px text-[9px] font-semibold leading-none',
-              match.multiplier > 1 ? 'text-good' : 'text-warn',
-            )}
-            title={match.label}
-          >
-            {match.multiplier > 1 ? 'strong' : 'weak'}
-          </span>
-        )}
-      </span>
-    </button>
-  );
-}
 
 function Outcome({
   won, battle, className,
@@ -963,147 +736,5 @@ function Outcome({
         </Link>
       </div>
     </Panel>
-  );
-}
-// Turn log ------------------------------------------------------------------
-
-/**
- * The fight so far, as a list of what happened, in the order it happened.
- *
- * What was here before was a WebGL bar chart: two rows of coloured rectangles,
- * one per round, sized by damage. It answered "how is it going" in the
- * abstract and answered nothing anyone actually asked — there was no way to
- * tell what a block WAS, and the two-word key on its left did not help.
- *
- * This is the same information as words and numbers, and it is the exact same
- * sequence the arena above plays: one card per round, and inside it one line
- * per turn in resolution order, so the top line is whoever the process gave
- * the first swing to. If the fight shows you moving first, this says you moved
- * first, because both are reading the same `turns` array.
- *
- * Newest on the right, scrolled to the end, so the round you just watched is
- * the one under your eye when you pick the next move.
- */
-function RoundLog({
-  turns, youAre,
-}: { turns: Turn[]; youAre: 'challenger' | 'accepter' }) {
-  const rounds = useMemo(() => {
-    const byRound = new Map<number, Turn[]>();
-    for (const t of turns) {
-      const list = byRound.get(t.round);
-      if (list) list.push(t);
-      else byRound.set(t.round, [t]);
-    }
-    return [...byRound.entries()]
-      .sort((a, b) => a[0] - b[0])
-      .map(([round, list]) => ({ round, list }));
-  }, [turns]);
-
-  const scroller = useRef<HTMLDivElement>(null);
-  useEffect(() => {
-    const el = scroller.current;
-    if (el) el.scrollLeft = el.scrollWidth;
-  }, [rounds.length]);
-
-  return (
-    <Panel className="battle-timeline flex min-h-0 flex-col overflow-hidden p-1.5">
-      <div className="mb-1 flex shrink-0 items-baseline justify-between gap-2 px-0.5">
-        <span className="eyebrow leading-none">Rounds, in order</span>
-        <span className="text-[9px] leading-none text-faint">
-          top line moved first
-        </span>
-      </div>
-
-      {rounds.length === 0 ? (
-        <p className="flex flex-1 items-center px-0.5 text-[11px] text-faint">
-          Nothing has happened yet. Pick a move.
-        </p>
-      ) : (
-        <div
-          ref={scroller}
-          className="flex min-h-0 flex-1 gap-1.5 overflow-x-auto overflow-y-hidden pb-0.5"
-        >
-          {rounds.map(({ round, list }, i) => (
-            <div
-              key={round}
-              className={cx(
-                'flex w-[136px] shrink-0 flex-col gap-0.5 rounded-[3px] border px-1.5 py-1',
-                i === rounds.length - 1
-                  ? 'border-element/45 bg-element/5'
-                  : 'border-edge/50 bg-void/25',
-              )}
-            >
-              <span className="font-mono text-[9px] leading-none text-faint">
-                R{round}
-              </span>
-              {list.map((t, n) => (
-                <TurnLine
-                  key={`${t.attacker}-${n}`}
-                  turn={t} order={n + 1} mine={t.attacker === youAre}
-                />
-              ))}
-            </div>
-          ))}
-        </div>
-      )}
-    </Panel>
-  );
-}
-
-/**
- * One swing.
- *
- * `1` and `2` down the left edge are the order the process resolved them in,
- * spelled out rather than implied, because "who went first" is the single
- * thing about a round that a player checks and the old chart could not say.
- */
-function TurnLine({
-  turn, order, mine,
-}: { turn: Turn; order: number; mine: boolean }) {
-  const look = MOVE_LOOK[turn.moveType] ?? MOVE_LOOK.normal;
-  const { Icon } = look;
-  const damage = turn.shieldDamage + turn.healthDamage;
-  const supportive = turn.moveType === 'heal' || turn.moveType === 'boost';
-
-  return (
-    <div
-      className="flex items-center gap-1 leading-none"
-      title={`${mine ? 'You' : 'They'} used ${turn.move}`}
-    >
-      <span className="w-2 shrink-0 font-mono text-[8px] text-faint">{order}</span>
-      <span className={cx(
-        'w-[22px] shrink-0 text-[9px] font-semibold uppercase tracking-wide',
-        mine ? 'text-good' : 'text-bad',
-      )}>
-        {mine ? 'You' : 'Foe'}
-      </span>
-      <Icon className={cx('h-2.5 w-2.5 shrink-0', look.tint)} />
-      <span className="min-w-0 flex-1 truncate text-[10px] text-muted">
-        {turn.move}
-      </span>
-      <span className="flex shrink-0 items-baseline gap-0.5 font-mono text-[10px] tabular-nums">
-        {/* A crit is marked before the number, not folded into its colour: the
-            number alone cannot say whether a big hit was a good roll or a good
-            matchup, and those are two different reasons to change your move. */}
-        {turn.critical && !turn.missed && (
-          <span className="rounded-[2px] bg-warn/20 px-0.5 text-[8px] font-bold uppercase leading-none text-warn">
-            crit
-          </span>
-        )}
-        {turn.missed ? (
-          <span className="text-faint">miss</span>
-        ) : supportive ? (
-          <span className="text-good">buff</span>
-        ) : (
-          <span className={cx(
-            turn.critical ? 'text-warn'
-              : turn.superEffective ? 'text-ember'
-                : turn.notEffective ? 'text-faint' : 'text-ink',
-          )}>
-            &minus;{damage}
-          </span>
-        )}
-      </span>
-    </div>
   );
 }

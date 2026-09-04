@@ -65,18 +65,45 @@ local function run(base, req)
     _G.collectgarbage = on and realgc or function() end
   end
 
-  -- One measured loop. `make(i)` produces the tags for the i-th message.
-  local function measure(label, count, first, make, withGc)
+  -- Owner-side helpers, so a scenario's SETUP is not charged to the verb it is
+  -- measuring. Everything here runs before the reading is taken.
+  local function unlock(who) send(OWNER, { Action = "Admin.Unlock", Addresses = who }) end
+  local function grant(who, item, amount)
+    send(OWNER, { Action = "Admin.Grant", PlayerId = who, Item = item, Amount = amount })
+  end
+  local function restock(who)
+    -- Energy and happiness are 25 apiece per arena entry, so a scenario that
+    -- fights more than three times silently starts measuring "Not enough
+    -- energy" instead of a battle.
+    send(OWNER, { Action = "Admin.SetStats", PlayerId = who,
+      Data = json.encode({ energy = 100, happiness = 100,
+        status = { type = "Home", since = 0, until_time = 0 } }) })
+  end
+  --- A wallet with a companion and a full satchel.
+  --- Joining a faction ALSO adopts, so `Monster.Adopt` afterwards answers "You
+  --- have already adopted" -- an error path costs almost nothing and would have
+  --- been reported here as a cheap write.
+  local function ready(who)
+    unlock(who)
+    send(who, { Action = "Faction.Join", Faction = "Inferno Blades" })
+    grant(who, "fire_berry", 500)
+    grant(who, "rune", 500)
+    restock(who)
+    return who
+  end
+
+  --- One measured loop.
+  ---
+  --- `prepare(prefix, count)` returns whatever `step` needs and runs OUTSIDE the
+  --- reading; `step(ctx, i)` sends exactly the message under test.
+  local function measure(label, count, prefix, prepare, step, withGc)
+    local ctx = prepare(prefix, count)
     gc(withGc)
-    send(OWNER, { Action = "Admin.Unlock", Addresses = addr(first, 0) })
     local before = slot()
-    for i = 1, count do
-      local who = make(i)
-      send(who.from, who.tags)
-    end
+    for i = 1, count do step(ctx, i) end
     local after = slot()
     gc(true)
-    line(string.format("%-34s %6d msgs   slot %8d -> %8d   %8.1f tables/msg",
+    line(string.format("%-30s %5d  slot %8d -> %8d   %9.1f tables/msg",
       label, count, before, after, (after - before) / count))
     return (after - before) / count
   end
@@ -86,36 +113,106 @@ local function run(base, req)
   -- is a slope; six messages measure it as well as sixty.
   local N = tonumber(req and req.body and req.body.N) or 6
 
-  -- A pure read. It writes nothing, so every table it leaves is garbage.
-  local loginOff = measure("User.Login          gc OFF", N, "RA", function()
-    return { from = addr("RA", 0), tags = { Action = "User.Login" } }
-  end, false)
-  local loginOn = measure("User.Login          gc ON ", N, "RB", function()
-    return { from = addr("RB", 0), tags = { Action = "User.Login" } }
-  end, true)
+  --- The handlers the brief names, plus the two the original probe carried.
+  ---
+  --- `perMessage` is false where one step is a whole session rather than one
+  --- message, so the number is not silently compared against a per-message one.
+  local SCENARIOS = {
+    {
+      name = "User.Login (read)",
+      prepare = function(p) return ready(addr(p, 0)) end,
+      step = function(who) send(who, { Action = "User.Login" }) end,
+    },
+    {
+      name = "User.Info (read)",
+      prepare = function(p) return ready(addr(p, 0)) end,
+      step = function(who) send(who, { Action = "User.Info" }) end,
+    },
+    {
+      name = "Monster.Feed",
+      prepare = function(p) return ready(addr(p, 0)) end,
+      step = function(who, i)
+        -- Feeding caps at MAX_ENERGY and then refuses, so drain it back down
+        -- between feeds. `Admin.SetStats` is owner-signed and counted.
+        if i % 2 == 0 then
+          send(OWNER, { Action = "Admin.SetStats", PlayerId = who,
+            Data = json.encode({ energy = 0 }) })
+        end
+        send(who, { Action = "Monster.Feed", Item = "fire_berry" })
+      end,
+    },
+    {
+      name = "Monster.Play",
+      prepare = function(p) return ready(addr(p, 0)) end,
+      step = function(who) send(who, { Action = "Monster.Play" }) end,
+    },
+    {
+      name = "Daily.Claim",
+      prepare = function(p) return ready(addr(p, 0)) end,
+      step = function(who) send(who, { Action = "Daily.Claim" }) end,
+    },
+    {
+      name = "Admin.Unlock (1 account)",
+      prepare = function(p) return p end,
+      step = function(p, i) unlock(addr(p, i)) end,
+    },
+    {
+      name = "Unlock+Join (new player)",
+      prepare = function(p) return p end,
+      step = function(p, i)
+        local who = addr(p, i)
+        unlock(who)
+        send(who, { Action = "Faction.Join", Faction = "Inferno Blades" })
+      end,
+    },
+    {
+      name = "bot battle (whole fight)",
+      perMessage = false,
+      prepare = function(p) return ready(addr(p, 0)) end,
+      step = function(who)
+        restock(who)
+        send(who, { Action = "Battle.Begin" })
+        send(who, { Action = "Battle.Start" })
+        for round = 1, 12 do
+          local res = send(who, { Action = "Battle.Attack", Move = tostring(round % 4) })
+          local body = type(res) == "table" and (res.body or res.Data) or nil
+          if type(body) == "string" and string.find(body, '"ended"', 1, true) then break end
+        end
+        send(who, { Action = "Battle.Leave" })
+      end,
+    },
+  }
 
-  -- A real write: each message unlocks an account, joins it to a faction and
-  -- adopts a companion, which is the ~1 KB record the brief measures against.
-  local function adoptSeq(prefix)
-    return function(i)
-      local who = addr(prefix, i)
-      send(OWNER, { Action = "Admin.Unlock", Addresses = who })
-      send(who, { Action = "Faction.Join", Faction = "Inferno Blades" })
-      return { from = who, tags = { Action = "Monster.Adopt" } }
-    end
+  line(string.format("%-30s %5s  %-30s %9s", "scenario", "n", "", "slope"))
+  line("")
+  local results = {}
+  for index, scenario in ipairs(SCENARIOS) do
+    -- Distinct address prefixes per arm: an account carries state, so reusing
+    -- one across the gc-OFF and gc-ON loops would measure two different players.
+    local off = measure(scenario.name .. "  gc OFF", N,
+      string.format("A%d", index), scenario.prepare, scenario.step, false)
+    local on = measure(scenario.name .. "  gc ON ", N,
+      string.format("B%d", index), scenario.prepare, scenario.step, true)
+    results[#results + 1] = { name = scenario.name, off = off, on = on,
+      perMessage = scenario.perMessage ~= false }
+    line("")
   end
-  local adoptOff = measure("Unlock+Join+Adopt   gc OFF", N, "WA", adoptSeq("WA"), false)
-  local adoptOn = measure("Unlock+Join+Adopt   gc ON ", N, "WB", adoptSeq("WB"), true)
 
   line("")
-  line(string.format("read  message: %.1f allocated, %.1f kept  -> %.1f%% garbage",
-    loginOff, loginOn, loginOff > 0 and (100 * (loginOff - loginOn) / loginOff) or 0))
-  line(string.format("write message: %.1f allocated, %.1f kept  -> %.1f%% garbage",
-    adoptOff, adoptOn, adoptOff > 0 and (100 * (adoptOff - adoptOn) / adoptOff) or 0))
+  line(string.format("%-30s %12s %12s %10s", "scenario", "allocated", "kept", "garbage"))
+  table.sort(results, function(a, b) return a.on > b.on end)
+  for _, r in ipairs(results) do
+    line(string.format("%-30s %12.1f %12.1f %9.1f%%%s",
+      r.name, r.off, r.on,
+      r.off > 0 and (100 * (r.off - r.on) / r.off) or 0,
+      r.perMessage and "" or "   (per SESSION, not per message)"))
+  end
   line("")
-  line("Slope is tables per message left in the Luerl store, which is what the")
-  line("node term_to_binary's into the snapshot. gc OFF is the code as deployed")
-  line("before this change (collectgarbage(\"step\") is a no-op on Luerl).")
+  line("Slope is tables per step left in the Luerl store. dev_lua keeps that")
+  line("store live in the process message's `priv` between slots and serializes")
+  line("it with term_to_binary every `process_snapshot_slots`, so tables kept IS")
+  line("bytes carried, up to a constant. `kept` is the honest cost of the data;")
+  line("`garbage` is what a collectgarbage placement could have saved.")
   return table.concat(out, "\n")
 end
 

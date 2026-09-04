@@ -1,10 +1,12 @@
 /** A looping game of fetch in one of the dedicated play scenes. */
 import Phaser from 'phaser';
-import { FRAME, ROW, STAND_FRAME, playUrl, rowFrames, sheetUrl } from './assets';
+import { playUrl } from './assets';
 import { reducedMotion } from './boot';
+import { MonsterRig, monsterRig } from './MonsterRig';
 
 export type PlayInit = {
   sprite: string;
+  entryNo?: number;
   backdrop: string;
   /** Locally composed 576x60 player sheet. Omitted when the account has no character. */
   playerSprite?: string;
@@ -28,6 +30,7 @@ export class PlayScene extends Phaser.Scene {
   private started = 0;
   private quiet = false;
   private lastPetAnimation = '';
+  private rig!: MonsterRig;
 
   constructor() {
     super(PlayScene.KEY);
@@ -35,14 +38,13 @@ export class PlayScene extends Phaser.Scene {
 
   init(data: PlayInit) {
     this.init_ = data;
+    this.rig = monsterRig({ entryNo: data.entryNo, sprite: data.sprite });
     this.quiet = reducedMotion();
   }
 
   preload() {
     this.load.image('play-backdrop', playUrl(this.init_.backdrop));
-    this.load.spritesheet('play-pet', sheetUrl(this.init_.sprite), {
-      frameWidth: FRAME.w, frameHeight: FRAME.h,
-    });
+    this.rig.preload(this, 'play-pet');
     if (this.init_.playerSprite) {
       this.load.spritesheet('play-player', this.init_.playerSprite, {
         frameWidth: 48, frameHeight: 60,
@@ -54,15 +56,7 @@ export class PlayScene extends Phaser.Scene {
     const { width: W, height: H } = this.scale;
     this.add.image(0, 0, 'play-backdrop').setOrigin(0).setDisplaySize(W, H);
 
-    for (const direction of ['walkLeft', 'walkRight'] as const) {
-      const key = `play-${direction}`;
-      this.anims.create({
-        key,
-        frames: this.anims.generateFrameNumbers('play-pet', { frames: rowFrames(ROW[direction]) }),
-        frameRate: 10,
-        repeat: -1,
-      });
-    }
+    this.rig.register(this, 'play-pet', 'play-pet');
 
     if (this.textures.exists('play-player')) {
       this.anims.create({
@@ -75,8 +69,8 @@ export class PlayScene extends Phaser.Scene {
       this.player = this.add.sprite(292, FLOOR_Y, 'play-player', 7).setOrigin(0.5, 1);
     }
 
-    this.petShadow = this.add.ellipse(216, FLOOR_Y + 1, 28, 7, 0x000000, 0.34);
-    this.pet = this.add.sprite(216, FLOOR_Y, 'play-pet', STAND_FRAME).setOrigin(0.5, 1);
+    this.petShadow = this.rig.createShadow(this, 216, FLOOR_Y);
+    this.pet = this.rig.createSprite(this, 'play-pet', 216, FLOOR_Y);
 
     this.makeBallTexture();
     this.ball = this.add.image(270, FLOOR_Y - 31, 'fetch-ball').setVisible(false);
@@ -115,7 +109,7 @@ export class PlayScene extends Phaser.Scene {
   }
 
   private drawQuietPose() {
-    this.pet.setPosition(216, FLOOR_Y).setFrame(STAND_FRAME);
+    this.pet.setPosition(216, FLOOR_Y).setFrame(this.standFrame());
     this.player?.setPosition(292, FLOOR_Y).setFrame(7);
     this.ball.setPosition(244, FLOOR_Y - 7).setVisible(true);
   }
@@ -169,8 +163,9 @@ export class PlayScene extends Phaser.Scene {
 
     this.pet.setPosition(petX, FLOOR_Y - jump);
     this.petShadow
-      .setPosition(petX, FLOOR_Y + 1)
-      .setSize(walking ? 24 : 28, walking ? 6 : 7)
+      .setPosition(petX, FLOOR_Y + this.rig.render.shadow.offsetY)
+      .setSize((walking ? 0.86 : 1) * this.rig.render.shadow.width,
+        (walking ? 0.86 : 1) * this.rig.render.shadow.height)
       .setAlpha(0.34 * (1 - jump / 10));
 
     if (this.player) {
@@ -185,15 +180,20 @@ export class PlayScene extends Phaser.Scene {
     }
 
     if (walking) {
-      const key = `play-walk${walking === 'left' ? 'Left' : 'Right'}`;
+      const key = `walk.${walking}` as const;
       if (key !== this.lastPetAnimation || !this.pet.anims.isPlaying) {
-        this.pet.setFlipX(false).play(key);
+        this.pet.setFlipX(false);
+        this.rig.loop(this.pet, 'play-pet', key);
         this.lastPetAnimation = key;
       }
     } else {
-      this.pet.anims.stop();
-      this.pet.setFrame(STAND_FRAME).setFlipX(t >= 5650 && t < 6900);
+      this.rig.hold(this.pet);
+      this.pet.setFlipX(t >= 5650 && t < 6900);
       this.lastPetAnimation = '';
     }
+  }
+
+  private standFrame() {
+    return this.rig.frame('idle');
   }
 }

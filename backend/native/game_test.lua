@@ -22,13 +22,54 @@ local function run(base, req)
   -- A process definition whose committer is OWNER, so resolveOwner() finds it.
   local PROCESS = { commitments = { sig1 = { committer = OWNER } } }
 
+  --- The published map, carried from one message to the next.
+  ---
+  --- `compute`'s result IS its `base`, and a live node feeds that result back in
+  --- as the next slot's base. Handing `compute` a FRESH `{ process = PROCESS }`
+  --- each time -- which is what this file used to do for all but a handful of
+  --- its messages -- makes every derived key look absent, so the `== nil` half
+  --- of every publish guard in `compute` fires on every message: `factions`,
+  --- `leaderboard`, `metrics`, `economy`, `challenges`, `monsterindex`,
+  --- `catalog` and the fleet views were all recomputed and re-encoded for a
+  --- read-only `User.Info`, which the real process never does. Nothing about
+  --- that is a contract bug and no assertion depended on it -- it just made one
+  --- request out of ~700 messages large enough that a node answered 502 before
+  --- the suite could finish. `battle-fleet/hblab/lua-cost.mjs` documents the
+  --- same trap and threads its base for the same reason.
+  ---
+  --- Everything the GAME owns (`Players`, `Battles`, the ledgers) lives in Lua
+  --- globals and was already carried; this carries the PUBLICATION state too.
+  local STATE = { process = PROCESS }
+
+  --- One raw message against the carried state. `body` is the request body
+  --- exactly as HyperBEAM presents it, `extra` any additional base fields the
+  --- node would supply for this slot (`scheduler-location`, and nothing else so
+  --- far). Extras are removed again afterwards so a test that names one
+  --- scheduler cannot silently decide the next test's answer.
+  local function computeOn(body, extra)
+    if extra then for k, v in pairs(extra) do STATE[k] = v end end
+    local res = compute(STATE, { body = body, timestamp = T }, {})
+    STATE = res
+    if extra then for k in pairs(extra) do STATE[k] = nil end end
+    return res
+  end
+
+  --- A base equivalent to the current one, for the determinism test, which has
+  --- to hand the SAME starting state to two separate calls. Top-level only,
+  --- which is all `compute` writes: every published value is an encoded string.
+  local function forkState()
+    local copy = {}
+    for k, v in pairs(STATE) do copy[k] = v end
+    return copy
+  end
+
   --- Drive compute() the way HyperBEAM does. `from` becomes the signer.
   local function send(from, tags, data)
     T = T + 1000
     local body = { Address = from }
     for k, v in pairs(tags) do body[k] = v end
     if data then body.Data = data end
-    local res = compute({ process = PROCESS }, { body = body, timestamp = T }, {})
+    local res = computeOn(body)
     local decoded = json.decode(res.results.output.data)
     return decoded, res
   end
@@ -62,10 +103,10 @@ local function run(base, req)
   -- made Admin.Unlock accept the message and unlock nobody.
   do
     T = T + 1000
-    local res = compute({ process = PROCESS }, { body = {
+    local res = computeOn({
       Address = OWNER, Action = "Admin.Unlock",
       data = json.encode({ addresses = { "DAVEddddddddddddddddddddddddddddddddddddddd" } }),
-    }, timestamp = T }, {})
+    })
     local decoded = json.decode(res.results.output.data)
     ok("Admin.Unlock reads a lowercase body", decoded and decoded.added == 1, json.encode(decoded))
   end
@@ -76,10 +117,10 @@ local function run(base, req)
   -- it.
   do
     T = T + 1000
-    local res = compute({ process = PROCESS }, { body = {
+    local res = computeOn({
       Address = OWNER, Action = "Admin.Grant", target = ALICE,
       Item = "rune", Amount = "999",
-    }, timestamp = T }, {})
+    })
     local decoded = json.decode(res.results.output.data)
     ok("an admin action cannot be aimed by the envelope's `target`",
        decoded and decoded.error ~= nil, json.encode(decoded))
@@ -140,6 +181,9 @@ local function run(base, req)
   ok("and it is in the roster, not loose", r and r.activeId
      and r.monsters and r.monsters[r.activeId] ~= nil, r and r.activeId)
   ok("and the oath is recorded as spent", r and r.adopted == true, r and tostring(r.adopted))
+  ok("owning a starter reveals its Monster Index entry",
+     r and r.seenEntries and r.seenEntries[1] == 1,
+     r and r.seenEntries and json.encode(r.seenEntries))
 
   local moveCount = 0
   for _ in pairs(r.monster.moves) do moveCount = moveCount + 1 end
@@ -434,7 +478,11 @@ local function run(base, req)
   -- Reads and publishing ----------------------------------------------------
 
   local _, res = send(ALICE, { Action = "User.Info" })
-  ok("compute publishes `player`", res.player ~= nil)
+  -- The singleton `player` key is gone -- it was a second full copy of a
+  -- record nothing addressed. The addressed key is the published one.
+  ok("compute does not publish the singleton `player`", res.player == nil,
+     res.player and string.sub(res.player, 1, 60))
+  ok("compute publishes `player-<address>`", res["player-" .. ALICE] ~= nil)
   ok("compute publishes `playerid`", res.playerid == ALICE, res.playerid)
   ok("compute publishes `factions`", res.factions ~= nil)
   ok("compute publishes `leaderboard`", res.leaderboard ~= nil)
@@ -444,6 +492,48 @@ local function run(base, req)
   ok("compute publishes the combat tuning", res.catalog ~= nil
      and string.find(res.catalog, "hpPerHealth") ~= nil,
      res.catalog and string.sub(res.catalog, 1, 60))
+  ok("compute publishes the numbered Monster Index", res.monsterindex ~= nil
+     and string.find(res.monsterindex, '"entryNo":1') ~= nil
+     and string.find(res.monsterindex, '"nextEntryNo":94') ~= nil,
+     res.monsterindex and string.sub(res.monsterindex, 1, 80))
+  ok("legacy starter records are mapped to Monster #001",
+     Players[ALICE] and Players[ALICE].monster and Players[ALICE].monster.entryNo == 1,
+     Players[ALICE] and Players[ALICE].monster and Players[ALICE].monster.entryNo)
+
+  local deniedMonsterIndex = send(ALICE, { Action = "Admin.MonsterIndex.Update", EntryNo = "13" },
+    json.encode({ name = "Forged Ashmouse" }))
+  ok("a player cannot edit the Monster Index", errOf(deniedMonsterIndex) == "Not authorised",
+     errOf(deniedMonsterIndex))
+  local renamedMonsterIndex = send(OWNER, { Action = "Admin.MonsterIndex.Update", EntryNo = "13" },
+    json.encode({ name = "Ashmouse Draft" }))
+  ok("the owner can rename a numbered planned entry",
+     renamedMonsterIndex and renamedMonsterIndex.entries
+       and renamedMonsterIndex.entries[13].name == "Ashmouse Draft",
+     renamedMonsterIndex and renamedMonsterIndex.entries and renamedMonsterIndex.entries[13].name)
+  local earlyRelease = send(OWNER, { Action = "Admin.MonsterIndex.Update", EntryNo = "13" },
+    json.encode({ state = "live", huntCatchable = true, huntWeight = 100 }))
+  ok("an entry with incomplete assets cannot be released", errOf(earlyRelease) ~= nil,
+     errOf(earlyRelease))
+  do
+    local source = Players[ALICE].monster
+    local evolved = Battle.clone(source)
+    evolved.level = 10
+    evolved.id = "evolution-test"
+    local target = C.MONSTER_INDEX_BY_NO[2]
+    local priorReady = target.assetReady
+    local priorOverride = MonsterIndexOverrides["2"]
+    target.assetReady = true
+    MonsterIndexOverrides["2"] = { state = "live" }
+    resolveEvolution(evolved)
+    ok("evolution changes the Monster Index entry when the target form is live",
+       evolved.entryNo == 2, evolved.entryNo)
+    ok("evolution preserves the owned companion identity and stats",
+       evolved.id == "evolution-test" and evolved.attack == source.attack
+         and evolved.level == 10,
+       evolved.id)
+    target.assetReady = priorReady
+    MonsterIndexOverrides["2"] = priorOverride
+  end
 
   -- An ANS-104 data item carries a lowercase `target` field holding the process
   -- id. If the tag lookup falls back to it, `player` and `battle` are published
@@ -451,10 +541,11 @@ local function run(base, req)
   do
     T = T + 1000
     local body = { Address = ALICE, Action = "User.Info", target = "THE-PROCESS-ID" }
-    local res = compute({ process = PROCESS }, { body = body, timestamp = T }, {})
+    local res = computeOn(body)
     ok("the envelope's `target` does not hijack the publish", res.playerid == ALICE, res.playerid)
     ok("the envelope's `target` does not leak into msg.Target",
-       res.player ~= nil and string.find(res.player, "THE%-PROCESS%-ID") == nil)
+       res["player-" .. ALICE] ~= nil
+       and string.find(res["player-" .. ALICE], "THE%-PROCESS%-ID") == nil)
   end
 
   local _, bad = send(ALICE, { Action = "Totally.Bogus" })
@@ -463,7 +554,8 @@ local function run(base, req)
   -- Integers must not serialise as 5001.0000000000; that is the Luerl %g bug
   -- the whole jsonenc.lua exists to route around.
   ok("published integers are not float-formatted",
-     string.find(res.player, "%.0000") == nil, string.sub(res.player, 1, 120))
+     string.find(res["player-" .. ALICE], "%.0000") == nil,
+     string.sub(res["player-" .. ALICE], 1, 120))
 
   r = send(ALICE, { Action = "Leaderboard", Limit = "10" })
   ok("leaderboard ranks players", r and #r >= 2, r and #r)
@@ -478,7 +570,7 @@ local function run(base, req)
   do
     local function raw(body)
       T = T + 1000
-      local res = compute({ process = PROCESS }, { body = body, timestamp = T }, {})
+      local res = computeOn(body)
       return json.decode(res.results.output.data)
     end
 
@@ -794,9 +886,17 @@ local function run(base, req)
     local before = send(ALICE, { Action = "User.Info" })
     local runes = before.inventory.rune or 0
     local claimed = send(ALICE, { Action = "Daily.Claim" })
-    ok("the daily can be claimed while global Rune rewards are paused",
-       claimed.dailyClaimed and (claimed.inventory.rune or 0) == runes,
+    ok("the daily pays from the scheduled global emission",
+       claimed.dailyClaimed ~= nil and (claimed.inventory.rune or 0) >= runes,
        errOf(claimed) or claimed.inventory.rune)
+    -- Emission is a schedule now, not a dial: no policy message has been sent
+    -- in this suite and the faucet still pays. That is the whole point --
+    -- `epochBudget` used to default to 0 and every worship in every deployment
+    -- paid exactly nothing until somebody remembered to propose and apply two
+    -- policy changes.
+    ok("and it did so with no policy change ever applied",
+       claimed.dailyClaimed and (claimed.dailyClaimed.runes or 0) > 0,
+       claimed.dailyClaimed and json.encode(claimed.dailyClaimed))
     local twice = send(ALICE, { Action = "Daily.Claim" })
     ok("but not twice in a day", errOf(twice) ~= nil, json.encode(twice))
     ok("and the client is told when it is next due", claimed.dailyReadyAt > 0,
@@ -908,9 +1008,13 @@ local function run(base, req)
   do
     -- The whole design rests on recomputing a slot reproducing it. An unseeded
     -- RNG would give a different answer on every replay.
+    -- A replay is the SAME base twice, not a fresh one twice, so each call gets
+    -- its own copy of the state as it stands here. `compute` writes into the
+    -- base it is handed, and the second run must not be reading the first
+    -- run's edits or this asserts nothing about determinism.
     local body = { Address = ALICE, Action = "Faction.List" }
-    local first = compute({ process = PROCESS }, { body = body, timestamp = 1700009999000 }, {})
-    local second = compute({ process = PROCESS }, { body = body, timestamp = 1700009999000 }, {})
+    local first = compute(forkState(), { body = body, timestamp = 1700009999000 }, {})
+    local second = compute(forkState(), { body = body, timestamp = 1700009999000 }, {})
     ok("recomputing the same message gives the same answer",
        first.results.output.data == second.results.output.data)
   end
@@ -1085,9 +1189,9 @@ local function run(base, req)
 
     -- The real thing, and the mint request it emits.
     T = T + 1000
-    local res = compute({ process = PROCESS }, { body = {
+    local res = computeOn({
       Address = WREN, Action = "Rune.Withdraw", Amount = "10",
-    }, timestamp = T }, {})
+    })
     local decoded = json.decode(res.results.output.data)
     ok("a withdrawal succeeds", decoded and decoded.error == nil, json.encode(decoded))
     ok("and deducts the in-game balance",
@@ -1144,10 +1248,7 @@ local function run(base, req)
           ["from-process"] = fromProcess,
         }
         for k, v in pairs(tags) do body[k] = v end
-        local res = compute(
-          { process = PROCESS, ["scheduler-location"] = SCHED },
-          { body = body, timestamp = T }, {}
-        )
+        local res = computeOn(body, { ["scheduler-location"] = SCHED })
         return json.decode(res.results.output.data)
       end
 
@@ -1264,17 +1365,14 @@ local function run(base, req)
         -- a republish they would poll their own key and see nothing arrive.
         do
           T = T + 1000
-          local res = compute(
-            { process = PROCESS, ["scheduler-location"] = SCHED },
-            { body = {
-                commitments = { sig1 = { committer = SCHED, alg = "rsa-pss-sha512" } },
-                ["from-process"] = TOKEN,
-                -- Mixed case exercises the same delivery shape a foreign
-                -- process may emit. Dispatch, telemetry and dirty publication
-                -- must all agree on the resolved canonical handler.
-                Action = "bUrN-NoTiCe", Account = DEPO, Quantity = "2", Reference = "b3",
-              }, timestamp = T }, {}
-          )
+          local res = computeOn({
+            commitments = { sig1 = { committer = SCHED, alg = "rsa-pss-sha512" } },
+            ["from-process"] = TOKEN,
+            -- Mixed case exercises the same delivery shape a foreign
+            -- process may emit. Dispatch, telemetry and dirty publication
+            -- must all agree on the resolved canonical handler.
+            Action = "bUrN-NoTiCe", Account = DEPO, Quantity = "2", Reference = "b3",
+          }, { ["scheduler-location"] = SCHED })
           local key = res["player-" .. DEPO]
           ok("a deposit republishes the depositor's own record",
              type(key) == "string", type(key))
@@ -1501,9 +1599,15 @@ local function run(base, req)
 
     local r = send(PILGRIM, { Action = "Daily.Claim" })
     ok("a first claim is a streak of one", r.dailyClaimed.streak == 1, json.encode(r.dailyClaimed))
-    ok("and does not revive the per-wallet Rune faucet",
-       r.dailyClaimed.runes == 0 and r.dailyClaimed.runeRewardReason ~= nil,
-       r.dailyClaimed.runes)
+    -- A per-wallet faucet is the one structural flaw in ECONOMY.md §2: total
+    -- emission would be `stipend x wallets x time` and wallets are free to
+    -- make. The pot is global and FIXED, so what a claim pays is one share of
+    -- a day, bounded by the rolling per-account cap -- never a fresh mint per
+    -- wallet. This pins the bound, not a particular number.
+    ok("a claim is a share of the global pot, never a per-wallet mint",
+       r.dailyClaimed.runes > 0
+         and r.dailyClaimed.runes <= 20,
+       json.encode(r.dailyClaimed))
     ok("and counts as an offering", r.dailyClaimed.offerings == 1, r.dailyClaimed.offerings)
     ok("and is tallied to the faction", r.dailyClaimed.factionOfferings >= 1,
        r.dailyClaimed.factionOfferings)
@@ -1515,9 +1619,9 @@ local function run(base, req)
     local paid = {}
     for day = 2, 11 do
       T = T + C.DAILY.interval
-      local res = compute({ process = PROCESS }, { body = {
+      local res = computeOn({
         Address = PILGRIM, Action = "Daily.Claim",
-      }, timestamp = T }, {})
+      })
       local d = json.decode(res.results.output.data)
       paid[day] = d.dailyClaimed
     end
@@ -1530,9 +1634,9 @@ local function run(base, req)
 
     -- Miss the window entirely and it is gone.
     T = T + (C.DAILY.breakAfter * 2)
-    local res = compute({ process = PROCESS }, { body = {
+    local res = computeOn({
       Address = PILGRIM, Action = "Daily.Claim",
-    }, timestamp = T }, {})
+    })
     local broke = json.decode(res.results.output.data)
     ok("missing a day breaks the streak", broke.dailyClaimed.streak == 1,
        broke.dailyClaimed.streak)
@@ -1546,13 +1650,16 @@ local function run(base, req)
       dailyStreak = 15, bestStreak = 15, offerings = 200,
     } } }))
     T = T + 1000
-    local back = json.decode(compute({ process = PROCESS }, { body = {
+    local back = json.decode(computeOn({
       Address = RETURNED, Action = "Daily.Claim",
-    }, timestamp = T }, {}).results.output.data)
+    }).results.output.data)
     ok("a restored streak carries on instead of resetting",
        back.dailyClaimed.streak == 16, back.dailyClaimed.streak)
-    ok("and remains subject to the paused global budget",
-       back.dailyClaimed.runes == 0, back.dailyClaimed.runes)
+    -- A long streak is not a bigger mint. The split is weighted by ACCOUNT AGE
+    -- and bounded by the rolling per-account cap, so a restored fifteen-day
+    -- streak still draws one share of the same fixed day.
+    ok("and a long streak still draws one bounded share, not a bigger mint",
+       back.dailyClaimed.runes <= 20, back.dailyClaimed.runes)
     ok("and keeps the lifetime offerings", back.dailyClaimed.offerings == 201,
        back.dailyClaimed.offerings)
 
@@ -1591,10 +1698,14 @@ local function run(base, req)
 
     r = send(OWNER, { Action = "Admin.AdjustAll", RerollMoves = "true" })
     after = send(ALICE, { Action = "User.Info" })
+    -- A served move is just its uses remaining now, so the damage a reroll has
+    -- to produce is looked up in the pool by name -- the same join the client
+    -- does against the catalog move pools.
     local n, damaging = 0, false
-    for _, mv in pairs(after.monster.moves) do
+    for name, mv in pairs(after.monster.moves) do
       n = n + 1
-      if (mv.damage or 0) > 0 then damaging = true end
+      local def = Battle.moveDef(name)
+      if ((def and def.damage) or 0) > 0 and mv.count ~= nil then damaging = true end
     end
     ok("a reroll gives a legal roster", n == 4 and damaging, n .. " moves")
   end
@@ -1683,9 +1794,9 @@ local function run(base, req)
     send(WATCHER, { Action = "Faction.Join", Faction = "Aqua Guardians" })
 
     T = T + C.DAILY.interval
-    local res = compute({ process = PROCESS }, { body = {
+    local res = computeOn({
       Address = WATCHER, Action = "Daily.Claim",
-    }, timestamp = T }, {})
+    })
     local day = T // 86400000
     local checkins = json.decode(res.checkins)
     ok("a claim is recorded against its day",
@@ -1876,6 +1987,14 @@ local function run(base, req)
   do
     local OPEN = "OPENooooooooooooooooooooooooooooooooooooooo"
     C.PUBLIC_ACCESS = true
+    -- `access` is a CONSTANT in the published map: `compute` writes it only
+    -- when the key is absent, because nothing assigns `C.PUBLIC_ACCESS` at
+    -- runtime on a real process. deploy.mjs changes it in the assembled bundle
+    -- and the redeploy spawns a process whose base is empty, so dropping the
+    -- key here is what "the bundle now ships open" actually looks like. Without
+    -- this the assertion below only passed because the old harness handed every
+    -- message a fresh base, i.e. because every message looked like a redeploy.
+    STATE.access = nil
     local joined, state = send(OPEN, { Action = "Faction.Join", Faction = "Sky Nomads" })
     ok("public access lets an unknown wallet join", joined and joined.faction == "Sky Nomads",
        errOf(joined))
@@ -1884,7 +2003,10 @@ local function run(base, req)
     local access = json.decode(state.access)
     ok("public access mode is published", access and access.publicAccess == true,
        state.access)
+    -- Back to closed, and the published key with it: leaving `publicAccess:
+    -- true` standing would be a lie about the process for the rest of the run.
     C.PUBLIC_ACCESS = false
+    STATE.access = nil
   end
 
   -- Roster, collection and the marketplace ----------------------------------
@@ -2237,8 +2359,7 @@ local function run(base, req)
       }
       for k, v in pairs(tags) do envelope[k] = v end
       if body then envelope.Data = body end
-      local res = compute({ process = PROCESS, ["scheduler-location"] = SCHED2 },
-                          { body = envelope, timestamp = T }, {})
+      local res = computeOn(envelope, { ["scheduler-location"] = SCHED2 })
       return json.decode(res.results.output.data)
     end
 
@@ -2299,6 +2420,16 @@ local function run(base, req)
     local listingId = listed.listing.id
 
     -- The buyer signs. The seller is not here.
+    --
+    -- WATCH is the bystander, and their key is already in the published map --
+    -- they joined a faction above, which wrote it. "Not republished" is
+    -- therefore not "absent"; it is "not written by THIS message", so the two
+    -- bystander assertions below stamp a sentinel over the key first and check
+    -- it survived. That is the same technique the slot-write block at the end
+    -- of this file uses, and it is what `== nil` was standing in for while
+    -- every message got a fresh base.
+    local BYSTANDER_SENTINEL = "SENTINEL-not-republished"
+    STATE["player-" .. WATCH] = BYSTANDER_SENTINEL
     local _, res = send(CUST, { Action = "Market.Buy", ListingId = listingId })
     local sellerKey = res["player-" .. VEND]
     ok("a sale republishes the seller's own record", type(sellerKey) == "string",
@@ -2311,7 +2442,7 @@ local function run(base, req)
     -- Not everybody, though. Republishing the whole table on a player action
     -- would make every trade cost what an admin write costs.
     ok("and a bystander is not republished for somebody else's trade",
-       res["player-" .. WATCH] == nil, res["player-" .. WATCH])
+       res["player-" .. WATCH] == BYSTANDER_SENTINEL, res["player-" .. WATCH])
 
     -- The same from the receiving end of a gift.
     local held = send(CUST, { Action = "User.Login" })
@@ -2328,9 +2459,12 @@ local function run(base, req)
 
     -- The list is per message. A later, unrelated action must not keep
     -- republishing the people an earlier one touched.
+    STATE["player-" .. WATCH] = BYSTANDER_SENTINEL
     local _, res3 = send(CUST, { Action = "User.Login" })
     ok("and the next message does not republish them again",
-       res3["player-" .. WATCH] == nil, res3["player-" .. WATCH])
+       res3["player-" .. WATCH] == BYSTANDER_SENTINEL, res3["player-" .. WATCH])
+    -- Leave the map honest: the sentinel is not a player record.
+    STATE["player-" .. WATCH] = nil
   end
 
   -- Adoption is once per account, EVER --------------------------------------
@@ -2505,17 +2639,25 @@ local function run(base, req)
     ok("an empty row does not empty a real account", finalRoster == 1, finalRoster)
   end
 
-  -- Stored thin, served whole ------------------------------------------------
+  -- Stored thin, SERVED thin, and the definitions published once -------------
   --
   -- A move is nine fields and eight of them are a verbatim copy of the entry in
-  -- `C.MOVE_POOLS`; only the uses remaining ever differ. Companions used to
-  -- carry all nine, so half of every companion record was a duplicate of a
-  -- constant sitting in the heap the node photographs every slot.
+  -- `C.MOVE_POOLS`; only the uses remaining ever differ.
   --
-  -- These pin BOTH halves of the trade. Storing less is only correct if every
-  -- door that hands a companion outwards puts the definition back, and a client
-  -- draws the card and the move list straight off those fields -- so a missed
-  -- door is a blank card, not an error anybody would notice in a reply.
+  -- Companions have been stored compactly for a while. What this block used to
+  -- pin was the opposite of what it pins now: every outward door expanded them
+  -- again, which put the whole duplication back into the published map -- the
+  -- one place it is most expensive, because the node marshals that map five
+  -- times on every message no matter what the message did (see the
+  -- published-state rule in CLAUDE.md). 499 bytes of every 1,007-byte
+  -- companion, times every companion of every player, charged to every player
+  -- on every action.
+  --
+  -- So the definitions are published ONCE under `catalog.movePools` and the
+  -- client joins names against them. Three things have to hold together: the
+  -- store stays thin, every view stays thin, and the catalog actually carries
+  -- the table a client needs to do the join. A missing catalog is a blank card
+  -- everywhere, so it is asserted first.
   do
     local MOVER = "MOVER" .. string.rep("m", 38)
     send(OWNER, { Action = "Admin.Unlock", Addresses = MOVER })
@@ -2536,7 +2678,85 @@ local function run(base, req)
     ok("and the uses are a real number", type(storedMove.count) == "number",
        json.encode(storedMove))
 
-    -- Everything below is what a client actually reads.
+    -- The join table. Without it every card in the client is blank, so it is
+    -- checked before anything that depends on it.
+    local _, catRes = send(MOVER, { Action = "User.Info" })
+    local catalog = json.decode(catRes.catalog)
+    ok("the catalog publishes the move pools", type(catalog.movePools) == "table",
+       type(catalog.movePools))
+    local pooled = nil
+    for _, pool in pairs(catalog.movePools or {}) do
+      if type(pool) == "table" and pool[storedName] then pooled = pool[storedName] end
+    end
+    ok("and every rolled move is findable in them", pooled ~= nil, tostring(storedName))
+    ok("with the numbers the engine uses", pooled and pooled.damage ~= nil
+       and pooled.type ~= nil and pooled.rarity ~= nil, json.encode(pooled))
+
+    -- Everything below is what a client actually reads. A served move carries
+    -- the uses remaining and NOTHING else: the other eight fields are in the
+    -- catalog above and must not be repeated once per companion.
+    local function thinMove(moves, where)
+      if type(moves) ~= "table" then return false, where .. ": no moves" end
+      local name, mv = next(moves)
+      if type(mv) ~= "table" then return false, where .. ": empty move" end
+      if mv.count == nil then return false, where .. " " .. tostring(name) .. ": no count" end
+      local dup = {}
+      for _, field in ipairs({ "name", "type", "rarity",
+                               "damage", "attack", "speed", "defense", "health" }) do
+        if mv[field] ~= nil then dup[#dup + 1] = field end
+      end
+      return #dup == 0,
+        where .. " " .. tostring(name) .. " republishes the constant " .. json.encode(dup)
+    end
+
+    local mine = send(MOVER, { Action = "User.Info" })
+    local okActive, whyActive = thinMove(mine.monster and mine.monster.moves, "active companion")
+    ok("the ACTIVE companion is served thin", okActive, whyActive)
+    local rosterEntry = mine.monsters and select(2, next(mine.monsters))
+    local okRoster, whyRoster = thinMove(rosterEntry and rosterEntry.moves, "roster entry")
+    ok("and so is the roster entry behind it", okRoster, whyRoster)
+
+    -- The same record read the way a wallet reads it: an unsigned GET.
+    local _, res = send(MOVER, { Action = "User.Info" })
+    local published = json.decode(res["player-" .. MOVER])
+    local okPub, whyPub = thinMove(published.monster and published.monster.moves, "published")
+    ok("and the published per-address record too", okPub, whyPub)
+
+    -- A stored companion, which is the shape a collection is drawn from.
+    send(OWNER, { Action = "Admin.CreateMonster", PlayerId = MOVER,
+                  Faction = "Aqua Guardians", Into = "collection" })
+    local held = send(MOVER, { Action = "User.Info" })
+    local kept = held.collection and select(2, next(held.collection))
+    local okKept, whyKept = thinMove(kept and kept.moves, "collection entry")
+    ok("a stored companion is served thin as well", okKept, whyKept)
+
+    -- The leaderboard is the worst case for this: fifty rows, each one a whole
+    -- companion, rewritten whenever the board is dirty.
+    local board = send(OWNER, { Action = "Leaderboard" })
+    local okBoard, whyBoard = thinMove(board[1] and board[1].monster and board[1].monster.moves,
+                                       "leaderboard row")
+    ok("a leaderboard row carries thin moves", okBoard, whyBoard)
+
+    -- So does a listing.
+    local collectionId = next(held.collection or {})
+    send(MOVER, { Action = "Market.List", MonsterId = collectionId, Price = "20" })
+    local _, listedRes = send(MOVER, { Action = "User.Info" })
+    local market = json.decode(listedRes.market)
+    local listing = select(2, next(market))
+    local okList, whyList = thinMove(listing and listing.monster and listing.monster.moves,
+                                     "market listing")
+    ok("a market listing carries thin moves", okList, whyList)
+    -- ...and the escrowed copy behind it too.
+    local escrowed = next(Market) and Market[next(Market)]
+    local escrowMove = escrowed and escrowed.monster and select(2, next(escrowed.monster.moves))
+    local escrowExtra = 0
+    for k in pairs(escrowMove or {}) do if k ~= "count" then escrowExtra = escrowExtra + 1 end end
+    ok("and the companion in escrow is still stored thin", escrowExtra == 0, escrowExtra)
+
+    -- The mint queue is the ONE exception, and it is deliberate. It is a wire
+    -- payload for an off-process worker that composites a card from each move
+    -- type and has no catalog to join against. The queue drains, so it is
+    -- O(mints in flight) rather than O(players).
     local function fullMove(moves, where)
       if type(moves) ~= "table" then return false, where .. ": no moves" end
       local name, mv = next(moves)
@@ -2548,53 +2768,6 @@ local function run(base, req)
       end
       return #missing == 0, where .. " " .. tostring(name) .. " missing " .. json.encode(missing)
     end
-
-    local mine = send(MOVER, { Action = "User.Info" })
-    local okActive, whyActive = fullMove(mine.monster and mine.monster.moves, "active companion")
-    ok("the ACTIVE companion is served with whole moves", okActive, whyActive)
-    local rosterEntry = mine.monsters and select(2, next(mine.monsters))
-    local okRoster, whyRoster = fullMove(rosterEntry and rosterEntry.moves, "roster entry")
-    ok("and so is the roster entry behind it", okRoster, whyRoster)
-
-    -- The same record read the way a wallet reads it: an unsigned GET.
-    local _, res = send(MOVER, { Action = "User.Info" })
-    local published = json.decode(res["player-" .. MOVER])
-    local okPub, whyPub = fullMove(published.monster and published.monster.moves, "published")
-    ok("and the published per-address record too", okPub, whyPub)
-
-    -- A stored companion, which is the shape a collection is drawn from.
-    send(OWNER, { Action = "Admin.CreateMonster", PlayerId = MOVER,
-                  Faction = "Aqua Guardians", Into = "collection" })
-    local held = send(MOVER, { Action = "User.Info" })
-    local kept = held.collection and select(2, next(held.collection))
-    local okKept, whyKept = fullMove(kept and kept.moves, "collection entry")
-    ok("a stored companion is served whole as well", okKept, whyKept)
-
-    -- The leaderboard carries the whole companion for the card it draws.
-    local board = send(OWNER, { Action = "Leaderboard" })
-    local okBoard, whyBoard = fullMove(board[1] and board[1].monster and board[1].monster.moves,
-                                       "leaderboard row")
-    ok("a leaderboard row carries whole moves", okBoard, whyBoard)
-
-    -- So does a listing: a buyer is choosing between creatures.
-    local collectionId = next(held.collection or {})
-    send(MOVER, { Action = "Market.List", MonsterId = collectionId, Price = "20" })
-    local _, listedRes = send(MOVER, { Action = "User.Info" })
-    local market = json.decode(listedRes.market)
-    local listing = select(2, next(market))
-    local okList, whyList = fullMove(listing and listing.monster and listing.monster.moves,
-                                     "market listing")
-    ok("a market listing carries whole moves", okList, whyList)
-    -- ...while the escrowed copy behind it stays thin.
-    local escrowed = next(Market) and Market[next(Market)]
-    local escrowMove = escrowed and escrowed.monster and select(2, next(escrowed.monster.moves))
-    local escrowExtra = 0
-    for k in pairs(escrowMove or {}) do if k ~= "count" then escrowExtra = escrowExtra + 1 end end
-    ok("but the companion in escrow is still stored thin", escrowExtra == 0, escrowExtra)
-
-    -- The mint queue is a wire payload the off-process worker composites a card
-    -- from, and the card is drawn from each move'''s type. It is the one place a
-    -- companion leaves this process without going through a view.
     send(OWNER, { Action = "Admin.Grant", PlayerId = MOVER, Item = "rune", Amount = "100" })
     local minting = send(MOVER, { Action = "Monster.Mint" })
     if errOf(minting) == nil then
@@ -2603,11 +2776,10 @@ local function run(base, req)
       local job = queue and queue[#queue]
       local okQueue, whyQueue = fullMove(job and job.monster and job.monster.moves,
                                          "mint queue job")
-      ok("a queued mint carries whole moves for the card", okQueue, whyQueue)
+      ok("a queued mint still carries whole moves for the card", okQueue, whyQueue)
     else
       -- Minting is paused in this build, so the queue cannot be filled through
-      -- the handler. Assert the primitive it uses instead: the queue line is
-      -- `withMoves(Battle.clone(m))` and this is what `withMoves` calls.
+      -- the handler. Assert the primitive it uses instead.
       local hydrated = Battle.hydrateMoves(stored.moves)
       local okHydrate, whyHydrate = fullMove(hydrated, "hydrated moveset")
       ok("minting is paused, so the hydration the queue uses is checked directly",
@@ -2615,7 +2787,7 @@ local function run(base, req)
     end
 
     -- A row written by an older build arrives with whole moves. It must be
-    -- accepted, reduced on the way in, and served whole again afterwards.
+    -- accepted, reduced on the way in, and stay reduced on the way back out.
     local LEGACY = "LEGACY" .. string.rep("l", 37)
     send(OWNER, { Action = "Admin.Load" }, json.encode({ players = { {
       address = LEGACY, unlocked = true, faction = "Sky Nomads",
@@ -2645,12 +2817,12 @@ local function run(base, req)
        and legacyStored.moves["Gale Force"].count == 1,
        legacyStored and json.encode(legacyStored.moves))
     local legacyBack = send(LEGACY, { Action = "User.Info" })
-    local okLegacy, whyLegacy = fullMove(legacyBack.monster and legacyBack.monster.moves,
+    local okLegacy, whyLegacy = thinMove(legacyBack.monster and legacyBack.monster.moves,
                                          "restored legacy companion")
-    ok("and it is served whole again", okLegacy, whyLegacy)
-    ok("with the definition from the pool, not the row",
+    ok("and a load cannot smuggle the constant back into the view", okLegacy, whyLegacy)
+    ok("while the uses it arrived with survive",
        legacyBack.monster.moves["Gale Force"]
-       and legacyBack.monster.moves["Gale Force"].speed == 5,
+       and legacyBack.monster.moves["Gale Force"].count == 1,
        legacyBack.monster and json.encode(legacyBack.monster.moves["Gale Force"]))
   end
 
@@ -2732,12 +2904,13 @@ local function run(base, req)
   -- What a slot actually writes ----------------------------------------------
   --
   -- `result` IS `base` on HyperBEAM: a key a slot does not write keeps the
-  -- value the slot before it left there. Every test above hands `compute` a
-  -- FRESH table, which is the one thing a real node never does -- so none of
-  -- them can tell a key that was deliberately skipped from one that was
+  -- value the slot before it left there. The suite carries `STATE` for exactly
+  -- that reason, but carrying it is not the same as ASSERTING on it -- no test
+  -- above can tell a key that was deliberately skipped from one that was
   -- rewritten, and skipping is the entire point of the gating in `compute`.
   --
-  -- These drive a CARRIED base and work by sentinel: a key still holding its
+  -- These start from a base of their own so the sentinels below are the only
+  -- thing in it, and work by sentinel: a key still holding its
   -- sentinel afterwards was not recomputed, and one that no longer holds it
   -- was. Being wrong in the safe direction only makes the process slow; being
   -- wrong in the other publishes stale state to everyone, so both directions
@@ -2792,6 +2965,28 @@ local function run(base, req)
                .. " / " .. tostring(faction.memberCount))
         end
       end
+
+      -- The board is now served from a maintained top-N instead of a sort of
+      -- the whole world, which is what makes a write O(1) in the player count.
+      -- The whole risk of that trade is DRIFT: a ranking that is quietly wrong
+      -- looks exactly like a ranking that is right. `leaderboardByScan` is the
+      -- old implementation, kept for precisely this -- it reads `Players`
+      -- directly and cannot be repaired by the index it is checking.
+      local ranked, scanned = leaderboard(50), leaderboardByScan(50)
+      ok(label .. " board is the same length as a full scan",
+         #ranked == #scanned, #ranked .. " / " .. #scanned)
+      local same = #ranked == #scanned
+      local firstBad
+      for i = 1, math.min(#ranked, #scanned) do
+        if ranked[i].address ~= scanned[i].address
+           or ranked[i].level ~= scanned[i].level
+           or ranked[i].wins ~= scanned[i].wins then
+          same = false
+          firstBad = firstBad or (i .. ": " .. tostring(ranked[i].address)
+            .. " vs " .. tostring(scanned[i].address))
+        end
+      end
+      ok(label .. " board matches a full scan row for row", same, firstBad)
     end
 
     -- A process that has published nothing publishes everything, even for a
@@ -2880,12 +3075,26 @@ local function run(base, req)
     ok("and the player count", carried.users ~= "SENTINEL", carried.users)
     ok("and the metrics", carried.metrics ~= "SENTINEL", carried.metrics)
 
-    -- Admin.Unlock mints a record for an address that had none, so every one of
-    -- them needs a key before its owner can see anything.
-    ok("Admin.Unlock publishes every account it minted",
-       type(carried["player-" .. ECON1]) == "string"
-       and type(carried["player-" .. ECON2]) == "string",
-       type(carried["player-" .. ECON1]) .. "/" .. type(carried["player-" .. ECON2]))
+    -- RE-POINTED at the current contract, deliberately. This used to assert
+    -- "Admin.Unlock publishes every account it minted", because unlocking an
+    -- address called `getPlayer` and therefore created one.
+    --
+    -- It no longer does. An admitted wallet is one string in `Unlocked` until
+    -- it acts, because an empty account is ~6 live Lua tables and the collect
+    -- at the end of every `compute` is O(live tables squared) — so a seeded
+    -- paid list used to be charged to every message from every player, forever.
+    -- There is nothing to publish for a wallet with no record, and the client
+    -- already handles a missing `player-<address>` key by falling back to a
+    -- signed `User.Info` — which is the second assertion here.
+    ok("admitting a wallet mints no account to publish",
+       carried["player-" .. ECON1] == nil and carried["player-" .. ECON2] == nil,
+       tostring(carried["player-" .. ECON1]) .. "/" .. tostring(carried["player-" .. ECON2]))
+    do
+      local admitted = sendOn(ECON2, { Action = "User.Info" })
+      ok("an admitted wallet reads back unlocked and not yet materialised",
+         admitted and admitted.unlocked == true and admitted.exists == false,
+         json.encode(admitted))
+    end
 
     -- Grant also goes through getPlayer and therefore may create its target.
     -- It is an easy classification edge to miss because the usual target
@@ -2898,6 +3107,29 @@ local function run(base, req)
     ok("and publishes the newly created account",
        type(carried["player-" .. ECON6]) == "string",
        type(carried["player-" .. ECON6]))
+
+    -- The other half of the admission rule: an address that ALREADY has a
+    -- record keeps the flag on the record, so unlocking it must still
+    -- republish that record. Only a wallet with nothing to publish publishes
+    -- nothing.
+    carried["player-" .. ECON6] = nil
+    sendOn(OWNER, { Action = "Admin.Lock", PlayerId = ECON6 })
+    sendOn(OWNER, { Action = "Admin.Unlock", Addresses = ECON6 })
+    ok("unlocking an account that exists republishes it",
+       type(carried["player-" .. ECON6]) == "string",
+       type(carried["player-" .. ECON6]))
+
+    -- A revocation has to reach an admitted wallet too, or Admin.Lock would
+    -- silently do nothing the moment Admin.Unlock stopped minting records.
+    do
+      local revoked = sendOn(OWNER, { Action = "Admin.Lock", PlayerId = ECON1 })
+      ok("Admin.Lock revokes an admission that has no record",
+         revoked and revoked.locked == ECON1, json.encode(revoked))
+      local after = sendOn(ECON1, { Action = "User.Info" })
+      ok("and the revoked wallet reads back locked",
+         after and after.unlocked == false and after.exists == false,
+         json.encode(after))
+    end
 
     -- Dispatch has always ignored Action value case. Every decision after
     -- dispatch must use that same resolved name: admin targeting, audit,
@@ -3346,6 +3578,36 @@ local function run(base, req)
     ok("a policy change cannot bypass its 24-hour delay", errOf(early) ~= nil,
        early and json.encode(early))
 
+    -- Emission is the ENGINE's decision, not a dial.
+    --
+    -- `epochBudget` and `newcomerFloor` used to be numbers a human proposed and
+    -- applied, defaulting to zero, which is why every worship on every
+    -- deployment paid nothing. They are derived from `C.ECONOMY.rune` and the
+    -- clock now, and the policy surface refuses to take them as input --
+    -- otherwise there are two sources of truth for the supply schedule.
+    local budgetDial = send(OWNER, { Action = "Admin.Economy.Propose" },
+      json.encode({ path = "runeRewards.epochBudget", value = 500,
+                    reason = "should not be settable by hand" }))
+    ok("the emission budget is not a policy dial", errOf(budgetDial) ~= nil,
+       json.encode(budgetDial))
+    local floorDial = send(OWNER, { Action = "Admin.Economy.Propose" },
+      json.encode({ path = "runeRewards.newcomerFloor", value = 5,
+                    reason = "should not be settable by hand" }))
+    ok("and neither is the newcomer floor", errOf(floorDial) ~= nil,
+       json.encode(floorDial))
+    -- What the schedule currently says, published for the client to read.
+    local sched = send(OWNER, { Action = "Economy.View" })
+    local rr = sched and sched.policy and sched.policy.runeRewards
+    ok("the published budget is the schedule's own answer",
+       rr and int(rr.epochBudget, 0) > 0, rr and json.encode(rr.epochBudget))
+    ok("and the floor is a fraction of one per-capita share, not zero",
+       rr and int(rr.newcomerFloor, 0) > 0, rr and json.encode(rr.newcomerFloor))
+    -- The emergency brake still stops it. That is the only thing that does.
+    ok("an operator brake remains proposable for an incident",
+       errOf(send(OWNER, { Action = "Admin.Economy.Propose" },
+         json.encode({ path = "runeRewards.haltedByOperator", value = true,
+                       reason = "incident brake" }))) == nil)
+
     -- Pass recovery moves the complete economic identity, including escrow.
     local PASSOLD = "PASSOLD" .. string.rep("o", 36)
     local RECOVERY = "RECOVERY" .. string.rep("r", 35)
@@ -3466,6 +3728,36 @@ end
 --- The cost is that a runtime error inside the suite comes back as a bare
 --- `500 Oops` naming nothing instead of a readable line. It still fails the
 --- run -- an HTML error page contains no "0 failed" for the runner to match.
+---
+--- `collectgarbage` is neutralised for the whole run, and the suite does not
+--- work on a live node without it.
+---
+--- `compute` ends every message with a real `collectgarbage("collect")`, which
+--- is correct on a process: HyperBEAM calls `compute` from Erlang, so the
+--- collect runs with nothing of ours on the Lua stack above it. Here `compute`
+--- is called from inside `run`, which is inside this function -- so the collect
+--- happens with live frames above it, and Luerl renumbers the table store
+--- underneath them. The result is not an error the suite can report: the VM
+--- goes down and the node answers 500 with no body.
+---
+--- That is the same hazard `game.lua` documents for a collect inside a `pcall`
+--- frame, and it is not limited to `pcall`. It had made `npm run test:lua`
+--- return a bare `curl (22) ... 500` on every node -- which reads exactly like
+--- the node being down, and is not. Bisecting the suite located it at the first
+--- `Battle.Begin`; with the collector stubbed the same bundle passes 637/637.
+---
+--- Nothing is lost by stubbing it. The collect is a heap measure, not a rule
+--- the handlers rely on, and `run-local-game-test.mjs` runs this same suite on
+--- real Lua 5.3 through ao-loader, where the collect is ordinary and does run.
+--- `gc = "on"` opts back in, and `run-local-game-test.mjs` passes it: ao-loader
+--- is real Lua 5.3, the collect is safe there, and the offline run is the one
+--- place this suite CAN cover it. Neutralising it unconditionally would have
+--- quietly removed that coverage everywhere at once.
 function gametest(base, req)
-  return run(base, req)
+  if req and req.body and req.body.gc == "on" then return run(base, req) end
+  local real = collectgarbage
+  _G.collectgarbage = function() end
+  local result = run(base, req)
+  _G.collectgarbage = real
+  return result
 end

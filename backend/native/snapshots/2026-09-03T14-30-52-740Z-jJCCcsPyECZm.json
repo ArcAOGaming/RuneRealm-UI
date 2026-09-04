@@ -1,0 +1,2261 @@
+{
+  "kind": "live-snapshot",
+  "isSeedData": false,
+  "note": "A checkpoint of a running process. NOT the legacynet seed data — that is legacy-players.json, it is the origin, and nothing here replaces it. Restoring this on a fresh deploy layers these accounts ON TOP of the seeded 168; Admin.Load takes the max of every counter, so it cannot remove anything either way.",
+  "reason": "pre-store-reset migration baseline",
+  "takenAt": "2026-09-03T14:30:52.740Z",
+  "source": {
+    "process": "jJCCcsPyECZmyI3kIL3C99oQM3uOXZhCMKAsz93Jep0",
+    "node": "https://hyperbeam.tylerw.ai",
+    "owner": "DA9qhP25ZPz6MHIhO-7aNHDN3LsTAL7yCKYIkqr13Z8"
+  },
+  "seedDataOrigin": "backend/native/legacy-players.json",
+  "counts": {
+    "players": 51,
+    "withCompanions": 3,
+    "companions": 3,
+    "listings": 0,
+    "sales": 0,
+    "assets": 0,
+    "usersReported": 51
+  },
+  "state": {
+    "players": [
+      {
+        "address": "-1VKf5iouA9PnULq2SO5nvLZPUp9rTlcCEzhW6pb9mU",
+        "adopted": false,
+        "bestStreak": 0,
+        "collection": {},
+        "dailyStreak": 0,
+        "gold": 0,
+        "inventory": {
+          "rune": 25,
+          "scroll": 5
+        },
+        "joinedAt": 1788397203043,
+        "lastActiveAt": 0,
+        "lootboxes": [],
+        "losses": 0,
+        "monsterSeq": 0,
+        "monsters": {},
+        "offerings": 0,
+        "pass": {
+          "accountId": "-1VKf5iouA9PnULq2SO5nvLZPUp9rTlcCEzhW6pb9mU",
+          "bond": 0,
+          "controller": "-1VKf5iouA9PnULq2SO5nvLZPUp9rTlcCEzhW6pb9mU",
+          "grantedAt": 1788397203043,
+          "origin": "test",
+          "recoveredAt": 0,
+          "recoveryCooldownUntil": 0
+        },
+        "questsCompleted": 0,
+        "seenEntries": {},
+        "seenEntriesVersion": 1,
+        "unlocked": true,
+        "wins": 0
+      },
+      {
+        "address": "0HTxfelB5WIILr1RHFZBylIyObM0WFgvkUWw14vZ3QM",
+        "adopted": false,
+        "bestStreak": 0,
+        "collection": {},
+        "dailyStreak": 0,
+        "gold": 0,
+        "inventory": {
+          "rune": 25,
+          "scroll": 5
+        },
+        "joinedAt": 1788397203043,
+        "lastActiveAt": 0,
+        "lootboxes": [],
+        "losses": 0,
+        "monsterSeq": 0,
+        "monsters": {},
+        "offerings": 0,
+        "pass": {
+          "accountId": "0HTxfelB5WIILr1RHFZBylIyObM0WFgvkUWw14vZ3QM",
+          "bond": 0,
+          "controller": "0HTxfelB5WIILr1RHFZBylIyObM0WFgvkUWw14vZ3QM",
+          "grantedAt": 1788397203043,
+          "origin": "test",
+          "recoveredAt": 0,
+          "recoveryCooldownUntil": 0
+        },
+        "questsCompleted": 0,
+        "seenEntries": {},
+        "seenEntriesVersion": 1,
+        "unlocked": true,
+        "wins": 0
+      },
+      {
+        "address": "26OBG86KTY49R7uorqLyAeqLv3BD2Oi5VKx-ECiYcjg",
+        "adopted": false,
+        "bestStreak": 0,
+        "collection": {},
+        "dailyStreak": 0,
+        "gold": 0,
+        "inventory": {
+          "rune": 25,
+          "scroll": 5
+        },
+        "joinedAt": 1788397203043,
+        "lastActiveAt": 0,
+        "lootboxes": [],
+        "losses": 0,
+        "monsterSeq": 0,
+        "monsters": {},
+        "offerings": 0,
+        "pass": {
+          "accountId": "26OBG86KTY49R7uorqLyAeqLv3BD2Oi5VKx-ECiYcjg",
+          "bond": 0,
+          "controller": "26OBG86KTY49R7uorqLyAeqLv3BD2Oi5VKx-ECiYcjg",
+          "grantedAt": 1788397203043,
+          "origin": "test",
+          "recoveredAt": 0,
+          "recoveryCooldownUntil": 0
+        },
+        "questsCompleted": 0,
+        "seenEntries": {},
+        "seenEntriesVersion": 1,
+        "unlocked": true,
+        "wins": 0
+      },
+      {
+        "address": "2wIIgjQCvAWkpyTzp1WpmkO2yQvut7sW9vAppyGbEDA",
+        "adopted": false,
+        "bestStreak": 0,
+        "collection": {},
+        "dailyStreak": 0,
+        "gold": 0,
+        "inventory": {
+          "rune": 25,
+          "scroll": 5
+        },
+        "joinedAt": 1788397203043,
+        "lastActiveAt": 0,
+        "lootboxes": [],
+        "losses": 0,
+        "monsterSeq": 0,
+        "monsters": {},
+        "offerings": 0,
+        "pass": {
+          "accountId": "2wIIgjQCvAWkpyTzp1WpmkO2yQvut7sW9vAppyGbEDA",
+          "bond": 0,
+          "controller": "2wIIgjQCvAWkpyTzp1WpmkO2yQvut7sW9vAppyGbEDA",
+          "grantedAt": 1788397203043,
+          "origin": "test",
+          "recoveredAt": 0,
+          "recoveryCooldownUntil": 0
+        },
+        "questsCompleted": 0,
+        "seenEntries": {},
+        "seenEntriesVersion": 1,
+        "unlocked": true,
+        "wins": 0
+      },
+      {
+        "address": "2z9jF_gQgexLbMMno3P2ojJoeexj0TcdkytP7vQLWnI",
+        "adopted": false,
+        "bestStreak": 0,
+        "collection": {},
+        "dailyStreak": 0,
+        "gold": 0,
+        "inventory": {
+          "rune": 25,
+          "scroll": 5
+        },
+        "joinedAt": 1788397203043,
+        "lastActiveAt": 0,
+        "lootboxes": [],
+        "losses": 0,
+        "monsterSeq": 0,
+        "monsters": {},
+        "offerings": 0,
+        "pass": {
+          "accountId": "2z9jF_gQgexLbMMno3P2ojJoeexj0TcdkytP7vQLWnI",
+          "bond": 0,
+          "controller": "2z9jF_gQgexLbMMno3P2ojJoeexj0TcdkytP7vQLWnI",
+          "grantedAt": 1788397203043,
+          "origin": "test",
+          "recoveredAt": 0,
+          "recoveryCooldownUntil": 0
+        },
+        "questsCompleted": 0,
+        "seenEntries": {},
+        "seenEntriesVersion": 1,
+        "unlocked": true,
+        "wins": 0
+      },
+      {
+        "address": "3IThR2iIReDQ4X75jfZXcqkQPHo9A4rQCP8tM7RiC4I",
+        "adopted": false,
+        "bestStreak": 0,
+        "collection": {},
+        "dailyStreak": 0,
+        "gold": 0,
+        "inventory": {
+          "rune": 25,
+          "scroll": 5
+        },
+        "joinedAt": 1788397203043,
+        "lastActiveAt": 0,
+        "lootboxes": [],
+        "losses": 0,
+        "monsterSeq": 0,
+        "monsters": {},
+        "offerings": 0,
+        "pass": {
+          "accountId": "3IThR2iIReDQ4X75jfZXcqkQPHo9A4rQCP8tM7RiC4I",
+          "bond": 0,
+          "controller": "3IThR2iIReDQ4X75jfZXcqkQPHo9A4rQCP8tM7RiC4I",
+          "grantedAt": 1788397203043,
+          "origin": "test",
+          "recoveredAt": 0,
+          "recoveryCooldownUntil": 0
+        },
+        "questsCompleted": 0,
+        "seenEntries": {},
+        "seenEntriesVersion": 1,
+        "unlocked": true,
+        "wins": 0
+      },
+      {
+        "address": "5B50VeNrw2egcqAeWw9MpjpKrcyoOgNkz4pws6P8ARI",
+        "adopted": false,
+        "bestStreak": 0,
+        "collection": {},
+        "dailyStreak": 0,
+        "gold": 0,
+        "inventory": {
+          "rune": 25,
+          "scroll": 5
+        },
+        "joinedAt": 1788397203043,
+        "lastActiveAt": 0,
+        "lootboxes": [],
+        "losses": 0,
+        "monsterSeq": 0,
+        "monsters": {},
+        "offerings": 0,
+        "pass": {
+          "accountId": "5B50VeNrw2egcqAeWw9MpjpKrcyoOgNkz4pws6P8ARI",
+          "bond": 0,
+          "controller": "5B50VeNrw2egcqAeWw9MpjpKrcyoOgNkz4pws6P8ARI",
+          "grantedAt": 1788397203043,
+          "origin": "test",
+          "recoveredAt": 0,
+          "recoveryCooldownUntil": 0
+        },
+        "questsCompleted": 0,
+        "seenEntries": {},
+        "seenEntriesVersion": 1,
+        "unlocked": true,
+        "wins": 0
+      },
+      {
+        "address": "9cFr2nlrhAu9VidILi7p1wbq5qdAdi95kr0NVLNOyg4",
+        "adopted": false,
+        "bestStreak": 0,
+        "collection": {},
+        "dailyStreak": 0,
+        "gold": 0,
+        "inventory": {
+          "rune": 25,
+          "scroll": 5
+        },
+        "joinedAt": 1788397203043,
+        "lastActiveAt": 0,
+        "lootboxes": [],
+        "losses": 0,
+        "monsterSeq": 0,
+        "monsters": {},
+        "offerings": 0,
+        "pass": {
+          "accountId": "9cFr2nlrhAu9VidILi7p1wbq5qdAdi95kr0NVLNOyg4",
+          "bond": 0,
+          "controller": "9cFr2nlrhAu9VidILi7p1wbq5qdAdi95kr0NVLNOyg4",
+          "grantedAt": 1788397203043,
+          "origin": "test",
+          "recoveredAt": 0,
+          "recoveryCooldownUntil": 0
+        },
+        "questsCompleted": 0,
+        "seenEntries": {},
+        "seenEntriesVersion": 1,
+        "unlocked": true,
+        "wins": 0
+      },
+      {
+        "address": "AL8c2mAQzjgGFMe8n-kIBC8QwjqHiPHGIb5abZ2Dk40",
+        "adopted": false,
+        "bestStreak": 0,
+        "collection": {},
+        "dailyStreak": 0,
+        "gold": 0,
+        "inventory": {
+          "rune": 25,
+          "scroll": 5
+        },
+        "joinedAt": 1788397203043,
+        "lastActiveAt": 0,
+        "lootboxes": [],
+        "losses": 0,
+        "monsterSeq": 0,
+        "monsters": {},
+        "offerings": 0,
+        "pass": {
+          "accountId": "AL8c2mAQzjgGFMe8n-kIBC8QwjqHiPHGIb5abZ2Dk40",
+          "bond": 0,
+          "controller": "AL8c2mAQzjgGFMe8n-kIBC8QwjqHiPHGIb5abZ2Dk40",
+          "grantedAt": 1788397203043,
+          "origin": "test",
+          "recoveredAt": 0,
+          "recoveryCooldownUntil": 0
+        },
+        "questsCompleted": 0,
+        "seenEntries": {},
+        "seenEntriesVersion": 1,
+        "unlocked": true,
+        "wins": 0
+      },
+      {
+        "address": "AY5Vdi9QMH7Ewil6hNchpu64KRl0wP_lVJvHrMPA0tA",
+        "adopted": false,
+        "bestStreak": 0,
+        "collection": {},
+        "dailyStreak": 0,
+        "gold": 0,
+        "inventory": {
+          "rune": 25,
+          "scroll": 5
+        },
+        "joinedAt": 1788397203043,
+        "lastActiveAt": 0,
+        "lootboxes": [],
+        "losses": 0,
+        "monsterSeq": 0,
+        "monsters": {},
+        "offerings": 0,
+        "pass": {
+          "accountId": "AY5Vdi9QMH7Ewil6hNchpu64KRl0wP_lVJvHrMPA0tA",
+          "bond": 0,
+          "controller": "AY5Vdi9QMH7Ewil6hNchpu64KRl0wP_lVJvHrMPA0tA",
+          "grantedAt": 1788397203043,
+          "origin": "test",
+          "recoveredAt": 0,
+          "recoveryCooldownUntil": 0
+        },
+        "questsCompleted": 0,
+        "seenEntries": {},
+        "seenEntriesVersion": 1,
+        "unlocked": true,
+        "wins": 0
+      },
+      {
+        "address": "AZa4_qW5FDX1EBucY8_hwFsP5Br8pTCS4OwqZi4vwKQ",
+        "adopted": false,
+        "bestStreak": 0,
+        "collection": {},
+        "dailyStreak": 0,
+        "gold": 0,
+        "inventory": {
+          "rune": 25,
+          "scroll": 5
+        },
+        "joinedAt": 1788397203043,
+        "lastActiveAt": 0,
+        "lootboxes": [],
+        "losses": 0,
+        "monsterSeq": 0,
+        "monsters": {},
+        "offerings": 0,
+        "pass": {
+          "accountId": "AZa4_qW5FDX1EBucY8_hwFsP5Br8pTCS4OwqZi4vwKQ",
+          "bond": 0,
+          "controller": "AZa4_qW5FDX1EBucY8_hwFsP5Br8pTCS4OwqZi4vwKQ",
+          "grantedAt": 1788397203043,
+          "origin": "test",
+          "recoveredAt": 0,
+          "recoveryCooldownUntil": 0
+        },
+        "questsCompleted": 0,
+        "seenEntries": {},
+        "seenEntriesVersion": 1,
+        "unlocked": true,
+        "wins": 0
+      },
+      {
+        "address": "AtYWgOnQxXoalaaRZFtJ4AdKDoo23yh6jI0B1gNlwiI",
+        "adopted": false,
+        "bestStreak": 0,
+        "collection": {},
+        "dailyStreak": 0,
+        "gold": 0,
+        "inventory": {
+          "rune": 25,
+          "scroll": 5
+        },
+        "joinedAt": 1788397203043,
+        "lastActiveAt": 0,
+        "lootboxes": [],
+        "losses": 0,
+        "monsterSeq": 0,
+        "monsters": {},
+        "offerings": 0,
+        "pass": {
+          "accountId": "AtYWgOnQxXoalaaRZFtJ4AdKDoo23yh6jI0B1gNlwiI",
+          "bond": 0,
+          "controller": "AtYWgOnQxXoalaaRZFtJ4AdKDoo23yh6jI0B1gNlwiI",
+          "grantedAt": 1788397203043,
+          "origin": "test",
+          "recoveredAt": 0,
+          "recoveryCooldownUntil": 0
+        },
+        "questsCompleted": 0,
+        "seenEntries": {},
+        "seenEntriesVersion": 1,
+        "unlocked": true,
+        "wins": 0
+      },
+      {
+        "address": "CV2QRgkdD9KZwfSXirgnSV-Rin1_EUQB22SHMqHyrmI",
+        "adopted": false,
+        "bestStreak": 0,
+        "collection": {},
+        "dailyStreak": 0,
+        "gold": 0,
+        "inventory": {
+          "rune": 25,
+          "scroll": 5
+        },
+        "joinedAt": 1788397203043,
+        "lastActiveAt": 0,
+        "lootboxes": [],
+        "losses": 0,
+        "monsterSeq": 0,
+        "monsters": {},
+        "offerings": 0,
+        "pass": {
+          "accountId": "CV2QRgkdD9KZwfSXirgnSV-Rin1_EUQB22SHMqHyrmI",
+          "bond": 0,
+          "controller": "CV2QRgkdD9KZwfSXirgnSV-Rin1_EUQB22SHMqHyrmI",
+          "grantedAt": 1788397203043,
+          "origin": "test",
+          "recoveredAt": 0,
+          "recoveryCooldownUntil": 0
+        },
+        "questsCompleted": 0,
+        "seenEntries": {},
+        "seenEntriesVersion": 1,
+        "unlocked": true,
+        "wins": 0
+      },
+      {
+        "activeId": "m1",
+        "address": "DA9qhP25ZPz6MHIhO-7aNHDN3LsTAL7yCKYIkqr13Z8",
+        "adopted": true,
+        "bestStreak": 1,
+        "collection": {},
+        "dailyStreak": 1,
+        "faction": "Stone Titans",
+        "gold": 0,
+        "inventory": {
+          "air_berry": 7,
+          "fire_berry": 10,
+          "rock_berry": 6,
+          "rune": 20,
+          "water_berry": 13
+        },
+        "joinedAt": 1788400802004,
+        "lastAction": "Monster.Feed",
+        "lastActiveAt": 1788435745669,
+        "lastActiveDay": 20699,
+        "lastDaily": 1788400802004,
+        "lootboxes": [
+          1,
+          1,
+          1,
+          1,
+          1,
+          1
+        ],
+        "losses": 0,
+        "monster": {
+          "attack": 3,
+          "background": "Earth",
+          "berryItem": "rock_berry",
+          "border": "Earth",
+          "bornAt": 1788401493213,
+          "careMode": "element-berry",
+          "defense": 3,
+          "elementType": "rock",
+          "energy": 100,
+          "entryNo": 10,
+          "exp": 0,
+          "faction": "Stone Titans",
+          "happiness": 75,
+          "health": 2,
+          "holographic": true,
+          "id": "m1",
+          "image": "WhdcUkIGYZG4M5kq00TnUwaIt5OCGz3Q4u6_fZNktvQ",
+          "level": 0,
+          "moves": {
+            "Boulder Crush": {
+              "count": 2
+            },
+            "Granite Barrier": {
+              "count": 1
+            },
+            "Heavy Strike": {
+              "count": 1
+            },
+            "Iron Skin": {
+              "count": 2
+            }
+          },
+          "name": "Rockpup",
+          "nameMode": "species",
+          "speed": 2,
+          "sprite": "Zt8LmHGVIziXhzjqBhEAWLuGetcDitFKbfaJROkyZks",
+          "status": {
+            "since": 1788435268601,
+            "type": "Home",
+            "until_time": 1788435268601
+          },
+          "totalTimesFed": 3,
+          "totalTimesPlay": 1,
+          "totalTimesQuest": 0
+        },
+        "monsterSeq": 1,
+        "monsters": {
+          "m1": {
+            "attack": 3,
+            "background": "Earth",
+            "berryItem": "rock_berry",
+            "border": "Earth",
+            "bornAt": 1788401493213,
+            "careMode": "element-berry",
+            "defense": 3,
+            "elementType": "rock",
+            "energy": 100,
+            "entryNo": 10,
+            "exp": 0,
+            "faction": "Stone Titans",
+            "happiness": 75,
+            "health": 2,
+            "holographic": true,
+            "id": "m1",
+            "image": "WhdcUkIGYZG4M5kq00TnUwaIt5OCGz3Q4u6_fZNktvQ",
+            "level": 0,
+            "moves": {
+              "Boulder Crush": {
+                "count": 2
+              },
+              "Granite Barrier": {
+                "count": 1
+              },
+              "Heavy Strike": {
+                "count": 1
+              },
+              "Iron Skin": {
+                "count": 2
+              }
+            },
+            "name": "Rockpup",
+            "nameMode": "species",
+            "speed": 2,
+            "sprite": "Zt8LmHGVIziXhzjqBhEAWLuGetcDitFKbfaJROkyZks",
+            "status": {
+              "since": 1788435268601,
+              "type": "Home",
+              "until_time": 1788435268601
+            },
+            "totalTimesFed": 3,
+            "totalTimesPlay": 1,
+            "totalTimesQuest": 0
+          }
+        },
+        "offerings": 1,
+        "pass": {
+          "accountId": "DA9qhP25ZPz6MHIhO-7aNHDN3LsTAL7yCKYIkqr13Z8",
+          "bond": 0,
+          "controller": "DA9qhP25ZPz6MHIhO-7aNHDN3LsTAL7yCKYIkqr13Z8",
+          "grantedAt": 1788400802004,
+          "origin": "test",
+          "recoveredAt": 0,
+          "recoveryCooldownUntil": 0
+        },
+        "questsCompleted": 0,
+        "seeded": true,
+        "seenEntries": {
+          "10": true
+        },
+        "seenEntriesVersion": 1,
+        "unlocked": true,
+        "wins": 0
+      },
+      {
+        "address": "E9cV0IG-aXtxjenPb15HBLZaxQZ_LrJb8r07ij1Jb58",
+        "adopted": false,
+        "bestStreak": 0,
+        "collection": {},
+        "dailyStreak": 0,
+        "gold": 0,
+        "inventory": {
+          "rune": 25,
+          "scroll": 5
+        },
+        "joinedAt": 1788397203043,
+        "lastActiveAt": 0,
+        "lootboxes": [],
+        "losses": 0,
+        "monsterSeq": 0,
+        "monsters": {},
+        "offerings": 0,
+        "pass": {
+          "accountId": "E9cV0IG-aXtxjenPb15HBLZaxQZ_LrJb8r07ij1Jb58",
+          "bond": 0,
+          "controller": "E9cV0IG-aXtxjenPb15HBLZaxQZ_LrJb8r07ij1Jb58",
+          "grantedAt": 1788397203043,
+          "origin": "test",
+          "recoveredAt": 0,
+          "recoveryCooldownUntil": 0
+        },
+        "questsCompleted": 0,
+        "seenEntries": {},
+        "seenEntriesVersion": 1,
+        "unlocked": true,
+        "wins": 0
+      },
+      {
+        "address": "FwQvt2zn303cMEyDepS3L6vpUz54YrYGD7xL4t2rqZM",
+        "adopted": false,
+        "bestStreak": 0,
+        "collection": {},
+        "dailyStreak": 0,
+        "gold": 0,
+        "inventory": {
+          "rune": 25,
+          "scroll": 5
+        },
+        "joinedAt": 1788397203043,
+        "lastActiveAt": 0,
+        "lootboxes": [],
+        "losses": 0,
+        "monsterSeq": 0,
+        "monsters": {},
+        "offerings": 0,
+        "pass": {
+          "accountId": "FwQvt2zn303cMEyDepS3L6vpUz54YrYGD7xL4t2rqZM",
+          "bond": 0,
+          "controller": "FwQvt2zn303cMEyDepS3L6vpUz54YrYGD7xL4t2rqZM",
+          "grantedAt": 1788397203043,
+          "origin": "test",
+          "recoveredAt": 0,
+          "recoveryCooldownUntil": 0
+        },
+        "questsCompleted": 0,
+        "seenEntries": {},
+        "seenEntriesVersion": 1,
+        "unlocked": true,
+        "wins": 0
+      },
+      {
+        "address": "GkZsvoyJwXvwlT9i16NQS3oaPqjAyVV9x4Mn692tEow",
+        "adopted": false,
+        "bestStreak": 0,
+        "collection": {},
+        "dailyStreak": 0,
+        "gold": 0,
+        "inventory": {
+          "rune": 25,
+          "scroll": 5
+        },
+        "joinedAt": 1788397203043,
+        "lastActiveAt": 0,
+        "lootboxes": [],
+        "losses": 0,
+        "monsterSeq": 0,
+        "monsters": {},
+        "offerings": 0,
+        "pass": {
+          "accountId": "GkZsvoyJwXvwlT9i16NQS3oaPqjAyVV9x4Mn692tEow",
+          "bond": 0,
+          "controller": "GkZsvoyJwXvwlT9i16NQS3oaPqjAyVV9x4Mn692tEow",
+          "grantedAt": 1788397203043,
+          "origin": "test",
+          "recoveredAt": 0,
+          "recoveryCooldownUntil": 0
+        },
+        "questsCompleted": 0,
+        "seenEntries": {},
+        "seenEntriesVersion": 1,
+        "unlocked": true,
+        "wins": 0
+      },
+      {
+        "address": "HGkH-1z--UnWpeU8-7PEYky8yFiyDvGejctg0MxP5c0",
+        "adopted": false,
+        "bestStreak": 0,
+        "collection": {},
+        "dailyStreak": 0,
+        "gold": 0,
+        "inventory": {
+          "rune": 25,
+          "scroll": 5
+        },
+        "joinedAt": 1788397203043,
+        "lastActiveAt": 0,
+        "lootboxes": [],
+        "losses": 0,
+        "monsterSeq": 0,
+        "monsters": {},
+        "offerings": 0,
+        "pass": {
+          "accountId": "HGkH-1z--UnWpeU8-7PEYky8yFiyDvGejctg0MxP5c0",
+          "bond": 0,
+          "controller": "HGkH-1z--UnWpeU8-7PEYky8yFiyDvGejctg0MxP5c0",
+          "grantedAt": 1788397203043,
+          "origin": "test",
+          "recoveredAt": 0,
+          "recoveryCooldownUntil": 0
+        },
+        "questsCompleted": 0,
+        "seenEntries": {},
+        "seenEntriesVersion": 1,
+        "unlocked": true,
+        "wins": 0
+      },
+      {
+        "address": "HghbeIvQxTiF-DYSUAnmEbAbP-r6sBzL6Qb7JAO88LI",
+        "adopted": false,
+        "bestStreak": 0,
+        "collection": {},
+        "dailyStreak": 0,
+        "gold": 0,
+        "inventory": {
+          "rune": 25,
+          "scroll": 5
+        },
+        "joinedAt": 1788397203043,
+        "lastActiveAt": 0,
+        "lootboxes": [],
+        "losses": 0,
+        "monsterSeq": 0,
+        "monsters": {},
+        "offerings": 0,
+        "pass": {
+          "accountId": "HghbeIvQxTiF-DYSUAnmEbAbP-r6sBzL6Qb7JAO88LI",
+          "bond": 0,
+          "controller": "HghbeIvQxTiF-DYSUAnmEbAbP-r6sBzL6Qb7JAO88LI",
+          "grantedAt": 1788397203043,
+          "origin": "test",
+          "recoveredAt": 0,
+          "recoveryCooldownUntil": 0
+        },
+        "questsCompleted": 0,
+        "seenEntries": {},
+        "seenEntriesVersion": 1,
+        "unlocked": true,
+        "wins": 0
+      },
+      {
+        "activeId": "m1",
+        "address": "IWeO7Ig98g4DUlokCFqIDqvWLNGiVJO6d5L0SawoB74",
+        "adopted": true,
+        "bestStreak": 1,
+        "collection": {},
+        "dailyStreak": 1,
+        "faction": "Inferno Blades",
+        "gold": 0,
+        "inventory": {
+          "air_berry": 28,
+          "fire_berry": 7,
+          "rock_berry": 27,
+          "rune": 4,
+          "scroll": 5,
+          "water_berry": 15
+        },
+        "joinedAt": 1788397203043,
+        "lastAction": "Monster.Play",
+        "lastActiveAt": 1788416163603,
+        "lastActiveDay": 20699,
+        "lastDaily": 1788406973280,
+        "lootboxes": [
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1
+        ],
+        "losses": 1,
+        "monster": {
+          "attack": 10,
+          "background": "Fire",
+          "berryItem": "fire_berry",
+          "border": "Fire",
+          "bornAt": 1788406524472,
+          "careMode": "element-berry",
+          "defense": 16,
+          "elementType": "fire",
+          "energy": 85,
+          "entryNo": 1,
+          "exp": 5,
+          "faction": "Inferno Blades",
+          "happiness": 100,
+          "health": 11,
+          "holographic": true,
+          "id": "m1",
+          "image": "lnYr9oTtkRHiheQFwH4ns50mrQE6AQR-8Bvl4VfXb0o",
+          "level": 4,
+          "moves": {
+            "Firenado": {
+              "count": 2
+            },
+            "Heal": {
+              "count": 2
+            },
+            "Quick Jab": {
+              "count": 3
+            },
+            "Swift Wind": {
+              "count": 2
+            }
+          },
+          "name": "FireFox",
+          "nameMode": "species",
+          "speed": 13,
+          "sprite": "wUo47CacsMRFFizJqUhSj75Rczg3f_MvHs4ytfPtCjQ",
+          "status": {
+            "since": 1788416163603,
+            "type": "Play",
+            "until_time": 1788417063603
+          },
+          "totalTimesFed": 11,
+          "totalTimesPlay": 5,
+          "totalTimesQuest": 1
+        },
+        "monsterSeq": 1,
+        "monsters": {
+          "m1": {
+            "attack": 10,
+            "background": "Fire",
+            "berryItem": "fire_berry",
+            "border": "Fire",
+            "bornAt": 1788406524472,
+            "careMode": "element-berry",
+            "defense": 16,
+            "elementType": "fire",
+            "energy": 85,
+            "entryNo": 1,
+            "exp": 5,
+            "faction": "Inferno Blades",
+            "happiness": 100,
+            "health": 11,
+            "holographic": true,
+            "id": "m1",
+            "image": "lnYr9oTtkRHiheQFwH4ns50mrQE6AQR-8Bvl4VfXb0o",
+            "level": 4,
+            "moves": {
+              "Firenado": {
+                "count": 2
+              },
+              "Heal": {
+                "count": 2
+              },
+              "Quick Jab": {
+                "count": 3
+              },
+              "Swift Wind": {
+                "count": 2
+              }
+            },
+            "name": "FireFox",
+            "nameMode": "species",
+            "speed": 13,
+            "sprite": "wUo47CacsMRFFizJqUhSj75Rczg3f_MvHs4ytfPtCjQ",
+            "status": {
+              "since": 1788416163603,
+              "type": "Play",
+              "until_time": 1788417063603
+            },
+            "totalTimesFed": 11,
+            "totalTimesPlay": 5,
+            "totalTimesQuest": 1
+          }
+        },
+        "offerings": 1,
+        "pass": {
+          "accountId": "IWeO7Ig98g4DUlokCFqIDqvWLNGiVJO6d5L0SawoB74",
+          "bond": 0,
+          "controller": "IWeO7Ig98g4DUlokCFqIDqvWLNGiVJO6d5L0SawoB74",
+          "grantedAt": 1788397203043,
+          "origin": "test",
+          "recoveredAt": 0,
+          "recoveryCooldownUntil": 0
+        },
+        "questsCompleted": 1,
+        "seeded": true,
+        "seenEntries": {
+          "1": true,
+          "4": true,
+          "7": true,
+          "10": true
+        },
+        "seenEntriesVersion": 1,
+        "unlocked": true,
+        "wins": 7
+      },
+      {
+        "address": "NRVgznPf56nVN4ENxlltxytmkOR86rYWd8Qbs1upJ1w",
+        "adopted": false,
+        "bestStreak": 0,
+        "collection": {},
+        "dailyStreak": 0,
+        "gold": 0,
+        "inventory": {
+          "rune": 25,
+          "scroll": 5
+        },
+        "joinedAt": 1788397203043,
+        "lastActiveAt": 0,
+        "lootboxes": [],
+        "losses": 0,
+        "monsterSeq": 0,
+        "monsters": {},
+        "offerings": 0,
+        "pass": {
+          "accountId": "NRVgznPf56nVN4ENxlltxytmkOR86rYWd8Qbs1upJ1w",
+          "bond": 0,
+          "controller": "NRVgznPf56nVN4ENxlltxytmkOR86rYWd8Qbs1upJ1w",
+          "grantedAt": 1788397203043,
+          "origin": "test",
+          "recoveredAt": 0,
+          "recoveryCooldownUntil": 0
+        },
+        "questsCompleted": 0,
+        "seenEntries": {},
+        "seenEntriesVersion": 1,
+        "unlocked": true,
+        "wins": 0
+      },
+      {
+        "address": "OApL0HxPqomql9WSs7d1d_9yzT-fdFXNZtHi0TbmXiA",
+        "adopted": false,
+        "bestStreak": 0,
+        "collection": {},
+        "dailyStreak": 0,
+        "gold": 0,
+        "inventory": {
+          "rune": 25,
+          "scroll": 5
+        },
+        "joinedAt": 1788397203043,
+        "lastActiveAt": 0,
+        "lootboxes": [],
+        "losses": 0,
+        "monsterSeq": 0,
+        "monsters": {},
+        "offerings": 0,
+        "pass": {
+          "accountId": "OApL0HxPqomql9WSs7d1d_9yzT-fdFXNZtHi0TbmXiA",
+          "bond": 0,
+          "controller": "OApL0HxPqomql9WSs7d1d_9yzT-fdFXNZtHi0TbmXiA",
+          "grantedAt": 1788397203043,
+          "origin": "test",
+          "recoveredAt": 0,
+          "recoveryCooldownUntil": 0
+        },
+        "questsCompleted": 0,
+        "seenEntries": {},
+        "seenEntriesVersion": 1,
+        "unlocked": true,
+        "wins": 0
+      },
+      {
+        "address": "OO4hhmx5mGlAK0j1zEhzfz72zNS-FhUj70rlwXwhWt4",
+        "adopted": false,
+        "bestStreak": 0,
+        "collection": {},
+        "dailyStreak": 0,
+        "gold": 0,
+        "inventory": {
+          "rune": 25,
+          "scroll": 5
+        },
+        "joinedAt": 1788397203043,
+        "lastActiveAt": 0,
+        "lootboxes": [],
+        "losses": 0,
+        "monsterSeq": 0,
+        "monsters": {},
+        "offerings": 0,
+        "pass": {
+          "accountId": "OO4hhmx5mGlAK0j1zEhzfz72zNS-FhUj70rlwXwhWt4",
+          "bond": 0,
+          "controller": "OO4hhmx5mGlAK0j1zEhzfz72zNS-FhUj70rlwXwhWt4",
+          "grantedAt": 1788397203043,
+          "origin": "test",
+          "recoveredAt": 0,
+          "recoveryCooldownUntil": 0
+        },
+        "questsCompleted": 0,
+        "seenEntries": {},
+        "seenEntriesVersion": 1,
+        "unlocked": true,
+        "wins": 0
+      },
+      {
+        "address": "PO6-o0zao4JQm9whIWT62a47COMQz7DyYvWkbKZiY80",
+        "adopted": false,
+        "bestStreak": 0,
+        "collection": {},
+        "dailyStreak": 0,
+        "gold": 0,
+        "inventory": {
+          "rune": 25,
+          "scroll": 5
+        },
+        "joinedAt": 1788397203043,
+        "lastActiveAt": 0,
+        "lootboxes": [],
+        "losses": 0,
+        "monsterSeq": 0,
+        "monsters": {},
+        "offerings": 0,
+        "pass": {
+          "accountId": "PO6-o0zao4JQm9whIWT62a47COMQz7DyYvWkbKZiY80",
+          "bond": 0,
+          "controller": "PO6-o0zao4JQm9whIWT62a47COMQz7DyYvWkbKZiY80",
+          "grantedAt": 1788397203043,
+          "origin": "test",
+          "recoveredAt": 0,
+          "recoveryCooldownUntil": 0
+        },
+        "questsCompleted": 0,
+        "seenEntries": {},
+        "seenEntriesVersion": 1,
+        "unlocked": true,
+        "wins": 0
+      },
+      {
+        "address": "QFZ6Z07Bynd3UhzGAAZZo5BmjIjrOgDI4eUL6OE_CCI",
+        "adopted": false,
+        "bestStreak": 0,
+        "collection": {},
+        "dailyStreak": 0,
+        "gold": 0,
+        "inventory": {
+          "rune": 25,
+          "scroll": 5
+        },
+        "joinedAt": 1788397203043,
+        "lastActiveAt": 0,
+        "lootboxes": [],
+        "losses": 0,
+        "monsterSeq": 0,
+        "monsters": {},
+        "offerings": 0,
+        "pass": {
+          "accountId": "QFZ6Z07Bynd3UhzGAAZZo5BmjIjrOgDI4eUL6OE_CCI",
+          "bond": 0,
+          "controller": "QFZ6Z07Bynd3UhzGAAZZo5BmjIjrOgDI4eUL6OE_CCI",
+          "grantedAt": 1788397203043,
+          "origin": "test",
+          "recoveredAt": 0,
+          "recoveryCooldownUntil": 0
+        },
+        "questsCompleted": 0,
+        "seenEntries": {},
+        "seenEntriesVersion": 1,
+        "unlocked": true,
+        "wins": 0
+      },
+      {
+        "address": "RmfBu_1SP8wYwp8fU9aGQrufiQungmXK_46XJ5bjYP8",
+        "adopted": false,
+        "bestStreak": 0,
+        "collection": {},
+        "dailyStreak": 0,
+        "gold": 0,
+        "inventory": {
+          "rune": 25,
+          "scroll": 5
+        },
+        "joinedAt": 1788397203043,
+        "lastActiveAt": 0,
+        "lootboxes": [],
+        "losses": 0,
+        "monsterSeq": 0,
+        "monsters": {},
+        "offerings": 0,
+        "pass": {
+          "accountId": "RmfBu_1SP8wYwp8fU9aGQrufiQungmXK_46XJ5bjYP8",
+          "bond": 0,
+          "controller": "RmfBu_1SP8wYwp8fU9aGQrufiQungmXK_46XJ5bjYP8",
+          "grantedAt": 1788397203043,
+          "origin": "test",
+          "recoveredAt": 0,
+          "recoveryCooldownUntil": 0
+        },
+        "questsCompleted": 0,
+        "seenEntries": {},
+        "seenEntriesVersion": 1,
+        "unlocked": true,
+        "wins": 0
+      },
+      {
+        "address": "Rrot7aTmESMH3z-l3bF5OiJYmeaDgo0riO7WMk2JxxU",
+        "adopted": false,
+        "bestStreak": 0,
+        "collection": {},
+        "dailyStreak": 0,
+        "gold": 0,
+        "inventory": {
+          "rune": 25,
+          "scroll": 5
+        },
+        "joinedAt": 1788397203043,
+        "lastActiveAt": 0,
+        "lootboxes": [],
+        "losses": 0,
+        "monsterSeq": 0,
+        "monsters": {},
+        "offerings": 0,
+        "pass": {
+          "accountId": "Rrot7aTmESMH3z-l3bF5OiJYmeaDgo0riO7WMk2JxxU",
+          "bond": 0,
+          "controller": "Rrot7aTmESMH3z-l3bF5OiJYmeaDgo0riO7WMk2JxxU",
+          "grantedAt": 1788397203043,
+          "origin": "test",
+          "recoveredAt": 0,
+          "recoveryCooldownUntil": 0
+        },
+        "questsCompleted": 0,
+        "seenEntries": {},
+        "seenEntriesVersion": 1,
+        "unlocked": true,
+        "wins": 0
+      },
+      {
+        "address": "TeLClQMvZzROk31yL1lUOn4ysGjM_GdBZXyOKF_7dpg",
+        "adopted": false,
+        "bestStreak": 0,
+        "collection": {},
+        "dailyStreak": 0,
+        "gold": 0,
+        "inventory": {
+          "rune": 25,
+          "scroll": 5
+        },
+        "joinedAt": 1788397203043,
+        "lastActiveAt": 0,
+        "lootboxes": [],
+        "losses": 0,
+        "monsterSeq": 0,
+        "monsters": {},
+        "offerings": 0,
+        "pass": {
+          "accountId": "TeLClQMvZzROk31yL1lUOn4ysGjM_GdBZXyOKF_7dpg",
+          "bond": 0,
+          "controller": "TeLClQMvZzROk31yL1lUOn4ysGjM_GdBZXyOKF_7dpg",
+          "grantedAt": 1788397203043,
+          "origin": "test",
+          "recoveredAt": 0,
+          "recoveryCooldownUntil": 0
+        },
+        "questsCompleted": 0,
+        "seenEntries": {},
+        "seenEntriesVersion": 1,
+        "unlocked": true,
+        "wins": 0
+      },
+      {
+        "address": "Ud11zB6UiHk2DuCzwLdIeK7VI_YWIb30agrYj1enoyM",
+        "adopted": false,
+        "bestStreak": 0,
+        "collection": {},
+        "dailyStreak": 0,
+        "gold": 0,
+        "inventory": {
+          "rune": 25,
+          "scroll": 5
+        },
+        "joinedAt": 1788397203043,
+        "lastActiveAt": 0,
+        "lootboxes": [],
+        "losses": 0,
+        "monsterSeq": 0,
+        "monsters": {},
+        "offerings": 0,
+        "pass": {
+          "accountId": "Ud11zB6UiHk2DuCzwLdIeK7VI_YWIb30agrYj1enoyM",
+          "bond": 0,
+          "controller": "Ud11zB6UiHk2DuCzwLdIeK7VI_YWIb30agrYj1enoyM",
+          "grantedAt": 1788397203043,
+          "origin": "test",
+          "recoveredAt": 0,
+          "recoveryCooldownUntil": 0
+        },
+        "questsCompleted": 0,
+        "seenEntries": {},
+        "seenEntriesVersion": 1,
+        "unlocked": true,
+        "wins": 0
+      },
+      {
+        "address": "Z6-4ibcydfVsNDmFM8lGmb3Za0HWJwCoOME09FNZq6w",
+        "adopted": false,
+        "bestStreak": 0,
+        "collection": {},
+        "dailyStreak": 0,
+        "gold": 0,
+        "inventory": {
+          "rune": 25,
+          "scroll": 5
+        },
+        "joinedAt": 1788397203043,
+        "lastActiveAt": 0,
+        "lootboxes": [],
+        "losses": 0,
+        "monsterSeq": 0,
+        "monsters": {},
+        "offerings": 0,
+        "pass": {
+          "accountId": "Z6-4ibcydfVsNDmFM8lGmb3Za0HWJwCoOME09FNZq6w",
+          "bond": 0,
+          "controller": "Z6-4ibcydfVsNDmFM8lGmb3Za0HWJwCoOME09FNZq6w",
+          "grantedAt": 1788397203043,
+          "origin": "test",
+          "recoveredAt": 0,
+          "recoveryCooldownUntil": 0
+        },
+        "questsCompleted": 0,
+        "seenEntries": {},
+        "seenEntriesVersion": 1,
+        "unlocked": true,
+        "wins": 0
+      },
+      {
+        "address": "ZV1-YxUrYPKmXUxeFIkRvx-bAyM8qws4Z9HDyOZ1wmI",
+        "adopted": false,
+        "bestStreak": 0,
+        "collection": {},
+        "dailyStreak": 0,
+        "gold": 0,
+        "inventory": {
+          "rune": 25,
+          "scroll": 5
+        },
+        "joinedAt": 1788397203043,
+        "lastActiveAt": 0,
+        "lootboxes": [],
+        "losses": 0,
+        "monsterSeq": 0,
+        "monsters": {},
+        "offerings": 0,
+        "pass": {
+          "accountId": "ZV1-YxUrYPKmXUxeFIkRvx-bAyM8qws4Z9HDyOZ1wmI",
+          "bond": 0,
+          "controller": "ZV1-YxUrYPKmXUxeFIkRvx-bAyM8qws4Z9HDyOZ1wmI",
+          "grantedAt": 1788397203043,
+          "origin": "test",
+          "recoveredAt": 0,
+          "recoveryCooldownUntil": 0
+        },
+        "questsCompleted": 0,
+        "seenEntries": {},
+        "seenEntriesVersion": 1,
+        "unlocked": true,
+        "wins": 0
+      },
+      {
+        "address": "ZxdE0Rd2Dz88xST8dqD0GxiCgdxmYBDB_p1840b4fjE",
+        "adopted": false,
+        "bestStreak": 0,
+        "collection": {},
+        "dailyStreak": 0,
+        "gold": 0,
+        "inventory": {
+          "rune": 25,
+          "scroll": 5
+        },
+        "joinedAt": 1788397203043,
+        "lastActiveAt": 0,
+        "lootboxes": [],
+        "losses": 0,
+        "monsterSeq": 0,
+        "monsters": {},
+        "offerings": 0,
+        "pass": {
+          "accountId": "ZxdE0Rd2Dz88xST8dqD0GxiCgdxmYBDB_p1840b4fjE",
+          "bond": 0,
+          "controller": "ZxdE0Rd2Dz88xST8dqD0GxiCgdxmYBDB_p1840b4fjE",
+          "grantedAt": 1788397203043,
+          "origin": "test",
+          "recoveredAt": 0,
+          "recoveryCooldownUntil": 0
+        },
+        "questsCompleted": 0,
+        "seenEntries": {},
+        "seenEntriesVersion": 1,
+        "unlocked": true,
+        "wins": 0
+      },
+      {
+        "address": "_TTLEBiWKaLGY8S_pSrsJ5Eie3gRhP2ZWR4RgL7bQG8",
+        "adopted": false,
+        "bestStreak": 0,
+        "collection": {},
+        "dailyStreak": 0,
+        "gold": 0,
+        "inventory": {
+          "rune": 25,
+          "scroll": 5
+        },
+        "joinedAt": 1788397203043,
+        "lastActiveAt": 0,
+        "lootboxes": [],
+        "losses": 0,
+        "monsterSeq": 0,
+        "monsters": {},
+        "offerings": 0,
+        "pass": {
+          "accountId": "_TTLEBiWKaLGY8S_pSrsJ5Eie3gRhP2ZWR4RgL7bQG8",
+          "bond": 0,
+          "controller": "_TTLEBiWKaLGY8S_pSrsJ5Eie3gRhP2ZWR4RgL7bQG8",
+          "grantedAt": 1788397203043,
+          "origin": "test",
+          "recoveredAt": 0,
+          "recoveryCooldownUntil": 0
+        },
+        "questsCompleted": 0,
+        "seenEntries": {},
+        "seenEntriesVersion": 1,
+        "unlocked": true,
+        "wins": 0
+      },
+      {
+        "address": "aQm5TEcP5tGShuSyfw9_AFZiBqc2gdwfyoi9H3DLI_I",
+        "adopted": false,
+        "bestStreak": 0,
+        "collection": {},
+        "dailyStreak": 0,
+        "gold": 0,
+        "inventory": {
+          "rune": 25,
+          "scroll": 5
+        },
+        "joinedAt": 1788397203043,
+        "lastActiveAt": 0,
+        "lootboxes": [],
+        "losses": 0,
+        "monsterSeq": 0,
+        "monsters": {},
+        "offerings": 0,
+        "pass": {
+          "accountId": "aQm5TEcP5tGShuSyfw9_AFZiBqc2gdwfyoi9H3DLI_I",
+          "bond": 0,
+          "controller": "aQm5TEcP5tGShuSyfw9_AFZiBqc2gdwfyoi9H3DLI_I",
+          "grantedAt": 1788397203043,
+          "origin": "test",
+          "recoveredAt": 0,
+          "recoveryCooldownUntil": 0
+        },
+        "questsCompleted": 0,
+        "seenEntries": {},
+        "seenEntriesVersion": 1,
+        "unlocked": true,
+        "wins": 0
+      },
+      {
+        "address": "bK9w11tAxhr8VDuMOeda5ZMkMSZSp5SLvFJRCz9K6YM",
+        "adopted": false,
+        "bestStreak": 0,
+        "collection": {},
+        "dailyStreak": 0,
+        "gold": 0,
+        "inventory": {
+          "rune": 25,
+          "scroll": 5
+        },
+        "joinedAt": 1788397203043,
+        "lastActiveAt": 0,
+        "lootboxes": [],
+        "losses": 0,
+        "monsterSeq": 0,
+        "monsters": {},
+        "offerings": 0,
+        "pass": {
+          "accountId": "bK9w11tAxhr8VDuMOeda5ZMkMSZSp5SLvFJRCz9K6YM",
+          "bond": 0,
+          "controller": "bK9w11tAxhr8VDuMOeda5ZMkMSZSp5SLvFJRCz9K6YM",
+          "grantedAt": 1788397203043,
+          "origin": "test",
+          "recoveredAt": 0,
+          "recoveryCooldownUntil": 0
+        },
+        "questsCompleted": 0,
+        "seenEntries": {},
+        "seenEntriesVersion": 1,
+        "unlocked": true,
+        "wins": 0
+      },
+      {
+        "address": "cE0TD-WqbaazdFy8Y8qGGxfKVy0z2D1GamgIjB0daws",
+        "adopted": false,
+        "bestStreak": 0,
+        "collection": {},
+        "dailyStreak": 0,
+        "gold": 0,
+        "inventory": {
+          "rune": 25,
+          "scroll": 5
+        },
+        "joinedAt": 1788397203043,
+        "lastActiveAt": 0,
+        "lootboxes": [],
+        "losses": 0,
+        "monsterSeq": 0,
+        "monsters": {},
+        "offerings": 0,
+        "pass": {
+          "accountId": "cE0TD-WqbaazdFy8Y8qGGxfKVy0z2D1GamgIjB0daws",
+          "bond": 0,
+          "controller": "cE0TD-WqbaazdFy8Y8qGGxfKVy0z2D1GamgIjB0daws",
+          "grantedAt": 1788397203043,
+          "origin": "test",
+          "recoveredAt": 0,
+          "recoveryCooldownUntil": 0
+        },
+        "questsCompleted": 0,
+        "seenEntries": {},
+        "seenEntriesVersion": 1,
+        "unlocked": true,
+        "wins": 0
+      },
+      {
+        "address": "dAhjECcGxcFWnrd99nNKOW4KvAePezKbhlL0WDrNKJs",
+        "adopted": false,
+        "bestStreak": 0,
+        "collection": {},
+        "dailyStreak": 0,
+        "gold": 0,
+        "inventory": {
+          "rune": 25,
+          "scroll": 5
+        },
+        "joinedAt": 1788397203043,
+        "lastActiveAt": 0,
+        "lootboxes": [],
+        "losses": 0,
+        "monsterSeq": 0,
+        "monsters": {},
+        "offerings": 0,
+        "pass": {
+          "accountId": "dAhjECcGxcFWnrd99nNKOW4KvAePezKbhlL0WDrNKJs",
+          "bond": 0,
+          "controller": "dAhjECcGxcFWnrd99nNKOW4KvAePezKbhlL0WDrNKJs",
+          "grantedAt": 1788397203043,
+          "origin": "test",
+          "recoveredAt": 0,
+          "recoveryCooldownUntil": 0
+        },
+        "questsCompleted": 0,
+        "seenEntries": {},
+        "seenEntriesVersion": 1,
+        "unlocked": true,
+        "wins": 0
+      },
+      {
+        "address": "dRbI7z__cUdhQMT9CDw8XIm9S1pdWRSCdH1Uc00NS6Y",
+        "adopted": false,
+        "bestStreak": 0,
+        "collection": {},
+        "dailyStreak": 0,
+        "gold": 0,
+        "inventory": {
+          "rune": 25,
+          "scroll": 5
+        },
+        "joinedAt": 1788397203043,
+        "lastActiveAt": 0,
+        "lootboxes": [],
+        "losses": 0,
+        "monsterSeq": 0,
+        "monsters": {},
+        "offerings": 0,
+        "pass": {
+          "accountId": "dRbI7z__cUdhQMT9CDw8XIm9S1pdWRSCdH1Uc00NS6Y",
+          "bond": 0,
+          "controller": "dRbI7z__cUdhQMT9CDw8XIm9S1pdWRSCdH1Uc00NS6Y",
+          "grantedAt": 1788397203043,
+          "origin": "test",
+          "recoveredAt": 0,
+          "recoveryCooldownUntil": 0
+        },
+        "questsCompleted": 0,
+        "seenEntries": {},
+        "seenEntriesVersion": 1,
+        "unlocked": true,
+        "wins": 0
+      },
+      {
+        "address": "f4iWi4fjTcwK-_xW8ks05EH5PYDrSfcXS7dYAw8apGI",
+        "adopted": false,
+        "bestStreak": 0,
+        "collection": {},
+        "dailyStreak": 0,
+        "gold": 0,
+        "inventory": {
+          "rune": 25,
+          "scroll": 5
+        },
+        "joinedAt": 1788397203043,
+        "lastActiveAt": 0,
+        "lootboxes": [],
+        "losses": 0,
+        "monsterSeq": 0,
+        "monsters": {},
+        "offerings": 0,
+        "pass": {
+          "accountId": "f4iWi4fjTcwK-_xW8ks05EH5PYDrSfcXS7dYAw8apGI",
+          "bond": 0,
+          "controller": "f4iWi4fjTcwK-_xW8ks05EH5PYDrSfcXS7dYAw8apGI",
+          "grantedAt": 1788397203043,
+          "origin": "test",
+          "recoveredAt": 0,
+          "recoveryCooldownUntil": 0
+        },
+        "questsCompleted": 0,
+        "seenEntries": {},
+        "seenEntriesVersion": 1,
+        "unlocked": true,
+        "wins": 0
+      },
+      {
+        "address": "fbhip50ZaLYiL9L1bPik6KvFxNNMYFBaOQdb9S5emuI",
+        "adopted": false,
+        "bestStreak": 0,
+        "collection": {},
+        "dailyStreak": 0,
+        "gold": 0,
+        "inventory": {
+          "rune": 25,
+          "scroll": 5
+        },
+        "joinedAt": 1788397203043,
+        "lastActiveAt": 0,
+        "lootboxes": [],
+        "losses": 0,
+        "monsterSeq": 0,
+        "monsters": {},
+        "offerings": 0,
+        "pass": {
+          "accountId": "fbhip50ZaLYiL9L1bPik6KvFxNNMYFBaOQdb9S5emuI",
+          "bond": 0,
+          "controller": "fbhip50ZaLYiL9L1bPik6KvFxNNMYFBaOQdb9S5emuI",
+          "grantedAt": 1788397203043,
+          "origin": "test",
+          "recoveredAt": 0,
+          "recoveryCooldownUntil": 0
+        },
+        "questsCompleted": 0,
+        "seenEntries": {},
+        "seenEntriesVersion": 1,
+        "unlocked": true,
+        "wins": 0
+      },
+      {
+        "address": "fggcDSakB0ZwVruJQ1r9UCOeMo_WDoyUo5zUipqZeMU",
+        "adopted": false,
+        "bestStreak": 0,
+        "collection": {},
+        "dailyStreak": 0,
+        "gold": 0,
+        "inventory": {
+          "rune": 25,
+          "scroll": 5
+        },
+        "joinedAt": 1788397203043,
+        "lastActiveAt": 0,
+        "lootboxes": [],
+        "losses": 0,
+        "monsterSeq": 0,
+        "monsters": {},
+        "offerings": 0,
+        "pass": {
+          "accountId": "fggcDSakB0ZwVruJQ1r9UCOeMo_WDoyUo5zUipqZeMU",
+          "bond": 0,
+          "controller": "fggcDSakB0ZwVruJQ1r9UCOeMo_WDoyUo5zUipqZeMU",
+          "grantedAt": 1788397203043,
+          "origin": "test",
+          "recoveredAt": 0,
+          "recoveryCooldownUntil": 0
+        },
+        "questsCompleted": 0,
+        "seenEntries": {},
+        "seenEntriesVersion": 1,
+        "unlocked": true,
+        "wins": 0
+      },
+      {
+        "address": "hKGhfWMjCnEQbIrD83KT5QjvRg6gdGP8mKAzGiPH6W4",
+        "adopted": false,
+        "bestStreak": 0,
+        "collection": {},
+        "dailyStreak": 0,
+        "gold": 0,
+        "inventory": {
+          "rune": 25,
+          "scroll": 5
+        },
+        "joinedAt": 1788397203043,
+        "lastActiveAt": 0,
+        "lootboxes": [],
+        "losses": 0,
+        "monsterSeq": 0,
+        "monsters": {},
+        "offerings": 0,
+        "pass": {
+          "accountId": "hKGhfWMjCnEQbIrD83KT5QjvRg6gdGP8mKAzGiPH6W4",
+          "bond": 0,
+          "controller": "hKGhfWMjCnEQbIrD83KT5QjvRg6gdGP8mKAzGiPH6W4",
+          "grantedAt": 1788397203043,
+          "origin": "test",
+          "recoveredAt": 0,
+          "recoveryCooldownUntil": 0
+        },
+        "questsCompleted": 0,
+        "seenEntries": {},
+        "seenEntriesVersion": 1,
+        "unlocked": true,
+        "wins": 0
+      },
+      {
+        "address": "iwJx7QqsNtEwrtDlvh5eCVF9NrTuwx7l-T_VH0QWkTw",
+        "adopted": false,
+        "bestStreak": 0,
+        "collection": {},
+        "dailyStreak": 0,
+        "gold": 0,
+        "inventory": {
+          "rune": 25,
+          "scroll": 5
+        },
+        "joinedAt": 1788397203043,
+        "lastActiveAt": 0,
+        "lootboxes": [],
+        "losses": 0,
+        "monsterSeq": 0,
+        "monsters": {},
+        "offerings": 0,
+        "pass": {
+          "accountId": "iwJx7QqsNtEwrtDlvh5eCVF9NrTuwx7l-T_VH0QWkTw",
+          "bond": 0,
+          "controller": "iwJx7QqsNtEwrtDlvh5eCVF9NrTuwx7l-T_VH0QWkTw",
+          "grantedAt": 1788397203043,
+          "origin": "test",
+          "recoveredAt": 0,
+          "recoveryCooldownUntil": 0
+        },
+        "questsCompleted": 0,
+        "seenEntries": {},
+        "seenEntriesVersion": 1,
+        "unlocked": true,
+        "wins": 0
+      },
+      {
+        "address": "jJmHKqHsSwzy-uo30N-O_yYfAcsqyLvQd_MF1kpr9iQ",
+        "adopted": false,
+        "bestStreak": 0,
+        "collection": {},
+        "dailyStreak": 0,
+        "gold": 0,
+        "inventory": {
+          "rune": 25,
+          "scroll": 5
+        },
+        "joinedAt": 1788397203043,
+        "lastActiveAt": 0,
+        "lootboxes": [],
+        "losses": 0,
+        "monsterSeq": 0,
+        "monsters": {},
+        "offerings": 0,
+        "pass": {
+          "accountId": "jJmHKqHsSwzy-uo30N-O_yYfAcsqyLvQd_MF1kpr9iQ",
+          "bond": 0,
+          "controller": "jJmHKqHsSwzy-uo30N-O_yYfAcsqyLvQd_MF1kpr9iQ",
+          "grantedAt": 1788397203043,
+          "origin": "test",
+          "recoveredAt": 0,
+          "recoveryCooldownUntil": 0
+        },
+        "questsCompleted": 0,
+        "seenEntries": {},
+        "seenEntriesVersion": 1,
+        "unlocked": true,
+        "wins": 0
+      },
+      {
+        "address": "mI9rvjP62PRt8_7qFjrFCoOImngWmBEflj7pkcrDUIU",
+        "adopted": false,
+        "bestStreak": 0,
+        "collection": {},
+        "dailyStreak": 0,
+        "gold": 0,
+        "inventory": {
+          "rune": 25,
+          "scroll": 5
+        },
+        "joinedAt": 1788397203043,
+        "lastActiveAt": 0,
+        "lootboxes": [],
+        "losses": 0,
+        "monsterSeq": 0,
+        "monsters": {},
+        "offerings": 0,
+        "pass": {
+          "accountId": "mI9rvjP62PRt8_7qFjrFCoOImngWmBEflj7pkcrDUIU",
+          "bond": 0,
+          "controller": "mI9rvjP62PRt8_7qFjrFCoOImngWmBEflj7pkcrDUIU",
+          "grantedAt": 1788397203043,
+          "origin": "test",
+          "recoveredAt": 0,
+          "recoveryCooldownUntil": 0
+        },
+        "questsCompleted": 0,
+        "seenEntries": {},
+        "seenEntriesVersion": 1,
+        "unlocked": true,
+        "wins": 0
+      },
+      {
+        "address": "nhRat0LQgMumGrby_fN5yYDlDejVDNk8_59EkgNRB5c",
+        "adopted": false,
+        "bestStreak": 0,
+        "collection": {},
+        "dailyStreak": 0,
+        "gold": 0,
+        "inventory": {
+          "rune": 25,
+          "scroll": 5
+        },
+        "joinedAt": 1788397203043,
+        "lastActiveAt": 0,
+        "lootboxes": [],
+        "losses": 0,
+        "monsterSeq": 0,
+        "monsters": {},
+        "offerings": 0,
+        "pass": {
+          "accountId": "nhRat0LQgMumGrby_fN5yYDlDejVDNk8_59EkgNRB5c",
+          "bond": 0,
+          "controller": "nhRat0LQgMumGrby_fN5yYDlDejVDNk8_59EkgNRB5c",
+          "grantedAt": 1788397203043,
+          "origin": "test",
+          "recoveredAt": 0,
+          "recoveryCooldownUntil": 0
+        },
+        "questsCompleted": 0,
+        "seenEntries": {},
+        "seenEntriesVersion": 1,
+        "unlocked": true,
+        "wins": 0
+      },
+      {
+        "activeId": "m1",
+        "address": "nmayR9TJ6zSl1_ZdKAbqsP19hy3CCV4Ffeqtx2E6Lzg",
+        "adopted": true,
+        "bestStreak": 1,
+        "collection": {},
+        "dailyStreak": 1,
+        "faction": "Inferno Blades",
+        "gold": 1,
+        "inventory": {
+          "air_berry": 8,
+          "fire_berry": 5,
+          "rock_berry": 6,
+          "rune": 34,
+          "scroll": 2,
+          "water_berry": 5
+        },
+        "joinedAt": 1788397203043,
+        "lastAction": "Lootbox.Open",
+        "lastActiveAt": 1788404617091,
+        "lastActiveDay": 20699,
+        "lastDaily": 1788397366488,
+        "lootboxes": [
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          2,
+          2
+        ],
+        "losses": 0,
+        "monster": {
+          "attack": 3,
+          "background": "Fire",
+          "berryItem": "fire_berry",
+          "border": "Fire",
+          "bornAt": 1788397277652,
+          "careMode": "element-berry",
+          "defense": 4,
+          "elementType": "fire",
+          "energy": 100,
+          "entryNo": 1,
+          "exp": 1,
+          "faction": "Inferno Blades",
+          "happiness": 0,
+          "health": 7,
+          "holographic": true,
+          "id": "m1",
+          "image": "lnYr9oTtkRHiheQFwH4ns50mrQE6AQR-8Bvl4VfXb0o",
+          "level": 1,
+          "moves": {
+            "Battle Cry": {
+              "count": 2
+            },
+            "Flame Shield": {
+              "count": 2
+            },
+            "Guard Break": {
+              "count": 2
+            },
+            "Recovery": {
+              "count": 2
+            }
+          },
+          "name": "FireFox",
+          "nameMode": "species",
+          "speed": 6,
+          "sprite": "wUo47CacsMRFFizJqUhSj75Rczg3f_MvHs4ytfPtCjQ",
+          "status": {
+            "since": 1788404599215,
+            "type": "Home",
+            "until_time": 1788404599215
+          },
+          "totalTimesFed": 5,
+          "totalTimesPlay": 0,
+          "totalTimesQuest": 2
+        },
+        "monsterSeq": 1,
+        "monsters": {
+          "m1": {
+            "attack": 3,
+            "background": "Fire",
+            "berryItem": "fire_berry",
+            "border": "Fire",
+            "bornAt": 1788397277652,
+            "careMode": "element-berry",
+            "defense": 4,
+            "elementType": "fire",
+            "energy": 100,
+            "entryNo": 1,
+            "exp": 1,
+            "faction": "Inferno Blades",
+            "happiness": 0,
+            "health": 7,
+            "holographic": true,
+            "id": "m1",
+            "image": "lnYr9oTtkRHiheQFwH4ns50mrQE6AQR-8Bvl4VfXb0o",
+            "level": 1,
+            "moves": {
+              "Battle Cry": {
+                "count": 2
+              },
+              "Flame Shield": {
+                "count": 2
+              },
+              "Guard Break": {
+                "count": 2
+              },
+              "Recovery": {
+                "count": 2
+              }
+            },
+            "name": "FireFox",
+            "nameMode": "species",
+            "speed": 6,
+            "sprite": "wUo47CacsMRFFizJqUhSj75Rczg3f_MvHs4ytfPtCjQ",
+            "status": {
+              "since": 1788404599215,
+              "type": "Home",
+              "until_time": 1788404599215
+            },
+            "totalTimesFed": 5,
+            "totalTimesPlay": 0,
+            "totalTimesQuest": 2
+          }
+        },
+        "offerings": 1,
+        "pass": {
+          "accountId": "nmayR9TJ6zSl1_ZdKAbqsP19hy3CCV4Ffeqtx2E6Lzg",
+          "bond": 0,
+          "controller": "nmayR9TJ6zSl1_ZdKAbqsP19hy3CCV4Ffeqtx2E6Lzg",
+          "grantedAt": 1788397203043,
+          "origin": "test",
+          "recoveredAt": 0,
+          "recoveryCooldownUntil": 0
+        },
+        "questsCompleted": 2,
+        "seeded": true,
+        "seenEntries": {
+          "1": true
+        },
+        "seenEntriesVersion": 1,
+        "unlocked": true,
+        "wins": 0
+      },
+      {
+        "address": "nq8saJ7h7pi-oIhJ423rCW7sSqhnZ5q-aj-xsGVp-Qc",
+        "adopted": false,
+        "bestStreak": 0,
+        "collection": {},
+        "dailyStreak": 0,
+        "gold": 0,
+        "inventory": {
+          "rune": 25,
+          "scroll": 5
+        },
+        "joinedAt": 1788397203043,
+        "lastActiveAt": 0,
+        "lootboxes": [],
+        "losses": 0,
+        "monsterSeq": 0,
+        "monsters": {},
+        "offerings": 0,
+        "pass": {
+          "accountId": "nq8saJ7h7pi-oIhJ423rCW7sSqhnZ5q-aj-xsGVp-Qc",
+          "bond": 0,
+          "controller": "nq8saJ7h7pi-oIhJ423rCW7sSqhnZ5q-aj-xsGVp-Qc",
+          "grantedAt": 1788397203043,
+          "origin": "test",
+          "recoveredAt": 0,
+          "recoveryCooldownUntil": 0
+        },
+        "questsCompleted": 0,
+        "seenEntries": {},
+        "seenEntriesVersion": 1,
+        "unlocked": true,
+        "wins": 0
+      },
+      {
+        "address": "oUwy4w44YTLCvJH6RblE2dsXIN5kkKBsQCMoXbOuvA4",
+        "adopted": false,
+        "bestStreak": 0,
+        "collection": {},
+        "dailyStreak": 0,
+        "gold": 0,
+        "inventory": {
+          "rune": 25,
+          "scroll": 5
+        },
+        "joinedAt": 1788397203043,
+        "lastActiveAt": 0,
+        "lootboxes": [],
+        "losses": 0,
+        "monsterSeq": 0,
+        "monsters": {},
+        "offerings": 0,
+        "pass": {
+          "accountId": "oUwy4w44YTLCvJH6RblE2dsXIN5kkKBsQCMoXbOuvA4",
+          "bond": 0,
+          "controller": "oUwy4w44YTLCvJH6RblE2dsXIN5kkKBsQCMoXbOuvA4",
+          "grantedAt": 1788397203043,
+          "origin": "test",
+          "recoveredAt": 0,
+          "recoveryCooldownUntil": 0
+        },
+        "questsCompleted": 0,
+        "seenEntries": {},
+        "seenEntriesVersion": 1,
+        "unlocked": true,
+        "wins": 0
+      },
+      {
+        "address": "vaieY0vvpfBLoZPZLkaa9DcjVdDjE5IgZi91wQFHN70",
+        "adopted": false,
+        "bestStreak": 0,
+        "collection": {},
+        "dailyStreak": 0,
+        "gold": 0,
+        "inventory": {
+          "rune": 25,
+          "scroll": 5
+        },
+        "joinedAt": 1788397203043,
+        "lastActiveAt": 0,
+        "lootboxes": [],
+        "losses": 0,
+        "monsterSeq": 0,
+        "monsters": {},
+        "offerings": 0,
+        "pass": {
+          "accountId": "vaieY0vvpfBLoZPZLkaa9DcjVdDjE5IgZi91wQFHN70",
+          "bond": 0,
+          "controller": "vaieY0vvpfBLoZPZLkaa9DcjVdDjE5IgZi91wQFHN70",
+          "grantedAt": 1788397203043,
+          "origin": "test",
+          "recoveredAt": 0,
+          "recoveryCooldownUntil": 0
+        },
+        "questsCompleted": 0,
+        "seenEntries": {},
+        "seenEntriesVersion": 1,
+        "unlocked": true,
+        "wins": 0
+      },
+      {
+        "address": "yNoJY9JLTXU6PGt4w-LO8EvT5RpWswXmbuHfnkfu5oA",
+        "adopted": false,
+        "bestStreak": 0,
+        "collection": {},
+        "dailyStreak": 0,
+        "gold": 0,
+        "inventory": {
+          "rune": 25,
+          "scroll": 5
+        },
+        "joinedAt": 1788397203043,
+        "lastActiveAt": 0,
+        "lootboxes": [],
+        "losses": 0,
+        "monsterSeq": 0,
+        "monsters": {},
+        "offerings": 0,
+        "pass": {
+          "accountId": "yNoJY9JLTXU6PGt4w-LO8EvT5RpWswXmbuHfnkfu5oA",
+          "bond": 0,
+          "controller": "yNoJY9JLTXU6PGt4w-LO8EvT5RpWswXmbuHfnkfu5oA",
+          "grantedAt": 1788397203043,
+          "origin": "test",
+          "recoveredAt": 0,
+          "recoveryCooldownUntil": 0
+        },
+        "questsCompleted": 0,
+        "seenEntries": {},
+        "seenEntriesVersion": 1,
+        "unlocked": true,
+        "wins": 0
+      }
+    ],
+    "offerings": {
+      "Inferno Blades": 2
+    },
+    "checkins": {
+      "20699": {
+        "high": 0,
+        "low": 3,
+        "medium": 0
+      }
+    },
+    "metrics": {
+      "daily": {
+        "20699": {
+          "actions": {
+            "Admin.SetHuntProcess": 1,
+            "Admin.SetRuneToken": 1,
+            "Battle.Attack": 19,
+            "Battle.Begin": 2,
+            "Battle.Start": 8,
+            "Burn-Notice": 78,
+            "Daily.Claim": 3,
+            "Faction.Join": 3,
+            "Lootbox.Open": 8,
+            "Monster.Claim": 9,
+            "Monster.Feed": 19,
+            "Monster.LevelUp": 5,
+            "Monster.Play": 7,
+            "Monster.Quest": 3,
+            "Rune.Minted": 100,
+            "Rune.Withdraw": 100
+          },
+          "activeBattles": 0,
+          "activePlayers": 3,
+          "adminActions": 2,
+          "arenaEntries": 2,
+          "battlesCompleted": 8,
+          "battlesStarted": 8,
+          "claims": 9,
+          "depositsCredited": 78,
+          "factionJoins": 3,
+          "factions": {
+            "air": 0,
+            "fire": 2,
+            "rock": 1,
+            "water": 0
+          },
+          "feeds": 19,
+          "levelUps": 5,
+          "lootboxes": 23,
+          "lootboxesOpened": 8,
+          "losses": 1,
+          "monsters": 3,
+          "players": 51,
+          "playsCompleted": 6,
+          "playsStarted": 7,
+          "quests": 3,
+          "questsCompleted": 3,
+          "questsStarted": 3,
+          "roundsPlayed": 19,
+          "runeAdded": 223,
+          "runeRemoved": 210,
+          "runes": 1258,
+          "unlocked": 51,
+          "wins": 7,
+          "withdrawals": 100,
+          "withdrawalsSettled": 100,
+          "worshipClaims": 3
+        }
+      },
+      "since": 1788397216883,
+      "totals": {
+        "Admin.SetHuntProcess": 1,
+        "Admin.SetRuneToken": 1,
+        "Battle.Attack": 19,
+        "Battle.Begin": 2,
+        "Battle.Start": 8,
+        "Burn-Notice": 78,
+        "Daily.Claim": 3,
+        "Faction.Join": 3,
+        "Lootbox.Open": 8,
+        "Monster.Claim": 9,
+        "Monster.Feed": 19,
+        "Monster.LevelUp": 5,
+        "Monster.Play": 7,
+        "Monster.Quest": 3,
+        "Rune.Minted": 100,
+        "Rune.Withdraw": 100
+      }
+    },
+    "audit": [
+      {
+        "action": "Admin.SetRuneToken",
+        "actor": "DA9qhP25ZPz6MHIhO-7aNHDN3LsTAL7yCKYIkqr13Z8",
+        "seq": 1,
+        "summary": "Admin.SetRuneToken",
+        "target": "DA9qhP25ZPz6MHIhO-7aNHDN3LsTAL7yCKYIkqr13Z8",
+        "timestamp": 1788397216883
+      },
+      {
+        "action": "Admin.SetHuntProcess",
+        "actor": "DA9qhP25ZPz6MHIhO-7aNHDN3LsTAL7yCKYIkqr13Z8",
+        "seq": 2,
+        "summary": "Admin.SetHuntProcess",
+        "target": "DA9qhP25ZPz6MHIhO-7aNHDN3LsTAL7yCKYIkqr13Z8",
+        "timestamp": 1788397233281
+      }
+    ],
+    "market": [],
+    "marketSeq": 0,
+    "marketHistory": [],
+    "assets": {},
+    "publishedMarket": {},
+    "runeToken": "MTZvMGCoI2RC5nw5WDC2F5bcsAO9I5JHhTEMqQUKRJ8",
+    "factions": [
+      {
+        "averageLevel": 0,
+        "berry": "air_berry",
+        "description": "Masters of the skies, the Sky Nomads harness wind and air to outmaneuver and outlast their opponents.",
+        "element": "air",
+        "mascot": "XD4tSBeekM1ETZMflAANDfkW6pVWaQIXgSdSiwfwVqw",
+        "memberCount": 0,
+        "members": [],
+        "monsterCount": 0,
+        "monsterEntryNo": 7,
+        "monsterImage": "XD4tSBeekM1ETZMflAANDfkW6pVWaQIXgSdSiwfwVqw",
+        "monsterName": "Airbud",
+        "name": "Sky Nomads",
+        "totalTimesFed": 0,
+        "totalTimesPlay": 0,
+        "totalTimesQuest": 0
+      },
+      {
+        "averageLevel": 0,
+        "berry": "water_berry",
+        "description": "Mystical protectors of the deep, the Aqua Guardians command the essence of water to heal and empower their allies.",
+        "element": "water",
+        "mascot": "w_-mPdemSXZ1G-Q6fMEu6wTDJYFnJM9XePjGf_ZChgo",
+        "memberCount": 0,
+        "members": [],
+        "monsterCount": 0,
+        "monsterEntryNo": 4,
+        "monsterImage": "w_-mPdemSXZ1G-Q6fMEu6wTDJYFnJM9XePjGf_ZChgo",
+        "monsterName": "WaterDoge",
+        "name": "Aqua Guardians",
+        "totalTimesFed": 0,
+        "totalTimesPlay": 0,
+        "totalTimesQuest": 0
+      },
+      {
+        "averageLevel": 2.5,
+        "berry": "fire_berry",
+        "description": "Fearsome warriors of flame, the Inferno Blades unleash devastating fire-based attacks to overwhelm their foes.",
+        "element": "fire",
+        "mascot": "lnYr9oTtkRHiheQFwH4ns50mrQE6AQR-8Bvl4VfXb0o",
+        "memberCount": 2,
+        "members": [
+          {
+            "id": "IWeO7Ig98g4DUlokCFqIDqvWLNGiVJO6d5L0SawoB74",
+            "level": 4,
+            "timesFed": 11,
+            "timesPlay": 5,
+            "timesQuest": 1,
+            "wins": 7
+          },
+          {
+            "id": "nmayR9TJ6zSl1_ZdKAbqsP19hy3CCV4Ffeqtx2E6Lzg",
+            "level": 1,
+            "timesFed": 5,
+            "timesPlay": 0,
+            "timesQuest": 2,
+            "wins": 0
+          }
+        ],
+        "monsterCount": 2,
+        "monsterEntryNo": 1,
+        "monsterImage": "lnYr9oTtkRHiheQFwH4ns50mrQE6AQR-8Bvl4VfXb0o",
+        "monsterName": "FireFox",
+        "name": "Inferno Blades",
+        "totalTimesFed": 16,
+        "totalTimesPlay": 5,
+        "totalTimesQuest": 3
+      },
+      {
+        "averageLevel": 0,
+        "berry": "rock_berry",
+        "description": "Immovable defenders, the Stone Titans use their unyielding strength to outlast and overpower their adversaries.",
+        "element": "rock",
+        "mascot": "WhdcUkIGYZG4M5kq00TnUwaIt5OCGz3Q4u6_fZNktvQ",
+        "memberCount": 1,
+        "members": [
+          {
+            "id": "DA9qhP25ZPz6MHIhO-7aNHDN3LsTAL7yCKYIkqr13Z8",
+            "level": 0,
+            "timesFed": 3,
+            "timesPlay": 1,
+            "timesQuest": 0,
+            "wins": 0
+          }
+        ],
+        "monsterCount": 1,
+        "monsterEntryNo": 10,
+        "monsterImage": "WhdcUkIGYZG4M5kq00TnUwaIt5OCGz3Q4u6_fZNktvQ",
+        "monsterName": "Rockpup",
+        "name": "Stone Titans",
+        "totalTimesFed": 3,
+        "totalTimesPlay": 1,
+        "totalTimesQuest": 0
+      }
+    ]
+  }
+}

@@ -25,12 +25,40 @@ import { cx } from './primitives';
 export type AltarInfo = {
   name: string;
   companion: string;
+  entryNo?: number;
   members: number;
   mine: boolean;
 };
 
+/**
+ * The arrival, in milliseconds.
+ *
+ * One altar every `STEP`, under the light for `HOLD` of it and stepped back for
+ * the rest, so each faction gets a beat of its own and the room fills left to
+ * right. Four steps, the release, and then the companions — 7.4s end to end,
+ * which is the whole of it inside the eight the sequence is allowed.
+ */
+const STEP = 1700;
+const HOLD = 1150;
+/** After the last altar steps back, everything comes up together. */
+const RELEASE = ALTAR_ORDER.length * STEP;
+/** And only then do the companions walk in — all four, so you see the field. */
+const COMPANIONS = RELEASE + 600;
+
+/** Where the arrival has got to. `done` is an ordinary hall again. */
+type Arrival = {
+  present: AltarElement[];
+  spotlight: AltarElement | null;
+  companions: boolean;
+  done: boolean;
+};
+
+const ARRIVED: Arrival = {
+  present: ALTAR_ORDER, spotlight: null, companions: true, done: true,
+};
+
 export function AltarHall({
-  info, sworn = null, selected, onSelect, hint, onLive, className,
+  info, sworn = null, selected, onSelect, hint, onLive, intro = false, onIntroDone, className,
 }: {
   /**
    * One plaque per element.
@@ -49,6 +77,15 @@ export function AltarHall({
   hint?: string;
   /** Told whether the hall actually rendered, so the page can fall back. */
   onLive?: (live: boolean) => void;
+  /**
+   * Play the arrival: an empty room that fills one altar at a time.
+   *
+   * Read ONCE, on mount, because the hall is built empty or it is not built
+   * empty — see `createAltars`. Flipping it later does nothing.
+   */
+  intro?: boolean;
+  /** The hall is finished introducing itself and the choice is the player's. */
+  onIntroDone?: () => void;
   className?: string;
 }) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -59,9 +96,25 @@ export function AltarHall({
 
   const layout = useCallback((next: AltarPoint[]) => setPoints(next), []);
 
+  /*
+    Whether this hall is playing the arrival is decided once, at mount, and the
+    ref is what the build effect reads. A prop would be re-read on every render
+    and the hall is built exactly once — the two cannot disagree if only one of
+    them is allowed to answer.
+
+    Somebody who has asked their system not to animate gets the room as it ends:
+    four altars, four companions, nothing moving.
+  */
+  const reduced = typeof window !== 'undefined'
+    && window.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
+  const playing = useRef(intro && !reduced).current;
+  const [arrival, setArrival] = useState<Arrival>(
+    playing ? { present: [], spotlight: null, companions: false, done: false } : ARRIVED,
+  );
+
   useEffect(() => {
     if (!canvasRef.current) return;
-    handle.current = createAltars(canvasRef.current, { sworn, onLayout: layout });
+    handle.current = createAltars(canvasRef.current, { sworn, onLayout: layout, intro: playing });
     setLive(Boolean(handle.current));
     onLive?.(Boolean(handle.current));
     return () => {
@@ -72,12 +125,71 @@ export function AltarHall({
     // rebuilding the hall, which would restart every core from cold.
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
+  /*
+    The arrival itself: one schedule, laid out up front.
+
+    Every beat is an absolute offset from the same start rather than a chain of
+    timeouts each waiting on the last, so the sequence cannot drift and the
+    cleanup is one loop. It runs on the clock and not on the render: what the
+    hall is doing is pushed straight into the handle, and React is told at the
+    same time only because the plaques and the companions live in the DOM.
+  */
+  const timersRef = useRef<number[]>([]);
+
+  /**
+   * End it now.
+   *
+   * Anybody who touches the screen during the arrival has stopped watching it,
+   * and a seven-second cutscene you cannot get out of is worse than no cutscene
+   * — so the first click or keypress lands the room and hands over the choice.
+   */
+  const skip = useCallback(() => {
+    if (timersRef.current.length === 0) return;
+    timersRef.current.forEach(window.clearTimeout);
+    timersRef.current = [];
+    setArrival(ARRIVED);
+    handle.current?.setIntro(null);
+    onIntroDone?.();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  useEffect(() => {
+    if (!playing) return undefined;
+    const at: [number, Arrival][] = [];
+    ALTAR_ORDER.forEach((element, i) => {
+      const present = ALTAR_ORDER.slice(0, i + 1);
+      at.push([i * STEP, { present, spotlight: element, companions: false, done: false }]);
+      at.push([i * STEP + HOLD, { present, spotlight: null, companions: false, done: false }]);
+    });
+    at.push([RELEASE, { ...ARRIVED, companions: false, done: true }]);
+    at.push([COMPANIONS, ARRIVED]);
+
+    const timers = timersRef.current = at.map(([ms, state]) => window.setTimeout(() => {
+      setArrival(state);
+      // The hall is driven from here, not from an effect on `arrival`: the
+      // spotlight's flare is an event, and an effect would re-fire it on any
+      // unrelated re-render that happened to land on the same state.
+      handle.current?.setIntro(state.done ? null : {
+        present: state.present, spotlight: state.spotlight,
+      });
+      if (state.spotlight) handle.current?.strike(state.spotlight);
+      if (state === ARRIVED) { timersRef.current = []; onIntroDone?.(); }
+    }, ms));
+    return () => timers.forEach(window.clearTimeout);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [playing]);
+
   // What the hall is lighting: whatever the pointer is on, else whatever has
   // been chosen. Falling back to `selected` is what keeps an altar lit while
   // you read its card instead of going dark the moment the mouse leaves.
+  //
+  // Nothing until the arrival is over: the sequence owns the light while it
+  // runs, and a pointer resting where an altar is about to appear must not take
+  // it over mid-introduction.
   useEffect(() => {
+    if (!arrival.done) return;
     handle.current?.setActive(hover ?? selected);
-  }, [hover, selected]);
+  }, [hover, selected, arrival.done]);
 
   // The strike is the oath landing, not the fact of having taken one. Firing it
   // on mount flashed the altar of anyone who had already sworn every time they
@@ -104,6 +216,9 @@ export function AltarHall({
         'h-[100dvh] min-h-[520px]',
         className,
       )}
+      // The arrival is a thing you are shown, not a thing you are held in.
+      onPointerDown={arrival.done ? undefined : skip}
+      onKeyDownCapture={arrival.done ? undefined : skip}
     >
       {/*
         Sized in CSS, always.
@@ -142,8 +257,10 @@ export function AltarHall({
         style={{ background: 'linear-gradient(to bottom, transparent, rgb(var(--void)))' }}
       />
 
-      {hint && (
-        <p className="eyebrow pointer-events-none absolute inset-x-0 top-3 text-center">
+      {/* Not while the room is still filling: the line tells you to choose an
+          altar, and for seven seconds there is nothing yet to choose. */}
+      {hint && arrival.done && (
+        <p className="eyebrow pointer-events-none absolute inset-x-0 top-3 text-center animate-rise">
           {hint}
         </p>
       )}
@@ -155,7 +272,15 @@ export function AltarHall({
             const Icon = ELEMENT_ICON[element];
             const plaque = info[element];
             const isSworn = sworn === element;
-            const isOn = (hover ?? selected) === element;
+            // Standing at an altar during the arrival is the sequence's doing,
+            // not the pointer's.
+            const isOn = arrival.done
+              ? (hover ?? selected) === element
+              : arrival.spotlight === element;
+            /** Arrived. Before that the plaque is not on the screen at all. */
+            const here = arrival.present.includes(element);
+            /** Shown off and stepped back, waiting for the rest to arrive. */
+            const waiting = here && !arrival.done && arrival.spotlight !== element;
             return (
               <button
                 key={element}
@@ -169,28 +294,67 @@ export function AltarHall({
                 onFocus={() => setHover(element)}
                 onBlur={() => setHover((h) => (h === element ? null : h))}
                 onClick={() => onSelect(element)}
+                // Nothing is choosable while the hall is still introducing
+                // itself — including by keyboard, which is why it is `disabled`
+                // and not a pointer-events class.
+                disabled={!arrival.done}
                 // Hidden until the first projection lands, so four buttons do
-                // not flash in the top-left corner on mount.
-                style={p
+                // not flash in the top-left corner on mount. And hidden again,
+                // per altar, until that altar has risen: the plaque belongs to
+                // the stone and must not stand over an empty floor.
+                style={p && here
                   ? { left: p.x, top: p.y, opacity: 1 }
-                  : { left: '50%', top: '50%', opacity: 0 }}
+                  : { left: p ? p.x : '50%', top: p ? p.y : '50%', opacity: 0 }}
                 className={cx(
-                  'altar-choice absolute -translate-x-1/2 transition-opacity duration-300',
+                  'altar-choice absolute -translate-x-1/2 duration-300',
+                  'transition-[opacity,filter,transform]',
                   'flex w-[176px] flex-col items-center',
                   'focus-visible:outline focus-visible:outline-2 focus-visible:outline-element',
+                  // Stepped back: the plaque goes with its altar, grey and a
+                  // little smaller, until the whole room comes up together.
+                  waiting && 'scale-[0.94] opacity-45 grayscale',
                 )}
               >
+                {/*
+                  The stone itself, made clickable.
+
+                  The plaque used to be the whole button, so the altar — the lit
+                  two-metre object the screen is built around, and the thing
+                  everybody pointed at first — did nothing at all. This reaches
+                  UP from the plaque to just above the core and out to the
+                  plinth's own width, both measured by projecting the real
+                  geometry each frame, so hovering or clicking the altar is
+                  hovering or clicking its faction.
+
+                  It is a child of the same button rather than a second one:
+                  one control, one focus stop, one thing for a screen reader.
+                */}
+                <span
+                  aria-hidden
+                  className="altar-choice-stone absolute bottom-full left-1/2 -translate-x-1/2"
+                  style={p && here
+                    ? { width: Math.max(64, p.half * 2), height: Math.max(0, p.y - p.top) }
+                    : { width: 0, height: 0 }}
+                />
+
                 {/* The companion, standing under its own pillar — the one place
                     it can be unambiguous about which monster belongs to which
                     stone. It overlaps the plaque a little on purpose, so the two
                     read as one object rather than as a picture above a box. */}
+                {/* The companions come last and come together — four altars
+                    first, then who is standing on them, so the arrival ends on
+                    what you would actually be raising. `visibility` and not a
+                    mount, so the images are already decoded when they land. */}
                 <img
-                  src={portrait(element)}
+                  src={portrait(element, 0, plaque?.entryNo)}
                   alt=""
-                  loading="lazy"
+                  loading="eager"
                   className={cx(
-                    'altar-choice-creature relative z-10 -mb-3 h-14 w-14 object-contain transition-all duration-300',
-                    isOn ? 'scale-110 opacity-100' : 'opacity-70',
+                    'altar-choice-creature relative z-10 -mb-3 h-14 w-14 object-contain',
+                    'transition-all duration-500',
+                    !arrival.companions
+                      ? 'invisible translate-y-3 scale-75 opacity-0'
+                      : isOn ? 'scale-110 opacity-100' : 'opacity-70',
                   )}
                 />
 

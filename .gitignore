@@ -42,3 +42,17 @@ backend/native/mint-ledger.json
 .ladder/
 .devserver.log
 .redeploy.log
+
+# A separate checkout that lives inside this one. 216 MB of somebody else's
+# repository is not this repository's history.
+hyper-Real/
+
+# The shape of `cmd > $UNSET_VAR`. Never deliberate.
+undefined/
+
+# Working copies kept beside the file they were taken from.
+*.bak
+
+# Soak results. The finding goes in a doc; the raw run is machine-local and
+# there is one of these per experiment.
+backend/native/battle-fleet/hblab/soak-*.json

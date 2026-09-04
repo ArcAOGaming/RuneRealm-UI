@@ -12,20 +12,30 @@
  *   --migrate-node <url>                which node hosts that old process,
  *                                       when moving between nodes. Defaults to
  *                                       what live-process.txt recorded.
- *   --no-seed-legacy                    do NOT restore the legacynet players
- *   --seed-legacy <file>                restore them from a different file
+ *   --seed-legacy [file]                DO restore the legacynet players (OFF by
+ *                                       default; an optional path replaces
+ *                                       legacy-players.json)
+ *   --no-seed-legacy                    explicit off — already the default
+ *   --paid-list                         DO unlock the paid allow-list (OFF by
+ *                                       default; PAID_LIST=<file> implies it)
+ *   --no-paid                           explicit off — already the default
  *   --no-env                            do NOT point the app at the new process
- *   --public-access / --free            let any signed wallet create an account
- *   --no-free                           force Eternal Pass access for this deploy
+ *   --public-access / --free            explicit free sign-up — already the default
+ *   --paid-access / --no-free           gate sign-up behind the Eternal Pass
  *
  * A successful deploy writes the new id into `src/lib/hyperbeam.ts`,
  * `.env.example` and `.env.local`, because a deploy that does not is
  * indistinguishable from every player losing their account.
  *
- * Every deploy restores the recovered legacynet players by default, from
- * `legacy-players.json`. It runs BEFORE `--migrate-from` so that a live
- * deployment's state always wins over a February 2026 checkpoint — see the note
- * on that block, because the order is load-bearing.
+ * A DEPLOY IS BLANK BY DEFAULT: no legacynet restore, no paid allow-list, no
+ * migration. Every one of those is opt-in (`--seed-legacy`, `--paid`,
+ * `--migrate-from`) and belongs to a final build, because the accounts they
+ * create are permanent and carrying them through every test deploy is how a
+ * chain of half-finished migrations starts.
+ *
+ * When they ARE asked for, the legacynet restore runs BEFORE `--migrate-from`
+ * so that a live deployment's state always wins over a February 2026
+ * checkpoint — see the note on that block, because the order is load-bearing.
  *
  * The paid list may be either a JSON array of addresses, a JSON object with an
  * `addresses` array, or a plain text file with one address per line.
@@ -40,7 +50,9 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { spawnProcess, sendMessage, jwkToAddress } from './hbclient.mjs';
+import { spawnProcess, sendMessage, jwkToAddress, transportNode } from './hbclient.mjs';
+import { minifyLua } from './lua-minify.mjs';
+import { gameModuleSources } from './game-bundle.mjs';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.resolve(HERE, '..', '..');
@@ -54,16 +66,26 @@ const ROOT = path.resolve(HERE, '..', '..');
  * jonny-ringo also answered 500 through a seeding run during this work.
  */
 const NODE = process.env.NODE_URL || 'https://schedule.forward.computer';
+const REQUEST_NODE = transportNode(NODE);
 const WALLET = process.env.HB_WALLET || path.join(ROOT, 'arweave-wallet-DA9qhP25.json');
+/**
+ * Sign-up is FREE by default; gating it is the deliberate act.
+ *
+ * It used to be the other way round, and that made the Eternal Pass allow-list
+ * the thing you got by forgetting a flag — a process nobody can join, which
+ * looks from the client exactly like a broken deploy. Anyone who wants the
+ * gate asks for it: `--paid-access` (`--no-free`, `PUBLIC_ACCESS=0`).
+ */
 const freeEnabled = process.argv.includes('--free')
   || process.argv.includes('--public-access');
 const freeDisabled = process.argv.includes('--no-free')
-  || process.argv.includes('--no-public-access');
+  || process.argv.includes('--no-public-access')
+  || process.argv.includes('--paid-access');
 if (freeEnabled && freeDisabled) {
-  throw new Error('Choose one access mode: --free or --no-free, not both');
+  throw new Error('Choose one access mode: --free (the default) or --paid-access, not both');
 }
-const PUBLIC_ACCESS = freeDisabled ? false : (
-  freeEnabled || /^(1|true|yes)$/i.test(process.env.PUBLIC_ACCESS || '')
+const PUBLIC_ACCESS = freeEnabled ? true : !(
+  freeDisabled || /^(0|false|no|off)$/i.test(process.env.PUBLIC_ACCESS || '')
 );
 
 if (!fs.existsSync(WALLET)) {
@@ -89,7 +111,6 @@ const PREVIOUS = (() => {
   return { pid, node };
 })();
 
-const read = (f) => fs.readFileSync(path.join(HERE, f), 'utf8');
 
 // A fresh process id is unknowable until spawn returns, while every worker is
 // immutably bound to a game process id. Pre-sealing here can therefore only bind
@@ -105,37 +126,71 @@ if (fleetManifestPath) {
 }
 
 // The bundle must match run-test.sh exactly, or the suite is testing something
-// other than what ships.
-const lua = [
-  // `json.lua` alone, not all of hyper-aos: this process defines its own
-  // `compute` and uses nothing else aos provides. Set HYPER_AOS to bundle the
-  // full runtime instead -- it registers `.json` the same way.
-  read(process.env.HYPER_AOS ? path.basename(process.env.HYPER_AOS) : 'json.lua'),
-  'local C = (function()',     read('constants.lua'), 'end)()',
-  `C.PUBLIC_ACCESS = ${PUBLIC_ACCESS ? 'true' : 'false'}`,
-  'local jsonx = (function()', read('jsonenc.lua'),   'end)()',
-  'local encode, jsonObject = jsonx.encode, jsonx.object',
-  'Battle = (function()',      read('battle.lua'),    'end)()',
-  'local EconomyEngine = (function()', read('economy.lua'), 'end)()',
-  'BattleFleetBootstrapConfig = { enabled = true }',
-  'BattleFleetConfig = nil',
-  'BattleFleetAuthority = (function()',
-  read('battle-fleet/authority.lua'),
-  'end)()',
-  read('game.lua'),
-].join('\n');
+// other than what ships. `minifyLua` below is the one permitted difference: it
+// deletes comments and layout and nothing else, so the suite and the module are
+// the same program.
+//
+// The list itself lives in `game-bundle.mjs` rather than here, because
+// `lua-minify.test.mjs` measures the assembled module against the deploy
+// ceiling and used to re-declare the list by hand. Two copies drifted apart
+// once already; one copy cannot.
+const sources = gameModuleSources({
+  publicAccess: PUBLIC_ACCESS,
+  hyperAos: process.env.HYPER_AOS || null,
+});
+
+/**
+ * Strip the comments out of the module — not out of the sources.
+ *
+ * The module reaches the scheduler as ONE signed message, and a public
+ * scheduler drops an oversized one with `500 scheduler_timeout`: no useful
+ * error, just a spawn that never happened. The cliff was bracketed on both
+ * hyperbeam.tylerw.ai and schedule.forward.computer — 524,452 B spawns in
+ * 10.9 s, 540,836 B fails — and the assembled bundle was 539,904 B. That is
+ * why this could not be deployed to any public node at all.
+ *
+ * About a third of those bytes were comments and indentation. They belong in
+ * the source files, which are where the reasoning for every rule in CLAUDE.md
+ * actually lives, and they do not belong in a scheduler message. `minifyLua`
+ * is a lexer rather than a regex, because both traps here are context: `--`
+ * inside a string is not a comment and `]]` inside a long string ends nothing.
+ * It preserves every token, name, number and string byte for byte, so `int()`
+ * narrowing, the published key names and the balance constants are untouched.
+ */
+const sourceBytes = Buffer.byteLength(sources);
+const lua = minifyLua(sources);
+const moduleBytes = Buffer.byteLength(lua);
+
+/**
+ * Refuse to spawn a module that is close to the cliff, rather than finding out
+ * from the scheduler.
+ *
+ * The bracket is a bracket: the real limit is somewhere in a 16 KB gap, it is
+ * the scheduler's rather than ours, and it can move. The bundle also grows
+ * every time a handler is added. Failing here costs a re-run and names the
+ * problem; failing at the scheduler leaves no process, a 500, and nothing that
+ * says what was wrong.
+ */
+const MODULE_BYTE_CEILING = 480_000;
+if (moduleBytes > MODULE_BYTE_CEILING) {
+  throw new Error(
+    `module is ${moduleBytes} bytes, over the ${MODULE_BYTE_CEILING} B ceiling `
+    + `(${sourceBytes} B of source). A public scheduler answers 500 scheduler_timeout above `
+    + '~524 KB and spawns nothing. Delete bytes — dead handlers, duplicated tables, constants '
+    + 'that the client can join from `catalog`. Moving them between files does not help.',
+  );
+}
 
 console.log(`node:   ${NODE}`);
 console.log(`owner:  ${owner}`);
 console.log(`access: ${PUBLIC_ACCESS ? 'public (new wallets may join)' : 'Eternal Pass allow-list'}`);
 console.log('fleet:  unconfigured (monolith; staged one-time fleet seal available)');
-console.log(`module: ${Buffer.byteLength(lua)} bytes`);
+console.log(`module: ${moduleBytes} bytes (${sourceBytes} B of source, comments stripped)`);
 
 let t = Date.now();
 const pid = await spawnProcess({ node: NODE, jwk, lua, name: 'TEST-Rune Realm Game' });
 console.log(`spawn:  ${Date.now() - t} ms`);
 console.log(`pid:    ${pid}\n`);
-fs.writeFileSync(path.join(ROOT, 'live-process.txt'), `${pid}\n${NODE}\n${owner}\n`);
 
 /**
  * Read a published key, retrying a node that is having a moment.
@@ -151,7 +206,7 @@ const readKey = async (k, { attempts = 6, delayMs = 1000 } = {}) => {
   let status = 0;
   for (let i = 0; i < attempts; i++) {
     try {
-      const r = await fetch(`${NODE}/${pid}~process@1.0/now/${k}`, { headers: { accept: 'text/plain' } });
+      const r = await fetch(`${REQUEST_NODE}/${pid}~process@1.0/now/${k}`, { headers: { accept: 'text/plain' } });
       if (r.ok) {
         const body = (await r.text()).trim();
         // A missing key is not always a 404: the node serves its own Hyperbuddy
@@ -189,6 +244,48 @@ const outJson = async (what) => {
   }
 };
 
+/**
+ * Read the result produced by one exact scheduled message.
+ *
+ * `results/output/data` under `/now` is process-global and can be overwritten
+ * by an automatic push, a concurrent bot, or any later message. Deployment
+ * acknowledgements must therefore be read at the slot returned by the write.
+ */
+const readSlot = async (node, processId, slot, {
+  attempts = 60, delayMs = 2000,
+} = {}) => {
+  let last = '(no answer)';
+  for (let i = 0; i < attempts; i++) {
+    try {
+      const response = await fetch(
+        `${transportNode(node)}/${processId}~process@1.0/compute&slot=${slot}/results/output/data`,
+        { headers: { accept: 'text/plain' } },
+      );
+      const body = (await response.text()).trim();
+      if (response.ok && body && !/^<!DOCTYPE html|^<html/i.test(body)) return body;
+      last = response.ok ? 'HTML/empty reply' : `status ${response.status}`;
+    } catch (error) {
+      last = error instanceof Error ? error.message : String(error);
+    }
+    await new Promise((resolve) => setTimeout(resolve, delayMs));
+  }
+  return `(${last})`;
+};
+
+const sendAndRead = async (message, what) => {
+  const sent = await sendMessage(message);
+  const slot = sent && (sent.slot ?? sent.Slot);
+  if (slot === undefined || slot === null) {
+    return { error: `${what} did not report a compute slot` };
+  }
+  const body = await readSlot(message.node, message.process, slot);
+  try {
+    return JSON.parse(body);
+  } catch {
+    return { error: `${what} slot ${slot} returned ${body.slice(0, 180) || '(nothing)'}` };
+  }
+};
+
 // Bulk player loading --------------------------------------------------------
 
 /**
@@ -201,13 +298,14 @@ const outJson = async (what) => {
  */
 async function loadPlayers(rows, label) {
   let loaded = 0;
-  const BATCH = 10;   // whole player records are large; keep the message small
+  // The largest 25-player legacy payload is ~23 KB. This stays comfortably
+  // below the relay/node limits while avoiding 17 slow scheduler round trips.
+  const BATCH = 25;
   for (let i = 0; i < rows.length; i += BATCH) {
-    await sendMessage({
+    const reply = await sendAndRead({
       node: NODE, jwk, process: pid, action: 'Admin.Load',
       data: JSON.stringify({ players: rows.slice(i, i + BATCH) }),
-    });
-    const reply = await outJson('load');
+    }, 'load');
     if (reply.error) {
       console.error(`\n  load failed: ${reply.error}`);
       console.error('  (only the process OWNER can load; check HB_WALLET)');
@@ -225,11 +323,16 @@ async function loadPlayers(rows, label) {
 /**
  * The old game's own players, recovered from its Arweave checkpoints.
  *
- * ON BY DEFAULT. `legacy-players.json` is committed, so every deploy from here
- * on restores the 168 who played on legacynet — their faction, companion,
- * level, stats, loot boxes and berries — rather than handing them an empty
- * account. `--no-seed-legacy` (or `SEED_LEGACY=0`) turns it off; a path after
- * `--seed-legacy` reads a different file.
+ * OFF BY DEFAULT, and asked for once. `legacy-players.json` is committed and
+ * holds the 168 who played on legacynet — their faction, companion, level,
+ * stats, loot boxes and berries. `--seed-legacy` (or `SEED_LEGACY=<file>`)
+ * restores them; a path after the flag reads a different file.
+ *
+ * It is opt-in because those 168 accounts are the real thing. Under a test
+ * process they are someone else's history sitting beneath whatever the run is
+ * measuring, and every deploy that carries them forward is another chance to
+ * carry them forward WRONG. They are restored onto the process that actually
+ * launches, once.
  *
  * `--migrate-from` carries one HyperBEAM deployment to the next by asking the
  * old process to export itself. That is impossible for legacynet: those
@@ -251,19 +354,25 @@ const legacyArg = process.argv.indexOf('--seed-legacy');
 const legacyPath = legacyArg !== -1 && (process.argv[legacyArg + 1] ?? '').match(/^[^-]/)
   ? process.argv[legacyArg + 1]
   : null;
-const seedLegacy = (process.env.SEED_LEGACY === '0' || process.argv.includes('--no-seed-legacy'))
+const legacyOff = process.env.SEED_LEGACY === '0' || process.argv.includes('--no-seed-legacy');
+// SEED_LEGACY may name a file or simply say yes; both mean "restore".
+const legacyEnv = !legacyOff && process.env.SEED_LEGACY
+  ? (/^(1|true|yes|on)$/i.test(process.env.SEED_LEGACY)
+    ? 'legacy-players.json'
+    : process.env.SEED_LEGACY)
+  : null;
+const seedLegacy = legacyOff
   ? null
-  : (legacyPath || process.env.SEED_LEGACY || 'legacy-players.json');
+  : (legacyPath || legacyEnv || (legacyArg !== -1 ? 'legacy-players.json' : null));
 
 if (seedLegacy) {
   const file = path.isAbsolute(seedLegacy) ? seedLegacy : path.join(HERE, seedLegacy);
   if (!fs.existsSync(file)) {
-    // Explicitly asked for and missing is an error; the default being absent is
-    // not — a fresh checkout that has not run the recovery still deploys.
-    const asked = legacyArg !== -1 || process.env.SEED_LEGACY;
+    // The restore is opt-in now, so getting here means it was asked for by name
+    // and is not on disk. That is a failed deploy, never a quiet skip.
     console.log(`No ${path.relative(ROOT, file)} — no legacynet players restored.`);
     console.log('  npm run recover:state && npm run recover:build\n');
-    if (asked) process.exit(1);
+    process.exit(1);
   } else {
     const parsed = JSON.parse(fs.readFileSync(file, 'utf8'));
     const rows = Array.isArray(parsed) ? parsed : (parsed.players ?? []);
@@ -277,14 +386,15 @@ if (seedLegacy) {
     // The Alter's faction tally is process-global, so it goes in a message of
     // its own rather than riding on an arbitrary batch of players.
     if (parsed.offerings && Object.keys(parsed.offerings).length) {
-      await sendMessage({
+      const reply = await sendAndRead({
         node: NODE, jwk, process: pid, action: 'Admin.Load',
         data: JSON.stringify({
           offerings: parsed.offerings,
           checkins: parsed.checkins ?? {},
           players: [],
         }),
-      });
+      }, 'load-offerings');
+      if (reply.error) throw new Error(`offering migration failed: ${reply.error}`);
       const tally = Object.entries(parsed.offerings)
         .map(([f, n]) => `${f} ${n}`).join(', ');
       console.log(`  faction offerings restored: ${tally}`);
@@ -293,6 +403,8 @@ if (seedLegacy) {
     }
     console.log('');
   }
+} else {
+  console.log('blank: no legacynet restore (--seed-legacy restores them)');
 }
 
 // Carry a previous deployment across ------------------------------------------
@@ -334,20 +446,6 @@ const migrateNode = process.env.MIGRATE_NODE
 if (migrateFrom) {
   console.log(`carrying players across from ${migrateFrom}`);
   if (migrateNode !== NODE) console.log(`  reading it from ${migrateNode}`);
-  const readOld = async () => {
-    const r = await fetch(
-      `${migrateNode}/${migrateFrom}~process@1.0/now/results/output/data`,
-      { headers: { accept: 'text/plain' } },
-    );
-    const body = (await r.text()).trim();
-    if (!r.ok) return { error: `${migrateNode} answered ${r.status} for ${migrateFrom}: ${body.slice(0, 160)}` };
-    try {
-      return JSON.parse(body);
-    } catch {
-      return { error: `unreadable export from ${migrateFrom}: ${body.slice(0, 160) || '(nothing)'}` };
-    }
-  };
-
   /**
    * Read the old player table out, page by page.
    *
@@ -371,11 +469,10 @@ if (migrateFrom) {
   for (let page = 0; page < 200 && !complete; page++) {
     let chunk = null;
     for (let attempt = 0; attempt < 4; attempt++) {
-      await sendMessage({
+      const got = await sendAndRead({
         node: migrateNode, jwk, process: migrateFrom, action: 'Admin.Export',
         tags: { Action: 'Admin.Export', Offset: String(offset), Limit: '25' },
-      });
-      const got = await readOld();
+      }, 'player export');
       if (!got.error && Number.isFinite(got.count)) { chunk = got; break; }
       if (got.error && /not authorised/i.test(got.error)) {
         console.error(`\n  export refused: ${got.error}`);
@@ -398,11 +495,21 @@ if (migrateFrom) {
         checkins: chunk.checkins ?? {},
         metrics: chunk.metrics ?? {},
         audit: chunk.audit ?? [],
+        monsterIndexOverrides: chunk.monsterIndexOverrides ?? {},
+        monsterIndexRevision: chunk.monsterIndexRevision ?? 1,
         battlesCompleted: chunk.battlesCompleted ?? 0,
         withdrawals: chunk.withdrawals ?? {},
         withdrawSeq: chunk.withdrawSeq ?? 0,
         deposits: chunk.deposits ?? {},
         runeToken: chunk.runeToken ?? '',
+        // The allow-list, which is in NO page of players.
+        //
+        // `Admin.Unlock` no longer mints a record for the addresses it admits
+        // — an empty account is ~6 live Lua tables swept quadratically by every
+        // message from every player, forever — so an admitted wallet that has
+        // not logged in yet exists only as a string in the old process. Drop it
+        // here and the redeploy locks out every paid holder who had not played.
+        unlockedAddresses: chunk.unlockedAddresses ?? [],
       };
     }
     carried.push(...(chunk.players ?? []));
@@ -424,9 +531,13 @@ if (migrateFrom) {
   /**
    * Drop the accounts that exist but were never played.
    *
-   * `Admin.Unlock` calls `getPlayer`, so seeding a paid list MINTS a record for
-   * every address on it — unlocked, and empty in every other respect. Export
-   * those and they look identical to a real player who has nothing.
+   * `Admin.Unlock` USED to call `getPlayer`, which minted a record for every
+   * address on a paid list — unlocked, and empty in every other respect. Export
+   * those and they look identical to a real player who has nothing. It now
+   * admits an address as a string instead (see `Unlocked` in game.lua), so a
+   * process deployed after that change produces no such rows; this filter stays
+   * because the process being migrated FROM may predate it, and because an
+   * account can still be emptied by other means.
    *
    * That matters because `Admin.Load` is not uniformly additive. It guards
    * `faction` and `monster` behind a presence check and merges `inventory`, but
@@ -455,11 +566,10 @@ if (migrateFrom) {
 
   const loaded = await loadPlayers(played, 'loaded');
   if (carriedHistory) {
-    await sendMessage({
+    const historyReply = await sendAndRead({
       node: NODE, jwk, process: pid, action: 'Admin.Load',
       data: JSON.stringify({ ...carriedHistory, players: [] }),
-    });
-    const historyReply = await outJson('load-history');
+    }, 'load-history');
     if (historyReply.error) throw new Error(`history migration failed: ${historyReply.error}`);
   }
 
@@ -487,12 +597,11 @@ if (migrateFrom) {
   for (let page = 0; page < 200 && !marketDone; page++) {
     let chunk = null;
     for (let attempt = 0; attempt < 4; attempt++) {
-      await sendMessage({
+      const got = await sendAndRead({
         node: migrateNode, jwk, process: migrateFrom, action: 'Admin.Export',
         tags: { Action: 'Admin.Export', Section: 'market',
                 Offset: String(marketOffset), Limit: '25' },
-      });
-      const got = await readOld();
+      }, 'market export');
       // A process deployed before the market existed does not know this
       // section and answers with an ordinary player page. That is not a
       // failure to retry — there is simply nothing to carry.
@@ -539,7 +648,7 @@ if (migrateFrom) {
   if (listings.length || marketHistory) {
     const BATCH = 10;
     for (let i = 0; i < Math.max(1, Math.ceil(listings.length / BATCH)); i++) {
-      await sendMessage({
+      const reply = await sendAndRead({
         node: NODE, jwk, process: pid, action: 'Admin.Load',
         data: JSON.stringify({
           players: [],
@@ -547,8 +656,7 @@ if (migrateFrom) {
           marketSeq,
           ...(i === 0 && marketHistory ? { marketHistory } : {}),
         }),
-      });
-      const reply = await outJson('load-market');
+      }, 'load-market');
       if (reply.error) throw new Error(`market migration failed: ${reply.error}`);
     }
     console.log(`  carried ${listings.length} listing(s) out of escrow`);
@@ -559,17 +667,15 @@ if (migrateFrom) {
   // state object. Load it LAST: its bucket totals describe the complete player
   // and order population, so loading it before paged players would make an
   // intermediate partial world look like a reconciliation correction.
-  await sendMessage({
+  const economyExport = await sendAndRead({
     node: migrateNode, jwk, process: migrateFrom, action: 'Admin.Export',
     tags: { Action: 'Admin.Export', Section: 'economy' },
-  });
-  const economyExport = await readOld();
+  }, 'economy export');
   if (economyExport?.section === 'economy' && economyExport.economy) {
-    await sendMessage({
+    const economyReply = await sendAndRead({
       node: NODE, jwk, process: pid, action: 'Admin.Load',
       data: JSON.stringify({ players: [], economy: economyExport.economy }),
-    });
-    const economyReply = await outJson('load-economy');
+    }, 'load-economy');
     if (economyReply.error) throw new Error(`economy migration failed: ${economyReply.error}`);
     console.log('  carried Gold, item, loot-box, order, shop and policy state');
   } else {
@@ -592,19 +698,29 @@ function loadPaidList(file) {
   return raw.split(/\r?\n/).map((s) => s.trim()).filter((s) => s && !s.startsWith('#'));
 }
 
-// The paid allow-list is skipped on a --no-paid deploy.
+// The paid allow-list is OFF unless this deploy asks for it (`--paid-list`).
 //
-// `Admin.Unlock` MINTS a record for every address it is given, so unlocking the
-// 168 paid wallets does not merely permit them, it creates 168 accounts. On a
-// real deployment that is exactly right. On a test process it is 168 empty
-// players sitting under whatever the run is measuring, inflating `users` and
-// every leaderboard denominator — and under `--free` it buys nothing anyway,
+// This is not the access mode — that is `--paid-access`, and it decides whether
+// an unknown wallet may join at all. This decides whether the wallets that
+// already bought a pass are minted into the new process.
+//
+// `Admin.Unlock` admits each address as a STRING and mints nothing, so
+// unlocking the 168 paid wallets permits them without creating 168 accounts.
+// That is what `--paid` (or `PAID_LIST=<file>`) is for. It no longer moves
+// `users` or any leaderboard denominator — the admitted count is published
+// separately as `allowlisted` — and under `--free` it buys nothing anyway,
 // because public access already admits any wallet.
+const paidEnv = process.env.PAID_LIST && process.env.PAID_LIST !== '0'
+  ? process.env.PAID_LIST
+  : null;
 const skipPaid = process.argv.includes('--no-paid')
-  || process.env.PAID_LIST === '0';
-const paidFile = process.env.PAID_LIST || path.join(HERE, 'paid.json');
+  || process.env.PAID_LIST === '0'
+  || !(process.argv.includes('--paid-list') || paidEnv);
+const paidFile = paidEnv && !/^(1|true|yes|on)$/i.test(paidEnv)
+  ? paidEnv
+  : path.join(HERE, 'paid.json');
 if (skipPaid) {
-  console.log('skipping the paid allow-list (--no-paid)');
+  console.log('blank: no paid allow-list (--paid-list unlocks it)');
 } else if (fs.existsSync(paidFile)) {
   const all = [...new Set(loadPaidList(paidFile))];
   // 43-character base64url is what an Arweave address looks like. Anything else
@@ -624,11 +740,10 @@ if (skipPaid) {
   let unlocked = 0;
   for (let i = 0; i < valid.length; i += BATCH) {
     const chunk = valid.slice(i, i + BATCH);
-    await sendMessage({
+    const reply = await sendAndRead({
       node: NODE, jwk, process: pid, action: 'Admin.Unlock',
       data: JSON.stringify({ addresses: chunk }),
-    });
-    const reply = await outJson('unlock');
+    }, 'unlock');
     if (reply.error) {
       console.error(`\n  unlock failed: ${reply.error}`);
       break;
@@ -719,6 +834,12 @@ function syncEnv(newPid) {
 }
 
 syncEnv(pid);
+
+// Publish the canonical process pointer LAST. A partially seeded process must
+// never become the target of the app, operators, or a watcher-driven bot run.
+// `redeploy.mjs` waits for this child to exit before reading the file, so it
+// does not need the id earlier.
+fs.writeFileSync(path.join(ROOT, 'live-process.txt'), `${pid}\n${NODE}\n${owner}\n`);
 
 // Smoke test -----------------------------------------------------------------
 

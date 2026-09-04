@@ -90,10 +90,22 @@ function readBody(request, limit = 8 * 1024 * 1024) {
   });
 }
 
-const REQUEST_HEADERS = ['accept', 'accept-bundle', 'content-type'];
+// Preserve every application/header field that the signing client supplied.
+// The old three-name allow-list was sufficient for unsigned GET preflights but
+// silently discarded `signature`, `signature-input`, `content-digest`, and all
+// AO message fields on signed writes. HyperBEAM therefore received a process
+// definition with no signer. Exclude only hop-by-hop headers and the defaults
+// that Node's local fetch adds on its own; the browser supplies its own copies
+// of those when it performs the public request.
+const TRANSPORT_HEADERS = new Set([
+  'host', 'connection', 'content-length', 'transfer-encoding', 'te', 'trailer',
+  'upgrade', 'proxy-authorization', 'proxy-authenticate', 'keep-alive',
+  'accept-encoding', 'accept-language', 'sec-fetch-mode', 'user-agent',
+]);
 function forwardHeaders(headers) {
-  return Object.fromEntries(REQUEST_HEADERS.flatMap((name) => (
-    headers[name] === undefined ? [] : [[name, String(headers[name])]]
+  return Object.fromEntries(Object.entries(headers).flatMap(([name, value]) => (
+    value === undefined || TRANSPORT_HEADERS.has(name.toLowerCase())
+      ? [] : [[name, Array.isArray(value) ? value.join(', ') : String(value)]]
   )));
 }
 

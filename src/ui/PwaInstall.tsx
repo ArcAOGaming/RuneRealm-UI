@@ -1,23 +1,14 @@
 import {
-  createContext, ReactNode, useCallback, useContext, useEffect, useMemo, useState,
+  ReactNode, useCallback, useEffect, useMemo, useState,
 } from 'react';
+import { type InstallResult, PwaInstallContext } from './pwaInstallContext';
+
+export type { InstallResult };
 
 type InstallPromptEvent = Event & {
   prompt: () => Promise<void>;
   userChoice: Promise<{ outcome: 'accepted' | 'dismissed'; platform: string }>;
 };
-
-export type InstallResult = 'accepted' | 'dismissed' | 'ios-help' | 'browser-help' | 'installed';
-
-type PwaInstallContextValue = {
-  installed: boolean;
-  installing: boolean;
-  promptReady: boolean;
-  ios: boolean;
-  install: () => Promise<InstallResult>;
-};
-
-const PwaInstallContext = createContext<PwaInstallContextValue | null>(null);
 
 // Browsers may decide that the app is installable before React mounts. Keep
 // the one-shot event at module scope so moving the install button into a
@@ -100,10 +91,4 @@ export function PwaInstallProvider({ children }: { children: ReactNode }) {
   }), [installed, installing, prompt, ios, install]);
 
   return <PwaInstallContext.Provider value={value}>{children}</PwaInstallContext.Provider>;
-}
-
-export function usePwaInstall(): PwaInstallContextValue {
-  const context = useContext(PwaInstallContext);
-  if (!context) throw new Error('usePwaInstall must be used inside <PwaInstallProvider>');
-  return context;
 }

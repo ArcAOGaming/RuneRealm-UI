@@ -68,6 +68,25 @@ function durationMs(value) {
   return Number(match[1]) * unit;
 }
 
+/**
+ * Unwrap a published key that the node returned inside a result envelope.
+ *
+ * A published read can come back either as the value itself or wrapped as
+ * `{ status, "ao-result": "body", body }`, where `body` holds the value and is
+ * sometimes still a JSON string. Reading the outer object as if it were the
+ * value does not fail loudly — every field simply reads `undefined`, so an
+ * invariant check on it reports a violation that never happened. That is
+ * exactly what the 2026-09-02 soak did: it ended on a false "economy invariant
+ * failed" while the live `economy` key had `invariants.ok = true` and every
+ * asset balanced.
+ */
+function unwrapPublished(value) {
+  if (!value || typeof value !== 'object') return value;
+  if (value.body === undefined || value.invariants !== undefined) return value;
+  if (typeof value.body !== 'string') return value.body;
+  try { return JSON.parse(value.body); } catch { return value; }
+}
+
 async function readEconomyAudit(node, pid) {
   try {
     const response = await fetch(`${node}/${pid}~process@1.0/now/economy`, {
@@ -77,7 +96,7 @@ async function readEconomyAudit(node, pid) {
     if (!response.ok || /^<!DOCTYPE html|^<html/i.test(text)) {
       return { ok: false, error: `economy read ${response.status}` };
     }
-    const value = JSON.parse(text);
+    const value = unwrapPublished(JSON.parse(text));
     return {
       ok: value?.invariants?.ok === true,
       mode: value?.mode,
@@ -95,7 +114,28 @@ async function readEconomyAudit(node, pid) {
   }
 }
 
+/**
+ * Which actors run. `--limit N` takes the first N; `--only a,b` names them.
+ *
+ * `--limit` alone cannot express "one actor that keeps finding work", because
+ * the profile order is grouped by role and the first eight are all quest
+ * runners. A single quest runner exhausts what it can usefully do and then
+ * spins `idle.no-economic-opportunity` forever — measured 2026-09-03, a
+ * 15-minute window with ZERO signed writes, which makes a latency run collect
+ * nothing at all. Naming the actor is the difference between a long run that
+ * measures something and one that idles.
+ */
 function selectedProfiles() {
+  const only = option('only', null);
+  if (only !== null) {
+    const wanted = String(only).split(',').map((name) => name.trim()).filter(Boolean);
+    if (!wanted.length) throw new Error('--only needs at least one wallet name');
+    return wanted.map((name) => {
+      const profile = PROFILES.find((candidate) => candidate.wallet === name);
+      if (!profile) throw new Error(`--only: no such wallet profile '${name}'`);
+      return profile;
+    });
+  }
   const limit = integerOption('limit', PROFILES.length, { min: 1, max: PROFILES.length });
   return PROFILES.slice(0, limit);
 }
@@ -186,6 +226,62 @@ function timingStats(values) {
   };
 }
 
+/**
+ * Percentiles for every phase of a signed write, over a run.
+ *
+ * The phases are reported separately because they fail for unrelated reasons
+ * and are fixed in unrelated places: signing is local CPU, the POST is the
+ * scheduler admitting the item, and the reply read is pull-based compute over
+ * the published state. A single round-trip number hides which one moved, which
+ * is the only thing a regression here needs to say.
+ */
+function transportStats(samples) {
+  const ok = samples.filter((sample) => sample.ok);
+  const phase = (name, from = ok) => timingStats(from.map((sample) => sample[name]));
+  const withRead = ok.filter((sample) => Number.isFinite(sample.readMs));
+  return {
+    writes: samples.length,
+    ok: ok.length,
+    failed: samples.length - ok.length,
+    // Sign and POST are the two the client controls and the node answers.
+    buildMs: phase('buildMs'),
+    signMs: phase('signMs'),
+    postMs: phase('postMs'),
+    sendMs: phase('sendMs'),
+    // Reading the computed reply. Charged separately because it is compute,
+    // not scheduling, and it is the half that grows with published state.
+    readMs: phase('readMs', withRead),
+    roundTripMs: timingStats(withRead.map((s) => s.sendMs + s.readMs)),
+    computeAttempts: timingStats(withRead.map((s) => s.attempts ?? 1)),
+    bytes: timingStats(ok.map((sample) => sample.bytes)),
+    // Failures carry no phase split worth averaging, but their count over time
+    // is how a node outage reads in the record.
+    failuresByError: samples.filter((sample) => !sample.ok).reduce((acc, sample) => {
+      const key = sample.error ?? 'unknown';
+      acc[key] = (acc[key] ?? 0) + 1;
+      return acc;
+    }, {}),
+  };
+}
+
+function formatPhase(label, stats) {
+  return `  ${label.padEnd(16)} n=${String(stats.count).padStart(5)}`
+    + ` p50 ${String(Math.round(stats.p50Ms)).padStart(6)}ms`
+    + ` p90 ${String(Math.round(stats.p90Ms)).padStart(6)}ms`
+    + ` p99 ${String(Math.round(stats.p99Ms)).padStart(6)}ms`
+    + ` max ${String(Math.round(stats.maxMs)).padStart(6)}ms`;
+}
+
+function printTransport(stats, title) {
+  console.log(`\n${title}  (${stats.ok} ok, ${stats.failed} failed)`);
+  console.log(formatPhase('build', stats.buildMs));
+  console.log(formatPhase('sign', stats.signMs));
+  console.log(formatPhase('POST -> slot', stats.postMs));
+  console.log(formatPhase('send subtotal', stats.sendMs));
+  console.log(formatPhase('reply read', stats.readMs));
+  console.log(formatPhase('round trip', stats.roundTripMs));
+}
+
 async function runLive() {
   const profiles = selectedProfiles();
   if (!flag('live')) {
@@ -208,6 +304,11 @@ async function runLive() {
   const { concurrency, actionsPerSecond, burst } = policy;
   const cycles = integerOption('cycles', 10, { min: 1, max: 1_000_000 });
   const runFor = durationMs(option('duration', null));
+  // How often a long run prints its phase split. Only meaningful for a timed
+  // run: a short cycle run finishes before the first interval would fire.
+  const reportEvery = runFor === null && !option('report', null)
+    ? null
+    : durationMs(option('report', '5m'));
   const cleanupOnly = flag('cleanup-only');
   if (cleanupOnly && runFor !== null) {
     throw new Error('--cleanup-only cannot be combined with --duration');
@@ -249,6 +350,9 @@ async function runLive() {
   }));
   const byWallet = new Map(actors.map((actor) => [actor.profile.wallet, actor]));
   const timings = new Map();
+  // Every signed write's phase split, successes and failures alike, in the
+  // order the transport reported them.
+  const transportSamples = [];
   const successfulResponseDurations = [];
   const failedResponseDurations = [];
   const acquireDispatchToken = actionsPerSecond === null
@@ -288,6 +392,7 @@ async function runLive() {
 
   const observe = (actor, phase, outcome) => {
     actionCount++;
+    if (Array.isArray(outcome.transport)) transportSamples.push(...outcome.transport);
     const duration = outcome.durationMs ?? 0;
     successfulResponseDurations.push(duration);
     const bucket = timings.get(outcome.action) ?? [];
@@ -308,6 +413,7 @@ async function runLive() {
     if (response) failedResponseCount++;
     const entry = { wallet: actor.profile.wallet, callSign: actor.profile.callSign,
       phase, ...failureEventFields(error) };
+    if (Array.isArray(entry.transport)) transportSamples.push(...entry.transport);
     failures.push(entry);
     if (response && Number.isFinite(error.durationMs)) {
       failedResponseDurations.push(error.durationMs);
@@ -436,6 +542,26 @@ async function runLive() {
   console.log(`seed        ${seed}`);
   console.log(`events      ${eventsFile}\n`);
 
+  // A long run that reports only at the end is not observable while it matters.
+  // Every interval, print the phase split for the writes since the last one and
+  // put the same numbers in the event log, so a node that degrades or drops out
+  // partway through is visible as a change rather than only as a worse average.
+  let reportedThrough = 0;
+  const reportTransport = () => {
+    const window = transportSamples.slice(reportedThrough);
+    reportedThrough = transportSamples.length;
+    if (!window.length) {
+      console.log(`\n[${new Date().toISOString()}] no signed writes in the last interval`);
+      record({ type: 'transport.progress', writes: 0 });
+      return;
+    }
+    const stats = transportStats(window);
+    printTransport(stats, `[${new Date().toISOString()}] last ${window.length} signed writes`);
+    record({ type: 'transport.progress', elapsedMs: Date.now() - startedAt, ...stats });
+  };
+  const reportTimer = reportEvery === null ? null : setInterval(reportTransport, reportEvery);
+  reportTimer?.unref?.();
+
   try {
     const bootstrapped = await mapLimit(actors, concurrency, (actor) =>
       invoke(actor, 'bootstrap', 'bootstrap'));
@@ -533,6 +659,7 @@ async function runLive() {
     console.error(`\nRUN ERROR: ${error.message}`);
     record({ type: 'error', ...entry });
   } finally {
+    if (reportTimer) clearInterval(reportTimer);
     // Timed runs have a definite stop, so leave no bot or PvP arena session
     // waiting for an actor that is no longer running. Cycle runs preserve bot
     // progress unless --cleanup-all is explicit, while PvP is always released.
@@ -588,6 +715,7 @@ async function runLive() {
       failureLatencyMs: timingStats(failedResponseDurations),
     },
     actions: Object.fromEntries([...timings].map(([action, values]) => [action, timingStats(values)])),
+    transport: transportStats(transportSamples),
     failures,
     economy: economyAudit,
   };
@@ -598,6 +726,7 @@ async function runLive() {
   console.log(`\n${actionCount} actions, ${failures.length} errors`
     + `${tolerated ? ` (${tolerated} tolerated, run continued)` : ''}`
     + `, ${Math.round(summary.elapsedMs / 1000)}s`);
+  if (summary.transport.writes) printTransport(summary.transport, 'Signed write, by phase');
   console.log(`summary     ${summaryFile}`);
   if (interrupted) process.exitCode = 130;
   else if (failures.length || fatalError) process.exitCode = 1;

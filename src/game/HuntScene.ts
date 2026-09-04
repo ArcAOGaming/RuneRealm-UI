@@ -1,8 +1,8 @@
 /** Placeholder top-down Hunt world. Tiled layers can replace drawWorld later. */
 import Phaser from 'phaser';
-import { Element, Monster } from '../lib/types';
-import { FRAME, ROW, rowFrames, sheetUrl, STAND_FRAME } from './assets';
+import { Affinity, Monster } from '../lib/types';
 import { reducedMotion } from './boot';
+import { MonsterRig, monsterRig } from './MonsterRig';
 
 export const HUNT_WORLD = { w: 768, h: 432 } as const;
 
@@ -10,7 +10,8 @@ type Dir = 'up' | 'down' | 'left' | 'right';
 type Init = {
   playerSheet: string;
   monsterSprite: string;
-  element: Element;
+  monsterEntryNo?: number;
+  element: Affinity;
   onTrailReady: () => void;
   onTravel: (travelled: number, target: number) => void;
 };
@@ -19,11 +20,8 @@ const PLAYER_FRAMES: Record<Dir, number[]> = {
   down: [0, 1, 2, 1], left: [3, 4, 5, 4],
   right: [6, 7, 8, 7], up: [9, 10, 11, 10],
 };
-const MONSTER_ROW: Record<Dir, number> = {
-  right: ROW.walkRight, left: ROW.walkLeft, up: ROW.walkUp, down: ROW.walkDown,
-};
-const TINT: Record<Element, number> = {
-  fire: 0xff7a43, water: 0x4ab0ff, air: 0x7ee2c8, rock: 0xc9a25d,
+const TINT: Record<Affinity, number> = {
+  fire: 0xff7a43, water: 0x4ab0ff, air: 0x7ee2c8, rock: 0xc9a25d, normal: 0x969fb8,
 };
 
 type TrailPoint = { x: number; y: number; facing: Dir };
@@ -40,17 +38,20 @@ export class HuntScene extends Phaser.Scene {
   private keys!: Record<'W' | 'A' | 'S' | 'D', Phaser.Input.Keyboard.Key>;
   private pad = new Set<Dir>();
   private facing: Dir = 'down';
+  private companionFacing: Dir = 'down';
   private trail: TrailPoint[] = [];
   private travelled = 0;
   private target = 540;
   private locked = false;
   private dead = false;
   private lastProgress = 0;
+  private companionRig!: MonsterRig;
 
   constructor() { super(HuntScene.KEY); }
 
   init(data: Init) {
     this.init_ = data;
+    this.companionRig = monsterRig({ entryNo: data.monsterEntryNo, sprite: data.monsterSprite });
     this.target = 460 + Math.floor(Math.random() * 300);
   }
 
@@ -58,9 +59,7 @@ export class HuntScene extends Phaser.Scene {
     this.load.spritesheet('hunt-player', this.init_.playerSheet, {
       frameWidth: 48, frameHeight: 60,
     });
-    this.load.spritesheet('hunt-companion', sheetUrl(this.init_.monsterSprite), {
-      frameWidth: FRAME.w, frameHeight: FRAME.h,
-    });
+    this.companionRig.preload(this, 'hunt-companion');
   }
 
   create() {
@@ -70,9 +69,8 @@ export class HuntScene extends Phaser.Scene {
     this.playerShadow = this.add.ellipse(384, 246, 23, 7, 0x07110f, 0.34).setDepth(239);
     this.player = this.add.sprite(384, 246, 'hunt-player', 1)
       .setOrigin(0.5, 1).setDepth(246);
-    this.companionShadow = this.add.ellipse(338, 268, 25, 8, 0x07110f, 0.3).setDepth(261);
-    this.companion = this.add.sprite(338, 268, 'hunt-companion', STAND_FRAME)
-      .setOrigin(0.5, 0.86).setDepth(268);
+    this.companionShadow = this.companionRig.createShadow(this, 338, 268, 0x07110f, 0.3).setDepth(261);
+    this.companion = this.companionRig.createSprite(this, 'hunt-companion', 338, 268).setDepth(268);
 
     for (let i = 0; i < 24; i += 1) {
       this.trail.push({ x: 384 - i * 2, y: 246 + i, facing: 'down' });
@@ -158,14 +156,11 @@ export class HuntScene extends Phaser.Scene {
   }
 
   private createAnimations() {
+    this.companionRig.register(this, 'hunt-companion', 'hunt-companion');
     (Object.keys(PLAYER_FRAMES) as Dir[]).forEach((dir) => {
       this.anims.create({
         key: `hunter-${dir}`, frameRate: 8, repeat: -1,
         frames: PLAYER_FRAMES[dir].map((frame) => ({ key: 'hunt-player', frame })),
-      });
-      this.anims.create({
-        key: `companion-${dir}`, frameRate: 8, repeat: -1,
-        frames: rowFrames(MONSTER_ROW[dir]).map((frame) => ({ key: 'hunt-companion', frame })),
       });
     });
   }
@@ -227,10 +222,10 @@ export class HuntScene extends Phaser.Scene {
         const dir: Dir = Math.abs(Math.cos(angle)) > Math.abs(Math.sin(angle))
           ? (Math.cos(angle) > 0 ? 'right' : 'left')
           : (Math.sin(angle) > 0 ? 'down' : 'up');
-        this.companion.play(`companion-${dir}`, true);
+        this.companionFacing = dir;
+        this.companionRig.loop(this.companion, 'hunt-companion', `walk.${dir}`);
       } else {
-        this.companion.anims.stop();
-        this.companion.setFrame(STAND_FRAME);
+        this.companionRig.hold(this.companion, this.companionFacing);
       }
     }
     this.syncDepth();
@@ -247,19 +242,20 @@ export class HuntScene extends Phaser.Scene {
     if (this.dead) return;
     this.locked = true;
     const key = `wild-${monster.id}`;
+    const rig = monsterRig(monster);
     const perform = () => {
       if (this.dead) return;
-      const wild = this.add.sprite(this.player.x + 180, this.player.y - 18, key, STAND_FRAME)
-        .setOrigin(0.5, 0.86).setDepth(this.player.y + 4).setScale(0.5).setAlpha(0);
-      const shadow = this.add.ellipse(wild.x, this.player.y - 3, 26, 8, 0x07110f, 0)
+      const wild = rig.createSprite(this, key, this.player.x + 180, this.player.y - 18)
+        .setDepth(this.player.y + 4).setScale(rig.render.worldScale * 0.5).setAlpha(0);
+      const shadow = rig.createShadow(this, wild.x, this.player.y - 3, 0x07110f, 0)
         .setDepth(this.player.y + 3);
       const duration = reducedMotion() ? 1 : 520;
       this.tweens.add({
         targets: wild, x: this.player.x + 54, y: this.player.y - 8,
-        scale: 1.18, alpha: 1, angle: -8, duration, ease: 'Back.Out',
+        scale: rig.render.worldScale * 1.18, alpha: 1, angle: -8, duration, ease: 'Back.Out',
         onUpdate: () => shadow.setPosition(wild.x, this.player.y - 3).setAlpha(wild.alpha * 0.34),
         onComplete: () => {
-          wild.play({ key: `${key}-attack`, repeat: 0 });
+          rig.once(wild, key, 'attack.basic');
           this.tweens.add({
             targets: wild, x: this.player.x + 24, duration: reducedMotion() ? 1 : 230,
             yoyo: true, ease: 'Quad.In',
@@ -275,19 +271,13 @@ export class HuntScene extends Phaser.Scene {
     };
 
     const makeAnim = () => {
-      if (!this.anims.exists(`${key}-attack`)) {
-        this.anims.create({
-          key: `${key}-attack`, frameRate: 12, repeat: 0,
-          frames: rowFrames(ROW.emote).map((frame) => ({ key, frame })),
-        });
-      }
+      rig.register(this, key, key);
       perform();
     };
     if (this.textures.exists(key)) { makeAnim(); return; }
-    this.load.spritesheet(key, sheetUrl(monster.sprite), {
-      frameWidth: FRAME.w, frameHeight: FRAME.h,
-    });
+    rig.preload(this, key);
     this.load.once(Phaser.Loader.Events.COMPLETE, makeAnim);
     this.load.start();
   }
+
 }

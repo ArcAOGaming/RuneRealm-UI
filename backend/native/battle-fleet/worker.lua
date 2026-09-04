@@ -847,6 +847,7 @@ local function finalize(record, timestamp)
     timedOut = record.battle.timedOut == true,
     startedAt = record.battle.startedAt,
     endedAt = timestamp,
+    opponentEntryNo = record.battle.accepter and record.battle.accepter.entryNo or nil,
     rewardPlan = record.rewardPlan,
   }
   record.battle.endedAt = timestamp

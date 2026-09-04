@@ -13,7 +13,7 @@
  * resolution". They are; three of them are simply WebP files named .png, which
  * is what that comment was really about.)
  */
-import { Element } from '../lib/types';
+import { Affinity, Element } from '../lib/types';
 
 const url = (m: Record<string, unknown>) => m as Record<string, string>;
 
@@ -73,44 +73,6 @@ export const questRoutes = () => [...new Set(
 
 export const FRAME = { w: 64, h: 64 } as const;
 
-/**
- * Which row of the sheet is which — checked against the art, not inherited.
- *
- * Room.tsx and the first version of BattleScene both called rows 4 and 5
- * "attack", which came from a comment in the original file. They are not.
- * Laying the sheet out row by row shows rows 4 and 5 are the creature STANDING
- * STILL and facing right, with a small emote in the middle frames — a lick in
- * one, a shake with motion lines in the other. Nothing in either row moves its
- * legs.
- *
- * That mistake is why an "idle" companion appeared to be walking on the spot:
- * idle was being played from the walk row because the rows that actually hold
- * a standing pose were being saved for an attack that never used them.
- *
- * The real attack is not on this sheet at all. It is `SPECIAL` below — a
- * separate 128x128 strip of the whole creature performing the move, which is
- * why it is drawn over the ATTACKER and not over the fighter being hit.
- */
-export const ROW = {
-  walkRight: 0, walkLeft: 1, walkUp: 2, walkDown: 3, idle: 4, emote: 5,
-} as const;
-
-export const rowFrames = (row: number) =>
-  [0, 1, 2, 3].map((i) => row * 4 + i);
-
-/**
- * The one frame a creature STANDS on.
- *
- * Row 4 is a standing row, but it is not four frames of standing: frame 0 is
- * the neutral pose and frames 1-3 are an emote — a paw comes up, the mouth
- * opens, motion lines appear. Looping the whole row therefore reads as the
- * creature repeatedly performing a small attack, which is what it looked like.
- *
- * So idle HOLDS this frame, and the emote is played deliberately and rarely as
- * a one-shot on top of it.
- */
-export const STAND_FRAME = ROW.idle * 4;
-
 // Element effects ------------------------------------------------------------
 
 /**
@@ -150,8 +112,8 @@ const NEUTRAL = [
   'sunken-temple', 'forge-hall', 'ember-shrine', 'moonlit-ruins',
 ];
 
-export function arenaFor(battleId: string, element?: Element): string {
-  if (element && Math.abs(hash(battleId)) % 3 === 0) {
+export function arenaFor(battleId: string, element?: Affinity): string {
+  if (element && element !== 'normal' && Math.abs(hash(battleId)) % 3 === 0) {
     const temple = `temple-${element}`;
     if (arenaUrl(temple)) return temple;
   }

@@ -434,8 +434,21 @@ function withNestedHmacs(tabm) {
 /* ------------------------------------------------------------------ *
  * Commit: message -> fully-signed { headers, body }                    *
  * ------------------------------------------------------------------ */
+/**
+ * Wall time between two `process.hrtime.bigint()` readings, in milliseconds.
+ *
+ * Signing is not one cost. Encoding a message to its signature base walks the
+ * whole TABM and is proportional to how much the message carries; the RSA-PSS
+ * operation over that base is a fixed cost that does not care. A single
+ * "time to sign" number cannot say which of those moved, which is exactly the
+ * question a round-trip regression asks, so the phases are timed separately
+ * and carried out on the result rather than re-derived by each caller.
+ */
+const durMs = (from, to) => Number(to - from) / 1e6;
+
 export function commit(msg, jwk, opts = {}) {
   const { bundle = 'true', nestedHmacs = true, ...params0 } = opts;
+  const tEncode = process.hrtime.bigint();
   const tabm = nestedHmacs ? withNestedHmacs(toTabm(msg)) : toTabm(msg);
   const { headers, body } = tabmToHttp(tabm);
 
@@ -447,7 +460,9 @@ export function commit(msg, jwk, opts = {}) {
   const keyid = 'publickey:' + b64std(pubKeyBuf(jwk));
   const params = commitmentParams({ alg: 'rsa-pss-sha512', bundle, keyid, ...params0 });
   const base = signatureBase(headers, committed, params);
+  const tSign = process.hrtime.bigint();
   const sig = rsaPssSign(jwk, base);
+  const tSeal = process.hrtime.bigint();
   const name = 'comm-' + b64url(sha256(sig)).toLowerCase();
 
   const outHeaders = { ...headers };
@@ -455,7 +470,14 @@ export function commit(msg, jwk, opts = {}) {
   outHeaders['signature-input'] = sfDict([[name, sfInnerList(
     addDerivedSpecifiers(committed).map((k) => sfStr(k)), params)]]);
 
-  return { headers: outHeaders, body, signatureBase: base, committed, sigName: name };
+  return {
+    headers: outHeaders, body, signatureBase: base, committed, sigName: name,
+    timing: {
+      encodeMs: durMs(tEncode, tSign),
+      signMs: durMs(tSign, tSeal),
+      sealMs: durMs(tSeal, process.hrtime.bigint()),
+    },
+  };
 }
 
 /* ------------------------------------------------------------------ *
@@ -533,7 +555,7 @@ function splitSfDict(str) {
  * HTTP plumbing                                                        *
  * ------------------------------------------------------------------ */
 async function send(node, path, method, headers, body) {
-  const url = node.replace(/\/$/, '') + (path.startsWith('/') ? path : '/' + path);
+  const url = transportNode(node) + (path.startsWith('/') ? path : '/' + path);
   const res = await fetch(url, {
     method,
     headers: { ...headers, 'accept-bundle': 'true' },
@@ -544,6 +566,17 @@ async function send(node, path, method, headers, body) {
   const h = {};
   res.headers.forEach((v, k) => { h[k] = v; });
   return { status: res.status, headers: h, body: buf, url };
+}
+
+/**
+ * Optional HTTP transport override used by deployments running behind the
+ * browser relay.  `node` remains the canonical public scheduler identity that
+ * is sealed into process/config manifests; only the actual HTTP destination is
+ * replaced.  Keeping those two concerns separate prevents a temporary
+ * localhost relay URL from leaking into a live deployment.
+ */
+export function transportNode(node) {
+  return (process.env.NODE_TRANSPORT_URL || node).replace(/\/$/, '');
 }
 
 function hbError(res) {
@@ -557,9 +590,12 @@ function hbError(res) {
 
 /** POST a signed message. Returns { status, headers, body }. */
 export async function postSigned(node, path, msg, jwk, opts = {}) {
-  const { headers, body, signatureBase: base, committed } = commit(msg, jwk, opts);
+  const { headers, body, signatureBase: base, committed, timing } = commit(msg, jwk, opts);
+  const tPost = process.hrtime.bigint();
   const res = await send(node, path, 'POST', headers, body);
+  const postMs = durMs(tPost, process.hrtime.bigint());
   res.request = { headers, body, base, committed };
+  res.timing = { ...timing, postMs, bytes: body ? body.length : 0 };
   return res;
 }
 

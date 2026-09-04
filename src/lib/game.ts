@@ -16,17 +16,27 @@
  */
 
 import {
-  AcceptedWriteError, activeAddress, HB_NODE, OutboxDeliveryError, pushSlotWithRetry,
+  AcceptedWriteError, activeAddress, deliverSlot, HB_NODE, OutboxDeliveryError,
   readJSON, readState, send, GAME_PROCESS, type SendOptions,
 } from './hyperbeam';
 import {
   AdminAuditEntry, AdminFactionStats, AdminMetrics, AdminPlayerPatch,
   AdminPlayerSummary, AdminSnapshot, Battle, BattleFleetConfig, BattleFleetRoute, BerryItemId,
-  Catalog, CharacterOutfit, EconomyPolicyChange, EconomyView, Element, Faction,
+  MonsterIndexEntry, MonsterIndexLifecycle, MonsterIndexView, Catalog, CharacterOutfit, EconomyPolicyChange, EconomyView, Element, Faction,
   GoldMarketItemId, GoldOrderSide,
-  GameError, GameStats, ItemId, LeaderboardRow, Listing, OpenChallenge, Player,
+  GameError, GameStats, ItemId, LeaderboardRow, Listing, Move, OpenChallenge, Player,
   RegistryAsset, Reply, RuneWithdrawal, Sale,
 } from './types';
+
+/**
+ * What every unsigned read accepts.
+ *
+ * `signal` is the one that matters here: a read with no signal holds one of the
+ * browser's six connections to the origin for as long as the node takes, which
+ * on a backed-up node is tens of seconds, and nothing can cancel it when the
+ * screen that wanted it has gone.
+ */
+export type ReadOpts = { process?: string; node?: string; signal?: AbortSignal };
 
 function unwrap<T>(reply: Reply<T>): T {
   if (reply && typeof reply === 'object' && 'error' in reply && reply.error) {
@@ -34,6 +44,226 @@ function unwrap<T>(reply: Reply<T>): T {
   }
   return reply as T;
 }
+
+// Move definitions, joined back on ------------------------------------------
+//
+// The process stores and now PUBLISHES a move as `{ count }` — the uses
+// remaining — and nothing else. The other eight fields are identical for every
+// companion that ever rolled that move, so re-publishing them per companion put
+// 499 bytes of constant into every one of a ~1,007-byte record, in the one map
+// the node marshals five times on every message, for every player, forever. It
+// is the difference between a slot that costs what the message did and a slot
+// that costs what the whole game weighs.
+//
+// So the definitions arrive once in `catalog.movePools` and the join happens
+// here, at the single read boundary, rather than in the fifteen components that
+// read a move's numbers. Everything downstream still sees a whole `Move`.
+//
+// An older process publishes whole moves already; those pass through unchanged
+// because a field the record carries always wins over the pooled definition.
+
+/**
+ * A published key that never changes for the life of a process, fetched at
+ * most once per tab.
+ *
+ * `catalog` and `monsterindex` used to be fetched TWICE on first load — once
+ * by the parallel wave in GameProvider and once, concurrently, from inside
+ * `joined()` on the very first read that wave issued. That is ~15 KB of
+ * constants pulled down twice and two of the browser's six connections to the
+ * origin spent on a duplicate, on exactly the load where the player is also
+ * waiting for their own record.
+ *
+ * A MISS IS CACHED, and that is the whole point of this being a cache rather
+ * than a de-duplicator. `joined()` runs on every read AND on every write reply,
+ * so a slot that cleared itself on a null answer put a fresh unsigned GET of
+ * ~15 KB of constants in front of the reply to every signed action the player
+ * is waiting on — on exactly the backed-up node that made the read miss in the
+ * first place, where a published read costs 20-45 s. In the steady state every
+ * `joined()` now resolves against an already-settled promise: a microtask, no
+ * connection, no wire.
+ *
+ * Recovering from a miss is therefore EXPLICIT rather than incidental. A caller
+ * that knows it has nothing passes `fresh: true`, which discards the cached
+ * answer and refetches; `GameProvider` does that from its first-pull retry and
+ * from its thirty-second background poll, and neither is on anybody's critical
+ * path. Nothing on an action's path can trigger a refetch.
+ *
+ * A successful read is immutable — these keys are only rewritten by a redeploy,
+ * which is a new process id, and the process id is part of the cache key.
+ */
+type ConstantCache<T> = Map<string, Promise<T | null>>;
+
+/**
+ * Which process, on which node, this cached answer came from.
+ *
+ * `where()` forwards `process`/`node` into the fetch, so a cache keyed on
+ * nothing hands whichever caller populated it first to every later one: a hunt
+ * worker's monster index served as the authority's, or a redeployed process
+ * served its predecessor's catalog, silently and for the life of the tab. The
+ * defaults are spelled out so an implicit read and an explicit read of the same
+ * place still share one entry rather than fetching twice.
+ */
+const constantKey = (opts: ReadOpts) =>
+  `${opts.process ?? GAME_PROCESS} ${opts.node ?? HB_NODE}`;
+
+function readConstant<T>(
+  cache: ConstantCache<T>,
+  opts: ReadOpts & { fresh?: boolean },
+  read: () => Promise<T | null>,
+): Promise<T | null> {
+  const key = constantKey(opts);
+  if (opts.fresh) cache.delete(key);
+  const cached = cache.get(key);
+  if (cached) return cached;
+  // Deliberately cannot reject. A shared promise that rejects hands an error to
+  // every caller sharing it, including ones that only wanted a move definition
+  // joined on; "no constants" means "join nothing", never "the action failed".
+  const pending = read().catch(() => null);
+  cache.set(key, pending);
+  return pending;
+}
+
+/**
+ * Where to read from, WITHOUT the caller's `signal`.
+ *
+ * A shared fetch must not be cancellable by one of the things sharing it. The
+ * screen that happened to ask first can unmount — React's StrictMode unmounts
+ * every provider once in development — and if its abort tore down the shared
+ * promise, every other caller waiting on it would see an `AbortError` for a
+ * request they never made and had no reason to cancel. These are two constants
+ * fetched once for the life of the tab; there is nothing here worth cancelling.
+ */
+const where = (opts: ReadOpts) => ({ process: opts.process, node: opts.node });
+
+const catalogCache: ConstantCache<Catalog> = new Map();
+const monsterIndexCache: ConstantCache<MonsterIndexView> = new Map();
+
+// Derived from the two constants above, and recomputed only when the resolved
+// value itself changes identity — `joined()` runs on every read and every write
+// reply, and re-flattening the whole move catalogue each time is pure waste.
+let flatMovesFrom: Catalog | null = null;
+let flatMoves: Record<string, Move> | null = null;
+let flatEntriesFrom: MonsterIndexView | null = null;
+let flatEntries: Record<number, MonsterIndexEntry> | null = null;
+
+function flattenPools(catalog: Catalog | null): Record<string, Move> | null {
+  const pools = catalog?.movePools;
+  if (!pools || typeof pools !== 'object') return null;
+  const index: Record<string, Move> = {};
+  for (const pool of Object.values(pools)) {
+    if (!pool || typeof pool !== 'object') continue;
+    for (const [name, def] of Object.entries(pool)) {
+      if (def && typeof def === 'object') index[name] = { ...def, name } as Move;
+    }
+  }
+  return Object.keys(index).length > 0 ? index : null;
+}
+
+/** The pooled definitions, flattened by name. One shared catalog fetch. */
+function moveIndex(): Promise<Record<string, Move> | null> {
+  return readCatalog().then((catalog) => {
+    if (!catalog) return null;
+    if (catalog !== flatMovesFrom) {
+      flatMovesFrom = catalog;
+      flatMoves = flattenPools(catalog);
+    }
+    return flatMoves;
+  }).catch(() => null);
+}
+
+function flattenMonsterIndex(view: MonsterIndexView | null): Record<number, MonsterIndexEntry> | null {
+  if (!view?.entries?.length) return null;
+  return Object.fromEntries(view.entries.map((entry) => [entry.entryNo, entry]));
+}
+
+function monsterIndexLookup(): Promise<Record<number, MonsterIndexEntry> | null> {
+  return readMonsterIndex().then((view) => {
+    if (!view) return null;
+    if (view !== flatEntriesFrom) {
+      flatEntriesFrom = view;
+      flatEntries = flattenMonsterIndex(view);
+    }
+    return flatEntries;
+  }).catch(() => null);
+}
+
+/**
+ * Expand every `moves` map found anywhere in a decoded payload, in place.
+ *
+ * Deliberately structural rather than typed per shape: a companion arrives
+ * under `monster`, under `monsters`, under `collection`, on a leaderboard row,
+ * inside a listing, on either side of a battle and inside an admin snapshot,
+ * and a door missed here is a blank card rather than an error anyone would
+ * notice. The depth cap is a guard against a pathological payload, not against
+ * a cycle — this only ever runs on `JSON.parse` output.
+ */
+function joinMoves(value: unknown, index: Record<string, Move>, depth = 0): void {
+  if (depth > 12 || !value || typeof value !== 'object') return;
+  if (Array.isArray(value)) {
+    for (const item of value) joinMoves(item, index, depth + 1);
+    return;
+  }
+  for (const [key, child] of Object.entries(value as Record<string, unknown>)) {
+    if (key === 'moves' && child && typeof child === 'object' && !Array.isArray(child)) {
+      for (const [name, stored] of Object.entries(child as Record<string, unknown>)) {
+        const def = index[name];
+        if (!def || !stored || typeof stored !== 'object') continue;
+        // The stored fields win: `count` is the only one that differs, but a
+        // record written by an older build carries all nine and must keep them.
+        (child as Record<string, unknown>)[name] = { ...def, ...stored, name };
+      }
+      continue;
+    }
+    joinMoves(child, index, depth + 1);
+  }
+}
+
+function joinMonsterIndex(value: unknown, index: Record<number, MonsterIndexEntry>, depth = 0): void {
+  if (depth > 12 || !value || typeof value !== 'object') return;
+  if (Array.isArray(value)) {
+    for (const item of value) joinMonsterIndex(item, index, depth + 1);
+    return;
+  }
+  const row = value as Record<string, unknown>;
+  const entryNo = Number(row.entryNo ?? 0);
+  const entry = Number.isInteger(entryNo) ? index[entryNo] : undefined;
+  if (entry) {
+    if (row.nameMode !== 'custom') row.name = entry.name ?? entry.workingName ?? row.name;
+    row.entryKey = entry.entryKey;
+    row.evolutionStage = entry.stage;
+    if ('elementType' in row) row.elementType = entry.affinity;
+    if ('element' in row) row.element = entry.affinity;
+  }
+  for (const child of Object.values(row)) joinMonsterIndex(child, index, depth + 1);
+}
+
+/**
+ * Anything read from or replied by any Rune Realm process, with its moves put
+ * back.
+ *
+ * Exported because the hunt worker publishes companions too. It still hydrates
+ * its own views, and this is a no-op against those — a field the record carries
+ * always wins over the pooled definition — so routing hunt reads through here
+ * costs nothing today and is what stops the two processes disagreeing the day
+ * the hunt worker is compacted as well.
+ */
+export async function joined<T>(value: T): Promise<T> {
+  if (!value || typeof value !== 'object') return value;
+  const [moves, entries] = await Promise.all([moveIndex(), monsterIndexLookup()]);
+  if (moves) joinMoves(value, moves);
+  if (entries) joinMonsterIndex(value, entries);
+  return value;
+}
+
+/**
+ * `readJSON` for every game key EXCEPT `catalog`.
+ *
+ * Reading the catalog through this would recurse into `moveIndex`, which reads
+ * the catalog.
+ */
+const readGameJSON = <T>(
+  key: string, opts?: ReadOpts,
+): Promise<T | null> => readJSON<T>(key, opts).then(joined);
 
 let adminSnapshotCache: AdminSnapshot | null = null;
 let adminSnapshotInFlight: Promise<AdminSnapshot> | null = null;
@@ -76,10 +306,13 @@ const write = async <T>(
   // quietly showing stale operational data.
   if (mutatesAdminState) adminSnapshotCache = null;
 
-  const value = unwrap<T>(await send<Reply<T>>(
+  // A reply carries the same compact companions the published keys do, so it
+  // goes through the same join. Doing it here rather than per verb is what
+  // keeps every caller unaware that the wire shape changed at all.
+  const value = await joined(unwrap<T>(await send<Reply<T>>(
     Object.entries(tags).map(([name, value]) => ({ name, value })),
     { data, ...options },
-  ));
+  )));
   rememberAdminSnapshot(value);
   return value;
 };
@@ -162,9 +395,10 @@ function rememberFleetRoute(player: Player, route: BattleFleetRoute) {
   fleetPlayers.set(route.battleId, player);
 }
 
-const readAuthorityPlayer = (address: string) => readJSON<Player>(`player-${address}`);
+const readAuthorityPlayer = (address: string, opts: ReadOpts = {}) =>
+  readGameJSON<Player>(`player-${address}`, opts);
 
-async function hydrateFleetPlayer(player: Player): Promise<Player> {
+async function hydrateFleetPlayer(player: Player, signal?: AbortSignal): Promise<Player> {
   if (!player.battleFleet) {
     clearFleetRoutes(player.address);
     return player;
@@ -180,7 +414,7 @@ async function hydrateFleetPlayer(player: Player): Promise<Player> {
 
   let battle: Battle | null = null;
   let unavailable = false;
-  try { battle = await readFleetBattle(route); }
+  try { battle = await readFleetBattle(route, signal); }
   catch { unavailable = true; }
   if (!battle) {
     const waiting = {
@@ -199,7 +433,7 @@ async function hydrateFleetPlayer(player: Player): Promise<Player> {
   // the account once: if recursive delivery already cleared this exact route,
   // use the settled account instead of resurrecting a stale outcome route.
   if (battle.status === 'ended') {
-    const latest = await readAuthorityPlayer(player.address).catch(() => null);
+    const latest = await readAuthorityPlayer(player.address, { signal }).catch(() => null);
     if (latest && (latest.activeBattleId !== route.battleId
         || latest.battleFleet?.reservationId !== route.reservationId)) {
       clearFleetRoutes(player.address);
@@ -211,20 +445,21 @@ async function hydrateFleetPlayer(player: Player): Promise<Player> {
   return hydrated;
 }
 
-export const readPlayer = async (address: string) => {
-  const player = await readAuthorityPlayer(address);
-  return player ? hydrateFleetPlayer(player) : null;
+export const readPlayer = async (address: string, opts: ReadOpts = {}) => {
+  const player = await readAuthorityPlayer(address, opts);
+  return player ? hydrateFleetPlayer(player, opts.signal) : null;
 };
 
 /** Whether this deployment admits new wallets without an Eternal Pass. */
-export const readAccess = () => LEGACY_ADMIN_PROCESSES.has(GAME_PROCESS)
+export const readAccess = (opts: ReadOpts = {}) => LEGACY_ADMIN_PROCESSES.has(GAME_PROCESS)
   // This closed predecessor never published the optional access flag. Avoid a
   // guaranteed 404 on every poll; closed access is its real configuration.
   ? Promise.resolve({ publicAccess: false })
-  : readJSON<{ publicAccess: boolean }>('access');
-export const readFactions = () => readJSON<Faction[]>('factions');
-export const readLeaderboard = () => readJSON<LeaderboardRow[]>('leaderboard');
-export const readBattle = () => readJSON<Battle>('battle');
+  : readJSON<{ publicAccess: boolean }>('access', opts);
+export const readFactions = (opts: ReadOpts = {}) => readJSON<Faction[]>('factions', opts);
+export const readLeaderboard = (opts: ReadOpts = {}) =>
+  readGameJSON<LeaderboardRow[]>('leaderboard', opts);
+export const readBattle = (opts: ReadOpts = {}) => readGameJSON<Battle>('battle', opts);
 /** Immutable fleet routes published by the game authority. */
 export const readBattleFleet = () => readJSON<BattleFleetConfig>('battlefleet');
 
@@ -250,7 +485,7 @@ const fleetActionId = (prefix: string) => {
 };
 
 async function readFleetBattle(route: BattleFleetRoute, signal?: AbortSignal) {
-  return readJSON<Battle>(`battle-${route.battleId}`, {
+  return readGameJSON<Battle>(`battle-${route.battleId}`, {
     process: route.workerProcessId,
     node: route.node || HB_NODE,
     signal,
@@ -285,10 +520,32 @@ async function waitForFleetBattle(
   throw new GameError('The assigned battle worker has not published this battle yet. '
     + 'The reservation is durable; refresh instead of starting another battle.');
 }
-/** Items, activities and the combat tuning. Static; safe to fetch once. */
-export const readCatalog = () => readJSON<Catalog>('catalog');
+/**
+ * Items, activities and the combat tuning. Constant for the life of a process,
+ * so every caller in the tab shares one request — see `readConstant`.
+ *
+ * `fresh` discards a cached answer and refetches. It is how a MISS is retried,
+ * and only a caller that is not on an action's critical path may pass it.
+ */
+export const readCatalog = (opts: ReadOpts & { fresh?: boolean } = {}) =>
+  readConstant(catalogCache, opts, () => readJSON<Catalog>('catalog', where(opts)));
+
+/**
+ * Numbered creature forms and their authoritative gameplay availability.
+ *
+ * Shared and cached like the catalog. `fresh` bypasses and REPLACES the cache
+ * entry for this process and node: the retry path for a missed first load, and
+ * the authoring console, which is the one place that has just changed the
+ * published value and must see its own edit.
+ */
+export const readMonsterIndex = (opts: ReadOpts & { fresh?: boolean } = {}) =>
+  readConstant(
+    monsterIndexCache, opts, () => readJSON<MonsterIndexView>('monsterindex', where(opts)),
+  );
+
 /** Open PvP challenges. Published, so the lobby's refresh costs nothing. */
-export const readChallenges = () => readJSON<OpenChallenge[]>('challenges');
+export const readChallenges = (opts: ReadOpts = {}) =>
+  readJSON<OpenChallenge[]>('challenges', opts);
 
 export async function readPlayerCount(): Promise<number> {
   const users = await readState('users');
@@ -330,8 +587,32 @@ export const feed = (item?: ItemId, monsterId?: string) =>
     ...(monsterId ? { MonsterId: monsterId } : {}),
   });
 
-export const startPlay = (monsterId?: string) =>
-  write<Player>({ Action: 'Monster.Play', ...(monsterId ? { MonsterId: monsterId } : {}) });
+/**
+ * Send a companion out to play, naming the berry it takes.
+ *
+ * `item` is a deliberate widening of a SIGNED action's tag shape, not a
+ * side effect of anything: `Monster.Play` costs one berry, and without the tag
+ * the process picks it itself — `msg.Item or m.berryItem`, falling back to the
+ * faction's berry (game.lua, `H["Monster.Play"]`). That is fine for an
+ * elemental companion, whose berry is its element's and never ambiguous. It is
+ * wrong for a `normal`-affinity companion caught on a hunt: it has no element
+ * berry, the card offers whichever berry the player actually holds, and the
+ * optimistic projection deducts THAT one. Leaving the choice to the process
+ * meant the screen debited one berry and the process debited another.
+ *
+ * Both shapes are accepted, and that is checked rather than assumed. The
+ * handler reads `msg.Item or m.berryItem`, so omitting the tag is exactly the
+ * old behaviour — an older deployed process and this build agree. It validates
+ * an unknown id by falling through to the faction berry, and rejects a
+ * non-berry only for an `any-berry` companion; every id this client can pass is
+ * a berry. `Monster.Feed` has always sent the tag this way.
+ */
+export const startPlay = (monsterId?: string, item?: ItemId) =>
+  write<Player>({
+    Action: 'Monster.Play',
+    ...(monsterId ? { MonsterId: monsterId } : {}),
+    ...(item ? { Item: item } : {}),
+  });
 
 export const startQuest = (monsterId?: string) =>
   write<Player>({ Action: 'Monster.Quest', ...(monsterId ? { MonsterId: monsterId } : {}) });
@@ -490,13 +771,14 @@ export async function attack(
       const cachedAddress = fleetPlayers.get(battleId)?.address ?? await activeAddress();
       if (cachedAddress && validateFleetBattle(published, route, cachedAddress)
           && published.status === 'ended') {
-        const delivered = await pushSlotWithRetry(error.slot, {
+        const delivery = await deliverSlot(error.slot, {
           process: route.workerProcessId,
           node: route.node || HB_NODE,
         });
-        if (!delivered) {
+        if (!delivery.delivered) {
           throw new OutboxDeliveryError({
             slot: error.slot, action: 'battle.attack', completed: true, cause: error,
+            pushStatus: delivery.status, confirmed: delivery.confirmed,
           });
         }
         // The signed action is known terminal and its durable slot has now
@@ -643,18 +925,20 @@ export const transferMonster = (monsterId: string, recipient: string) =>
 // bought or cancelled, so it can never be sold twice or sold and kept.
 
 /** Every companion currently for sale, keyed by listing id. Free to read. */
-export const readMarket = () => readJSON<Record<string, Listing>>('market');
+export const readMarket = (opts: ReadOpts = {}) =>
+  readGameJSON<Record<string, Listing>>('market', opts);
 
 /** What has actually sold, newest first. Free to read. */
-export const readMarketHistory = () => readJSON<Sale[]>('markethistory');
+export const readMarketHistory = (opts: ReadOpts = {}) =>
+  readJSON<Sale[]>('markethistory', opts);
 
-export const readMarketStats = () =>
-  readJSON<{ listings: number; sales: number }>('marketstats');
+export const readMarketStats = (opts: ReadOpts = {}) =>
+  readJSON<{ listings: number; sales: number }>('marketstats', opts);
 
 // Gold goods economy --------------------------------------------------------
 
 /** Exact ledgers, Gold order book, finite NPC desks and public policy state. */
-export const readEconomy = () => readJSON<EconomyView>('economy');
+export const readEconomy = (opts: ReadOpts = {}) => readJSON<EconomyView>('economy', opts);
 
 export const placeGoldOrder = (
   side: GoldOrderSide,
@@ -734,12 +1018,89 @@ export const buyListing = (listingId: string) =>
  * The reply comes back with `withdrawal` set to `pending`. Settlement is the
  * token process applying an outbox message, so the balance appears on the token
  * a moment later, not in this reply.
+ *
+ * This is the one verb in the app that supplies its own delivery verdict, and
+ * it has to. The outbox push for a withdrawal answers HTTP 500 on the live node
+ * every single time it works — see `deliverSlot` — so `res.ok` reported failure
+ * for 40 out of 40 withdrawals in a soak while the mints landed, and the
+ * three-attempt retry that failure triggered minted 224 Rune against 80
+ * deducted. The verdict is therefore the tokens themselves: snapshot
+ * `now/balance-<address>` on the token BEFORE scheduling, and treat delivery as
+ * landed once it has risen by the amount asked.
+ *
+ * Known and accepted: two withdrawals from the same wallet in flight at once
+ * can satisfy each other's delta. Both are real mints, so the worst case is
+ * mis-attribution rather than a false success; the UI serialises them anyway.
  */
-export const withdrawRune = (amount: number) =>
-  write<Player & { withdrawal?: RuneWithdrawal }>({
+export async function withdrawRune(
+  amount: number,
+): Promise<Player & { withdrawal?: RuneWithdrawal }> {
+  const value = Math.max(1, Math.floor(amount));
+  const [address, token] = await Promise.all([activeAddress(), runeTokenProcess()]);
+  // `null` means the baseline could not be established, and a delta needs one.
+  // Rather than guess, fall through to the transport's status-only verdict —
+  // which is wrong in the safe direction: it reports a failure that did not
+  // happen and tells the player not to retry, instead of reporting a success
+  // that did not happen.
+  const baseline = address && token ? await tokenBalance(token, address) : null;
+  const goal = baseline === null ? null : baseline + BigInt(value);
+
+  return write<Player & { withdrawal?: RuneWithdrawal }>({
     Action: 'Rune.Withdraw',
-    Amount: String(Math.max(1, Math.floor(amount))),
+    Amount: String(value),
+  }, undefined, goal === null ? {} : {
+    deliveryOptions: {
+      confirm: async () => {
+        const held = await tokenBalance(token as string, address as string);
+        return held !== null && held >= goal;
+      },
+    },
   });
+}
+
+/**
+ * The token process the game will mint into, from the game's own published
+ * state. Cached because it changes only through `Admin.SetRuneToken`, and
+ * because a withdrawal should not pay 130 ms to re-learn it.
+ */
+let runeTokenId: string | null = null;
+async function runeTokenProcess(): Promise<string | null> {
+  if (runeTokenId) return runeTokenId;
+  const value = await readState('runetoken').catch(() => null);
+  const id = (value ?? '').trim();
+  if (!/^[A-Za-z0-9_-]{43}$/.test(id)) return null;
+  runeTokenId = id;
+  return id;
+}
+
+/**
+ * A wallet's balance on a token process, from the one-byte published key.
+ *
+ * `balance-<address>` is written by the token on every mint to that recipient
+ * and persists across slots; it is 1 byte and answers in ~130 ms, which is why
+ * it is the confirmation signal rather than the 2 KB `balances` map or the 7 KB
+ * `runewithdrawals` ledger. A 404 is a wallet that has never been minted to,
+ * which is a balance of zero. Anything that is not a plain integer — including
+ * a node's HTML landing page served at 200 — means the key was not reached, and
+ * that is "absent", not "zero-and-certain": it returns null so a confirmation
+ * cannot be built on it.
+ */
+async function tokenBalance(token: string, address: string): Promise<bigint | null> {
+  let text: string | null;
+  try {
+    // `node` is PINNED. Without it `readState` walks HB_NODES, and the
+    // fallback does not host this token: its 404 would arrive here as a
+    // confident zero. A false zero BASELINE is the dangerous direction --
+    // goal becomes `0 + amount`, a wallet that already holds more clears it
+    // instantly, and a withdrawal that minted nothing reports success.
+    text = await readState(`balance-${address}`, { process: token, node: HB_NODE });
+  } catch {
+    return null;
+  }
+  if (text === null || text === '') return 0n;
+  if (!/^\d+$/.test(text)) return null;
+  return BigInt(text);
+}
 
 /** This wallet's withdrawals, and the token they settle on. */
 export const readWithdrawals = () =>
@@ -785,6 +1146,30 @@ export const adminSetStats = (address: string, patch: Record<string, unknown>) =
 
 export const adminRemove = (address: string) =>
   write<{ removed: string }>({ Action: 'Admin.RemoveUser', PlayerId: address });
+
+export const adminUpdateMonsterIndex = async (
+  entryNo: number,
+  patch: Partial<{
+    name: string;
+    state: MonsterIndexLifecycle;
+    starter: boolean;
+    huntCatchable: boolean;
+    huntWeight: number;
+    artRevision: string;
+  }>,
+) => {
+  const view = await write<MonsterIndexView>(
+    { Action: 'Admin.MonsterIndex.Update', EntryNo: String(Math.max(1, Math.floor(entryNo))) },
+    JSON.stringify(patch),
+  );
+  // The console has just rewritten the published value, so the cached index is
+  // stale. Do NOT seed the cache with `view`: this reply came back through
+  // write() -> joined() -> joinMonsterIndex, which overwrote the freshly edited
+  // entry with the PRE-EDIT cached one, so caching it would persist the revert.
+  // Drop the entry and let the next read fetch the authoritative value.
+  monsterIndexCache.delete(constantKey({}));
+  return view;
+};
 
 type LegacyAdminExport = {
   total: number;

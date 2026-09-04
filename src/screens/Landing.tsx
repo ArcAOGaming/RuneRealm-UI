@@ -7,7 +7,7 @@
  */
 import { lazy, Suspense, useEffect, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { useGame } from '../state/GameProvider';
+import { useGame } from '../state/gameContext';
 import { Element, ItemId, Monster, Move } from '../lib/types';
 import { Button, cx } from '../ui/primitives';
 import {
@@ -175,9 +175,7 @@ function Hero() {
           </p>
           <div className="mt-9 flex flex-wrap items-center gap-3">
             <EntryButton />
-            <a href="#companions" className="landing-secondary-link">
-              See the companions <Arrow className="h-4 w-4" />
-            </a>
+            <HeroSecondary />
           </div>
           <div className="mt-10 flex flex-wrap gap-x-7 gap-y-3 font-mono text-[10px] uppercase tracking-[0.16em] text-faint">
             <span>4 factions</span>
@@ -509,6 +507,77 @@ function FinalCall() {
   );
 }
 
+/**
+ * Where this player goes next, and whether the hall should introduce itself.
+ *
+ * Shared by the button and the link beside it, because the two standing next to
+ * each other saying different things is the exact confusion the first mile is
+ * supposed to remove. Null while the record is unknown: the answer is not "the
+ * faction hall" until the account has actually been read.
+ */
+function useEntry() {
+  const { player } = useGame();
+  const navigate = useNavigate();
+
+  const ready = !!player?.unlocked;
+  /** Connected, allowed in, and has never sworn. The onboarding case. */
+  const needsFaction = ready && !player!.faction;
+  const destination = !ready ? null : player!.faction ? '/companion' : '/factions';
+
+  /*
+    Arriving at the hall for the first time is an introduction.
+
+    A player with no faction has never seen these four, so the hall fills itself
+    in — one altar at a time, left to right, then the companions — before it
+    hands over the choice. It rides on the navigation and only from here: coming
+    to the same screen from the nav, or with a faction already sworn, walks into
+    a room that is already standing. See `Factions`.
+  */
+  const go = (to: string) => navigate(to, needsFaction ? { state: { intro: true } } : undefined);
+
+  return { destination, needsFaction, go };
+}
+
+/**
+ * The quiet link beside the button.
+ *
+ * It is the second thing on the page and it should not be advertising the
+ * companion cards to somebody the game is currently waiting on. With no faction
+ * sworn there is exactly one thing to do, and both controls say so — this one
+ * as the calm way in, since not everybody clicks the loud button.
+ */
+function HeroSecondary() {
+  const { needsFaction, go } = useEntry();
+
+  if (needsFaction) {
+    return (
+      <button type="button" className="landing-secondary-link" onClick={() => go('/factions')}>
+        Pick a faction <Arrow className="h-4 w-4" />
+      </button>
+    );
+  }
+
+  return (
+    <a href="#companions" className="landing-secondary-link">
+      See the companions <Arrow className="h-4 w-4" />
+    </a>
+  );
+}
+
+/**
+ * The one button on the front page, and the whole of the first mile.
+ *
+ * It is a state readout, not a link: whatever it says is the next thing the
+ * player actually has to do, and pressing it does that thing. A wallet with no
+ * faction is offered the faction hall, not a companion screen that would only
+ * bounce it back there; a wallet with no companion is offered the room where
+ * one is claimed; only a player with a companion is offered a return to it.
+ *
+ * Connecting is armed here rather than in the provider on purpose. Pressing
+ * THIS button says "I want to be playing", so the wallet handshake hands off
+ * straight into onboarding. Connecting from the header says nothing of the
+ * kind, and yanking somebody off the page they were reading would be a bug.
+ */
 function EntryButton() {
   const {
     address,
@@ -516,8 +585,21 @@ function EntryButton() {
     connecting,
     player,
     loadingPlayer,
+    loginError,
+    refresh,
   } = useGame();
-  const navigate = useNavigate();
+  const { destination, go } = useEntry();
+  const [entering, setEntering] = useState(false);
+
+  // The hand-off waits for the record, not for the wallet: an address arrives
+  // milliseconds after the signature and the account read takes seconds, and
+  // navigating on the address alone would guess the destination wrong.
+  useEffect(() => {
+    if (!entering || !destination) return;
+    setEntering(false);
+    go(destination);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [entering, destination]);
 
   if (!address) {
     return (
@@ -525,10 +607,21 @@ function EntryButton() {
         size="lg"
         variant="primary"
         busy={connecting}
-        onClick={connect}
+        onClick={() => { setEntering(true); void connect(); }}
         icon={<Wallet className="h-4 w-4" />}
       >
-        Connect wallet
+        Connect and play now
+      </Button>
+    );
+  }
+
+  // A read that failed is not a read that is still running. Without this the
+  // button spins on a network error for as long as the page is open, with no
+  // way back other than a reload.
+  if (!player && loginError) {
+    return (
+      <Button size="lg" variant="primary" onClick={() => void refresh()}>
+        The realm did not answer — try again
       </Button>
     );
   }
@@ -550,13 +643,25 @@ function EntryButton() {
     );
   }
 
-  const destination = player.monster ? '/companion' : '/factions';
-  const label = player.monster ? 'Return to your companion' : 'Choose your faction';
+  /*
+    Three connected states, and the label names the one thing left to do in
+    each. A reload in the middle of onboarding lands back on the same rung.
+
+    The faction is asked about FIRST, and that is not a style choice: a record
+    can carry a companion with no oath behind it — a legacy recovery does
+    exactly that — and keying the label on the monster sent that player to the
+    faction hall under a button that said "go to your companion".
+  */
+  const label = !player.faction
+    ? 'Choose a faction and start now'
+    : player.monster
+    ? 'Go to your companion'
+    : 'Claim your companion';
   return (
     <Button
       size="lg"
       variant="primary"
-      onClick={() => navigate(destination)}
+      onClick={() => go(player.faction ? '/companion' : '/factions')}
       icon={<Arrow className="h-4 w-4" />}
     >
       {label}

@@ -71,11 +71,44 @@ function unwrap<T>(reply: Reply<T>): T {
   return reply as T;
 }
 
+/**
+ * Exchange verbs whose whole effect is a message to ANOTHER process.
+ *
+ * HyperBEAM does not deliver an outbox by itself — something has to push the
+ * slot — and `OUTBOX_ACTIONS` in `hyperbeam.ts` listed only `rune.withdraw`,
+ * which is a fact about the GAME process. Every verb below was going out
+ * without a push, and the failure is silent and looks exactly like theft:
+ *
+ * - `Transfer` into the AMM moves the tokens and emits the `Credit-Notice` that
+ *   is the only thing telling the pool who they belong to. Unpushed, the pool
+ *   holds the balance and credits nobody. Measured on the live pool: 94
+ *   TEST-RUNE sitting in the AMM's balance, `deposit-<address>` a 404 for every
+ *   wallet, the AMM parked at slot 12 with the notices never scheduled.
+ * - `Burn` is the bridge deposit; its `Burn-Notice` is what makes the game
+ *   credit the Rune back. Unpushed, the tokens are destroyed and nothing
+ *   arrives.
+ * - `Swap`, `Liquidity.Remove` and `Deposit.Refund` all pay out by transferring
+ *   FROM the pool. Unpushed, the trade settles in the pool's books and the
+ *   trader never receives anything.
+ *
+ * `requiredOutbox` makes the client push the slot and raise
+ * `OutboxDeliveryError` when it cannot, which is recoverable — the message is
+ * durable and can be pushed again — rather than a balance that quietly
+ * disappears.
+ */
+const OUTBOX_EXCHANGE_ACTIONS = new Set([
+  'Transfer', 'Burn', 'Swap', 'Liquidity.Remove', 'Deposit.Refund',
+]);
+
 const write = async <T>(process: string, tags: Record<string, string>): Promise<T> => {
   if (!ID.test(process)) throw new Error('This external exchange process has not been deployed yet.');
   return unwrap<T>(await send<Reply<T>>(
     Object.entries(tags).map(([name, value]) => ({ name, value })),
-    { process, node: MARKET_NODE },
+    {
+      process,
+      node: MARKET_NODE,
+      requiredOutbox: OUTBOX_EXCHANGE_ACTIONS.has(tags.Action),
+    },
   ));
 };
 
@@ -86,8 +119,23 @@ const readMarketJSON = <T>(process: string, key: string) => {
 
 export const readPool = () => readMarketJSON<AmmPool>(AMM_PROCESS, 'amm');
 export const readSwaps = () => readMarketJSON<AmmSwap[]>(AMM_PROCESS, 'swaps');
-export const readDeposit = (address: string) =>
-  readMarketJSON<AmmDeposit>(AMM_PROCESS, `deposit-${address}`);
+/**
+ * A wallet's credited deposit, with a fallback to the aggregate.
+ *
+ * The AMM writes `deposit-<address>` only on a slot where that address was the
+ * signer or the `Sender`, so the addressed key is absent for a wallet whose
+ * credit arrived on somebody else's slot — a 404, which reads as "no deposit"
+ * and is how a genuinely credited balance looked like nothing at all. The
+ * `deposits` map is rewritten on every message and always has the answer.
+ *
+ * Same shape as `readTokenBalance` below, and for the same reason.
+ */
+export const readDeposit = async (address: string): Promise<AmmDeposit | null> => {
+  const direct = await readMarketJSON<AmmDeposit>(AMM_PROCESS, `deposit-${address}`);
+  if (direct && (direct.base !== undefined || direct.quote !== undefined)) return direct;
+  const all = await readMarketJSON<Record<string, AmmDeposit>>(AMM_PROCESS, 'deposits');
+  return all?.[address] ?? null;
+};
 export const readTokenInfo = (token: string) => readMarketJSON<TokenInfo>(token, 'tokeninfo');
 
 export async function readTokenBalance(token: string, address: string): Promise<string> {

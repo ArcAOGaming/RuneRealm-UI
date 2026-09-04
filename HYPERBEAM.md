@@ -121,6 +121,50 @@ Probed live, not read from docs:
 `math.type(1)=integer`, `math.maxinteger` correct, `9007199254740993` exact,
 `//` and `%` and `string.format("%d")` all correct. Token and currency math is safe.
 
+### Integers are bignums, and `math.type` will not tell you `[V]`
+
+**Added 2026-09-01.** The section above is right that token and currency maths is
+safe, and wrong if you read it as "Lua 5.3 integer semantics". Luerl integers are
+Erlang bignums and **do not wrap**:
+
+```lua
+math.type(0xcbf29ce484222325)          --> integer
+math.maxinteger                        --> 9223372036854775807     (correct)
+0xcbf29ce484222325 * 0x100000001b3     --> 16158402040730025834900042659807
+```
+
+So both of the things you would check report a 64-bit signed integer while
+arithmetic silently promotes past it. Real Lua 5.3 wraps, and `ao-loader` IS real
+Lua, so a local suite cannot see this.
+
+Anything relying on fixed-width overflow — a hash, a PRNG, a checksum — computes
+a different answer here than everywhere else, with no error. Mask after every
+operation that can overflow:
+
+```lua
+local M64 = 0xFFFFFFFFFFFFFFFF
+h = (h * PRIME) & M64
+```
+
+That yields unsigned 0..2^64-1 and matches JavaScript `BigInt & M64` exactly.
+Note also that Lua's `%` is floored, so on a real 5.3 the same bits would be
+negative and `x % n` would differ again; mask the sign bit off before any modulo
+to be correct on both.
+
+### `string.gmatch` does not work at all `[V]`
+
+**Added 2026-09-01.** It rejects **every** pattern:
+
+```lua
+string.gmatch("1:5", "[^:]+")   --> bad argument '1:5','[^:]+' to 'gmatch'
+string.gmatch("1:5", "%d+")     --> bad argument '1:5','%d+' to 'gmatch'
+```
+
+`string.find`, `string.match` and `string.gsub` are all fine, patterns included.
+It is specifically `gmatch`, so any tokenizer written the obvious way throws on
+the deployed process having passed every local test. Use
+`string.find(s, sep, start, true)` with `string.sub`.
+
 ### `string.format("%g")` IS BROKEN `[V]`
 
 Luerl does not strip trailing zeros the way PUC Lua's C `printf` does:
@@ -758,7 +802,7 @@ tag-to-number conversion: `math.tointeger(tonumber(x))` or `tonumber(x) | 0`.
 
 ---
 
-## 19. Browser writes: ANS-104, and currently UNREPRODUCIBLE
+## 19. Browser writes: ANS-104 and composed push
 
 ### The architecture (settled)
 
@@ -823,6 +867,42 @@ normal usage                   OK slot=6   count=6
 **The browser write path works.** `src/lib/hyperbeam/browser.mjs` now builds tags
 through a `Map`, so a repeated name is impossible and later entries win, letting
 callers override any default.
+
+### POST `/push` is the interactive fast path `[V]`
+
+**Added 2026-09-03 and verified on the local node with both signature formats.**
+The lower-level write path used by `src/lib/hyperbeam.ts` is valid but not the
+only path:
+
+```
+POST /<pid>~process@1.0/schedule?codec-device=ans104@1.0
+GET  /<pid>~process@1.0/compute&slot=N/results/output/data
+```
+
+HyperBEAM also composes admission, ordered computation, outbox delivery and the
+correlated reply into one request:
+
+```
+POST /<pid>~process@1.0/push?codec-device=ans104@1.0   # browser
+POST /<pid>~process@1.0/push                           # httpsig backend
+```
+
+On a fresh TEST-HyperDB process, an httpsig push returned the assigned slot and
+the correct mutation receipt in 120 ms. A browser-equivalent ANS-104 push did
+the same in 93 ms. The process scheduler head advanced by exactly one in each
+case. Under 16 concurrent ANS-104 writers, four shards completed the same
+32,000-update workload in 3.60 s through composed push versus 3.91 s through
+schedule + compute, while removing one HTTP request from every interaction.
+
+Do not confuse that POST with `GET /<pid>~process@1.0/push&slot=N`, which walks
+the outbox of an already-computed slot. Calling the GET after a successful POST
+repeats delivery work and is both slower and unsafe for a non-idempotent
+downstream contract.
+
+The official `permaweb/httpsig-examples` uses POST `/process-id/push`; the
+behavior above was reproduced rather than inferred from it. The runnable
+contract, browser-codec benchmark, split-path control and full measurements are
+in `backend/native/hyperdb/`.
 
 ### Debugging note for next time
 

@@ -8,6 +8,8 @@
  */
 
 export type Element = 'fire' | 'water' | 'air' | 'rock';
+/** `normal` is an untyped creature affinity, not a fifth element. */
+export type Affinity = Element | 'normal';
 
 export type BerryItemId = 'air_berry' | 'water_berry' | 'fire_berry' | 'rock_berry';
 
@@ -235,6 +237,12 @@ export interface Monster {
    * is never a stable name for the creature across owners.
    */
   id: string;
+  /** Permanent Monster Index form number; absent only on older deployments. */
+  entryNo?: number;
+  /** Resolved presentation helpers supplied with Monster Index-aware views. */
+  entryKey?: string;
+  evolutionStage?: 1 | 2 | 3;
+  nameMode?: 'species' | 'custom';
   name: string;
   image: string;
   sprite: string;
@@ -244,8 +252,9 @@ export interface Monster {
   background: string;
   border: string;
   faction: string;
-  elementType: Element;
-  berryItem: ItemId;
+  elementType: Affinity;
+  berryItem?: ItemId;
+  careMode?: 'element-berry' | 'any-berry';
   attack: number;
   defense: number;
   speed: number;
@@ -300,8 +309,9 @@ export interface Sale {
   buyer: string;
   price: number;
   soldAt: number;
+  entryNo?: number;
   name: string;
-  element: Element;
+  element: Affinity;
   level: number;
 }
 
@@ -339,8 +349,9 @@ export interface RegistryAsset {
   mintedAt: number;
   returnedAt?: number;
   seq: number;
+  entryNo?: number;
   name: string;
-  element: Element;
+  element: Affinity;
   faction: string;
   level: number;
   attack: number;
@@ -467,6 +478,9 @@ export interface Player {
    * — they are somebody who needs the market, and the screen has to say so.
    */
   adopted?: boolean;
+  /** Permanent discovery; current ownership is derived separately. */
+  seenEntries?: number[];
+  seenEntriesVersion?: number;
   pass?: PassRecord;
   /** Present only on the reply to `Market.List`. */
   listing?: Listing;
@@ -505,7 +519,24 @@ export interface Player {
   lastDaily?: number;
   /** Present only on the reply to the action that produced them. */
   rewards?: { happiness?: number; exp?: number; lootbox?: number };
-  dailyClaimed?: { runes: number; lootboxRarity: number };
+  /**
+   * What the daily worship actually paid out.
+   *
+   * `runeRewardReason` is why `runes` is what it is, and it is not decoration:
+   * global Rune emission is an unresolved launch decision, so it ships PAUSED
+   * (`runeRewards.enabled = false`, `epochBudget = 0`) and every worship pays
+   * zero. The process has always said so in this field and the dialog has never
+   * read it, which is why claiming looked like a broken faucet — "+0 Runes" and
+   * no explanation — rather than a switch nobody has turned on yet.
+   */
+  dailyClaimed?: {
+    runes: number;
+    lootboxRarity: number;
+    runeRewardReason?: string;
+    streak?: number;
+    offerings?: number;
+    factionOfferings?: number;
+  };
   economyResult?: {
     order?: EconomyOrder;
     fills?: EconomyFill[];
@@ -569,7 +600,8 @@ export interface Combatant {
   image: string;
   sprite?: string;
   faction?: string;
-  elementType: Element;
+  entryNo?: number;
+  elementType: Affinity;
   level: number;
   attack: number;
   defense: number;
@@ -582,6 +614,12 @@ export interface Combatant {
   baseAttack: number;
   baseDefense: number;
   baseSpeed: number;
+  /**
+   * The four stats summed and frozen when the fight started, which is what the
+   * engine sizes `attackPerStatPoint` against. Absent on a battle produced by a
+   * process deployed before the floor existed.
+   */
+  statBudget?: number;
   moves: Record<string, Move>;
   /** The session's berry boost already folded into this combatant's displayed stats. */
   battleBoost?: ArenaBoost;
@@ -597,7 +635,7 @@ export interface CombatantState {
   attack: number;
   defense: number;
   speed: number;
-  elementType: Element;
+  elementType: Affinity;
 }
 
 export interface Turn {
@@ -689,6 +727,7 @@ export interface Faction {
   description: string;
   mascot: string;
   berry: ItemId;
+  monsterEntryNo?: number;
   monsterName: string;
   monsterImage: string;
   memberCount: number;
@@ -704,7 +743,7 @@ export interface LeaderboardRow {
   address: string;
   faction?: string;
   name: string;
-  element: Element;
+  element: Affinity;
   level: number;
   exp: number;
   wins: number;
@@ -723,7 +762,7 @@ export interface OpenChallenge {
   challenger: string;
   monsterName: string;
   level: number;
-  element: Element;
+  element: Affinity;
   startedAt: number;
 }
 
@@ -737,6 +776,19 @@ export interface OpenChallenge {
  */
 export interface Tuning {
   attackBase: number;
+  /**
+   * The two damage FLOORS, added to the attack stat before a move's power is
+   * multiplied by it — see `attackFloor` in battle.lua. They exist because
+   * health and defense are multiplied on the way into a fight and damage is
+   * not, so a build that never buys attack used to stop scaling entirely.
+   *
+   * Both are optional here: a process deployed before they existed publishes a
+   * tuning without them, and a missing floor is a zero floor.
+   */
+  attackPerLevel?: number;
+  attackPerStatPoint?: number;
+  /** The budget `attackPerStatPoint` is measured from — every companion starts on ten. */
+  attackBudgetBaseline?: number;
   variance: number;
   hpPerHealth: number;
   shieldPerDefense: number;
@@ -755,6 +807,70 @@ export interface Tuning {
   criticalMultiplier: number;
 }
 
+export type MonsterIndexLifecycle = 'planned' | 'art-in-progress' | 'testing' | 'live' | 'retired';
+export type MonsterIndexAssetStatus = 'missing' | 'planned' | 'partial' | 'draft' | 'fallback' | 'approved';
+export type MonsterRarity = 'common' | 'uncommon' | 'rare' | 'legendary';
+
+export type MonsterSourceRows = Record<
+  'idle' | 'emote' | 'walk.right' | 'walk.left' | 'walk.up' | 'walk.down',
+  number
+>;
+
+export interface MonsterIndexAssetSlot {
+  status: MonsterIndexAssetStatus;
+  path?: string;
+  notes?: string;
+  sourceRect?: readonly [number, number, number, number];
+  /** Optional authored row map for uniform-grid world sheets. */
+  rows?: MonsterSourceRows;
+}
+
+export interface MonsterIndexEntry {
+  entryNo: number;
+  entryKey: string;
+  lineKey: string;
+  stage: 1 | 2 | 3;
+  /** Null while an unreleased evolution still has only a working label. */
+  displayName?: string | null;
+  /** Contract views use `name`; generated authoring views use `displayName`. */
+  name?: string | null;
+  workingName: string;
+  affinity: Affinity;
+  rarity?: MonsterRarity;
+  /** Number and placement may change until the content line is accepted. */
+  provisional?: boolean;
+  starterFaction?: string | null;
+  evolution?: { from: number | null; to: number | null; atLevel: number | null };
+  evolvesFrom?: number | null;
+  evolvesTo?: number | null;
+  evolvesAtLevel?: number | null;
+  moves?: { basic: string | null; advanced: string | null };
+  basicMove?: string | null;
+  advancedMove?: string | null;
+  availability?: {
+    state: MonsterIndexLifecycle;
+    starter: boolean;
+    huntCatchable: boolean;
+    huntWeight: number;
+  };
+  state?: MonsterIndexLifecycle;
+  starter?: boolean;
+  huntCatchable?: boolean;
+  huntWeight?: number;
+  assetReady?: boolean;
+  artRevision: string;
+  assets?: Record<'portrait' | 'world' | 'basicAttack' | 'advancedAttack' | 'runtimeAtlas', MonsterIndexAssetSlot>;
+  plan?: { appearance: string; basicAttack: string; advancedAttack: string };
+}
+
+export interface MonsterIndexView {
+  schemaVersion: number;
+  catalogHash?: string;
+  revision: number;
+  nextEntryNo: number;
+  entries: MonsterIndexEntry[];
+}
+
 export interface Catalog {
   items: Record<string, { id: ItemId; name: string; section: string; element?: Element }>;
   activities: Record<string, unknown>;
@@ -762,6 +878,7 @@ export interface Catalog {
   hunt?: HuntTuning;
   elements: Element[];
   tuning: Tuning;
+  monsterIndex?: { schemaVersion: number; nextEntryNo: number };
   effectiveness: Record<Element, Record<Element, number>>;
   /**
    * What a level-up costs, as a rule rather than a number.
@@ -777,6 +894,20 @@ export interface Catalog {
     levelsPerRune: number;
     costItem: ItemId;
   };
+  /**
+   * Every move definition, by pool then by name. The join table.
+   *
+   * A stored move is `{ count }` and nothing else — the other eight fields are
+   * identical for every companion that ever rolled that move, so the process
+   * publishes them once, here, instead of once per companion in every player
+   * record, leaderboard row and listing it writes. `hydrateMoves` in
+   * `lib/game.ts` puts them back at the read boundary, so components still see
+   * a whole `Move`.
+   *
+   * Absent on deployments from before the split; those publish whole moves
+   * already and the join is a no-op against them.
+   */
+  movePools?: Record<string, Record<string, Omit<Move, 'name'> & { name?: string }>>;
 }
 
 /**
@@ -803,7 +934,7 @@ export interface AdminPlayerSummary {
   unlocked: boolean;
   faction?: string;
   name?: string;
-  element?: Element;
+  element?: Affinity;
   level: number;
   exp: number;
   energy: number;

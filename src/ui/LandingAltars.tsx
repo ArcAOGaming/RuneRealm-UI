@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react';
-import { useGame } from '../state/GameProvider';
+import { useGame } from '../state/gameContext';
 import { Element } from '../lib/types';
 import AltarHall, { AltarInfo } from './Altars';
 

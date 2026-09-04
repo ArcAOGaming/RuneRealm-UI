@@ -50,6 +50,7 @@ const bootstrapSource = [
   'package.loaded[".json"] = require("json")',
   'Owner = nil',
   'local C = (function()', readSrc('constants.lua'), 'end)()',
+  readSrc('monster-index.generated.lua'),
   'local jsonx = (function()', readSrc('jsonenc.lua'), 'end)()',
   'local encode, jsonObject = jsonx.encode, jsonx.object',
   'Battle = (function()', readSrc('battle.lua'), 'end)()',

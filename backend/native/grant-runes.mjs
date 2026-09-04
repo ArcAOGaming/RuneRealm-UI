@@ -55,6 +55,68 @@ const owner = jwkToAddress(jwk);
 const targets = listBurners().slice(0, limit);
 if (!targets.length) throw new Error('no burners; run: npm run swarm:wallets');
 
+/**
+ * `--gold N` — set every test wallet's Gold balance, in ONE message.
+ *
+ * Gold is not an item, so `Admin.AdjustInventory` cannot touch it: the only
+ * door that writes `p.gold` is `Admin.Load`. That matters more than it sounds,
+ * because on a fresh deployment players have NO gold and only one external way
+ * to get any — selling to an NPC desk, which stops buying at a stock cap of
+ * twelve. Measured on a blank deploy mid-soak: fifty wallets holding 47 Gold
+ * between them, eight resting p2p orders and zero fills, because nobody could
+ * afford to take the other side. Selling works; buying, order-taking and
+ * arbitrage are all unreachable.
+ *
+ * A row carrying ONLY an address and a gold amount is safe to load: `Admin.Load`
+ * rebuilds the holding only when the row actually carries one (`carriesHolding`
+ * in game.lua), so this leaves companions, inventory and streaks untouched.
+ *
+ * Like the rest of this file: a TEST-deployment tool that mints spending money
+ * out of nothing. It is exactly what you must not run on a real deployment.
+ */
+const goldArg = opt('gold', null);
+if (goldArg !== null) {
+  const goldAmount = Number(goldArg);
+  if (!Number.isSafeInteger(goldAmount) || goldAmount < 0 || goldAmount > 1_000_000) {
+    throw new Error('--gold must be an integer from 0 to 1000000');
+  }
+  console.log(`setting Gold to ${goldAmount} for ${targets.length} wallets`);
+  console.log(`process ${pid}\nnode    ${node}\nowner   ${owner}\n`);
+  const players = targets.map((t) => ({ address: t.address, gold: goldAmount }));
+  if (PLAN) {
+    console.log(`  would load ${players.length} gold-only rows in one Admin.Load`);
+    process.exit(0);
+  }
+  const sent = await sendMessage({
+    node, jwk, process: pid, action: 'Admin.Load',
+    tags: { Action: 'Admin.Load' }, data: JSON.stringify({ players }),
+  });
+  const slot = Number(sent?.slot ?? sent?.Slot);
+  if (!Number.isInteger(slot)) throw new Error('Admin.Load did not report a slot');
+  // Pull compute to the message's own slot; a published key read before that
+  // answers with the pre-load balance. See the note in seed-monsters.mjs.
+  let reply = null;
+  for (let attempt = 0; attempt < 60; attempt += 1) {
+    const res = await fetch(`${node}/${pid}~process@1.0/compute&slot=${slot}/results/output/data`,
+      { headers: { accept: 'text/plain' }, signal: AbortSignal.timeout(45_000) }).catch(() => null);
+    if (res && res.ok) {
+      const body = (await res.text()).trim();
+      if (body && !/^<!DOCTYPE html|^<html/i.test(body)) {
+        try { reply = JSON.parse(body); } catch { /* non-JSON */ }
+        if (reply) break;
+      }
+    }
+    await new Promise((done) => setTimeout(done, 2_000));
+  }
+  if (reply?.error) throw new Error(`Admin.Load refused: ${reply.error}`);
+  console.log(`  loaded ${reply?.loaded ?? '?'} row(s)\n\nreading back:`);
+  for (const target of targets.slice(0, 5)) {
+    const p = await readPlayer(target.address);
+    console.log(`  ${target.name.padEnd(11)} gold = ${p?.gold ?? '(unreadable)'}`);
+  }
+  process.exit(0);
+}
+
 console.log(`granting ${amount >= 0 ? '+' : ''}${amount} ${item} to ${targets.length} wallets`);
 console.log(`process ${pid}\nnode    ${node}\nowner   ${owner}\n`);
 

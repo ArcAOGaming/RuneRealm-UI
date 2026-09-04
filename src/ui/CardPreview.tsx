@@ -18,7 +18,7 @@
  * like the renderer rather than the count.
  */
 import { useEffect, useRef, useState } from 'react';
-import { useGame } from '../state/GameProvider';
+import { useGame } from '../state/gameContext';
 import { drawCard } from '../lib/card/browser';
 import type { BrowserCardOptions } from '../lib/card/browser';
 import { cardSize } from '../lib/card/layout.mjs';
