@@ -18,6 +18,31 @@ Opening and capture settlement are explicitly retryable delivery steps. A
 retry re-emits the same run or already-fixed capture result; it cannot roll a
 second time, spend twice, or allocate a second Hunt id.
 
+`Hunt.Settled` is the only one of these that carries its identity in TAGS
+rather than in a JSON body, and that is what broke it on a live process. The
+game emits `run-id` and `settlement-id`; tag names are lowercased HTTP headers
+by the time a handler reads them; and the worker's lookup matched on case
+alone, so both read `nil` and every acknowledgement was refused with "Capture
+settlement not found". The ledger had already spent the Rune and granted the
+companion, so the run sat in `settling` for good — and `Hunt.End` refuses to
+leave while settling, which makes it unrecoverable from the worker's side.
+
+Two rules came out of that, and both are enforced:
+
+- **Separators are not part of a tag name.** `hunt.lua`'s `field` normalises
+  `-` and `_` away, so `run-id`, `run_id` and `RunId` are one key. The tests
+  send the exact spelling the game emits, because the old test sent `RunId` and
+  passed against a process that could not read a single live acknowledgement.
+- **An id rides two tags.** The settlement id is on `settlement-id` and on
+  `reference`, which is what the battle fleet has always done.
+
+When a route is stranded anyway — a worker replaced, a run that can never reach
+a terminal state — `backend/native/clear-hunt-route.mjs` is the door. An
+exported row carries no `hunt` field and `Admin.Load` thaws a `Hunt` status, so
+loading a player's own current row drops the route and unfreezes the companion
+without touching anything else. It refuses to write a row with no companions in
+it.
+
 The browser never chooses an encountered faction, level, battle result, or
 capture result. A wallet signs search, attacks, capture, and leaving, just as it
 already signs arena moves. Cross-process messages are accepted only when this

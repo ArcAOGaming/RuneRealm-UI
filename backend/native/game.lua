@@ -3228,6 +3228,10 @@ H["Hunt.Settle"] = function(base, msg, timestamp)
     end
     local ack = huntMessage("Hunt.Settled", p.hunt)
     ack["settlement-id"] = settlementId
+    -- The same id on a second, differently named tag. The Hunt worker reads
+    -- either, so one lost spelling cannot strand a paid capture in `settling`;
+    -- it also makes the reference unique per settlement rather than per run.
+    ack.reference = settlementId
     return huntReply(base, playerView(p), { acknowledgement = ack })
   end
 
@@ -3271,6 +3275,10 @@ H["Hunt.Settle"] = function(base, msg, timestamp)
   v.huntCapture = Battle.clone(receipt)
   local ack = huntMessage("Hunt.Settled", p.hunt)
   ack["settlement-id"] = settlementId
+  -- The same id on a second, differently named tag. The Hunt worker reads
+  -- either, so one lost spelling cannot strand a paid capture in `settling`;
+  -- it also makes the reference unique per settlement rather than per run.
+  ack.reference = settlementId
   return huntReply(base, v, { acknowledgement = ack })
 end
 

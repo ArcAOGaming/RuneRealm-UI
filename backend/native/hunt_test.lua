@@ -142,9 +142,15 @@ function hunttest(base)
     retry and retry.status == "settling" and retriedId == settlementId,
     retriedId)
 
+  -- THE SPELLING IS THE TEST. game.lua builds this acknowledgement with
+  -- `run-id` and `settlement-id`, and tag names are lowercased HTTP headers by
+  -- the time a handler reads them. This test used to send `RunId` /
+  -- `SettlementId`, which the old case-only lookup matched -- so the suite
+  -- passed while every capture on the live process stuck in `settling`
+  -- forever, its Rune already spent and its companion already granted.
   r = send({
     Action = "Hunt.Settled", ["from-process"] = GAME,
-    RunId = "h1", SettlementId = settlementId,
+    ["run-id"] = "h1", ["settlement-id"] = settlementId,
   })
   ok("game acknowledgement returns the run to roaming", r and r.status == "roaming", r and r.status)
   ok("settled roll remains visible", r and r.lastCapture and r.lastCapture.chance ~= nil)
@@ -170,6 +176,42 @@ function hunttest(base)
   r = send({ Action = "Hunt.Open", ["from-process"] = GAME }, nextOpen)
   ok("a player can start a later hunt after a loss", r and r.status == "roaming",
     r and r.status)
+
+  -- The same acknowledgement carrying its id ONLY as `reference` — the second
+  -- spelling game.lua now sends, and the one the battle fleet has always used.
+  r = send({
+    Action = "Hunt.Search", Address = ALICE, RunId = "h2", Ticket = "ticket_h2",
+    ActionId = "search_ref",
+  })
+  local guard2 = 0
+  while r and r.battle and r.battle.status ~= "ended" and guard2 < 60 do
+    guard2 = guard2 + 1
+    local moveName
+    for name, move in pairs(r.battle.challenger.moves or {}) do
+      if (move.count or 0) > 0 then moveName = name break end
+    end
+    r = send({
+      Action = "Hunt.Attack", Address = ALICE, RunId = "h2", Ticket = "ticket_h2",
+      ActionId = "attack_ref_" .. tostring(guard2),
+      Round = tostring(r.battle.round), Move = moveName or "struggle",
+    })
+  end
+  if r and r.status == "defeated" then
+    send({
+      Action = "Hunt.Capture", Address = ALICE, RunId = "h2", Ticket = "ticket_h2",
+      ActionId = "capture_ref", Runes = "3",
+    })
+    local refId = base.results.outbox and base.results.outbox.settlement
+      and base.results.outbox.settlement["settlement-id"]
+    r = send({
+      Action = "Hunt.Settled", ["from-process"] = GAME, reference = refId,
+    })
+    ok("a reference-only acknowledgement still settles the run",
+      r and r.status == "roaming", r and (r.error or r.status))
+  else
+    ok("a reference-only acknowledgement still settles the run", false,
+      "the second run did not reach a capture")
+  end
 
   out[#out + 1] = string.format("%d passed, %d failed", passed, failed)
   return table.concat(out, "\n")

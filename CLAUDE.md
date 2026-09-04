@@ -47,6 +47,17 @@ The token publishes `tokeninfo` for this reason; `ticker`, `minter`,
 
 Treat an HTML body at 200 as "key absent" everywhere a published key is read.
 
+And a tag name's SEPARATORS do not survive the trip either. A handler that
+matches tag names case-insensitively still misses `run-id` when it asks for
+`runid`, and cross-process messages are exactly where the two spellings meet:
+a browser signs `RunId`, a process emits `run-id`, HTTP lowercases both. That
+cost a live deployment every hunt capture — the game spent the Rune and granted
+the companion, the worker refused the acknowledgement, and the run stuck in
+`settling` permanently (see HUNT.md). So normalise `-` and `_` out of a name
+before comparing, put an id on a second tag as well, and **write the test with
+the spelling the sender actually emits** — the old test sent `SettlementId` and
+passed against a process that could not read one real message.
+
 ## Identity comes from a signature commitment, and only that
 
 `signer()` accepts a commitment whose algorithm is a real signature and nothing

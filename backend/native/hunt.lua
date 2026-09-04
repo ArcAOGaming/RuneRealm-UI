@@ -42,13 +42,29 @@ local function int(value, fallback)
   return narrowed
 end
 
+--- Tag lookup that survives every spelling a tag reaches this process in.
+---
+--- A browser signs `RunId`; the game process emits `run-id`; HTTP lowercases
+--- every header on the way. Matching on case alone found the first two and
+--- missed the third, which is how `Hunt.Settled` — the ONLY game-to-hunt
+--- message that carries its identity in tags rather than in a JSON body — read
+--- a nil run id, failed with "Capture settlement not found", and left every
+--- successful capture stuck in `settling` forever on a live process while the
+--- game ledger had already paid the Rune and granted the companion.
+---
+--- So separators are not part of a name here. `run-id`, `run_id`, `RunId` and
+--- `runid` are one key.
+local function normalisedName(name)
+  return (string.gsub(string.lower(name), "[-_]", ""))
+end
+
 local function field(t, wanted)
   if type(t) ~= "table" then return nil end
   local exact = t[wanted]
   if exact ~= nil then return exact end
-  local lower = string.lower(wanted)
+  local target = normalisedName(wanted)
   for k, v in pairs(t) do
-    if type(k) == "string" and string.lower(k) == lower then return v end
+    if type(k) == "string" and normalisedName(k) == target then return v end
   end
   return nil
 end
@@ -594,9 +610,20 @@ end
 Handlers["hunt.settled"] = function(base, msg, timestamp)
   local allowed, why = requireGame(base, msg)
   if not allowed then return fail(base, why) end
+  -- `reference` is the second spelling on purpose: the battle fleet already
+  -- reads its settlement id from there, and an id that rides two independent
+  -- tags cannot be lost to one of them being renamed or flattened in transit.
+  local settlementId = field(msg, "settlementid") or field(msg, "reference")
   local runId = field(msg, "runid")
-  local settlementId = field(msg, "settlementid")
   local record = runId and State.runs[runId]
+  -- A settlement id begins with its own run id, so the run is recoverable from
+  -- it alone. The acknowledgement is the last hop of a capture that the game
+  -- ledger has ALREADY paid; refusing it because one tag went missing strands
+  -- the run in `settling` with no way out, and `Hunt.End` refuses to leave.
+  if not record and type(settlementId) == "string" then
+    local candidate = string.match(settlementId, "^(.-)%-capture%-%d+$")
+    record = candidate and State.runs[candidate] or nil
+  end
   if not record or not record.settlement or record.settlement.id ~= settlementId then
     return fail(base, "Capture settlement not found")
   end

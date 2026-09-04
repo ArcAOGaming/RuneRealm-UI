@@ -13,7 +13,7 @@ import { createRoot } from 'react-dom/client';
 import { useRef, useState } from 'react';
 import '../index.css';
 import {
-  ActivityReceipt, Battle, Combatant, Element, LootResult, Monster,
+  ActivityReceipt, Battle, Combatant, Element, HuntCaptureReceipt, LootResult, Monster,
 } from '../lib/types';
 import RoomStage from '../ui/RoomStage';
 import BattleStageImpl from '../ui/BattleStageImpl';
@@ -21,7 +21,7 @@ import Arena from '../screens/Arena';
 import Companion from '../screens/Companion';
 import Collection from '../screens/Collection';
 import CompanionAcquisition, { AcquisitionKind } from '../ui/CompanionAcquisition';
-import { CaptureChoice } from '../screens/Hunt';
+import { CaptureCeremony } from '../screens/Hunt';
 import { Shell } from '../ui/Shell';
 import { ToastProvider } from '../ui/Toast';
 import { MemoryRouter } from 'react-router-dom';
@@ -472,10 +472,26 @@ function CollectionPage() {
   );
 }
 
-/** The post-victory binding desk, without playing a whole encounter to reach it. */
+/**
+ * The post-victory binding, without playing a whole encounter to reach it.
+ *
+ * `?page=capture&element=air` picks the creature, and the three buttons drive
+ * the ceremony's own states — the wait, a bind, a break — because the only way
+ * to see those in the real game is to spend Rune on a live process and hope the
+ * roll goes the way you needed it to for review.
+ */
 function CapturePage() {
+  const query = new URLSearchParams(location.search);
+  const requested = query.get('element');
+  const wildElement: Element = ['fire', 'water', 'air', 'rock'].includes(requested ?? '')
+    ? requested as Element : 'water';
+  const [settling, setSettling] = useState(false);
+  const [receipt, setReceipt] = useState<HuntCaptureReceipt | null>(null);
   const hunter = { ...monster('fire', SPRITES[0], 'Hunt'), id: 'm1', name: 'FireFox', level: 8 };
-  const wild = { ...monster('water', SPRITES[1], 'Home'), id: 'h1-e1', name: 'WaterDoge', level: 8 };
+  const wild = {
+    ...monster(wildElement, SPRITES[1], 'Home'),
+    id: 'h1-e1', name: 'WaterDoge', level: 8,
+  };
   const tuning = {
     protocol: 'runerealm-hunt/1' as const, levelRange: 5, searchCooldown: 3000,
     entry: { berries: {
@@ -509,8 +525,37 @@ function CapturePage() {
   return (
     <ToastProvider>
       <GameContext.Provider value={value as never}>
-        <div className="relative min-h-screen bg-void" data-element="water">
-          <CaptureChoice hunter={hunter} wild={wild} tuning={tuning} onRun={() => {}} />
+        <div className="relative min-h-screen bg-void" data-element={wildElement}>
+          <div className="absolute left-3 top-3 z-30 flex gap-2">
+            {([
+              ['Settling', () => { setReceipt(null); setSettling(true); }],
+              ['Bound', () => setReceipt({
+                settlementId: 'h1-capture-1', encounterId: 'h1-e1', success: true,
+                chance: 75, roll: 12, runesSpent: 5,
+                monster: { ...wild, id: 'm2' } as Monster,
+              })],
+              ['Broken', () => setReceipt({
+                settlementId: 'h1-capture-1', encounterId: 'h1-e1', success: false,
+                chance: 75, roll: 91, runesSpent: 5,
+              })],
+              ['Reset', () => { setSettling(false); setReceipt(null); }],
+            ] as const).map(([label, act]) => (
+              <button
+                key={label}
+                type="button"
+                onClick={act}
+                className="rounded-[3px] border border-edge bg-raised/70 px-2.5 py-1.5 text-[11px] text-muted hover:text-ink"
+              >
+                {label}
+              </button>
+            ))}
+          </div>
+          <CaptureCeremony
+            hunter={hunter} wild={wild} tuning={tuning}
+            settling={settling} receipt={receipt}
+            onRun={() => setSettling(true)}
+            onFinish={() => { setSettling(false); setReceipt(null); }}
+          />
         </div>
       </GameContext.Provider>
     </ToastProvider>

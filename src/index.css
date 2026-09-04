@@ -2313,6 +2313,93 @@ pre,
    A transaction has already made the companion real by the time this portal
    opens. The sequence therefore uses the returned creature's actual battle
    and card assets: the magic is theatrical, but none of the record is mocked. */
+/*
+  The Verge changing scene.
+
+  A hunt is four screens on one panel — the trail, the fight, the binding, the
+  verdict — and every one of them used to arrive by being mounted, which reads
+  as the page breaking rather than as somewhere new. Three cut bands sweep
+  across instead, staggered so the panel is covered top-first, and the swap
+  happens underneath at `--wipe-cover`. The element tints the leading edge, so
+  what closes over the trail is the colour of the thing that broke cover.
+
+  Purely presentational and `pointer-events: none`: a wipe that could swallow a
+  click would be a wipe that loses a move.
+*/
+/*
+  The binding's two bands of text, over a live field.
+
+  The canvas is `inset-0` and the copy sits on top of it, so both ends of the
+  panel need a ground of their own — otherwise the creature's name is white
+  pixel art on white pixel art the moment the ring turns behind it. These are
+  the only two places in the app that scrim: everywhere else the type has a
+  panel under it.
+*/
+.capture-ceremony > header {
+  background: linear-gradient(to bottom, rgb(var(--void) / .9), transparent);
+  padding-bottom: 2.5rem;
+}
+
+.capture-console {
+  background: linear-gradient(
+    to top,
+    rgb(var(--void)) 18%,
+    rgb(var(--void) / .86) 52%,
+    transparent
+  );
+}
+
+.scene-wipe {
+  position: absolute;
+  inset: 0;
+  z-index: 45;
+  overflow: hidden;
+  pointer-events: none;
+}
+
+/*
+  Wider than the panel, on purpose.
+
+  A band exactly the width of what it covers is opaque for one frame — the
+  instant its middle is centred — which is not long enough to swap anything
+  underneath. This one is 2.4 screens across with an opaque core 1.2 screens
+  wide, and the keyframes HOLD it at centre. That hold is the swap window, and
+  `WIPE_COVER_MS` in ui/SceneWipe is the middle of it.
+*/
+.scene-wipe > i {
+  position: absolute;
+  left: -70%;
+  width: 240%;
+  height: 34.4%;
+  background:
+    linear-gradient(
+      90deg,
+      transparent 8%,
+      rgb(var(--element) / .55) 20%,
+      rgb(var(--void)) 26%,
+      rgb(var(--void)) 74%,
+      rgb(var(--element) / .55) 80%,
+      transparent 92%
+    );
+  animation: scene-wipe-band 760ms cubic-bezier(.55, .05, .4, .95) both;
+}
+
+/* Alternating, so it reads as shutters rather than as one sheet sliding. */
+.scene-wipe > i:nth-child(1) { top: 0; }
+.scene-wipe > i:nth-child(2) { top: 33%; --wipe-dir: -1; }
+.scene-wipe > i:nth-child(3) { top: 66%; }
+
+@keyframes scene-wipe-band {
+  0%   { transform: translateX(calc(var(--wipe-dir, 1) * -105%)) skewX(-7deg); }
+  42%  { transform: translateX(0) skewX(-7deg); }
+  58%  { transform: translateX(0) skewX(-7deg); }
+  100% { transform: translateX(calc(var(--wipe-dir, 1) * 105%)) skewX(-7deg); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .scene-wipe > i { animation-duration: 1ms; opacity: 0; }
+}
+
 .acquisition-reveal {
   position: fixed;
   inset: 0;
@@ -2355,6 +2442,35 @@ pre,
     0 0 90px rgb(var(--element) / .1) inset,
     0 0 120px rgb(var(--element) / .08);
   transform: translate(-50%, -50%) rotate(45deg);
+}
+
+/*
+  The wait, before the ceremony exists.
+
+  Everything decorative is held at zero until the art has decoded, so the
+  loading state is the flat void the reveal lands on plus one spinner — rather
+  than the room's furniture with the ceremony missing from it. They come up on
+  the entrance, which is the first frame that has something to decorate.
+*/
+.acquisition-grid,
+.acquisition-glow,
+.acquisition-copy {
+  transition: opacity 420ms ease-out;
+}
+
+.acquisition-phase-loading .acquisition-grid,
+.acquisition-phase-loading .acquisition-glow,
+.acquisition-phase-loading .acquisition-copy {
+  opacity: 0;
+}
+
+/* Centred on the screen rather than in the stage's grid row. */
+.acquisition-waiting {
+  position: fixed;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  pointer-events: none;
 }
 
 .acquisition-copy {
