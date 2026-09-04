@@ -39,8 +39,23 @@ const FOCUSABLE = [
  */
 let openDialogs = 0;
 
+/**
+ * The width, as a choice rather than a class the caller passes in.
+ *
+ * A `max-w-*` utility appended through `className` does NOT win: this project's
+ * Tailwind emits `.max-w-md` after `.max-w-4xl`, so the default here beat every
+ * caller that tried to widen itself and the character editor came out at a
+ * confirm-dialog's width. Naming the sizes removes the guess.
+ */
+const WIDTH = {
+  sm: 'max-w-sm',
+  md: 'max-w-md',
+  lg: 'max-w-2xl',
+  xl: 'max-w-4xl',
+} as const;
+
 export function Dialog({
-  title, onClose, busy, element, children, className,
+  title, onClose, busy, element, children, className, size = 'md',
 }: {
   /** Also the accessible name. Rendered by the caller; passed here for aria. */
   title: string;
@@ -51,6 +66,8 @@ export function Dialog({
   element?: string;
   children: ReactNode;
   className?: string;
+  /** How wide it is allowed to get. A confirmation is `md`; an editor is `xl`. */
+  size?: keyof typeof WIDTH;
 }) {
   const panelRef = useRef<HTMLDivElement>(null);
   const restoreTo = useRef<HTMLElement | null>(null);
@@ -135,8 +152,9 @@ export function Dialog({
           // laid over one. The title stays put and the body takes the overflow,
           // so the thing you opened is always visibly a panel on top of the
           // hall.
-          'dialog-panel panel my-auto flex max-h-[calc(100dvh-5rem)] w-full max-w-md flex-col',
+          'dialog-panel panel my-auto flex max-h-[calc(100dvh-5rem)] w-full flex-col',
           'animate-rise p-6 shadow-glow outline-none',
+          WIDTH[size],
           className,
         )}
       >

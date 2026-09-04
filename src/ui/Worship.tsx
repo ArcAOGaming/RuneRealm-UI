@@ -8,7 +8,7 @@
  * not, and never a button that exists all day and fails for twenty hours of it.
  */
 import { useEffect, useState } from 'react';
-import { useGame } from '../state/GameProvider';
+import { useGame } from '../state/gameContext';
 import * as api from '../lib/game';
 import { Player } from '../lib/types';
 import { article, countdown, LOOTBOX_TIER } from '../lib/format';
@@ -45,6 +45,7 @@ export function Worship() {
       {ready ? (
         <Button
           size="sm" variant="primary" busy={isPending('daily')} onClick={claim}
+          data-tour="worship"
           title="Claim your daily worship: Runes and a loot box"
           icon={<Sparkle className="h-4 w-4" />}
         >
@@ -52,6 +53,7 @@ export function Worship() {
         </Button>
       ) : (
         <span
+          data-tour="worship"
           title="Your next daily worship"
           className={cx(
             'hidden h-8 items-center gap-1.5 rounded-[3px] border border-edge',
@@ -64,18 +66,34 @@ export function Worship() {
       )}
 
       {reward && (
-        <Dialog title="Daily worship" onClose={() => setReward(null)} className="max-w-sm text-center">
+        <Dialog title="Daily worship" onClose={() => setReward(null)} size="sm" className="text-center">
           <div className="mt-4">
             <Sparkle className="mx-auto h-10 w-10 text-element" />
             {(() => {
               const tier = (LOOTBOX_TIER[reward.lootboxRarity]
                 ?? `tier ${reward.lootboxRarity}`).toLowerCase();
+              // A zero payout is a real, deliberate state — Rune emission ships
+              // paused — so say what was actually received and why, rather than
+              // printing "+0 Runes" and leaving the player to conclude the
+              // faucet is broken. The reason is the process's own words.
+              const paid = reward.runes > 0;
               return (
-                <p className="mt-4 text-sm text-muted">
-                  Your offering is accepted:{' '}
-                  <span className="font-mono text-element">+{reward.runes}</span> Runes
-                  {` and ${article(tier)} ${tier} loot box.`}
-                </p>
+                <>
+                  <p className="mt-4 text-sm text-muted">
+                    Your offering is accepted:{' '}
+                    {paid && (
+                      <>
+                        <span className="font-mono text-element">+{reward.runes}</span> Runes and{' '}
+                      </>
+                    )}
+                    {`${article(tier)} ${tier} loot box.`}
+                  </p>
+                  {!paid && (
+                    <p className="mt-2 text-xs text-faint">
+                      {reward.runeRewardReason ?? 'Rune rewards are paused.'}
+                    </p>
+                  )}
+                </>
               );
             })()}
             <Button className="mt-5 w-full" variant="primary" onClick={() => setReward(null)}

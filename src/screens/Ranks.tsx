@@ -16,7 +16,7 @@
  * extra steps.
  */
 import { useMemo, useState } from 'react';
-import { useGame } from '../state/GameProvider';
+import { useGame } from '../state/gameContext';
 import { Badge, Panel, SectionTitle, Skeleton, cx } from '../ui/primitives';
 import { ELEMENT_ICON, Sword, Trophy } from '../ui/icons';
 import { ELEMENT_LABEL, shortAddress } from '../lib/format';

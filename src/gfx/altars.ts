@@ -50,12 +50,47 @@ const GOLD = 0xd6c8a2;
 /** Left to right, and the order the DOM buttons are laid out in. */
 export const ALTAR_ORDER: AltarElement[] = ['fire', 'water', 'air', 'rock'];
 
-/** Where each altar's core sits, in CSS pixels inside the canvas box. */
-export type AltarPoint = { element: AltarElement; x: number; y: number; scale: number };
+/**
+ * Where each altar is on screen, in CSS pixels inside the canvas box.
+ *
+ * `x`/`y` is the plaque anchor at the foot of the plinth. `top` and `half`
+ * describe the STONE above it — the top of the core and half the plinth's
+ * width — so the DOM can put the hit area over the altar itself rather than
+ * only over its plaque. Pointing at a two-metre lit object and having nothing
+ * happen is the thing this fixes.
+ */
+export type AltarPoint = {
+  element: AltarElement;
+  x: number;
+  y: number;
+  scale: number;
+  /** Screen y of a point just above the core: the top of the clickable stone. */
+  top: number;
+  /** Half the plinth's on-screen width, at the foot. */
+  half: number;
+};
+
+/**
+ * One frame of the arrival sequence: which altars exist yet, and which one the
+ * hall is showing off. Null is the hall at rest, with all four standing.
+ */
+export type AltarIntro = {
+  /** The altars that have arrived. Everything else is not in the room at all. */
+  present: AltarElement[];
+  /** The one under the light. The others that have arrived sit back, unlit. */
+  spotlight: AltarElement | null;
+};
 
 export type Altars = {
   /** The one being pointed at or focused. Null relaxes the whole hall. */
   setActive(element: AltarElement | null): void;
+  /**
+   * Drive the arrival. Null ends it: every altar present and back at rest.
+   *
+   * The hall has to be BUILT for this (`intro: true` below) or the four are
+   * already standing when the first frame of the sequence arrives.
+   */
+  setIntro(state: AltarIntro | null): void;
   /** The one sworn to. Permanent: it stays lit and the rest go dark. */
   setSworn(element: AltarElement | null): void;
   /** The oath lands: a flare and a ring outward from that altar. */
@@ -559,7 +594,11 @@ function waterCore(colour: Color): Core {
  */
 function airCore(colour: Color): Core {
   const group = new Group();
-  const COUNT = 620;
+  // Denser than it was. Air is the only core with no body, and at 620 motes
+  // spread over the same volume as a flame it read as dust in a beam rather
+  // than as a vortex — the one altar of the four that looked like it had
+  // failed to load.
+  const COUNT = 900;
   const seed = new Float32Array(COUNT * 4);
   const pos = new Float32Array(COUNT * 3);
   for (let i = 0; i < COUNT; i++) {
@@ -630,7 +669,7 @@ function airCore(colour: Color): Core {
         vFade = (0.25 + 0.75 * fract(aSeed.y)) * pinch * wrap;
         vec4 mv = modelViewMatrix * vec4(p, 1.0);
         gl_PointSize = (1.0 + aSeed.w * 2.0) * uPixel * (2.6 / -mv.z)
-                     * (0.65 + uCharge * 0.6 + gust * 0.45);
+                     * (0.85 + uCharge * 0.5 + gust * 0.45);
         gl_Position = projectionMatrix * mv;
       }`,
     fragmentShader: `
@@ -641,8 +680,13 @@ function airCore(colour: Color): Core {
         if (d > 0.5) discard;
         // White, with the element only tinting it — and whiter still in a gust.
         vec3 c = mix(vec3(1.0), uColour, 0.30 - vGust * 0.10);
+        // The floor was 0.10, and at rest that is a scatter of specks over a
+        // black room: beside a flame, an orb and a pile of shards, air read as
+        // a broken altar rather than as a quiet one. It is still the faintest
+        // of the four — it has no body — but it is now visibly a vortex before
+        // you point at it.
         float a = smoothstep(0.5, 0.0, d) * vFade
-                * (0.10 + uCharge * 0.9 + vGust * 0.28);
+                * (0.34 + uCharge * 0.7 + vGust * 0.28);
         gl_FragColor = vec4(c, a);
       }`,
   })));
@@ -794,10 +838,21 @@ export function createAltars(
   {
     sworn = null as AltarElement | null,
     onLayout,
+    intro = false,
   }: {
     sworn?: AltarElement | null;
     /** Where each core is on screen, so the DOM can put a real button there. */
     onLayout?: (points: AltarPoint[]) => void;
+    /**
+     * Build the hall EMPTY, for the arrival sequence.
+     *
+     * It is a build-time flag and not a call because an altar that can be
+     * absent has to own its stone: the plinth materials are shared by all four,
+     * so fading one out fades the room. Under `intro` each altar gets its own
+     * clone, which is four extra materials on the one path that needs them and
+     * nothing at all on the path that does not.
+     */
+    intro?: boolean;
   } = {},
 ): Altars | null {
   LIVE.get(canvas)?.();
@@ -921,8 +976,14 @@ export function createAltars(
     auraMat: MeshBasicMaterial;
     aura: Mesh;
     ringMat: ShaderMaterial;
+    /** The plinth's own stone, when there is an arrival to fade it through. */
+    stoneMat: MeshStandardMaterial;
+    bandMat: MeshStandardMaterial;
     charge: number;   // eased
     target: number;
+    /** 0 the altar is not in the room, 1 it is standing. Eased, like charge. */
+    presence: number;
+    presenceTarget: number;
     struckAt: number;
   };
 
@@ -940,19 +1001,32 @@ export function createAltars(
     root.rotation.y = -x * 0.055;
     scene.add(root);
 
-    const foot = new Mesh(footGeo, stoneMat);
+    // Its own stone only when the altar has to be able to not be there. The
+    // clone shares the granite texture, so this is four material objects, not
+    // four uploads.
+    const stone = intro ? stoneMat.clone() : stoneMat;
+    const gold = intro ? bandMat.clone() : bandMat;
+    if (intro) {
+      // Left transparent for good rather than switched back at the end of the
+      // sequence: `transparent` is a program-level flag and flipping it mid-run
+      // is a recompile, for a plinth that is already at full opacity.
+      stone.transparent = true; stone.opacity = 0;
+      gold.transparent = true; gold.opacity = 0;
+    }
+
+    const foot = new Mesh(footGeo, stone);
     foot.position.y = 0.08;
     root.add(foot);
 
-    const shaft = new Mesh(shaftGeo, stoneMat);
+    const shaft = new Mesh(shaftGeo, stone);
     shaft.position.y = 0.16 + 1.18 / 2;
     root.add(shaft);
 
-    const cap = new Mesh(capGeo, stoneMat);
+    const cap = new Mesh(capGeo, stone);
     cap.position.y = 0.16 + 1.18 + 0.065;
     root.add(cap);
 
-    const band = new Mesh(bandGeo, bandMat);
+    const band = new Mesh(bandGeo, gold);
     band.position.y = 0.16 + 1.18 - 0.012;
     root.add(band);
 
@@ -1019,6 +1093,8 @@ export function createAltars(
 
     built.push({
       element, root, core, light, glyphMat, auraMat, aura, ringMat, baseX: x,
+      stoneMat: stone, bandMat: gold,
+      presence: intro ? 0 : 1, presenceTarget: intro ? 0 : 1,
       coreAt: new Vector3(x, PLINTH_TOP + 0.62, -Math.abs(x) * 0.22),
       // Anchored on a flat line rather than on the arc: projecting each
       // plinth's own foot put the outer two names higher up the screen than the
@@ -1064,13 +1140,41 @@ export function createAltars(
    */
   const IDLE = 0.36;
 
+  /**
+   * What an altar sits at once it has been shown off and stepped back.
+   *
+   * Well under `IDLE`, and that is the point of the sequence: the one under the
+   * light is the only lit thing in the room, and the ones behind it read as
+   * stone waiting its turn. They all come back to `IDLE` together at the end,
+   * which is the moment the choice is handed over.
+   *
+   * Not near zero, though — that was the first attempt and it emptied the
+   * plinths. A core carries no light of its own below about a tenth of a
+   * charge, so an altar that had already been shown off went back to being a
+   * bare stone box and the room lost the three factions it had just introduced.
+   */
+  const INTRO_BACK = 0.16;
+
+  /** Non-null while the hall is being introduced. See `setIntro`. */
+  let arrival: AltarIntro | null = intro ? { present: [], spotlight: null } : null;
+
   const retarget = () => {
     for (const a of built) {
-      a.target = a.element === active ? 1 : IDLE;
+      if (!arrival) {
+        a.presenceTarget = 1;
+        a.target = a.element === active ? 1 : IDLE;
+        continue;
+      }
+      const here = arrival.present.includes(a.element);
+      a.presenceTarget = here ? 1 : 0;
+      // An altar that has not arrived is not dark, it is absent: charge 0 as
+      // well as presence 0, so it does not fade up already glowing.
+      a.target = !here ? 0 : arrival.spotlight === a.element ? 1 : INTRO_BACK;
     }
   };
   retarget();
-  // Start settled rather than fading up from black on mount.
+  // Start settled rather than fading up from black on mount — except during an
+  // arrival, where starting from nothing is the whole point.
   for (const a of built) a.charge = a.target;
 
   // -- framing ---------------------------------------------------------------
@@ -1081,17 +1185,31 @@ export function createAltars(
     if (!onLayout) return;
     const w = canvas.clientWidth;
     const h = canvas.clientHeight;
+    const toScreen = (v: Vector3) => {
+      const p = v.clone().project(camera);
+      return { x: (p.x * 0.5 + 0.5) * w, y: (-p.y * 0.5 + 0.5) * h };
+    };
     const points = built.map((a) => {
-      const v = a.labelAt.clone().project(camera);
+      const anchor = toScreen(a.labelAt);
+      // A little over the core, so the flame/orb/vortex is inside the hit area
+      // and not just the stone under it.
+      const crown = toScreen(new Vector3(a.coreAt.x, a.coreAt.y + 1.15, a.coreAt.z));
+      // The foot's own half-width, projected at the foot's depth. `footGeo` is
+      // 1.24 wide; 0.72 gives it a little margin without reaching its neighbour,
+      // which stands 2.85 away before the narrow-screen spread closes them up.
+      const edge = toScreen(new Vector3(a.coreAt.x + 0.72, 0.08, a.coreAt.z));
+      const centre = toScreen(new Vector3(a.coreAt.x, 0.08, a.coreAt.z));
       return {
         element: a.element,
-        x: (v.x * 0.5 + 0.5) * w,
-        y: (-v.y * 0.5 + 0.5) * h,
+        x: anchor.x,
+        y: anchor.y,
         // Perspective scale, so a button over a further altar can shrink with it.
         scale: 1 - (a.coreAt.z * -1) * 0.06,
+        top: crown.y,
+        half: Math.abs(edge.x - centre.x),
       };
     });
-    const key2 = points.map((p) => `${p.x.toFixed(1)},${p.y.toFixed(1)}`).join('|');
+    const key2 = points.map((p) => `${p.x.toFixed(1)},${p.y.toFixed(1)},${p.top.toFixed(1)},${p.half.toFixed(1)}`).join('|');
     if (key2 === lastLayout) return;
     lastLayout = key2;
     onLayout(points);
@@ -1188,8 +1306,36 @@ export function createAltars(
       // Eased, not switched. The hall should feel like it is responding to you
       // rather than toggling.
       a.charge += (a.target - a.charge) * (reduced ? 1 : 0.09);
+      a.presence += (a.presenceTarget - a.presence) * (reduced ? 1 : 0.085);
       const ring = Math.exp(-(now - a.struckAt) / 520);
       const c = a.charge + ring * 1.6;
+
+      /*
+        Arriving.
+
+        The plinth rises the last three quarters of a metre into its place and
+        fades in as it comes, so an altar enters the room from under the floor
+        rather than being switched on in mid-air. `p` then multiplies everything
+        the altar emits — nothing may glow from a stone that is not all the way
+        up. Skipped entirely once it is standing, which is every frame of the
+        hall's actual life.
+      */
+      const p = a.presence;
+      if (p < 0.999) {
+        a.root.visible = p > 0.004;
+        a.root.position.y = (p - 1) * 0.75;
+        a.stoneMat.opacity = p;
+        a.bandMat.opacity = p;
+        // The core is the brightest thing on the altar; hold it until the stone
+        // under it is most of the way there.
+        a.core.group.visible = p > 0.3;
+      } else if (a.root.position.y !== 0) {
+        a.root.visible = true;
+        a.root.position.y = 0;
+        a.stoneMat.opacity = 1;
+        a.bandMat.opacity = 1;
+        a.core.group.visible = true;
+      }
 
       a.core.update(reduced ? 0 : t, a.charge);
       // Each core breathes on its own phase, seeded off its x, so the four
@@ -1198,15 +1344,15 @@ export function createAltars(
         + (reduced ? 0 : Math.sin(t * 0.6 + a.coreAt.x) * 0.035);
       a.aura.position.y = a.core.group.position.y;
 
-      a.glyphMat.opacity = 0.12 + a.charge * 0.95 + ring * 1.2;
-      a.auraMat.opacity = 0.05 + a.charge * 0.5 + ring * 0.8;
+      a.glyphMat.opacity = (0.12 + a.charge * 0.95 + ring * 1.2) * p;
+      a.auraMat.opacity = (0.05 + a.charge * 0.5 + ring * 0.8) * p;
       a.aura.scale.setScalar(1.9 + a.charge * 0.55 + ring * 2.4);
-      a.light.intensity = 0.3 + c * 11;
+      a.light.intensity = (0.3 + c * 11) * p;
       a.ringMat.uniforms.uTime.value = t;
       // The one mark the oath leaves in the scene: your own circle stays cut
       // into the floor whether or not you are standing at it. It costs the
       // altar no light, so it marks without ranking.
-      a.ringMat.uniforms.uCharge.value = Math.min(1.4, c + (a.element === oath ? 0.3 : 0));
+      a.ringMat.uniforms.uCharge.value = Math.min(1.4, c + (a.element === oath ? 0.3 : 0)) * p;
     }
 
     /*
@@ -1228,6 +1374,14 @@ export function createAltars(
   const handle: Altars = {
     setActive(element) {
       active = element;
+      retarget();
+    },
+    setIntro(state) {
+      // Only a hall built for it can be introduced; on any other the four are
+      // already standing and pretending otherwise would drop them through the
+      // floor mid-session.
+      if (!intro) return;
+      arrival = state;
       retarget();
     },
     setSworn(element) {

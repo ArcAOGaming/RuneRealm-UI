@@ -70,6 +70,8 @@
   [data-element='water'] { --element: var(--tide); }
   [data-element='air']   { --element: var(--gale); }
   [data-element='rock']  { --element: var(--stone); }
+  /* Untyped creatures deliberately carry no magical chroma. */
+  [data-element='normal'] { --element: var(--muted); }
 
   * { border-color: rgb(var(--edge)); }
 
@@ -102,6 +104,10 @@
     border: 2px solid rgb(var(--void));
   }
   ::-webkit-scrollbar-thumb:hover { background: rgb(var(--faint)); }
+  /* Where a horizontal and a vertical bar meet. Unstyled it is painted WHITE,
+     which on this palette is a bright square in the corner of every box that
+     scrolls both ways — the faction roster being the one people noticed. */
+  ::-webkit-scrollbar-corner { background: transparent; }
 
   :focus-visible {
     outline: 2px solid rgb(var(--element));
@@ -1171,10 +1177,18 @@ html { scroll-behavior: smooth; }
 @media (max-width: 767px) {
   .landing-hero { min-height: calc(100svh - 57px); }
   .hero-title { font-size: clamp(3rem, 16vw, 5rem); }
+  /*
+     Above the copy, not behind it.
+
+     Stacked on a phone the mark is centred, and at 92vw wide from -1.2rem its
+     lower half came down through the eyebrow and the first two lines of the
+     headline — a 16vw serif reading over a lit glyph. It keeps its place at
+     the top of the frame; it just stops reaching the type.
+  */
   .hero-monolith {
-    top: -1.2rem;
-    width: min(92vw, 28rem);
-    opacity: 0.82;
+    top: -4.5rem;
+    width: min(76vw, 23rem);
+    opacity: 0.55;
   }
   .hero-scroll { display: none; }
   .landing-section { padding-block: 5.5rem; }
@@ -1319,6 +1333,20 @@ pre,
 
 .faction-roster-table,
 .admin-data-table { min-width: 30rem; }
+
+/*
+   A roster narrower than its own columns.
+
+   30rem does not fit a phone, and the box it sits in scrolls sideways — so on a
+   narrow screen the last two columns were simply not on screen, in a container
+   with no visible affordance saying to drag it. Quests is the one that goes:
+   a roster is names, levels and wins, and the fifth number is the one nobody
+   is scanning the list for.
+*/
+@media (max-width: 40rem) {
+  .faction-roster-table { min-width: 0; }
+  .faction-roster-table .roster-quests { display: none; }
+}
 
 /* Realm command -----------------------------------------------------------
    The admin surface is denser than the game screens, but it uses the same cut
@@ -1701,6 +1729,30 @@ pre,
   .altar-choice-name { font-size: 9px; }
 }
 
+/* Walkthrough --------------------------------------------------------------
+   The dim is the spotlight's own shadow, spread past any viewport, so there is
+   exactly one box to position and the hole in the dark is the element being
+   described — no four-rectangle cutout to keep in sync with it. */
+.tour-spot {
+  box-shadow:
+    0 0 0 9999px rgb(var(--void) / .84),
+    0 0 0 1px rgb(var(--element) / .55),
+    0 0 22px 2px rgb(var(--element) / .28);
+}
+
+/*
+   No transition on the box, deliberately.
+
+   Sliding it between steps looked right and did not work: the position is
+   written from a rAF loop that follows the subject, and every write restarts
+   an in-flight transition from wherever it had got to. The result converges on
+   the target about as fast as Zeno's tortoise — a spotlight that is visibly
+   half way to the thing it is describing, for as long as you look at it. It
+   snaps now, which is also the clearer read: one element is lit at a time.
+*/
+
+.tour-card { max-width: calc(100vw - 1.5rem); }
+
 /* Market ------------------------------------------------------------------ */
 .market-tabs {
   position: sticky;
@@ -1750,8 +1802,213 @@ pre,
 
 .market-chart canvas { image-rendering: auto; }
 
+/*
+ * The listing grid sizes itself off the card, not off a breakpoint count. A
+ * card is 648x1065 plus a price rail, so a column narrower than ~13rem prints
+ * art nobody can read and one wider than ~17rem fits four to a wide screen and
+ * makes the market look empty.
+ */
+.market-listing-grid {
+  display: grid;
+  gap: .75rem;
+  grid-template-columns: repeat(auto-fill, minmax(13.5rem, 1fr));
+}
+
+@media (max-width: 420px) {
+  .market-listing-grid { grid-template-columns: repeat(auto-fill, minmax(9.5rem, 1fr)); }
+}
+
 .market-monster-card {
   transition: transform .22s ease, box-shadow .22s ease;
+}
+
+/*
+ * Two desks, two languages.
+ *
+ * The Goods tab holds a shop and a market, and they are not the same kind of
+ * thing: one sells to you at a price the realm sets and cannot be haggled
+ * with, the other is players bidding against each other. Told apart by their
+ * headings alone, players treat the second like the first and are surprised
+ * when nobody fills their order.
+ *
+ * So they get the system's own two non-elemental colours. The shop is carved
+ * bone-gold — the chrome's colour, the realm's own voice, the same `--rune` as
+ * the wordmark and the seal — and it is a counter: plaques, pips, art. The
+ * floor is arcane violet, gridded and monospaced, with bid green and ask red:
+ * the only place in the app where a number moving is somebody else's decision.
+ */
+.market-desk-choice {
+  position: relative;
+  display: flex;
+  min-height: 5.5rem;
+  flex-direction: column;
+  gap: .2rem;
+  overflow: hidden;
+  padding: .7rem .9rem .75rem;
+  border: 1px solid rgb(var(--edge));
+  text-align: left;
+  transition: border-color .18s ease, background-color .18s ease, opacity .18s ease;
+}
+
+.market-desk-choice:not(.is-active) { opacity: .66; }
+.market-desk-choice:not(.is-active):hover { opacity: .85; }
+
+.market-desk-title {
+  font-size: 1.05rem;
+  font-weight: 600;
+  line-height: 1.15;
+  color: rgb(var(--ink));
+}
+
+.market-desk-note {
+  font-size: 11px;
+  line-height: 1.35;
+  color: rgb(var(--faint));
+}
+
+.market-desk-stat {
+  margin-top: auto;
+  padding-top: .35rem;
+  font-size: 11px;
+  color: rgb(var(--muted));
+}
+
+/* The realm's counter: carved, warm, bone-gold. */
+.market-desk-shop {
+  background:
+    linear-gradient(180deg, rgb(var(--rune) / .06), transparent 70%),
+    rgb(var(--surface) / .7);
+  clip-path: polygon(
+    0 0,
+    calc(100% - var(--notch)) 0,
+    100% var(--notch),
+    100% 100%,
+    0 100%
+  );
+}
+
+.market-desk-shop.is-active {
+  border-color: rgb(var(--rune) / .5);
+  background:
+    linear-gradient(180deg, rgb(var(--rune) / .12), transparent 72%),
+    rgb(var(--surface) / .82);
+  box-shadow: inset 0 1px 0 rgb(var(--rune) / .25);
+}
+
+/* The floor: a cold terminal, ruled into a grid. */
+.market-desk-floor { background: rgb(var(--void) / .72); }
+
+.market-desk-floor.is-active {
+  border-color: rgb(var(--arcane) / .55);
+  background: rgb(var(--void) / .92);
+}
+
+.market-desk-floor::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  pointer-events: none;
+  background-image:
+    linear-gradient(rgb(var(--arcane) / .12) 1px, transparent 1px),
+    linear-gradient(90deg, rgb(var(--arcane) / .12) 1px, transparent 1px);
+  background-size: 22px 22px;
+  mask-image: linear-gradient(100deg, black, transparent 72%);
+}
+
+.market-desk-floor > * { position: relative; z-index: 1; }
+
+/* Shop tiles ------------------------------------------------------------- */
+
+.market-tile {
+  transition: border-color .18s ease, box-shadow .18s ease;
+}
+
+.market-tile:hover {
+  box-shadow:
+    0 1px 0 rgb(255 255 255 / .04) inset,
+    0 20px 40px -30px rgb(var(--element) / .45);
+}
+
+/* The display case: the item lit on a shelf, not an icon in a row. */
+.market-tile-art {
+  min-height: 0;
+  border: 1px solid rgb(var(--element) / .22);
+  border-radius: 3px;
+  background:
+    radial-gradient(ellipse at 50% 38%, rgb(var(--element) / .18), transparent 68%),
+    rgb(var(--void) / .42);
+}
+
+.market-tile-art img,
+.market-tile-art svg { filter: drop-shadow(0 6px 12px rgb(var(--void) / .9)); }
+
+/* The price tag IS the button. */
+.market-plaque {
+  display: flex;
+  min-height: 2.5rem;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: .1rem;
+  border: 1px solid rgb(var(--edge));
+  border-radius: 3px;
+  background: rgb(var(--void) / .35);
+  padding: .25rem .35rem;
+  transition: border-color .15s ease, background-color .15s ease, filter .15s ease;
+}
+
+.market-plaque:disabled { opacity: .38; pointer-events: none; }
+.market-plaque-label { font-size: 8px; letter-spacing: .14em; text-transform: uppercase; color: rgb(var(--faint)); }
+.market-plaque-value {
+  font-family: 'JetBrains Mono', ui-monospace, monospace;
+  font-size: 15px;
+  line-height: 1;
+}
+.market-plaque-unit { font-size: 9px; font-style: normal; opacity: .6; }
+
+.market-plaque.is-buy { border-color: rgb(var(--element) / .4); }
+.market-plaque.is-buy .market-plaque-value { color: rgb(var(--element)); }
+.market-plaque.is-buy:hover:not(:disabled) { background: rgb(var(--element) / .14); }
+
+.market-plaque.is-sell .market-plaque-value { color: rgb(var(--muted)); }
+.market-plaque.is-sell:hover:not(:disabled) { background: rgb(var(--raised) / .8); }
+
+.market-purse {
+  border: 1px solid rgb(var(--rune) / .22);
+  background:
+    linear-gradient(180deg, rgb(var(--rune) / .06), transparent 40%),
+    rgb(var(--surface) / .78);
+}
+
+/* Floor tiles ------------------------------------------------------------ */
+
+.market-floor { --element: var(--arcane); }
+
+.market-floor-tile {
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  border: 1px solid rgb(var(--edge));
+  border-radius: 3px;
+  background: rgb(var(--void) / .55);
+  padding: .5rem .6rem .45rem;
+  text-align: left;
+  transition: border-color .15s ease, background-color .15s ease;
+}
+
+.market-floor-tile:hover { border-color: rgb(var(--arcane) / .45); }
+
+.market-floor-tile.is-active {
+  border-color: rgb(var(--arcane) / .7);
+  background: rgb(var(--arcane) / .09);
+}
+
+.market-price-chart {
+  border: 1px solid rgb(var(--arcane) / .16);
+  background:
+    linear-gradient(rgb(var(--arcane) / .05) 1px, transparent 1px) 0 0 / 100% 25%,
+    rgb(var(--void) / .55);
 }
 
 .market-monster-card:hover {
@@ -1786,16 +2043,33 @@ pre,
 
   .market-tabpanel > * { width: 100%; }
 
+  .market-goods,
   .market-monsters,
   .market-rune {
     display: flex;
     min-height: 0;
     flex: 1;
     flex-direction: column;
+    gap: .625rem;
   }
 
   .market-monsters > :not(.market-monsters-scroll),
   .market-rune > :not(.market-rune-workspace) { flex: none; }
+
+  /*
+   * Whichever desk is chosen owns the rest of the viewport, and neither of
+   * them scrolls: the shop shows all six goods, the floor all six charts.
+   * Anything that can overrun (the satchel, the depth ladders, your own open
+   * orders) scrolls inside its own panel rather than moving the page.
+   */
+  .market-goods > .market-desks { flex: none; }
+
+  .market-goods-body {
+    min-height: 0;
+    flex: 1;
+  }
+
+  .market-shop-stock { grid-auto-rows: minmax(0, 1fr); }
 
   .market-monster-chart { height: 7rem; }
 
@@ -2470,30 +2744,6 @@ pre,
   place-items: end center;
 }
 
-.acquisition-layer-ledger {
-  display: flex;
-  max-width: min(48rem, 94vw);
-  flex-wrap: wrap;
-  justify-content: center;
-  gap: .4rem 1rem;
-  font-family: 'JetBrains Mono', ui-monospace, monospace;
-  font-size: 9px;
-  letter-spacing: .12em;
-  text-transform: uppercase;
-  color: rgb(var(--faint));
-}
-
-.acquisition-layer-ledger span::before {
-  content: '';
-  display: inline-block;
-  width: 4px;
-  height: 4px;
-  margin-right: .45rem;
-  background: rgb(var(--element));
-  box-shadow: 0 0 7px rgb(var(--element) / .75);
-  transform: rotate(45deg) translateY(-1px);
-}
-
 .acquisition-finish {
   display: flex;
   align-items: center;
@@ -2508,7 +2758,6 @@ pre,
   .acquisition-copy h1 { font-size: clamp(2rem, 11vw, 3rem); }
   .acquisition-copy > p:last-child { font-size: .75rem; }
   .acquisition-finish { flex-direction: column; gap: .75rem; text-align: center; }
-  .acquisition-layer-ledger { max-width: 22rem; gap: .3rem .65rem; font-size: 8px; }
 }
 
 @media (max-height: 600px) {

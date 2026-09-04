@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import BASE_URL from '../assets/BASE.png?url';
-import { Element, Monster } from '../lib/types';
+import { Monster } from '../lib/types';
 import { HuntScene, HUNT_WORLD } from '../game/HuntScene';
 import { mountGame, Mounted } from '../game/boot';
 import { cx } from './primitives';
@@ -35,12 +35,13 @@ export function HuntStage({
     handle.game.scene.start(HuntScene.KEY, {
       playerSheet: playerSpriteTxId ? `https://arweave.net/${playerSpriteTxId}` : BASE_URL,
       monsterSprite: companion.sprite,
-      element: companion.elementType as Element,
+      monsterEntryNo: companion.entryNo,
+      element: companion.elementType,
       onTrailReady: () => callbacks.current.onTrailReady(),
       onTravel: (travelled: number, target: number) => callbacks.current.onTravel(travelled, target),
     });
     return () => { mounted.current = null; handle.destroy(); };
-  }, [playerSpriteTxId, companion.sprite, companion.elementType]);
+  }, [playerSpriteTxId, companion.sprite, companion.entryNo, companion.elementType]);
 
   useEffect(() => {
     if (!wild?.id || revealed.current === wild.id) return;

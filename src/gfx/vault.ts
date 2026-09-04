@@ -20,9 +20,9 @@
 import {
   ACESFilmicToneMapping, AdditiveBlending, BackSide, BufferAttribute, BufferGeometry,
   CanvasTexture, Color, CylinderGeometry, DoubleSide, Group, Mesh,
-  MeshBasicMaterial, MeshStandardMaterial, PerspectiveCamera, PlaneGeometry, PMREMGenerator,
-  PointLight, Points, RepeatWrapping, RingGeometry, Scene, ShaderMaterial, SphereGeometry,
-  SRGBColorSpace, Texture, TextureLoader, Vector3, WebGLRenderer,
+  MeshBasicMaterial, MeshStandardMaterial, OctahedronGeometry, PerspectiveCamera, PlaneGeometry,
+  PMREMGenerator, PointLight, Points, RepeatWrapping, RingGeometry, Scene, ShaderMaterial,
+  SphereGeometry, SRGBColorSpace, Texture, TextureLoader, TorusGeometry, Vector3, WebGLRenderer,
 } from 'three';
 import { RoundedBoxGeometry } from 'three/examples/jsm/geometries/RoundedBoxGeometry.js';
 import { RoomEnvironment } from 'three/examples/jsm/environments/RoomEnvironment.js';
@@ -39,6 +39,46 @@ const RARITY_COLOR = [
 ];
 
 const GOLD = 0xd6c8a2;
+
+/**
+ * What each tier is BUILT of, as opposed to what colour its light is.
+ *
+ * `RARITY_COLOR` only ever drove the glow, the seal and the beam, so every box
+ * in the game was the same purple crate with the same gold straps and the only
+ * difference between a Common and a Legendary was the colour of the light
+ * coming out of the seam. The prop is the thing on screen for six seconds; it
+ * should be the thing that differs.
+ *
+ * `straps` are x positions, and they are chosen around two fixed obstacles: the
+ * seal on the lid spans +/-0.39, and the lock sits on the front at x=0. Nothing
+ * belongs between +/-0.42 or the mark gets a bar across it.
+ */
+const RARITY_BUILD = [
+  // (unused index 0)
+  { wood: 0x2b2136, metal: GOLD, straps: [-0.62, 0.62], rivets: 4, brackets: true, gem: 0 },
+  // Common — a shipping crate. Rough pine, cold iron, no ornament at all.
+  { wood: 0x3b3430, metal: 0x8b8f99, straps: [-0.62, 0.62], rivets: 2, brackets: false, gem: 0 },
+  // Uncommon — the same crate, kept: warmer timber, bronze, corners protected.
+  { wood: 0x40301f, metal: 0xa9793f, straps: [-0.62, 0.62], rivets: 3, brackets: true, gem: 0 },
+  // Rare — planed and banded properly. Cold blue timber under bright silver.
+  { wood: 0x232a3a, metal: 0xc2ccd8, straps: [-0.86, -0.5, 0.5, 0.86], rivets: 3, brackets: true, gem: 0 },
+  // Epic — the arcane purple this whole ceremony was built around, and a stone.
+  { wood: 0x2b2136, metal: 0xbda6e2, straps: [-0.86, -0.5, 0.5, 0.86], rivets: 4, brackets: true, gem: 0xb98bff },
+  // Legendary — black lacquer and gold. The only one that reads as treasure.
+  { wood: 0x1d1610, metal: GOLD, straps: [-0.86, -0.5, 0.5, 0.86], rivets: 4, brackets: true, gem: 0xffd76a },
+];
+
+/**
+ * A CSS colour derived from one of the above, mixed toward white (`k > 0`) or
+ * black (`k < 0`). The texture painters were written with their purples typed
+ * in by hand; this is what lets one painter serve six chests.
+ */
+function tint(hex: number, k: number, alpha = 1) {
+  const to = k >= 0 ? 255 : 0;
+  const t = Math.abs(k);
+  const m = (v: number) => Math.round(v + (to - v) * t);
+  return `rgba(${m((hex >> 16) & 255)},${m((hex >> 8) & 255)},${m(hex & 255)},${alpha})`;
+}
 
 /** One reward, as the ceremony needs it: a picture and a count. */
 export type Spoil = { url: string; amount: number };
@@ -110,8 +150,8 @@ function makeTexture(
 }
 
 /** Planked, grained hardwood, dark enough to sit in the game's palette. */
-function drawWood(ctx: CanvasRenderingContext2D, s: number, mono = false) {
-  ctx.fillStyle = mono ? '#808080' : '#2b2136';
+function drawWood(ctx: CanvasRenderingContext2D, s: number, mono = false, tone = 0x2b2136) {
+  ctx.fillStyle = mono ? '#808080' : tint(tone, 0);
   ctx.fillRect(0, 0, s, s);
 
   // Grain: long strokes that wander, drawn light and dark so the surface has
@@ -121,7 +161,7 @@ function drawWood(ctx: CanvasRenderingContext2D, s: number, mono = false) {
     const light = Math.random() > 0.5;
     ctx.strokeStyle = mono
       ? `rgba(255,255,255,${light ? 0.09 : 0.04})`
-      : light ? 'rgba(168,140,196,0.09)' : 'rgba(10,6,16,0.35)';
+      : light ? tint(tone, 0.5, 0.09) : tint(tone, -0.75, 0.35);
     ctx.lineWidth = 0.6 + Math.random() * 2.2;
     ctx.beginPath();
     ctx.moveTo(-4, y);
@@ -134,13 +174,13 @@ function drawWood(ctx: CanvasRenderingContext2D, s: number, mono = false) {
 
   // Plank seams, which is what tells you it is built rather than moulded.
   for (const y of [0.22, 0.5, 0.78]) {
-    ctx.strokeStyle = mono ? 'rgba(0,0,0,0.55)' : 'rgba(6,4,10,0.85)';
+    ctx.strokeStyle = mono ? 'rgba(0,0,0,0.55)' : tint(tone, -0.85, 0.85);
     ctx.lineWidth = 3;
     ctx.beginPath();
     ctx.moveTo(0, y * s);
     ctx.lineTo(s, y * s);
     ctx.stroke();
-    ctx.strokeStyle = mono ? 'rgba(255,255,255,0.3)' : 'rgba(150,120,180,0.14)';
+    ctx.strokeStyle = mono ? 'rgba(255,255,255,0.3)' : tint(tone, 0.42, 0.14);
     ctx.lineWidth = 1;
     ctx.beginPath();
     ctx.moveTo(0, y * s + 2.5);
@@ -149,9 +189,9 @@ function drawWood(ctx: CanvasRenderingContext2D, s: number, mono = false) {
   }
 }
 
-/** Hammered, slightly pitted gold. Flat metal reads as plastic. */
-function drawGold(ctx: CanvasRenderingContext2D, s: number, mono = false) {
-  ctx.fillStyle = mono ? '#8c8c8c' : '#d6c8a2';
+/** Hammered, slightly pitted metal. Flat metal reads as plastic. */
+function drawGold(ctx: CanvasRenderingContext2D, s: number, mono = false, tone = GOLD) {
+  ctx.fillStyle = mono ? '#8c8c8c' : tint(tone, 0);
   ctx.fillRect(0, 0, s, s);
 
   for (let i = 0; i < 900; i++) {
@@ -159,7 +199,7 @@ function drawGold(ctx: CanvasRenderingContext2D, s: number, mono = false) {
     const light = Math.random() > 0.5;
     ctx.fillStyle = mono
       ? `rgba(${light ? '255,255,255' : '0,0,0'},${0.05 + Math.random() * 0.09})`
-      : light ? 'rgba(255,246,214,0.16)' : 'rgba(88,68,30,0.16)';
+      : light ? tint(tone, 0.7, 0.16) : tint(tone, -0.6, 0.16);
     ctx.beginPath();
     ctx.arc(Math.random() * s, Math.random() * s, r, 0, Math.PI * 2);
     ctx.fill();
@@ -167,7 +207,7 @@ function drawGold(ctx: CanvasRenderingContext2D, s: number, mono = false) {
 
   // A scored line down the middle of every strap: the one straight edge on an
   // otherwise beaten surface, which is what makes the beating read.
-  ctx.strokeStyle = mono ? 'rgba(0,0,0,0.5)' : 'rgba(74,56,22,0.5)';
+  ctx.strokeStyle = mono ? 'rgba(0,0,0,0.5)' : tint(tone, -0.68, 0.5);
   ctx.lineWidth = 4;
   ctx.beginPath();
   ctx.moveTo(s / 2, 0);
@@ -252,9 +292,11 @@ export function createVault(
   const vault = new Group();
   scene.add(vault);
 
-  const woodTex = makeTexture(512, (c, n) => drawWood(c, n), [2, 1]);
+  const build = RARITY_BUILD[rarity] ?? RARITY_BUILD[0];
+
+  const woodTex = makeTexture(512, (c, n) => drawWood(c, n, false, build.wood), [2, 1]);
   const woodBump = makeTexture(512, (c, n) => drawWood(c, n, true), [2, 1], false);
-  const goldTex = makeTexture(256, (c, n) => drawGold(c, n), [1, 2]);
+  const goldTex = makeTexture(256, (c, n) => drawGold(c, n, false, build.metal), [1, 2]);
   const goldBump = makeTexture(256, (c, n) => drawGold(c, n, true), [1, 2], false);
 
   const woodMat = new MeshStandardMaterial({
@@ -263,7 +305,10 @@ export function createVault(
   });
   const goldMat = new MeshStandardMaterial({
     map: goldTex, bumpMap: goldBump, bumpScale: 0.6,
-    color: GOLD, roughnessMap: goldBump, roughness: 0.42, metalness: 1,
+    // White, not the tier's metal: the map is ALREADY painted in it, and
+    // multiplying the two squared every colour — iron came out near-black and
+    // only gold survived, which is how five tiers ended up looking like one.
+    color: 0xffffff, roughnessMap: goldBump, roughness: 0.42, metalness: 1,
     envMapIntensity: 0.8,
   });
   const glowMat = new MeshStandardMaterial({
@@ -281,33 +326,56 @@ export function createVault(
   glow.position.y = 0.06;
   vault.add(glow);
 
-  // Bands: two vertical straps and a lock plate, all the same gold, because
-  // one metal repeated is what makes a prop read as one object.
+  /*
+    The straps, and the one number that matters here: SEAM.
+
+    The body's top face is at y=0.50 and the lid's underside at y=0.44 — the
+    lid's skirt covers the body's top 0.06, so the joint you actually SEE from
+    outside is at 0.44. Both straps were solid boxes taller than the piece they
+    wrapped: the body's ran to 0.53 and the lid's down to 0.41, so each one
+    carried on past the joint and into the other's half. Closed, they
+    interpenetrated and z-fought along the seam; open, the body's strap stood up
+    as a tab inside the chest's mouth and the lid's hung down under the lid as a
+    tongue. A strap wraps the outside of a box. It has no business on the inside
+    of one.
+
+    So each stops flush at SEAM and is proud only where a strap should be — 0.03
+    past the front, the back, and the far end of its own piece.
+  */
+  const SEAM = 0.44;
+  const bodyBottom = -0.53;    // 0.03 below the body: the strap passes under it
+  const lidTop = 0.91;         // 0.03 above the lid: and over the top of it
+
   const rivet = new SphereGeometry(0.035, 12, 8);
-  for (const x of [-0.62, 0.62]) {
-    const band = new Mesh(new RoundedBoxGeometry(0.16, 1.06, 1.36, 3, 0.03), goldMat);
-    band.position.set(x, 0, 0);
+  const rivetYs = [-0.36, -0.12, 0.12, 0.36].slice(0, build.rivets);
+  for (const x of build.straps) {
+    const band = new Mesh(
+      new RoundedBoxGeometry(0.16, SEAM - bodyBottom, 1.36, 3, 0.03),
+      goldMat,
+    );
+    band.position.set(x, (SEAM + bodyBottom) / 2, 0);
     vault.add(band);
-    // Rivets. Four beads of geometry each, and the chest stops being boxes.
-    for (const y of [-0.36, -0.12, 0.12, 0.36]) {
+    // Rivets. A few beads of geometry each, and the chest stops being boxes.
+    for (const y of rivetYs) {
       const head = new Mesh(rivet, goldMat);
       head.position.set(x, y, 0.68);
       vault.add(head);
     }
   }
 
-  // Corner brackets, front two only — the back is never seen.
-  for (const x of [-0.98, 0.98]) {
-    for (const y of [-0.46, 0.46]) {
-      const bracket = new Mesh(new RoundedBoxGeometry(0.12, 0.12, 0.12, 2, 0.03), goldMat);
-      bracket.position.set(x, y, 0.63);
-      vault.add(bracket);
+  // Corner brackets, front two only — the back is never seen. Both sit BELOW
+  // the seam for the same reason the straps stop at it: the upper pair used to
+  // be centred at 0.46 and reach to 0.52, so a fitting bolted to the body stood
+  // across the lid's edge and read as a tab stuck to nothing once it opened.
+  if (build.brackets) {
+    for (const x of [-0.98, 0.98]) {
+      for (const y of [-0.46, SEAM - 0.07]) {
+        const bracket = new Mesh(new RoundedBoxGeometry(0.12, 0.12, 0.12, 2, 0.03), goldMat);
+        bracket.position.set(x, y, 0.63);
+        vault.add(bracket);
+      }
     }
   }
-
-  const lock = new Mesh(new RoundedBoxGeometry(0.34, 0.42, 0.12, 2, 0.04), goldMat);
-  lock.position.set(0, 0.16, 0.68);
-  vault.add(lock);
 
   // The lid, hinged at the back edge rather than spun about its middle.
   const hinge = new Group();
@@ -318,11 +386,22 @@ export function createVault(
   lid.position.set(0, 0.16, 0.65);
   hinge.add(lid);
 
-  for (const x of [-0.62, 0.62]) {
-    const band = new Mesh(new RoundedBoxGeometry(0.16, 0.5, 1.36, 2, 0.03), goldMat);
-    band.position.set(x, 0.16, 0.65);
+  // The lid's half of each strap. Local y is offset by the hinge's own 0.5, so
+  // the world span [SEAM, lidTop] is written here as [-0.06, 0.41].
+  for (const x of build.straps) {
+    const band = new Mesh(
+      new RoundedBoxGeometry(0.16, lidTop - SEAM, 1.36, 2, 0.03),
+      goldMat,
+    );
+    band.position.set(x, (lidTop + SEAM) / 2 - 0.5, 0.65);
     hinge.add(band);
   }
+
+  // The staple the shackle hooks over. It belongs to the LID, which is why the
+  // lock has something to hold and why the shackle is what gives, not this.
+  const staple = new Mesh(new RoundedBoxGeometry(0.15, 0.11, 0.07, 2, 0.02), goldMat);
+  staple.position.set(0, 0.03, 1.35);
+  hinge.add(staple);
 
   // The seal: the realm's own mark, cut into the lid and lit from beneath.
   const sealCanvas = document.createElement('canvas');
@@ -342,6 +421,91 @@ export function createVault(
   );
   seal.position.set(0, 0.39, 0.65);
   hinge.add(seal);
+
+  // The lock ----------------------------------------------------------------
+  //
+  // It straddles the joint: a plate bolted to the body, a shackle arcing up out
+  // of it and over the staple on the lid. It is the answer to a question the
+  // ceremony was asking without ever showing it — the chest knocks three times
+  // against something, and until now there was nothing there to knock against.
+  //
+  // Its own material, cloned, for one reason: the pieces have to fade out after
+  // they are thrown, and `goldMat` is shared with every strap on the chest.
+  const lockMat = goldMat.clone();
+  lockMat.transparent = true;
+
+  const lockGroup = new Group();
+  lockGroup.position.set(0, 0.29, 0.71);
+  vault.add(lockGroup);
+
+  const lockPlate = new Mesh(new RoundedBoxGeometry(0.34, 0.30, 0.10, 2, 0.035), lockMat);
+  lockGroup.add(lockPlate);
+
+  const keyholeMat = new MeshStandardMaterial({
+    color: 0x0a0710, roughness: 0.6, metalness: 0.3, transparent: true,
+  });
+  const keyhole = new Mesh(new CylinderGeometry(0.038, 0.038, 0.12, 12), keyholeMat);
+  keyhole.rotation.x = Math.PI / 2;
+  keyhole.position.set(0, -0.02, 0.02);
+  lockGroup.add(keyhole);
+
+  /*
+    The shackle, in two quarter-arcs rather than one half-ring.
+
+    A torus arc runs counter-clockwise from +X, so a quarter is the upper-right
+    of the ring: one end at the plate, the other at top dead centre. The second
+    copy rotated a quarter turn is its mirror. They meet at the top, which is
+    exactly where a shackle gives — so breaking it is letting the two halves go,
+    not swapping a whole part for a broken one.
+  */
+  const shackleGeo = new TorusGeometry(0.13, 0.028, 8, 20, Math.PI / 2);
+  const shackleR = new Mesh(shackleGeo, lockMat);
+  const shackleL = new Mesh(shackleGeo, lockMat);
+  shackleL.rotation.z = Math.PI / 2;
+  // A group, because the strain is a stretch of the WHOLE arc from where it
+  // enters the plate. The left half is rotated a quarter turn, so its own local
+  // Y no longer points up — scaling the halves individually would pull one of
+  // them sideways.
+  const shackle = new Group();
+  shackle.position.set(0, 0.15, 0);
+  shackle.add(shackleR, shackleL);
+  lockGroup.add(shackle);
+
+  // A stone in the plate, for the tiers that have earned one.
+  const gem = build.gem
+    ? new Mesh(
+      new OctahedronGeometry(0.09, 0),
+      new MeshStandardMaterial({
+        color: build.gem, emissive: build.gem, emissiveIntensity: 0.5,
+        roughness: 0.15, metalness: 0.2, transparent: true,
+      }),
+    )
+    : null;
+  if (gem) {
+    gem.position.set(0, 0.075, 0.055);
+    gem.rotation.z = Math.PI / 4;
+    lockGroup.add(gem);
+  }
+
+  /*
+    What the lock does when it stops being a lock.
+
+    Each piece carries its own velocity and spin in the lock group's frame and
+    is integrated under gravity from the instant the lid gives. Nothing is
+    reparented: the group rides the chest's slow drift, which is the frame the
+    pieces left from, so they keep travelling in a straight line relative to the
+    thing that threw them.
+  */
+  type Shard = { mesh: Mesh; vel: Vector3; spin: Vector3 };
+  const shards: Shard[] = [
+    { mesh: shackleR, vel: new Vector3(1.9, 2.3, 1.0), spin: new Vector3(5, 3, 11) },
+    { mesh: shackleL, vel: new Vector3(-1.8, 2.1, 1.2), spin: new Vector3(-6, -4, -9) },
+    { mesh: lockPlate, vel: new Vector3(0.25, 0.7, 1.9), spin: new Vector3(4, 7, 3) },
+    { mesh: keyhole, vel: new Vector3(0.25, 0.7, 1.9), spin: new Vector3(4, 7, 3) },
+    ...(gem ? [{ mesh: gem, vel: new Vector3(-0.6, 2.7, 1.5), spin: new Vector3(9, 9, 9) }] : []),
+  ];
+  const shardHome = shards.map((sh) => sh.mesh.position.clone());
+  let brokenAt = -1;
 
   // The plinth --------------------------------------------------------------
 
@@ -793,6 +957,30 @@ export function createVault(
     ringMat.uniforms.uTime.value = t;
     dustMat.uniforms.uTime.value = t;
 
+    // The lock, once it is debris. Ballistic and tumbling, faded out over the
+    // last third of its flight so nothing has to be caught and hidden on an
+    // exact frame.
+    if (brokenAt >= 0) {
+      const dt = (now - brokenAt) / 1000;
+      for (let i = 0; i < shards.length; i++) {
+        const sh = shards[i];
+        const home = shardHome[i];
+        sh.mesh.position.set(
+          home.x + sh.vel.x * dt,
+          home.y + sh.vel.y * dt - 4.6 * dt * dt,
+          home.z + sh.vel.z * dt,
+        );
+        sh.mesh.rotation.x += sh.spin.x * 0.016;
+        sh.mesh.rotation.y += sh.spin.y * 0.016;
+        sh.mesh.rotation.z += sh.spin.z * 0.016;
+      }
+      const gone = Math.max(0, Math.min(1, (dt - 0.55) / 0.5));
+      lockMat.opacity = 1 - gone;
+      keyholeMat.opacity = 1 - gone;
+      if (gem) (gem.material as MeshStandardMaterial).opacity = 1 - gone;
+      if (gone >= 1) { lockGroup.visible = false; brokenAt = -1; }
+    }
+
     // A slow drift, always. A prop that is perfectly still looks like a
     // screenshot of a prop.
     vault.rotation.y = Math.sin(t * 0.24) * 0.16;
@@ -835,6 +1023,13 @@ export function createVault(
       // it — and slams shut again.
       hinge.rotation.x = -(0.02 + knock * 0.19);
 
+      // And the lock is what it lifts against. The shackle stretches out of its
+      // plate on every knock and the whole assembly judders; three times, harder
+      // each time, and then it is not there any more.
+      shackle.scale.y = 1 + knock * 0.5;
+      lockGroup.position.y = 0.29 + knock * 0.02;
+      lockGroup.rotation.z = (Math.random() - 0.5) * knock * 0.14;
+
       beam.visible = true;
       beamMat.uniforms.uPower.value = strain * 0.28 + knock * 0.3;
       beam.scale.set(0.2 + p * 0.25, 0.3 + knock * 0.35, 0.2 + p * 0.25);
@@ -843,6 +1038,12 @@ export function createVault(
         phase = 'burst';
         mark = now;
         burstAt = now;
+        // The shackle gives at the same instant the hinge does, because it is
+        // the thing that was holding it.
+        brokenAt = now;
+        shackle.scale.y = 1;
+        lockGroup.rotation.z = 0;
+        lockGroup.position.y = 0.29;
         // A beat after the lid gives, not with it: the spoils have to come out
         // through an opening, and launching them on the same frame as the
         // hinge has them passing through the lid.

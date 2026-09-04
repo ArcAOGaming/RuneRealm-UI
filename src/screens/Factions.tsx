@@ -16,8 +16,8 @@
  * engine ever read them. They are gone from the process as well as from here
  * (see `C.FACTIONS` in backend/native/constants.lua). A faction picks the
  * companion you start with and the group you belong to. That is the whole of it.
- */import { lazy, Suspense, useMemo, useState } from 'react';
-import { useGame } from '../state/GameProvider';
+ */import { lazy, Suspense, useEffect, useMemo, useState } from 'react';
+import { useGame } from '../state/gameContext';
 import * as api from '../lib/game';
 import { Faction, Element, Monster } from '../lib/types';
 import { Badge, Button, Panel, Skeleton, Spinner, cx } from '../ui/primitives';
@@ -26,7 +26,7 @@ import { ELEMENT_ICON, Check, Arrow } from '../ui/icons';
 import { article, ELEMENT_LABEL, ITEM_NAME, shortAddress } from '../lib/format';
 import { portrait } from '../ui/art';
 import { Sigil } from '../ui/Sigil';
-import { useNavigate } from 'react-router-dom';
+import { useLocation, useNavigate } from 'react-router-dom';
 import Ranks from './Ranks';
 
 // The hall is three.js and three.js is most of the bundle. It arrives after the
@@ -39,6 +39,17 @@ export default function Factions() {
   const { factions, player, run, isPending } = useGame();
   const [confirming, setConfirming] = useState<Faction | null>(null);
   const [acquired, setAcquired] = useState<Monster | null>(null);
+  /**
+   * The faction whose oath is being written right now.
+   *
+   * `ConfirmJoin` used to stay up with a busy spinner for the whole signed
+   * write, so the moment after you swore was the oath dialog's PARTIAL dim
+   * over the hall — several seconds of it — and only then the full-screen
+   * reveal. Two different backdrops for one continuous moment. This carries
+   * the element through so the veil can be the same opaque full-screen ground
+   * the reveal lands on, and the seam disappears.
+   */
+  const [swearing, setSwearing] = useState<Faction | null>(null);
   const navigate = useNavigate();
 
   const mine = player?.faction ?? null;
@@ -56,6 +67,27 @@ export default function Factions() {
    * altar in the hall.
    */
   const [focused, setFocused] = useState<Element | null>(null);
+
+  /*
+    The arrival, and who gets it.
+
+    A player sent here by the front door with no faction yet is meeting these
+    four for the first time, and the hall introduces itself: one altar at a
+    time, left to right, then the companions. Anyone else — the nav, a link, a
+    reload, a sworn player coming back to read a roster — walks into the room
+    already standing. It is an onboarding beat, not the screen's behaviour.
+
+    The flag rides on the navigation and is consumed on arrival, so it survives
+    exactly one entrance: refreshing the page is not a second first time.
+  */
+  const location = useLocation();
+  const [introRequested] = useState(
+    () => Boolean((location.state as { intro?: boolean } | null)?.intro),
+  );
+  useEffect(() => {
+    if (introRequested) navigate(location.pathname, { replace: true, state: null });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
   /** The faction whose detail is open. Set by choosing an altar or a card. */
   const [detail, setDetail] = useState<Faction | null>(null);
   /** False when the hall could not render, and the cards have to carry it. */
@@ -72,6 +104,7 @@ export default function Factions() {
       out[f.element] = {
         name: f.name,
         companion: f.monsterName,
+        entryNo: f.monsterEntryNo,
         members: f.memberCount,
         mine: mine === f.name,
       };
@@ -80,8 +113,12 @@ export default function Factions() {
   }, [factions, mine]);
 
   const join = async (faction: Faction) => {
-    const reply = await run('join', () => api.joinFaction(faction.name));
+    // Straight to the full-screen veil: the dialog has done its job the moment
+    // the oath is confirmed, and leaving it up is what produced the half-dim.
     setConfirming(null);
+    setSwearing(faction);
+    const reply = await run('join', () => api.joinFaction(faction.name));
+    setSwearing(null);
     if (reply?.monster) {
       setDetail(null);
       setAcquired(reply.monster);
@@ -118,6 +155,7 @@ export default function Factions() {
               if (f) open(f);
             }}
             onLive={setHallLive}
+            intro={introRequested && !mine}
             hint={canJoin ? 'Choose an altar to read it' : undefined}
             /*
               Out of the page's padding entirely, top and bottom.
@@ -176,6 +214,16 @@ export default function Factions() {
           onCancel={() => setConfirming(null)}
           onConfirm={() => join(confirming)}
         />
+      )}
+
+      {swearing && !acquired && (
+        <div
+          role="status"
+          data-element={swearing.element}
+          className="fixed inset-0 z-[70] grid place-items-center bg-void"
+        >
+          <Spinner className="h-8 w-8 text-element" />
+        </div>
       )}
 
       {acquired && (
@@ -250,7 +298,7 @@ function FactionCard({
 
       <div className="relative flex items-center gap-3">
         <img
-          src={portrait(faction.element)}
+          src={portrait(faction.element, 0, faction.monsterEntryNo)}
           alt=""
           loading="lazy"
           className="h-14 w-14 shrink-0 object-contain"
@@ -298,7 +346,13 @@ function FactionDetail({
       title={faction.name}
       onClose={onClose}
       element={faction.element}
-      className="max-w-lg"
+      /*
+        `size`, not a `max-w-*` in `className` — that one loses to the default,
+        which is why this dialog was coming out at a confirmation's width and
+        the roster's Wins and Quests columns were being scrolled off the right
+        edge of a box nobody would think to drag.
+      */
+      size="lg"
     >
       <div className="mt-1 flex flex-wrap items-center gap-2">
         <Badge tone="element"><Icon className="h-3 w-3" />{ELEMENT_LABEL[faction.element]}</Badge>
@@ -309,7 +363,7 @@ function FactionDetail({
 
       <div className="mt-4 flex items-center gap-4 rounded-[3px] border border-edge/60 bg-void/30 p-3">
         <img
-          src={portrait(faction.element)}
+          src={portrait(faction.element, 0, faction.monsterEntryNo)}
           alt={faction.monsterName}
           className="h-20 w-20 shrink-0 object-contain"
         />
@@ -338,7 +392,7 @@ function FactionDetail({
                   <th className="px-3 py-2 text-left font-medium" colSpan={2}>Member</th>
                   <th className="px-3 py-2 text-right font-medium">Lvl</th>
                   <th className="px-3 py-2 text-right font-medium">Wins</th>
-                  <th className="px-3 py-2 text-right font-medium">Quests</th>
+                  <th className="roster-quests px-3 py-2 text-right font-medium">Quests</th>
                 </tr>
               </thead>
               <tbody>
@@ -352,7 +406,7 @@ function FactionDetail({
                     <td className="px-2 py-1.5 font-mono text-xs text-muted">{shortAddress(m.id, 5)}</td>
                     <td className="px-3 py-1.5 text-right font-mono tabular-nums">{m.level}</td>
                     <td className="px-3 py-1.5 text-right font-mono tabular-nums text-muted">{m.wins}</td>
-                    <td className="px-3 py-1.5 text-right font-mono tabular-nums text-muted">{m.timesQuest}</td>
+                    <td className="roster-quests px-3 py-1.5 text-right font-mono tabular-nums text-muted">{m.timesQuest}</td>
                   </tr>
                 ))}
               </tbody>

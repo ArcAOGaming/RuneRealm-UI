@@ -61,6 +61,9 @@ const MODULES = {
   ...import.meta.glob('../../assets/Monsters/portraits/doge/level-1/*.png', {
     eager: true, query: '?url', import: 'default',
   }),
+  ...import.meta.glob('../../assets/monster-index/*/portrait.png', {
+    eager: true, query: '?url', import: 'default',
+  }),
   // The satchel icons, for the extended card only.
   ...import.meta.glob('../../assets/art/{berry,gem,scroll}*.png', {
     eager: true, query: '?url', import: 'default',

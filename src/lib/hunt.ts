@@ -1,5 +1,6 @@
 /** Client for the separate Hunt process. Account ownership stays in game.ts. */
 import { HB_NODE, readJSON, send } from './hyperbeam';
+import { joined } from './game';
 import {
   GameError, HuntRoute, HuntRun, Reply,
 } from './types';
@@ -38,11 +39,17 @@ const write = async (
   requiredOutbox,
 }));
 
-export const readHunt = (route: HuntRoute) =>
+/**
+ * The run, from the worker's published cache. Free, unsigned, and cancellable:
+ * the screen polls this while a run is opening or settling, and a read with no
+ * signal outlives the screen holding one of six connections to the origin.
+ */
+export const readHunt = (route: HuntRoute, signal?: AbortSignal) =>
   readJSON<HuntRun>(`hunt-run-${route.runId}`, {
     process: route.processId,
     node: route.node || HB_NODE,
-  });
+    signal,
+  }).then(joined);
 
 export const search = (route: HuntRoute) =>
   write(route, 'Hunt.Search', { ActionId: actionId('search') });

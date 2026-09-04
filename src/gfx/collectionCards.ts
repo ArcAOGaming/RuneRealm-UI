@@ -7,11 +7,11 @@ import {
   LinearFilter, Mesh, MeshBasicMaterial, MeshStandardMaterial, NearestFilter,
   NoToneMapping, PerspectiveCamera, Scene, SRGBColorSpace, WebGLRenderer,
 } from 'three';
-import type { Element } from '../lib/types';
+import type { Affinity } from '../lib/types';
 
 export type CollectionCardFace = {
   face: HTMLCanvasElement;
-  element: Element;
+  element: Affinity;
   target: HTMLElement | null;
 };
 
@@ -26,7 +26,7 @@ export type CollectionCardRect = {
 
 export type CollectionCardSwapFace = {
   face: HTMLCanvasElement;
-  element: Element;
+  element: Affinity;
   start: CollectionCardRect;
   target: HTMLElement;
 };
@@ -37,8 +37,8 @@ const LIVE = new WeakMap<HTMLCanvasElement, () => void>();
 const LIVE_SWAPS = new WeakMap<HTMLCanvasElement, () => void>();
 const RATIO = 648 / 1065;
 const GOLD = 0xd6c8a2;
-const HUE: Record<Element, number> = {
-  fire: 0xff7a43, water: 0x4ab0ff, air: 0x7ee8d6, rock: 0xc7a26b,
+const HUE: Record<Affinity, number> = {
+  fire: 0xff7a43, water: 0x4ab0ff, air: 0x7ee8d6, rock: 0xc7a26b, normal: 0x969fb8,
 };
 
 const clamp = (n: number) => Math.max(0, Math.min(1, n));

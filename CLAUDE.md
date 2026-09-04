@@ -69,6 +69,26 @@ keeps its **earliest** known age. An empty account is a real export shape — it
 is what `Admin.Unlock` mints for a wallet that never played — and loading one on
 top of a real player used to erase them.
 
+## A flow change is a walkthrough change
+
+Screens teach themselves. Each one that has a guided walkthrough declares it in
+its **own file** with `useTourSteps` — `COMPANION_TOUR` in `screens/Companion.tsx`,
+`ENTRANCE_TOUR`/`LOBBY_TOUR` in `screens/Arena.tsx`, `MARKET_TOUR`,
+`HUNT_TOUR` — precisely so that changing what the arena charges and changing
+the sentence that says what the arena charges are the same diff.
+
+Those sentences state real numbers and real rules: one Rune for four battles,
+25 energy and 25 happiness to enter, +5 from three berries, a 2% seller fee on
+the trading floor, one to five Rune to bind and consumed either way. **If you
+move any of those, the walkthrough moves with them in the same commit.** A tour
+describing rules the game no longer has is worse than no tour: it is
+confidently wrong, and the player has no way to tell.
+
+Same rule for the shape of a screen. Steps point at `data-tour` attributes and a
+step whose target is missing is silently dropped — so deleting a panel does not
+break the tour, it quietly removes a step nobody notices is gone. Check the
+walkthrough when you move markup, because nothing will fail if you do not.
+
 ## Test before deploying, on a real node
 
 ```bash
@@ -136,6 +156,69 @@ genuinely covers many state transitions — auto-resolved bot battles, admin
 loads, seeding, migrations. A player picks a move after seeing the last result,
 so a battle round is one message by definition, and no amount of batching
 changes that.
+
+## Every message pays for all published state, so publish nothing twice
+
+A `~lua@5.3a` slot does not cost what the handler did. It costs the size of the
+**whole published map**, five times over, whatever the message was. From
+HyperBEAM's own `dev_lua:compute/4`:
+
+1. `hb_cache:ensure_all_loaded(Params)` — "load the entire structure of the
+   message into memory". Lazy `{link, ...}` values exist and this defeats all
+   of them.
+2. `encode/2` — `maps:to_list(maps:map(...))` recursively over the whole base.
+3. `luerl:call_function_dec` — that whole term decoded into Luerl tables.
+4. `decode(MsgResult)` — the returned map, which **is** `base` plus the edits,
+   walked all the way back to Erlang.
+5. `hb_cache:write` — `hb_message:id`, `calculate_all_ids`, then a `maps:fold`
+   emitting write ops per key.
+
+Two consequences, and neither is negotiable by rearranging keys:
+
+- **Moving a value to its own key buys nothing.** There is no touched-key
+  optimisation to reach; `ensure_all_loaded` flattens the distinction before
+  Lua is called. Only *deleting bytes* makes a slot faster.
+- **A key that grows with the player count makes every action slower for
+  everyone.** `player-<address>` is written once per wallet and never removed,
+  so slot cost is O(wallets ever seen) and a returning player pays for every
+  stranger. This is what the 2026-08-31 soak measured: median action 7.6 s
+  early, 18.5 s by the end of 5,061 actions, at ~7 KB of published record per
+  wallet.
+
+So, when writing a handler or a view:
+
+**Publish state, never constants.** If a field is a verbatim copy of something
+in `constants.lua`, publish the constant ONCE under `catalog` and let the client
+join. A move is nine fields and only `count` is state; a companion is ~1,007
+bytes of which 499 are the move definitions. `Battle.compactMoves` already
+stores them compactly — `playerView` used to hydrate them straight back on the
+way out, which is the whole bug in one line.
+
+**Publish a record once.** `p.monster` and `p.monsters[p.activeId]` are the same
+Lua table, so the store holds one copy and the JSON encoder writes two. A mirror
+that costs nothing in the heap costs its full size in every publication. Publish
+the map and the id; let the client index.
+
+**A derived key inherits the size of what it embeds.** A leaderboard row that
+carries a whole companion is 1,217 bytes; fifty of them is 61 KB rewritten
+whenever the board is dirty. Derived keys are the last place to be generous.
+
+**Bound every list, at the point it is appended.** `MarketHistory` is trimmed to
+100 on insert and that is the pattern; a list that is only trimmed on read, or
+not at all, is a permanent tax on every future message.
+
+**An `Admin.Load`/export path must round-trip the compact form.** Reading a
+published view back in and storing it is how a hydrated field gets written into
+the store permanently.
+
+Verify a change with the byte count, not by reasoning about it:
+
+```bash
+curl -s "$NODE/$PID~process@1.0/now" -o now.bin   # every key, one multipart body
+```
+
+then split on the boundary and sum per `name="..."` part. That is the number
+every slot pays.
 
 ## Language is not the lever
 

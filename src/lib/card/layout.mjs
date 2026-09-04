@@ -86,6 +86,10 @@ const ART_ELEMENT = { fire: 'Fire', water: 'Water', air: 'Air', rock: 'Earth' };
 const PORTRAIT_FAMILY = 'doge';
 const portraitPlate = (art) =>
   `Monsters/portraits/${PORTRAIT_FAMILY}/level-1/Doge ${art}.png`;
+const monsterIndexPortrait = (entryNo) => {
+  const number = Math.round(Number(entryNo) || 0);
+  return number > 0 ? `monster-index/${String(number).padStart(3, '0')}/portrait.png` : null;
+};
 
 const LEVEL_COIN = { cx: 56, cy: 56 };
 const NAME_BAND = { cx: 324, cy: 75, maxWidth: 430 };
@@ -397,10 +401,11 @@ export function cardPlan(monster, opts = {}) {
   const ops = [];
 
   ops.push(plate(opts.backgroundAsset || `Monsters/cards/1-backgrounds/Background ${art}.png`));
-  if (opts.portraitAsset) {
+  const numberedPortrait = monsterIndexPortrait(monster && monster.entryNo);
+  if (opts.portraitAsset || numberedPortrait) {
     // Studio portraits are normalized to the authoring spec's 320x448 canvas.
     // Its bottom aligns with the card window and leaves symmetric side room.
-    ops.push({ op: 'image', asset: opts.portraitAsset, dx: 164, dy: 128 });
+    ops.push({ op: 'image', asset: opts.portraitAsset || numberedPortrait, dx: 164, dy: 128 });
   } else {
     ops.push(plate(portraitPlate(art)));
   }

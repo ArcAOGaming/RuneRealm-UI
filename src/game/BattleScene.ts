@@ -31,12 +31,13 @@
  * defender come to meet them.
  */
 import Phaser from 'phaser';
-import { Element, Turn } from '../lib/types';
+import { Affinity, Turn } from '../lib/types';
+import { monsterIndexEntry, isElement } from '../lib/monster-index';
 import {
-  FRAME, HEAL_FRAME, ROW, SPECIAL, SPECIAL_FRAME, STAND_FRAME,
-  arenaUrl, fxUrl, rowFrames, sheetUrl,
+  HEAL_FRAME, SPECIAL, SPECIAL_FRAME, arenaUrl, fxUrl,
 } from './assets';
 import { reducedMotion } from './boot';
+import { MonsterRig, monsterRig } from './MonsterRig';
 
 export type Side = 'challenger' | 'accepter';
 
@@ -56,8 +57,8 @@ export type BattleInit = {
   arena: string;
   /** Which side the viewer is, so "you" is always the left-hand fighter. */
   you: Side;
-  left: { sprite: string; element: Element } & Vitals & Nameplate;
-  right: { sprite: string; element: Element } & Vitals & Nameplate;
+  left: { sprite: string; element: Affinity; entryNo?: number } & Vitals & Nameplate;
+  right: { sprite: string; element: Affinity; entryNo?: number } & Vitals & Nameplate;
 };
 
 /**
@@ -115,7 +116,9 @@ type Fighter = {
   home: number;
   /** +1 faces right (fights rightward), -1 faces left. */
   dir: 1 | -1;
-  element: Element;
+  element: Affinity;
+  entryNo?: number;
+  rig: MonsterRig;
   vitals: Vitals;
   plate: Nameplate;
   onLeft: boolean;
@@ -147,6 +150,7 @@ export class BattleScene extends Phaser.Scene {
   private init_!: BattleInit;
   private fighters!: Record<Side, Fighter>;
   private floorY = 0;
+  private rigs!: Record<'L' | 'R', MonsterRig>;
 
   /**
    * The playback queue, owned HERE rather than by the React component.
@@ -184,18 +188,20 @@ export class BattleScene extends Phaser.Scene {
 
   init(data: BattleInit) {
     this.init_ = data;
+    this.rigs = {
+      L: monsterRig({ entryNo: data.left.entryNo, sprite: data.left.sprite, name: data.left.name, elementType: data.left.element }),
+      R: monsterRig({ entryNo: data.right.entryNo, sprite: data.right.sprite, name: data.right.name, elementType: data.right.element }),
+    };
     this.dead = false;
   }
 
   preload() {
     this.load.image('arena', arenaUrl(this.init_.arena));
-    this.load.spritesheet('fighterL', sheetUrl(this.init_.left.sprite), {
-      frameWidth: FRAME.w, frameHeight: FRAME.h,
-    });
-    this.load.spritesheet('fighterR', sheetUrl(this.init_.right.sprite), {
-      frameWidth: FRAME.w, frameHeight: FRAME.h,
-    });
+    for (const prefix of ['L', 'R'] as const) {
+      this.rigs[prefix].preload(this, `fighter${prefix}`);
+    }
     for (const el of new Set([this.init_.left.element, this.init_.right.element])) {
+      if (!isElement(el)) continue;
       this.load.spritesheet(`fx-${el}`, fxUrl(SPECIAL[el]), {
         frameWidth: SPECIAL_FRAME.w, frameHeight: SPECIAL_FRAME.h,
       });
@@ -236,19 +242,17 @@ export class BattleScene extends Phaser.Scene {
   private makeFighter(side: Side, prefix: 'L' | 'R', onLeft: boolean, W: number): Fighter {
     const home = Math.round(onLeft ? W * FLOOR_INSET : W * (1 - FLOOR_INSET));
     const src = prefix === 'L' ? this.init_.left : this.init_.right;
+    const rig = this.rigs[prefix];
 
-    const shadow = this.add.ellipse(home, this.floorY + 1, 30, 7, 0x000000, 0.36);
-    const sprite = this.add.sprite(home, this.floorY, `fighter${prefix}`, 0)
-      .setOrigin(0.5, 1)
+    const shadow = rig.createShadow(this, home, this.floorY, 0x000000, 0.36);
+    const sprite = rig.createSprite(this, `fighter${prefix}`, home, this.floorY, 'battle')
       .setDepth(10);
-    // Row 0 walks right and row 1 walks left, so each starts looking at the
-    // other rather than out of the frame.
-    sprite.setFrame(rowFrames(onLeft ? ROW.walkRight : ROW.walkLeft)[0]);
 
     const f: Fighter = {
       side, sprite, shadow, prefix, home, onLeft,
       dir: onLeft ? 1 : -1,
-      element: src.element,
+      element: src.element, entryNo: src.entryNo,
+      rig,
       down: false,
       vitals: {
         healthPoints: src.healthPoints, maxHealthPoints: src.maxHealthPoints,
@@ -267,21 +271,10 @@ export class BattleScene extends Phaser.Scene {
 
   private buildAnimations() {
     for (const prefix of ['L', 'R'] as const) {
-      for (const [name, row] of Object.entries(ROW)) {
-        const key = `${prefix}-${name}`;
-        if (this.anims.exists(key)) continue;
-        this.anims.create({
-          key,
-          frames: this.anims.generateFrameNumbers(`fighter${prefix}`, {
-            frames: rowFrames(row),
-          }),
-          // Only walking loops. The two standing rows are one-shot emotes.
-          frameRate: name === 'idle' || name === 'emote' ? 6 : WALK_FPS,
-          repeat: name === 'idle' || name === 'emote' ? 0 : -1,
-        });
-      }
+      this.rigs[prefix].register(this, `fighter${prefix}`, `fighter-${prefix}`);
     }
     for (const el of new Set([this.init_.left.element, this.init_.right.element])) {
+      if (!isElement(el)) continue;
       if (this.anims.exists(`strike-${el}`)) continue;
       this.anims.create({
         key: `strike-${el}`,
@@ -307,25 +300,23 @@ export class BattleScene extends Phaser.Scene {
   /**
    * Standing.
    *
-   * Row 4, which is the creature on its feet and not moving them. Playing the
-   * WALK row slowly was the bug: it looked like a companion marching on the
-   * spot, because that is exactly what it was.
+   * The atlas idle pose faces right. Mirror it for the fighter on the right so
+   * both creatures look into the arena rather than out of the frame.
    */
   private idle(f: Fighter) {
     if (f.down) return;
+    f.rig.hold(f.sprite);
     f.sprite.setFlipX(!f.onLeft);
-    f.sprite.anims.stop();
-    // The neutral frame, held. Looping the standing row played its paw-raise
-    // and its shake over and over, which read as a fighter attacking the air
-    // between turns.
-    f.sprite.setFrame(STAND_FRAME);
   }
 
   /** Walking, in whichever direction the fighter is currently going. */
   private walk(f: Fighter, towards: 1 | -1) {
-    f.sprite.setFlipX(towards === -1);
-    f.sprite.play(`${f.prefix}-walkRight`);
-    f.sprite.anims.msPerFrame = 1000 / WALK_FPS;
+    f.sprite.setFlipX(false);
+    f.rig.loop(
+      f.sprite, `fighter-${f.prefix}`,
+      towards === -1 ? 'walk.left' : 'walk.right',
+      { frameRate: WALK_FPS },
+    );
   }
 
   // Vitals --------------------------------------------------------------------
@@ -499,7 +490,7 @@ export class BattleScene extends Phaser.Scene {
   private async playTurn(turn: Turn): Promise<void> {
     const a = this.fighters[turn.attacker];
     const d = this.fighters[other(turn.attacker)];
-    if (!a || !d) return;
+    if (!a || !d || this.dead) return;
 
     /**
      * A killing blow, as the PROCESS recorded it — not as the scene guesses.
@@ -520,7 +511,9 @@ export class BattleScene extends Phaser.Scene {
     }
 
     await this.approach(a, d);
-    await this.swing(a);
+    if (this.dead) return;
+    await this.swing(a, turn);
+    if (this.dead) return;
 
     if (turn.missed) {
       this.float(d.sprite.x, this.floorY - 74, 'miss', 0x9aa4b2);
@@ -534,6 +527,7 @@ export class BattleScene extends Phaser.Scene {
         onUpdate: () => { d.shadow.x = d.sprite.x; },
       });
       await this.wait(BEAT.afterMiss);
+      if (this.dead) return;
       this.reconcile(a, turn.attackerState);
       this.riders(a, turn);
       await this.retreat(a);
@@ -578,7 +572,7 @@ export class BattleScene extends Phaser.Scene {
    *
    * Neither fighter takes a step — walking across an arena to put a shield on
    * yourself is nonsense — and the caster is not replaced by anything either.
-   * It performs its own emote (row 5 of the sheet, the paw-raise) and the
+   * It performs its own one-shot emote and the
    * effect is drawn over and behind it: the heal strip for a heal, rings rising
    * past it for a buff. Playing the elemental STRIKE here was wrong twice over:
    * it is the attack animation, and it hid the creature the move was happening
@@ -586,7 +580,7 @@ export class BattleScene extends Phaser.Scene {
    */
   private async support(a: Fighter, turn: Turn) {
     a.sprite.setFlipX(!a.onLeft);
-    a.sprite.play(`${a.prefix}-emote`);
+    a.rig.once(a.sprite, `fighter-${a.prefix}`, 'emote');
 
     if (turn.moveType === 'heal') this.mend(a);
     else this.aura(a, turn);
@@ -603,6 +597,7 @@ export class BattleScene extends Phaser.Scene {
     this.reconcile(a, after);
     this.riders(a, turn);
     await this.wait(BEAT.afterSupport);
+    if (this.dead) return;
     this.idle(a);
   }
 
@@ -660,7 +655,7 @@ export class BattleScene extends Phaser.Scene {
    * than on top of it.
    */
   private approach(a: Fighter, d: Fighter): Promise<void> {
-    return this.step(a, Math.round(d.sprite.x - a.dir * REACH), a.dir);
+    return this.step(a, Math.round(d.sprite.x - a.dir * (a.rig.render.attackReach ?? REACH)), a.dir);
   }
 
   /** One fighter, walking to a mark and facing the way it is going. */
@@ -721,17 +716,27 @@ export class BattleScene extends Phaser.Scene {
    * baseline. Anchored bottom-centre, so however much bigger the strike frames
    * are, the feet stay on the same floor line.
    */
-  private swing(a: Fighter): Promise<void> {
+  private swing(a: Fighter, turn: Turn): Promise<void> {
     return new Promise((resolve) => {
       if (reducedMotion() || this.dead) { resolve(); return; }
 
-      const fx = this.add.sprite(a.sprite.x, this.floorY, `fx-${a.element}`)
-        .setOrigin(0.5, 1)
-        .setFlipX(!a.onLeft)
-        .setDepth(11);
+      const entry = monsterIndexEntry(a.entryNo);
+      const advancedMove = entry?.moves?.advanced ?? entry?.advancedMove;
+      const useAdvanced = turn.move === advancedMove;
+      const motion = useAdvanced ? 'attack.advanced' : 'attack.basic';
+      const ownAttack = a.rig.clip(motion);
+      const fx = ownAttack
+        ? a.rig.createSprite(this, `fighter${a.prefix}`, a.sprite.x, this.floorY, 'battle', motion)
+          .setFlipX(!a.onLeft)
+          .setDepth(11)
+        : this.add.sprite(a.sprite.x, this.floorY, `fx-${a.element}`)
+          .setOrigin(0.5, 1)
+          .setFlipX(!a.onLeft)
+          .setDepth(11);
       a.special = fx;
       a.sprite.setVisible(false);
-      fx.play(`strike-${a.element}`);
+      if (ownAttack) a.rig.once(fx, `fighter-${a.prefix}`, motion);
+      else fx.play(`strike-${a.element}`);
 
       let done = false;
       const finish = () => {
@@ -846,6 +851,7 @@ export class BattleScene extends Phaser.Scene {
       };
       this.publish(d);
       await this.wait(BEAT.shield);
+      if (this.dead) return;
     }
 
     // Then whatever got through them.
@@ -856,6 +862,7 @@ export class BattleScene extends Phaser.Scene {
       };
       this.publish(d);
       await this.wait(BEAT.health);
+      if (this.dead) return;
     }
 
     // And finally the authority, which also carries anything the two deltas do
@@ -948,7 +955,7 @@ export class BattleScene extends Phaser.Scene {
   /** The loser on the floor. Idempotent — a KO and `finish` both want it. */
   private slump(f: Fighter) {
     f.down = true;
-    f.sprite.anims.stop();
+    f.rig.stop(f.sprite, null);
     f.sprite.clearTint();
     this.tweens.add({
       targets: f.sprite,

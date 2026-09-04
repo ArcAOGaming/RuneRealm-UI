@@ -47,6 +47,7 @@ const vitals = (c: Combatant): Vitals => ({
 /** Everything the scene's corner panel needs about one fighter. */
 const side = (c: Combatant) => ({
   ...vitals(c),
+  entryNo: c.entryNo,
   element: c.elementType,
   // A bot opponent is a trainer, not "the house" — it gets a name of its own
   // the day one is rendered, and the panel already has the room for it.

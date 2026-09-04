@@ -32,7 +32,7 @@ export default defineConfig(({ mode }) => {
         RETRO_DIFFUSION_API_KEY: local.RETRO_DIFFUSION_API_KEY,
       }),
       nodePolyfills({
-        include: ['crypto', 'buffer', 'stream'],
+        include: ['crypto', 'buffer', 'stream', 'util'],
         globals: { Buffer: true, global: true, process: true },
       }),
     ],

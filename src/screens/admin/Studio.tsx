@@ -9,6 +9,7 @@ import { BattleStage } from '../../ui/BattleStage';
 import { CardPreview } from '../../ui/CardPreview';
 import CompanionAcquisition, { AcquisitionKind } from '../../ui/CompanionAcquisition';
 import { Badge, Button, Empty, ErrorNote, Panel, SectionTitle, cx } from '../../ui/primitives';
+import { GENERATED_MONSTER_INDEX } from '../../generated/monster-index';
 
 type StudioMode = 'visualize' | 'create';
 type AssetCategory = 'all' | 'background' | 'creature' | 'card' | 'move' | 'item' | 'ui' | 'legacy';
@@ -37,6 +38,8 @@ type StudioJob = {
   templateSlots?: Record<string, string>; redoOf?: string;
   revision?: number; sourceWidth?: number; sourceHeight?: number;
   providerMeta?: Record<string, unknown>;
+  entryNo?: number;
+  assetSlot?: 'portrait' | 'world' | 'basicAttack' | 'advancedAttack';
 };
 
 const inputClass = cx(
@@ -593,6 +596,15 @@ function CreateStudio({ status, jobs, moves, loading, onReload }: {
   status: StudioStatus | null; jobs: StudioJob[]; moves: StudioMove[];
   loading: boolean; onReload: () => Promise<void>;
 }) {
+  const [assignment, setAssignment] = useState<{
+    entryNo: string; assetSlot: 'portrait' | 'world' | 'basicAttack' | 'advancedAttack';
+  }>(() => ({
+    entryNo: window.sessionStorage.getItem('runerealm-studio-entry') ?? '',
+    assetSlot: 'portrait',
+  }));
+  const assigned = assignment.entryNo
+    ? { entryNo: Number(assignment.entryNo), assetSlot: assignment.assetSlot }
+    : {};
   const [form, setForm] = useState({ provider: 'retro-diffusion' as 'pixellab' | 'retro-diffusion', kind: 'card-background' as StudioKind, name: 'light-observatory-rd', theme: 'light', prompt: CARD_BACKGROUND_PROMPT, width: 216, height: 355, transparent: false, seed: 1101, guidance: 9, variations: 1, redoOf: '', revision: 1 });
   const [rig, setRig] = useState({
     name: 'lumen-lynx-rig-96', theme: 'light', prompt: LUMEN_RIG_PROMPT,
@@ -620,6 +632,7 @@ function CreateStudio({ status, jobs, moves, loading, onReload }: {
       for (let index = 0; index < form.variations; index++) {
         await postJson('/__studio/generate', {
           ...form,
+          ...assigned,
           name: form.variations > 1 ? `${form.name}-${index + 1}` : form.name,
           seed: form.seed + index,
         });
@@ -637,19 +650,19 @@ function CreateStudio({ status, jobs, moves, loading, onReload }: {
   };
   const createRig = async () => {
     setBusy('create-rig'); setError(null);
-    try { await postJson('/__studio/create-rig', rig); await onReload(); }
+    try { await postJson('/__studio/create-rig', { ...rig, ...assigned }); await onReload(); }
     catch (caught) { setError(caught); }
     finally { setBusy(null); }
   };
   const createRetroCharacter = async () => {
     setBusy('create-retro-character'); setError(null);
-    try { await postJson('/__studio/create-retro-character', retroCharacter); await onReload(); }
+    try { await postJson('/__studio/create-retro-character', { ...retroCharacter, ...assigned }); await onReload(); }
     catch (caught) { setError(caught); }
     finally { setBusy(null); }
   };
   const createRetroAnchor = async () => {
     setBusy('create-retro-anchor'); setError(null);
-    try { await postJson('/__studio/create-retro-anchor', retroCharacter); await onReload(); }
+    try { await postJson('/__studio/create-retro-anchor', { ...retroCharacter, ...assigned }); await onReload(); }
     catch (caught) { setError(caught); }
     finally { setBusy(null); }
   };
@@ -778,6 +791,19 @@ function CreateStudio({ status, jobs, moves, loading, onReload }: {
   });
 
   return <div className="space-y-4">
+    <Panel className="p-5">
+      <SectionTitle>Monster Index assignment</SectionTitle>
+      <p className="mb-3 text-sm text-muted">Assign new creature work before generating it. Approval then lands in that numbered entry folder instead of the generic asset library.</p>
+      <div className="grid gap-3 sm:grid-cols-[minmax(0,1fr)_220px]">
+        <Field label="Monster Index entry"><select className={inputClass} value={assignment.entryNo} onChange={(event) => {
+          const entryNo = event.target.value;
+          setAssignment((current) => ({ ...current, entryNo }));
+          if (entryNo) window.sessionStorage.setItem('runerealm-studio-entry', entryNo);
+          else window.sessionStorage.removeItem('runerealm-studio-entry');
+        }}><option value="">unassigned draft</option>{GENERATED_MONSTER_INDEX.entries.map((entry) => <option key={entry.entryNo} value={entry.entryNo}>#{String(entry.entryNo).padStart(3, '0')} · {entry.displayName}</option>)}</select></Field>
+        <Field label="Asset slot"><select className={inputClass} value={assignment.assetSlot} disabled={!assignment.entryNo} onChange={(event) => setAssignment((current) => ({ ...current, assetSlot: event.target.value as typeof current.assetSlot }))}><option value="portrait">portrait</option><option value="world">world sheet</option><option value="basicAttack">basic attack</option><option value="advancedAttack">advanced attack</option></select></Field>
+      </div>
+    </Panel>
     <PipelineBoard jobs={jobs} />
     <Panel className="p-5">
       <SectionTitle right={<div className="flex gap-2"><Badge tone="good">server-side keys</Badge><Badge tone="warn">paid generation</Badge></div>}>1 · Create a staged still</SectionTitle>

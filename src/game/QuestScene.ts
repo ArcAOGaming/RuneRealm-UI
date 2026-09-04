@@ -3,11 +3,13 @@
  * speed, with the companion's stride locked to the ground speed.
  */
 import Phaser from 'phaser';
-import { FRAME, ROW, questLayerUrl, rowFrames, sheetUrl } from './assets';
+import { questLayerUrl } from './assets';
 import { reducedMotion } from './boot';
+import { MonsterRig, monsterRig } from './MonsterRig';
 
 export type QuestInit = {
   sprite: string;
+  entryNo?: number;
   route: string;
   element?: [number, number, number];
 };
@@ -25,6 +27,7 @@ export class QuestScene extends Phaser.Scene {
   private pet!: Phaser.GameObjects.Sprite;
   private shadow!: Phaser.GameObjects.Ellipse;
   private quiet = false;
+  private rig!: MonsterRig;
 
   constructor() {
     super(QuestScene.KEY);
@@ -32,6 +35,7 @@ export class QuestScene extends Phaser.Scene {
 
   init(data: QuestInit) {
     this.init_ = data;
+    this.rig = monsterRig({ entryNo: data.entryNo, sprite: data.sprite });
     this.quiet = reducedMotion();
   }
 
@@ -39,9 +43,7 @@ export class QuestScene extends Phaser.Scene {
     this.load.image('quest-sky', questLayerUrl(this.init_.route, 'sky'));
     this.load.image('quest-far', questLayerUrl(this.init_.route, 'far'));
     this.load.image('quest-mid', questLayerUrl(this.init_.route, 'mid'));
-    this.load.spritesheet('quest-pet', sheetUrl(this.init_.sprite), {
-      frameWidth: FRAME.w, frameHeight: FRAME.h,
-    });
+    this.rig.preload(this, 'quest-pet');
   }
 
   create() {
@@ -52,17 +54,12 @@ export class QuestScene extends Phaser.Scene {
     this.far = this.add.tileSprite(0, H - 28 - 104, W, 104, 'quest-far').setOrigin(0);
     this.mid = this.add.tileSprite(0, H - 176, W, 176, 'quest-mid').setOrigin(0);
 
-    this.anims.create({
-      key: 'quest-run',
-      frames: this.anims.generateFrameNumbers('quest-pet', { frames: rowFrames(ROW.walkRight) }),
-      frameRate: 10,
-      repeat: -1,
-    });
+    this.rig.register(this, 'quest-pet', 'quest-pet');
 
-    this.shadow = this.add.ellipse(112, FEET_Y + 1, 27, 6, 0x000000, 0.32).setDepth(5);
-    this.pet = this.add.sprite(112, FEET_Y, 'quest-pet').setOrigin(0.5, 1).setDepth(6);
-    if (this.quiet) this.pet.setFrame(rowFrames(ROW.walkRight)[1]);
-    else this.pet.play('quest-run');
+    this.shadow = this.rig.createShadow(this, 112, FEET_Y, 0x000000, 0.32).setDepth(5);
+    this.pet = this.rig.createSprite(this, 'quest-pet', 112, FEET_Y).setDepth(6);
+    if (this.quiet) this.rig.hold(this.pet, 'right');
+    else this.rig.loop(this.pet, 'quest-pet', 'walk.right');
 
     this.makeRuneTexture();
     if (!this.quiet) {
@@ -111,6 +108,9 @@ export class QuestScene extends Phaser.Scene {
     // it. Both use the same clock, so the stride never turns into a moonwalk.
     const bob = Math.sin(this.time.now * 0.012) * 0.6;
     this.pet.y = FEET_Y + bob;
-    this.shadow.setSize(25 + Math.cos(this.time.now * 0.012) * 2, 6);
+    this.shadow.setSize(
+      this.rig.render.shadow.width + Math.cos(this.time.now * 0.012) * 2,
+      this.rig.render.shadow.height,
+    );
   }
 }

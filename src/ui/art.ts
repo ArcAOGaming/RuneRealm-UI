@@ -27,7 +27,8 @@
  * To refresh them, re-copy from `src/assets/Monsters/` — `doge-<element>.png`
  * is `portraits/doge/level-1/Doge <Element>.png`, cropped to 320x448.
  */
-import { Element, ItemId } from '../lib/types';
+import { Affinity, Element, ItemId } from '../lib/types';
+import { monsterIndexArt } from '../lib/monster-index';
 
 // `hatchling-*.png` IS the doge family, cropped. The other eight files in that
 // directory are the unreleased Super and Dragon art and are deliberately not
@@ -57,8 +58,10 @@ const PORTRAITS: Record<Element, string> = {
  * at the top. The parameter stays so every call site keeps working and so the
  * day a second family ships is a one-line change here rather than a hunt.
  */
-export function portrait(element: Element, _level = 0): string {
-  return PORTRAITS[element] ?? PORTRAITS.fire;
+export function portrait(element: Affinity, _level = 0, entryNo?: number): string {
+  const entryPortrait = monsterIndexArt(entryNo)?.portrait;
+  if (entryPortrait) return entryPortrait;
+  return element !== 'normal' ? PORTRAITS[element] : PORTRAITS.fire;
 }
 
 export const ITEM_ART: Partial<Record<ItemId, string>> = {

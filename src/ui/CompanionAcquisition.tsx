@@ -16,6 +16,8 @@ import {
   BrowserCardOptions, CardAssembly, CardAssemblyLayer, drawCardAssembly,
 } from '../lib/card/browser';
 import { Monster } from '../lib/types';
+import { isElement } from '../lib/monster-index';
+import { MonsterRig, monsterRig } from '../game/MonsterRig';
 import {
   FRAME, SPECIAL, SPECIAL_FRAME, fxUrl, sheetUrl,
 } from '../game/assets';
@@ -30,6 +32,7 @@ type PerformanceArt = {
   walk: HTMLImageElement | null;
   strike: HTMLImageElement | null;
   portrait: HTMLImageElement | null;
+  atlas?: { image: HTMLImageElement; rig: MonsterRig };
 };
 
 const NEXT: Partial<Record<Phase, { phase: Phase; after: number }>> = {
@@ -40,24 +43,6 @@ const NEXT: Partial<Record<Phase, { phase: Phase; after: number }>> = {
   swirl: { phase: 'forge', after: 2900 },
   forge: { phase: 'burst', after: 700 },
   burst: { phase: 'reveal', after: 560 },
-};
-
-const COPY: Record<Exclude<Phase, 'loading'>, { eyebrow: string; body: string }> = {
-  entrance: { eyebrow: 'The oath is answered', body: 'A companion steps forward.' },
-  attack: { eyebrow: 'Power awakened', body: 'Its advanced strike seals the bond.' },
-  swirl: { eyebrow: 'The record takes shape', body: 'Portrait, element, frame and story converge.' },
-  forge: { eyebrow: 'Bound into one', body: 'Every layer becomes one living card.' },
-  burst: { eyebrow: 'The card breaks free', body: 'Ink becomes matter.' },
-  reveal: { eyebrow: 'Companion adopted', body: 'The bond is written. The card is yours to hold.' },
-};
-
-const CAPTURE_COPY: Record<Exclude<Phase, 'loading'>, { eyebrow: string; body: string }> = {
-  entrance: { eyebrow: 'The binding takes hold', body: 'The wild creature answers the scroll.' },
-  attack: { eyebrow: 'Wild power contained', body: 'Its spirit leaves its mark on the bond.' },
-  swirl: { eyebrow: 'The captured record forms', body: 'Portrait, element, frame and story converge.' },
-  forge: { eyebrow: 'Bound into one', body: 'The encounter becomes one living card.' },
-  burst: { eyebrow: 'The card breaks free', body: 'The binding is complete.' },
-  reveal: { eyebrow: 'Companion captured', body: 'The card is yours. The trail remembers the meeting.' },
 };
 
 const ORBITS = [
@@ -113,9 +98,11 @@ export function CompanionAcquisition({
 
   useEffect(() => {
     let cancelled = false;
-    const walk = sheetUrl(monster.sprite);
-    const strike = fxUrl(SPECIAL[monster.elementType]);
-    const portraitUrl = performancePortraitUrl ?? portrait(monster.elementType, monster.level);
+    const rig = monsterRig(monster);
+    const walk = rig.textureUrl ?? sheetUrl(monster.sprite);
+    const strike = rig.textureUrl ?? (isElement(monster.elementType)
+      ? fxUrl(SPECIAL[monster.elementType]) : '');
+    const portraitUrl = performancePortraitUrl ?? portrait(monster.elementType, monster.level, monster.entryNo);
 
     Promise.all([
       // A held card is always the plain 648x1065 face. Ignore an extended flag
@@ -127,7 +114,10 @@ export function CompanionAcquisition({
     ]).then(([card, walkImage, strikeImage, portraitImage]) => {
       if (cancelled) return;
       setAssembly(card);
-      setPerformance({ walk: walkImage, strike: strikeImage, portrait: portraitImage });
+      setPerformance({
+        walk: walkImage, strike: strikeImage, portrait: portraitImage,
+        atlas: rig.packed && walkImage ? { image: walkImage, rig } : undefined,
+      });
       setPhase(reduced.current || skipRequested.current ? 'reveal' : 'entrance');
     }).catch(() => {
       if (cancelled) return;
@@ -186,13 +176,6 @@ export function CompanionAcquisition({
     return () => window.removeEventListener('keydown', onKey);
   });
 
-  const copy = phase === 'loading'
-    ? kind === 'capture'
-      ? { eyebrow: 'Testing the binding', body: 'The scroll is resolving the encounter.' }
-      : { eyebrow: 'Writing the bond', body: 'Calling your companion through the veil.' }
-    : kind === 'capture' ? CAPTURE_COPY[phase] : COPY[phase];
-  const finalEyebrow = kind === 'capture' ? 'Companion captured' : COPY.reveal.eyebrow;
-
   return createPortal(
     <div
       role="dialog"
@@ -210,12 +193,21 @@ export function CompanionAcquisition({
         </button>
       )}
 
-      <header className="acquisition-copy" aria-live="polite">
-        <p className="eyebrow text-element">
-          {phase === 'reveal' ? finalEyebrow : copy.eyebrow}
-        </p>
+      {/*
+        The name, and nothing else.
+
+        There used to be an eyebrow and a body line narrating each phase as it
+        passed — "The record takes shape", "Every layer becomes one living
+        card". The animation already shows all of that, so the text was a
+        caption for a picture the player is looking at, changing six times in
+        seven seconds directly above it.
+
+        The failure line stays. That one is not narration: it is the only thing
+        that explains a companion arriving without its card art.
+      */}
+      <header className="acquisition-copy">
         <h1>{monster.name}</h1>
-        <p>{failed ? 'Your companion arrived, but the card art could not be rendered.' : copy.body}</p>
+        {failed && <p>Your companion arrived, but the card art could not be rendered.</p>}
       </header>
 
       <div className="acquisition-stage">
@@ -292,7 +284,7 @@ export function CompanionAcquisition({
             )}
             {failed && !assembly && (
               <img
-                src={portrait(monster.elementType, monster.level)}
+                src={portrait(monster.elementType, monster.level, monster.entryNo)}
                 alt={monster.name}
                 data-pixel
                 className="acquisition-card-fallback"
@@ -303,11 +295,6 @@ export function CompanionAcquisition({
       </div>
 
       <footer className="acquisition-footer">
-        {(phase === 'swirl' || phase === 'forge') && assembly && (
-          <div className="acquisition-layer-ledger" aria-hidden>
-            {assembly.layers.map((layer) => <span key={layer.id}>{layer.label}</span>)}
-          </div>
-        )}
         {phase === 'reveal' && (
           <div className="acquisition-finish animate-rise">
             <p className="text-[13px] text-faint">
@@ -382,6 +369,39 @@ function CopyCanvas({
   );
 }
 
+type PackedRect = { x: number; y: number; w: number; h: number };
+
+/**
+ * The packed atlas rectangle for this phase, or undefined to fall through to
+ * the sprite sheets.
+ *
+ * Resolved from the atlas DIRECTLY rather than through `rig.clip()`. `clip()`
+ * falls back to the LEGACY sheet clips when the packed atlas has no such
+ * motion, and those name their frames by sprite-sheet row index — `"12"` —
+ * which is not a key in a packed atlas's `frames` map. Looking one up returned
+ * undefined and reading `.frame` off it took the whole reveal down, for any
+ * companion whose atlas has no `attack.advanced`.
+ *
+ * So: only a clip the packed atlas actually declares, and only a frame that
+ * actually resolves. Anything else is not an error — it is a companion that
+ * animates from its sheets instead.
+ */
+function packedFrame(
+  art: PerformanceArt, phase: Phase, elapsed: number,
+): { frame: PackedRect } | undefined {
+  if (!art.atlas || (phase !== 'entrance' && phase !== 'attack')) return undefined;
+  const motion = phase === 'attack' ? 'attack.advanced' : 'walk.right';
+  const clip = art.atlas.rig.atlas?.runerealm.clips[motion];
+  if (!clip?.frames.length || !clip.frameRate) return undefined;
+  const step = Math.floor(elapsed / (1000 / clip.frameRate));
+  const index = phase === 'attack'
+    ? Math.min(clip.frames.length - 1, step)
+    : step % clip.frames.length;
+  const entry = art.atlas.rig.atlas?.frames[clip.frames[index]] as
+    { frame?: PackedRect } | undefined;
+  return entry?.frame ? { frame: entry.frame } : undefined;
+}
+
 function CreaturePerformance({ art, phase }: { art: PerformanceArt; phase: Phase }) {
   const canvas = useRef<HTMLCanvasElement>(null);
 
@@ -403,7 +423,13 @@ function CreaturePerformance({ art, phase }: { art: PerformanceArt; phase: Phase
       ctx.clearRect(0, 0, 128, 128);
       ctx.imageSmoothingEnabled = false;
       const elapsed = now - started;
-      if (phase === 'entrance' && art.walk) {
+      const packed = packedFrame(art, phase, elapsed);
+      if (packed) {
+        const { frame } = packed;
+        const scale = Math.min(128 / frame.w, 128 / frame.h);
+        ctx.drawImage(art.atlas!.image, frame.x, frame.y, frame.w, frame.h,
+          (128 - frame.w * scale) / 2, 128 - frame.h * scale, frame.w * scale, frame.h * scale);
+      } else if (phase === 'entrance' && art.walk) {
         const frame = Math.floor(elapsed / 125) % 4;
         ctx.drawImage(
           art.walk,

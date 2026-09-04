@@ -9,7 +9,8 @@
  */
 import { lazy, Suspense, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { Link, Navigate, useNavigate } from 'react-router-dom';
-import { useGame } from '../state/GameProvider';
+import { useGame } from '../state/gameContext';
+import { projectFeed, projectPlay } from '../state/optimistic';
 import * as api from '../lib/game';
 import {
   ActivityReceipt, BerryItemId, ItemId, levelUpCost, Monster, Player,
@@ -25,10 +26,12 @@ import {
 } from '../lib/format';
 import { StatusBadge } from '../ui/MonsterCard';
 import { Dialog } from '../ui/Dialog';
+import { CharacterDialog } from '../ui/character/CharacterDialog';
 import { Sigil } from '../ui/Sigil';
 import { Room } from '../ui/Room';
 import { ArenaPeek } from '../ui/ArenaPeek';
 import { SatchelDrawer } from '../ui/Satchel';
+import { useTour, useTourSteps, type TourStep } from '../ui/tourContext';
 // three.js, so it arrives when somebody actually picks the card up.
 const CardViewer = lazy(() => import('../ui/CardViewer'));
 const HuntOffering = lazy(() => import('../ui/HuntOffering'));
@@ -37,9 +40,96 @@ import { CardPreview } from '../ui/CardPreview';
 import type { ActivityRunes, RuneState } from '../gfx/activityRunes';
 import { HUNT_PROCESS } from '../lib/hyperbeam';
 
+/**
+ * The walkthrough for this screen — and, because this is where a new player is
+ * put down the moment their oath lands, for the game.
+ *
+ * It names the room, what you can ask of the companion, the card, the daily
+ * claim, and then what is behind each tab. One line each, and each one says
+ * what the thing IS and what it costs or gives; nobody needs to be told that a
+ * button can be pressed.
+ *
+ * **This list is part of the flows it describes.** Change what an activity
+ * costs, what the arena charges or what a tab is called, and the sentence here
+ * is part of that change — a walkthrough describing rules the game no longer
+ * has is worse than none, because the player has no way to tell.
+ *
+ * Steps whose target is not on screen are dropped by the tour, which is why the
+ * tab steps can name routes a given player may not have (no companion, no
+ * Arena tab) and why the daily-worship step simply is not there on a phone.
+ */
+const COMPANION_TOUR: TourStep[] = [
+  {
+    target: '[data-tour="room"]',
+    title: 'Your companion',
+    body: 'This is its home. Energy, happiness and level all move with what you do next.',
+  },
+  {
+    target: '[data-tour="activities"]',
+    title: 'What you can ask of it',
+    body: 'Feed it its berry, play with it, send it on a quest, or take it hunting for a wild companion to bring back.',
+  },
+  {
+    target: '[data-tour="card"]',
+    title: 'Its card',
+    body: 'Stats, moves and meters, drawn on the card itself. Pick it up to look at it, and level it up once it has the experience.',
+  },
+  {
+    target: '[data-tour="worship"]',
+    title: 'Daily worship',
+    body: 'One claim a day, free — Runes and a loot box. It is the realm’s only faucet, so it is worth coming back for.',
+  },
+  {
+    target: '[data-tour-to="/arena"]',
+    title: 'Arena',
+    body: 'A Rune buys a session of four battles. Fight a trainer, or challenge another player.',
+  },
+  {
+    target: '[data-tour-to="/market"]',
+    title: 'Market',
+    body: 'Berries, Rune and companions — at the realm’s fixed price, or against other players on the trading floor.',
+  },
+  {
+    target: '[data-tour-to="/monster-index"]',
+    title: 'Monster Index',
+    body: 'Every companion form there is, and which of them you have held.',
+  },
+  {
+    target: '[data-tour-to="/factions"]',
+    title: 'Factions',
+    body: 'The four altars, the standings, and everybody else sworn alongside you.',
+  },
+  {
+    target: '[data-tour="guide"]',
+    title: 'And whenever you are lost',
+    body: 'This shows you around whatever page you are on. It is on every screen, and it never goes away.',
+  },
+];
+
 export default function Companion() {
   const { player, loadingPlayer, address } = useGame();
   const [activityReceipt, setActivityReceipt] = useState<ActivityReceipt>();
+  const { offer } = useTour();
+  useTourSteps('companion', COMPANION_TOUR);
+
+  /*
+    The walkthrough, once, for somebody who has just got here.
+
+    This is the screen a new player is dropped on the moment the oath lands —
+    a room, four activities, a card and a strip of tabs, none of which says
+    which one is the game. `offer` is a no-op for anybody who has already been
+    through it or dismissed it; replaying is in the wallet dialog.
+
+    The delay is not padding. Every step points at a real element and the ones
+    with no target are dropped, so opening on the first frame — before the card
+    has painted or the tab strip has grown its Arena entry — is a tour of
+    whichever half of the screen happened to exist.
+  */
+  useEffect(() => {
+    if (!player?.faction || !player.monster) return undefined;
+    const timer = window.setTimeout(offer, 1200);
+    return () => window.clearTimeout(timer);
+  }, [player?.faction, player?.monster?.id, offer]);
 
   // A claim receipt is a hand-off to the ceremony, not durable player state.
   // Let the animation finish, then forget it so remounting the room after an
@@ -110,7 +200,7 @@ export default function Companion() {
           {/* The badge sits ON the room, which is the thing it describes. It
               used to be in the activities heading, where it was a second label
               for a fact the room behind it was already showing. */}
-          <div className="relative shrink-0">
+          <div data-tour="room" className="relative shrink-0">
             {/* Away at the arena, and there is a fight to look at: show the
                 fight. An empty house with a dimmed sprite in it is a picture of
                 an absence, and the interesting thing is one click away. */}
@@ -152,7 +242,7 @@ function Adopt() {
       <Panel className="p-8 text-center" glow>
         {faction && (
           <img
-            src={portrait(faction.element)} alt=""
+            src={portrait(faction.element, 0, faction.monsterEntryNo)} alt=""
             className="mx-auto h-32 w-32 animate-drift object-contain"
           />
         )}
@@ -253,6 +343,27 @@ function NoActiveCompanion({ player }: { player: Player }) {
  */
 // The card ------------------------------------------------------------------
 
+/**
+ * True while the viewport is at least `query` wide, and it keeps listening.
+ *
+ * Read once on mount would be wrong here: the card this drives is a different
+ * DRAWING at each size, and a phone that is turned sideways has to get the
+ * other one.
+ */
+function useWide(query: string) {
+  const [wide, setWide] = useState(
+    () => typeof window !== 'undefined' && window.matchMedia(query).matches,
+  );
+  useEffect(() => {
+    const mq = window.matchMedia(query);
+    const on = () => setWide(mq.matches);
+    on();
+    mq.addEventListener('change', on);
+    return () => mq.removeEventListener('change', on);
+  }, [query]);
+  return wide;
+}
+
 function CompanionCard({ monster, player }: { monster: Monster; player: Player }) {
   const { catalog } = useGame();
   // Priced from the process, never from arithmetic inlined here — see the note
@@ -264,9 +375,23 @@ function CompanionCard({ monster, player }: { monster: Monster; player: Player }
   const ownedCount = Object.keys(player.collection ?? {}).length + 1;
   const [allocating, setAllocating] = useState(false);
   const [holding, setHolding] = useState(false);
+  const [editingCharacter, setEditingCharacter] = useState(false);
+  /*
+    The extended card is 1044 pixels wide. In the two-column desktop layout it
+    gets about half a screen and reads perfectly; stacked on a phone it gets
+    ~356, which is a THIRD scale on pixel art whose panel type is drawn at ten
+    pixels — three on screen. The moves, the meters and the satchel were all
+    there and none of them could be read.
+
+    So below the desktop layout the plain card is drawn instead, at nearly
+    double the scale, and the three meters the panel was carrying come back as
+    real DOM bars underneath — which are crisp at any size and were always the
+    better drawing of a meter anyway.
+  */
+  const extended = useWide('(min-width: 1024px)');
 
   return (
-    <Panel className="relative flex min-h-0 flex-1 flex-col overflow-hidden p-3 sm:p-4" glow>
+    <Panel data-tour="card" className="relative flex min-h-0 flex-1 flex-col overflow-hidden p-3 sm:p-4" glow>
       <div
         aria-hidden
         className="pointer-events-none absolute -left-24 -top-24 h-64 w-64 rounded-full opacity-20 blur-3xl"
@@ -308,7 +433,7 @@ function CompanionCard({ monster, player }: { monster: Monster; player: Player }
             monster={monster}
             inventory={player.inventory}
             className="h-full w-auto max-w-full"
-            extended
+            extended={extended}
             eager
           />
           <span
@@ -324,6 +449,22 @@ function CompanionCard({ monster, player }: { monster: Monster; player: Player }
           </span>
         </span>
       </button>
+
+      {/* The three meters, whenever the card is not carrying them.
+          Crisp text at any size, and the same values the panel draws. */}
+      {!extended && (
+        <div className="relative mt-3 shrink-0 space-y-2">
+          <Bar tone="energy" size="sm" name={`${monster.name} energy`}
+               value={monster.energy} max={100} label="Energy"
+               right={`${monster.energy}/100`} />
+          <Bar tone="happy" size="sm" name={`${monster.name} happiness`}
+               value={monster.happiness} max={100} label="Happiness"
+               right={`${monster.happiness}/100`} />
+          <Bar tone="exp" size="sm" name={`${monster.name} experience`}
+               value={monster.exp} max={monster.nextLevelExp} label="Experience"
+               right={`${monster.exp}/${monster.nextLevelExp}`} />
+        </div>
+      )}
 
       {/* The things you DO to a companion, together. Minting used to sit in
           its own panel with a second copy of the card above it — which is the
@@ -363,10 +504,19 @@ function CompanionCard({ monster, player }: { monster: Monster; player: Player }
           Hold the card
         </Button>
         <SatchelDrawer className="h-8 px-3 text-[13px]" />
-        {/* The sprite the room is drawing, and the only other page a companion
+        {/* The sprite the room is drawing, and the only other thing a companion
             owner has any reason to open from here. It used to sit on a line of
             its own above the whole layout, which cost the card thirty pixels
-            of height for one link. */}
+            of height for one link — and then it was a link to a page of its
+            own, which threw the room away to change a hat. */}
+        <button
+          type="button"
+          onClick={() => setEditingCharacter(true)}
+          className="ml-auto inline-flex h-11 items-center gap-1.5 rounded-[3px] px-2 text-[11px] text-faint transition-colors hover:text-muted lg:h-8"
+        >
+          <Sparkle className="h-3 w-3" />
+          Edit character
+        </button>
       </div>
 
       <div className="relative mt-3 flex shrink-0 flex-wrap items-center gap-x-4 gap-y-1 border-t border-rune/12 pt-3 text-[13px] text-faint">
@@ -394,6 +544,13 @@ function CompanionCard({ monster, player }: { monster: Monster; player: Player }
         <Suspense fallback={null}>
           <CardViewer monster={monster} onClose={() => setHolding(false)} />
         </Suspense>
+      )}
+
+      {editingCharacter && (
+        <CharacterDialog
+          element={monster.elementType}
+          onClose={() => setEditingCharacter(false)}
+        />
       )}
 
     </Panel>
@@ -523,7 +680,7 @@ function Activities({
 }: {
   onActivityClaim: (receipt: ActivityReceipt) => void;
 }) {
-  const { player, catalog, run, isPending, busy } = useGame();
+  const { player, catalog, run, isPending, writePhase, busy } = useGame();
   const navigate = useNavigate();
   const [huntGateOpen, setHuntGateOpen] = useState(false);
   const monster = player!.monster!;
@@ -536,10 +693,6 @@ function Activities({
   ));
   const kind = activityMonster?.status.type ?? monster.status.type;
 
-  if (activityMonster && (kind === 'Play' || kind === 'Quest')) {
-    return <InProgress monster={activityMonster} onClaim={onActivityClaim} />;
-  }
-
   // Anything but Home and the process refuses every activity. The arena used to get
   // a whole empty state of its own, on a screen where the room behind the
   // companion has already changed to the beach and the badge already reads
@@ -551,7 +704,9 @@ function Activities({
   // choose: the row states the cost and feeds. The picker that used to sit
   // here offered three buttons that were worth half as much and read as if the
   // wrong one might be right.
-  const ownBerry = BERRY_FOR[monster.elementType];
+  const ownBerry: BerryItemId = monster.elementType === 'normal'
+    ? HUNT_BERRY_IDS.find((item) => (player!.inventory[item] ?? 0) > 0) ?? 'air_berry'
+    : BERRY_FOR[monster.elementType];
   const berries = player!.inventory[ownBerry] ?? 0;
   const runes = player!.inventory.rune ?? 0;
   const huntConfigured = HUNT_PROCESS.length === 43;
@@ -572,8 +727,26 @@ function Activities({
     away || runes < 1 || monster.energy < 25 || monster.happiness < 25,
     away || !huntConfigured || !canPayHunt,
   ];
+  /*
+    The rune animation runs on the SIGNATURE, not the click.
+
+    These four drive `busy` on the activity runes, and they used to be
+    `isPending`, which goes true the instant the button is pressed. That meant
+    the stones started casting while the wallet's approval dialog was still
+    open — animating behind a modal, for a write that had not been sent and
+    might be rejected — and the whole thing snapped back on a reject.
+
+    `settling` is the wallet's answer: signed, scheduled, and now the chain's.
+    So the cast begins when the player has actually committed, and ends when
+    the computed reply lands and the phase clears. The button's own spinner
+    still comes from `isPending`, because that is what stops a second click,
+    and a disabled button is not an animation.
+  */
   const working = [
-    isPending('feed'), isPending('play'), isPending('quest'), isPending('hunt'),
+    writePhase('feed') === 'settling',
+    writePhase('play') === 'settling',
+    writePhase('quest') === 'settling',
+    writePhase('hunt') === 'settling',
   ];
 
   const beginHunt = async () => {
@@ -590,12 +763,31 @@ function Activities({
     blocked.map((no, i) => ({ disabled: no, busy: working[i], hover: hovered === i })),
   );
 
+  /*
+    Play and Quest replace this panel with the countdown — and this return has
+    to stay BELOW every hook above it.
+
+    It used to sit up beside `kind`, which meant starting an activity rendered
+    three hooks and claiming it rendered six: "Rendered more hooks than during
+    the previous render", and the whole screen replaced by the error boundary,
+    a couple of interactions into a session. React counts hooks by call order,
+    so a return that skips some is a crash waiting for the state that comes
+    back.
+
+    Nothing above is wasted on the way past. `useActivityRunes` mounts nothing
+    while its canvas is unrendered — every effect in it leads with
+    `if (!node) return` — and the costs it is handed are plain arithmetic.
+  */
+  if (activityMonster && (kind === 'Play' || kind === 'Quest')) {
+    return <InProgress monster={activityMonster} onClaim={onActivityClaim} />;
+  }
+
   // Content height, not "whatever is left". Given `flex-1` this panel took
   // about half the column for three cards and a heading and centred them in it,
   // so the emptiness read as part of the activities rather than as space.
   return (
     <>
-    <Panel className="flex shrink-0 flex-col px-4 pb-3 pt-2.5">
+    <Panel data-tour="activities" className="flex shrink-0 flex-col px-4 pb-3 pt-2.5">
       {/* Not `SectionTitle`: that one reserves a row for something on the
           right and a `mb-3` under it, and this heading has nothing on its right
           any more — the status went to the room, which is what it describes.
@@ -630,7 +822,7 @@ function Activities({
           costs={[
             { icon: berryIcon, value: '−1', title: ITEM_NAME[ownBerry], short: berries < 1 },
           ]}
-          gains={[{ icon: energy, value: '+20', title: 'Energy' }]}
+          gains={[{ icon: energy, value: monster.elementType === 'normal' ? '+10' : '+20', title: 'Energy' }]}
           reason={
             away ? null
               : berries < 1 ? `No ${ITEM_NAME[ownBerry]}`
@@ -640,7 +832,14 @@ function Activities({
           action="Feed your companion"
           busy={isPending('feed')}
           disabled={busy || away || monster.energy >= 100 || berries < 1}
-          onClick={() => run('feed', () => api.feed(ownBerry))}
+          /* Rendered before the node answers. Feeding costs one berry and adds
+             a fixed, capped amount of energy — arithmetic this client can do
+             itself — so the bar moves on the click and the authoritative reply
+             replaces it a round trip later. A rejection puts the berry back
+             under the toast that says why. */
+          onClick={() => run(
+            'feed', () => api.feed(ownBerry), undefined, projectFeed(monster, ownBerry),
+          )}
         />
 
         <ActivityCard
@@ -664,7 +863,13 @@ function Activities({
           action="Send out to play"
           busy={isPending('play')}
           disabled={busy || away || monster.energy < 10 || berries < 1}
-          onClick={() => run('play', api.startPlay, 'Off to play.')}
+          /* Same rule as Feed: a fixed cost and a status flip, nothing rolled
+             and nothing awarded. The countdown starts on this browser's clock
+             and is corrected by the reply. */
+          onClick={() => run(
+            'play', () => api.startPlay(undefined, ownBerry), 'Off to play.',
+            projectPlay(monster, ownBerry),
+          )}
         />
 
         <ActivityCard
@@ -1027,16 +1232,26 @@ function InProgress({
 
 // Level up ------------------------------------------------------------------
 
-const TOTAL_POINTS = 10;
-const MAX_PER_STAT = 5;
+/**
+ * The allocation rule, from the process rather than from here.
+ *
+ * These were hardcoded as 10 and 5, which is the drift `Catalog.levelUp` exists
+ * to prevent: the cap moved to three and a hardcoded dialog would have kept
+ * offering an allocation the process now refuses. The constants remain as the
+ * fallback for a deployment that predates the catalog key.
+ */
+const FALLBACK_TOTAL_POINTS = 10;
+const FALLBACK_MAX_PER_STAT = 5;
 
 /**
- * Ten points, at most five into any one stat, and all ten must be spent — the
+ * Every point must be spent, and no more than the cap into any one stat — the
  * process enforces exactly that, so the dialog does too rather than letting
  * someone submit an allocation that will be refused.
  */
 function LevelUpDialog({ monster, onClose }: { monster: Monster; onClose: () => void }) {
-  const { run, isPending } = useGame();
+  const { run, isPending, catalog } = useGame();
+  const TOTAL_POINTS = catalog?.levelUp?.points ?? FALLBACK_TOTAL_POINTS;
+  const MAX_PER_STAT = catalog?.levelUp?.maxPerStat ?? FALLBACK_MAX_PER_STAT;
   const [points, setPoints] = useState({ attack: 0, defense: 0, speed: 0, health: 0 });
   const spent = points.attack + points.defense + points.speed + points.health;
   const left = TOTAL_POINTS - spent;

@@ -14,7 +14,7 @@
  * preview at the same size — which is the card, so nothing is lost but the
  * turning.
  */
-import { useEffect, useRef, useState } from 'react';
+import { ReactNode, useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { drawCard } from '../lib/card/browser';
 import { cardSize } from '../lib/card/layout.mjs';
@@ -24,7 +24,16 @@ import { CardPreview } from './CardPreview';
 import { X } from './icons';
 import { Spinner, cx } from './primitives';
 
-export function CardViewer({ monster, onClose }: { monster: Monster; onClose: () => void }) {
+export function CardViewer({ monster, onClose, footer }: {
+  monster: Monster;
+  onClose: () => void;
+  /**
+   * Anything the caller needs the viewer to be able to act on — the market
+   * puts the asking price and its buy here, so inspecting a listing and
+   * buying it are the same screen rather than two dialogs of the same card.
+   */
+  footer?: ReactNode;
+}) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const object = useRef<CardObject | null>(null);
   const [state, setState] = useState<'painting' | 'held' | 'flat'>('painting');
@@ -119,6 +128,9 @@ export function CardViewer({ monster, onClose }: { monster: Monster; onClose: ()
         <p className="eyebrow">{monster.name}</p>
         {state === 'held' && (
           <p className="mt-2 text-[13px] text-faint">Drag to turn it over</p>
+        )}
+        {footer && (
+          <div className="pointer-events-auto mt-4 flex justify-center px-4">{footer}</div>
         )}
       </div>
     </div>,

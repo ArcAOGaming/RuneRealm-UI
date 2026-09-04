@@ -68,6 +68,10 @@ export function mountGame(
   const game = new Phaser.Game({
     type: Phaser.AUTO,
     parent,
+    // Phaser prints a coloured version banner to the console on every boot.
+    // The scene mounts and remounts as screens come and go, so that is a line
+    // of noise per mount in the one place real errors have to be visible.
+    banner: false,
     width: baseW,
     height: baseH,
     transparent: false,

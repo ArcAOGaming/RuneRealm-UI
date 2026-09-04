@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import * as api from '../lib/game';
-import { useGame } from '../state/GameProvider';
+import { useGame } from '../state/gameContext';
 import { Button, ErrorNote, Panel } from '../ui/primitives';
 import { Shield } from '../ui/icons';
 

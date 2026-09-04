@@ -1,14 +1,21 @@
 import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Navigate, useNavigate } from 'react-router-dom';
-import { useGame } from '../state/GameProvider';
+import { useGame } from '../state/gameContext';
+import { isAbort, usePoll } from '../state/usePoll';
 import * as huntApi from '../lib/hunt';
 import * as gameApi from '../lib/game';
-import { HuntCaptureReceipt, HuntRoute, HuntRun, HuntTuning, Monster, Move } from '../lib/types';
+import { HuntCaptureReceipt, HuntRoute, HuntRun, HuntTuning, Monster } from '../lib/types';
 import { BattleStage } from '../ui/BattleStage';
+// The wild fight IS the arena fight: same `Battle` record, same engine, same
+// moves, same type chart, same struggle rule. So it is the same grid and the
+// same round log, not a second implementation — see ui/BattleMoves.tsx.
+import { MoveChooser, RoundLog } from '../ui/BattleMoves';
+import { useAether } from '../ui/aetherContext';
 import { Button, Panel, Spinner, cx } from '../ui/primitives';
 import { portrait } from '../ui/art';
 import { Map, Rune, Satchel, Shield, Sparkle, X } from '../ui/icons';
-import { useToast } from '../ui/Toast';
+import { useToast } from '../ui/toastContext';
+import { useTourSteps, type TourStep } from '../ui/tourContext';
 
 // Phaser and the 3D capture card arrive only after someone enters Hunt.
 const HuntStage = lazy(() => import('../ui/HuntStage'));
@@ -30,7 +37,47 @@ function errorMessage(error: unknown) {
   return error instanceof Error ? error.message : String(error);
 }
 
+/**
+ * The hunt's walkthrough.
+ *
+ * A hunt is the one place in the game where Rune leaves your satchel and may
+ * not come back, so every sentence here is about what is already spent. The
+ * offering was paid on the way in; a bid is consumed whether or not the binding
+ * holds; leaving does not refund either.
+ *
+ * The bid step only exists while something is cornered — the tour drops steps
+ * whose target is not on screen, so one list covers roaming and capture and the
+ * player is only told about bidding at the moment they are being asked to bid.
+ *
+ * **These sentences are the capture rules in words.** The bid range and what a
+ * failed binding costs live in `C.CAPTURE`; change either and this list is part
+ * of the change.
+ */
+const HUNT_TOUR: TourStep[] = [
+  {
+    target: '[data-tour="hunt-stage"]',
+    title: 'The Wild Verge',
+    body: 'Your companion walks the trail until something breaks cover. Searching and fighting are free — the offering you paid on the way in covers the whole run.',
+  },
+  {
+    target: '[data-tour="hunt-tally"]',
+    title: 'What the run has cost',
+    body: 'Encounters so far, and the Rune you have left. Rune is only spent when you try to bind something.',
+  },
+  {
+    target: '[data-tour="hunt-bid"]',
+    title: 'Binding costs whether it works',
+    body: 'One to five Rune, thrown once. Every Rune committed is consumed even if the binding breaks, and level advantage still matters at five.',
+  },
+  {
+    target: '[data-tour="hunt-leave"]',
+    title: 'Leaving',
+    body: 'You keep everything you bound. The offering is not refunded, so there is no reason to leave a run early.',
+  },
+];
+
 export default function Hunt() {
+  useTourSteps('hunt', HUNT_TOUR);
   const { player, loadingPlayer, catalog, refresh } = useGame();
   const route = player?.hunt;
   const companion = route && (player?.monsters?.[route.monsterId] ?? player?.monster);
@@ -47,45 +94,55 @@ export default function Hunt() {
   const [outcome, setOutcome] = useState<HuntCaptureReceipt | null>(null);
   const seenCapture = useRef<string | null>(null);
 
+  /**
+   * Fold one published run into the screen.
+   *
+   * Shared by the one-shot load below and the poll, because they used to be two
+   * effects that could both be reading the same key at the same time — the
+   * route loader on 650 ms and the settlement watcher on its own 650 ms.
+   */
+  const applyRun = useCallback((next: HuntRun | null) => {
+    if (!next) return;
+    setRun(next);
+    if (next.status === 'defeated' || next.status === 'lost') {
+      // A reload after the final blow has no animation queue to wait for.
+      setEncounterReady(true);
+      setBattleSettled(true);
+    }
+  }, []);
+
+  // A different run is a different screen. Clearing the old one is also what
+  // arms the poll below, which is the only thing that reads a run in.
   useEffect(() => {
-    if (!route) return undefined;
-    let cancelled = false;
-    let timer = 0;
-    const pull = async () => {
-      const next = await huntApi.readHunt(route).catch(() => null);
-      if (cancelled) return;
-      if (next) {
-        setRun(next);
-        if (next.status === 'defeated' || next.status === 'lost') {
-          // A reload after the final blow has no animation queue to wait for.
-          setEncounterReady(true);
-          setBattleSettled(true);
-        }
-      }
-      if (!next || next.status === 'opening') {
-        timer = window.setTimeout(pull, 650);
-      }
-    };
-    void pull();
-    return () => { cancelled = true; window.clearTimeout(timer); };
+    setRun(null);
+    setEncounterReady(false);
+    setBattleSettled(false);
   }, [route?.runId, route?.processId]);
 
-  // Capture crosses Hunt -> game ledger -> Hunt acknowledgement. The route
-  // loader above normally goes idle once roaming begins, so submitting a bid
-  // explicitly wakes a short poll until that three-message settlement lands.
-  useEffect(() => {
-    if (!route || run?.status !== 'settling') return undefined;
-    let cancelled = false;
-    let timer = 0;
-    const pull = async () => {
-      const next = await huntApi.readHunt(route).catch(() => null);
-      if (cancelled) return;
-      if (next) setRun(next);
-      if (!next || next.status === 'settling') timer = window.setTimeout(pull, 650);
-    };
-    timer = window.setTimeout(pull, 450);
-    return () => { cancelled = true; window.clearTimeout(timer); };
-  }, [route?.runId, route?.processId, run?.status]);
+  /*
+    The two states the client has to wait through, on one poll.
+
+    `opening` is the game authority handing the run to the Hunt worker;
+    `settling` is capture crossing Hunt -> game ledger -> Hunt acknowledgement.
+    Both used to be a bare 650 ms `setTimeout` chain per state, with no ceiling
+    and nothing cancelling the read. At the node's real service time — tens of
+    seconds while it works through a write backlog — that asks for the same key
+    far faster than it can be answered, and every unanswered ask is holding one
+    of six connections on the screen where the player is waiting.
+
+    `usePoll` schedules the next read from the END of the last one and lets the
+    delay grow to what the node actually costs, so the ask rate can never
+    outrun the answer rate.
+  */
+  const waiting = !!route && (!run || run.status === 'opening' || run.status === 'settling');
+  usePoll(async (signal) => {
+    if (!route) return;
+    try {
+      applyRun(await huntApi.readHunt(route, signal));
+    } catch (error) {
+      if (!isAbort(error)) throw error;
+    }
+  }, { intervalMs: 650, maxIntervalMs: 8_000, enabled: waiting, leading: true });
 
   useEffect(() => {
     const receipt = run?.lastCapture;
@@ -173,18 +230,18 @@ export default function Hunt() {
                 : `${companion.name} is following your trail`}
           </p>
         </div>
-        <div className="hidden items-center gap-3 text-[11px] text-faint sm:flex">
+        <div data-tour="hunt-tally" className="hidden items-center gap-3 text-[11px] text-faint sm:flex">
           <span><b className="font-mono text-ink">{run?.encounterCount ?? 0}</b> encounters</span>
           <span><b className="font-mono text-ink">{player?.inventory.rune ?? 0}</b> runes</span>
         </div>
-        <Button variant="quiet" size="sm" busy={ending}
+        <Button data-tour="hunt-leave" variant="quiet" size="sm" busy={ending}
                 disabled={!run || run.status === 'opening' || run.status === 'settling'}
                 onClick={() => void endHunt()} icon={<X className="h-3.5 w-3.5" />}>
           Leave hunt
         </Button>
       </div>
 
-      <Panel className="relative min-h-0 flex-1 overflow-hidden p-0" data-element={companion.elementType}>
+      <Panel data-tour="hunt-stage" className="relative min-h-0 flex-1 overflow-hidden p-0" data-element={companion.elementType}>
         {showWorld && (
           <>
             <Suspense fallback={<div className="h-full animate-pulse bg-raised/40" />}>
@@ -287,6 +344,15 @@ export default function Hunt() {
   );
 }
 
+/**
+ * The wild fight.
+ *
+ * The only thing here that is not the arena is the message the move is signed
+ * into: `Hunt.Attack` against the run's own worker rather than `Battle.Attack`
+ * against the game process. The grid, the round log, the stage, the impact
+ * shock and the rule that the grid stays up until the last blow has finished
+ * playing are all the arena's, imported.
+ */
 function HuntBattle({
   run, route, onRun, onSettled,
 }: {
@@ -295,15 +361,27 @@ function HuntBattle({
   onRun: (run: HuntRun) => void;
   onSettled: () => void;
 }) {
+  const { tuning } = useGame();
   const toast = useToast();
   const [attacking, setAttacking] = useState<string | null>(null);
   const battle = run.battle!;
   const me = battle.challenger;
   const them = battle.accepter!;
+  const over = battle.status === 'ended';
+
+  // Hit the field behind the arena when a blow CONNECTS — the scene calls this
+  // at the frame of impact, not when the reply lands.
+  const stageRef = useRef<HTMLDivElement>(null);
+  const { shockFrom } = useAether();
+  const onImpact = useCallback(() => {
+    shockFrom(stageRef.current ?? undefined);
+  }, [shockFrom]);
 
   const attack = async (name: string) => {
     setAttacking(name);
     try {
+      // The round is sent so a click made for this round cannot land on the
+      // next one, exactly as the arena does.
       onRun(await huntApi.attack(route, name, battle.round));
     } catch (error) {
       const latest = await huntApi.readHunt(route).catch(() => null);
@@ -315,42 +393,29 @@ function HuntBattle({
   };
 
   return (
-    <div className="absolute inset-0 flex min-h-0 flex-col bg-void">
-      <BattleStage battle={battle} me={me} them={them} fill onSettled={onSettled}
-                   className="min-h-0 flex-1 border-0" />
-      <div className="grid shrink-0 gap-1.5 border-t border-rune/15 bg-void/95 p-2 sm:grid-cols-4">
-        {Object.entries(me.moves).map(([name, move]) => (
-          <BattleMove key={name} name={name} move={move}
-                      busy={attacking === name} disabled={!!attacking || battle.status === 'ended'}
-                      onClick={() => void attack(name)} />
-        ))}
-        {!Object.values(me.moves).some((move) => move.count > 0) && (
-          <Button busy={attacking === 'struggle'} disabled={!!attacking}
-                  onClick={() => void attack('struggle')}>Struggle</Button>
-        )}
+    <div className="battle-screen absolute inset-0 flex min-h-0 flex-col gap-1.5 bg-void p-1.5 lg:grid lg:grid-rows-[minmax(0,1fr)_var(--battle-bottom)]">
+      <Panel
+        ref={stageRef}
+        className="battle-stage relative flex h-full min-h-0 w-full flex-col overflow-hidden rounded-none border-0 bg-transparent p-0 shadow-none"
+      >
+        <BattleStage
+          battle={battle} me={me} them={them} fill
+          onSettled={onSettled} onImpact={onImpact}
+          className="min-h-0 flex-1 border-0"
+        />
+      </Panel>
+      <div className="battle-bottom grid min-h-0 gap-2 lg:grid-rows-[minmax(0,1fr)_auto]">
+        <MoveChooser
+          me={me} them={them}
+          // Locked once the fight is decided, but kept in place while the last
+          // blow plays — swapping it out mid-swing is the jump this avoids.
+          disabled={over} busy={attacking !== null} tuning={tuning}
+          isPending={(name) => attacking === name}
+          onMove={(name) => void attack(name)}
+        />
+        <RoundLog turns={battle.turns} youAre={me.side} />
       </div>
     </div>
-  );
-}
-
-function BattleMove({
-  name, move, busy, disabled, onClick,
-}: { name: string; move: Move; busy: boolean; disabled: boolean; onClick: () => void }) {
-  return (
-    <button type="button" disabled={disabled || move.count <= 0} onClick={onClick}
-            className={cx(
-              'min-h-14 border border-edge/70 bg-raised/70 px-3 py-2 text-left transition-colors',
-              'hover:border-element/60 disabled:opacity-35',
-            )}>
-      <span className="flex items-center justify-between gap-2 text-[12px] font-semibold">
-        {busy ? <Spinner className="h-3.5 w-3.5" /> : name}
-        <b className="font-mono text-[10px] font-normal text-faint">×{move.count}</b>
-      </span>
-      <span className="mt-1 flex gap-2 text-[10px] uppercase tracking-wide text-faint">
-        <i className="not-italic text-element">{move.type}</i>
-        {move.damage > 0 && <i className="not-italic">{move.damage} power</i>}
-      </span>
-    </button>
   );
 }
 
@@ -390,7 +455,7 @@ export function CaptureChoice({
     <div className="absolute inset-0 grid place-items-center overflow-y-auto bg-void/90 p-4 backdrop-blur-sm">
       <Panel className="grid w-full max-w-3xl gap-5 p-5 sm:grid-cols-[190px_1fr]" glow data-element={wild.elementType}>
         <div className="relative overflow-hidden border border-element/25 bg-raised/50">
-          <img src={portrait(wild.elementType, wild.level)} alt={wild.name}
+          <img src={portrait(wild.elementType, wild.level, wild.entryNo)} alt={wild.name}
                data-pixel className="aspect-square h-full w-full object-contain p-4" />
           <span className="absolute bottom-2 left-2 bg-void/80 px-2 py-1 font-mono text-[11px]">level {wild.level}</span>
         </div>
@@ -407,7 +472,7 @@ export function CaptureChoice({
             Choose one to five Runes. Five is likely, never guaranteed, and level advantage still matters.
           </p>
           <div className="mt-5 grid gap-4 sm:grid-cols-[1fr_auto] sm:items-center">
-            <fieldset disabled={!canCapture || busy !== null}>
+            <fieldset data-tour="hunt-bid" disabled={!canCapture || busy !== null}>
               <legend className="text-xs text-faint">Runes to throw</legend>
               <div className="mt-2 grid grid-cols-5 gap-1.5">
                 {bids.map((bid) => {

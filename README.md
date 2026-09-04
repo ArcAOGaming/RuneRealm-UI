@@ -10,6 +10,8 @@ companion-asset implementation; it is not a release workflow.
 Rune AMM, test quote token, and their deployment and verification flow.
 [HYPERBEAM.md](HYPERBEAM.md) records platform facts that were verified by
 running them rather than read in the docs.
+[MONSTER_INDEX.md](MONSTER_INDEX.md) defines the numbered Monster Index, evolution
+identity, asset-repository boundary, Phaser atlas contract, and release flow.
 
 ---
 
@@ -157,6 +159,8 @@ owns its install identity and `public/sw.js` owns its small presentation cache.
 
 ```bash
 npm run build                     # type-check + bundle
+npm run monster-index:sync             # validate asset repo + regenerate runtime catalog/atlases
+npm run monster-index:check            # fail if the two repositories drifted
 npm run test:lua                  # the process suite, on a public node, free
 npm run test:hunt                 # Hunt process + game bridge, offline
 npm run test:marketplace:local    # AMM + quote + Rune suites, offline
@@ -211,18 +215,46 @@ npm run deploy:contracts               # contracts + linked client build; no sit
 npm run deploy:contracts:resume        # resume an interrupted contract deployment
 ```
 
-The fixed `deploy:contracts*` scripts always enable `--free --with-bots` and
-never pass `--site`. They deploy the integrated game/economy, Rune bridge,
+**Every deployment is blank.** No migration from the process being replaced, no
+legacynet restore, no paid allow-list — a bare process holding nothing but what
+this run puts in it. Seeding is one flag, `--seed`, and it is a final-build
+step, because the accounts it creates are permanent and carrying them through
+every test deploy is how a chain of half-finished migrations starts:
+
+```bash
+npm run deploy:contracts:final:plan    # inspect the seeded deployment
+npm run deploy:contracts:final:check   # its preflight, including the 168-player load
+npm run deploy:contracts:final         # --seed: the launch build
+```
+
+`--seed` migrates the process named by `live-process.txt` (or `--from <pid>`),
+restores the 168 recovered legacynet players, and unlocks the paid list.
+`--fresh` is the same without the migration. `--resume` only ever picks up a
+process recorded as having been born the same way — `seeded` in
+`backend/native/deployment-state.json` — so a blank run never adopts a seeded
+process, or the reverse. `deploy.mjs` on its own takes the same decision through
+`--seed-legacy [file]` and `--paid-list`, both off unless asked for.
+
+The fixed `deploy:contracts*` scripts always enable `--free --with-bots`, never
+pass `--seed`, and never pass `--site`. They deploy the integrated game/economy, Rune bridge,
 test quote token, AMM, battle workers, and hunt workers; verify the graph; rewrite the frontend
 process ids; and create the linked `dist/` bundle. Review
 `backend/native/deployment-state.json` after completion. Then commit and push
 the rewritten ids: pushing does **not** publish the site.
 
-`--free` is the test access flag. With it on, any correctly signed wallet may
-create an account and play; `--no-free` (also the default) restores the Eternal
-Pass allow-list. The selected value is compiled into the game process, verified
-after spawn, printed in the plan and final receipt, and saved as `publicAccess`
-in `backend/native/deployment-state.json`. Supplying both flags is rejected.
+**Sign-up is free by default.** Any correctly signed wallet may create an
+account and play. `--paid-access` (`--no-free`, or `PUBLIC_ACCESS=0`) is the
+flag that gates it behind the Eternal Pass allow-list, and it is the only way to
+get a closed process — a gate you reach by forgetting a flag is a process nobody
+can join, which reads from the client exactly like a broken deploy. `--free`
+still works and now asserts the default. The selected value is compiled into the
+game process, verified after spawn, printed in the plan and final receipt, and
+saved as `publicAccess` in `backend/native/deployment-state.json`. Supplying
+both flags is rejected.
+
+Access and the paid allow-list are separate decisions: `--paid-access` says who
+may join, `--seed` (via `deploy.mjs --paid-list`) mints the wallets that already
+bought a pass into the new process.
 
 `--with-bots` validates all 50 gitignored swarm wallets before the first live
 write. In free mode they are admitted normally on their first signed action. In
@@ -234,14 +266,16 @@ action is unavailable after economy activation.
 ### Open-access deployments
 
 Access is enforced by the game process, not by a frontend-only environment
-variable. Release an open game with one flag:
+variable. An open game is what you get by default:
 
 ```bash
 npm run deploy:contracts
 ```
 
-That compiles the new game process in public mode, migrates existing players,
-and builds the client against the new process graph without publishing it. An
+That compiles the new game process in public mode and builds the client against
+the new process graph without publishing it. It carries no players over; the
+build that does is `npm run deploy:contracts:final`. To close registration
+instead, add `--paid-access`. An
 unknown signed wallet is granted durable access on its first game action. If a
 later release closes registration, wallets that already joined stay unlocked.
 The process publishes `/now/access`, and the client reads that authoritative

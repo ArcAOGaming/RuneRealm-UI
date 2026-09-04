@@ -8,13 +8,14 @@
  */
 import { useEffect, useState } from 'react';
 import { NavLink, useLocation } from 'react-router-dom';
-import { useGame } from '../state/GameProvider';
+import { useGame } from '../state/gameContext';
 import { shortAddress } from '../lib/format';
-import { useAether } from './Aether';
+import { useAether } from './aetherContext';
 import { Sigil } from './Sigil';
 import { Button, cx } from './primitives';
-import { Berry, Exchange, Map, Rune, Sword, Users, Wallet } from './icons';
+import { Berry, Exchange, Map, Paw, Rune, Sword, Users, Wallet } from './icons';
 import { Worship } from './Worship';
+import { TourChip } from './Tour';
 import { Wordmark } from './Mark';
 
 type Tab = { to: string; label: string; Icon: (p: any) => JSX.Element };
@@ -32,6 +33,7 @@ export function Shell({ children }: { children: React.ReactNode }) {
   const tabs: Tab[] = [];
   tabs.push({ to: '/factions', label: 'Factions', Icon: Users });
   if (player?.faction) tabs.push({ to: '/companion', label: 'Companion', Icon: Berry });
+  if (player) tabs.push({ to: '/monster-index', label: 'Monster Index', Icon: Paw });
   if (player?.monster) tabs.push({ to: '/arena', label: 'Arena', Icon: Sword });
   if (player?.hunt) tabs.push({ to: '/hunt', label: 'Hunt', Icon: Map });
   tabs.push({ to: '/market', label: 'Market', Icon: Exchange });
@@ -117,7 +119,11 @@ export function Shell({ children }: { children: React.ReactNode }) {
           {!onPublicStory && (
             <nav aria-label="Primary" className="ml-4 hidden items-center gap-1 lg:flex">
               {tabs.map(({ to, label, Icon }) => (
-                <NavLink key={to} to={to} className={({ isActive }) => cx(
+                /* `data-tour-to` and not a per-tab id: the walkthrough points
+                   at whichever of these two strips is on screen, and the route
+                   is the only thing the header row and the phone bar agree on.
+                   See `findTarget` in Tour.tsx. */
+                <NavLink key={to} to={to} data-tour-to={to} className={({ isActive }) => cx(
                   'flex h-9 items-center gap-2 rounded-[3px] px-3 text-sm transition-colors',
                   isActive
                     ? 'bg-raised text-ink'
@@ -132,6 +138,12 @@ export function Shell({ children }: { children: React.ReactNode }) {
 
           <div className="ml-auto flex items-center gap-2">
             {!onPublicStory && player && <SessionChips />}
+            {/* One row, and it stays one row. The guide is a 32px icon in the
+                cluster that is already here — not a bar of its own, and not a
+                control that appears only on pages that have a walkthrough,
+                which would slide the rune count and the address sideways every
+                time you changed page. See `TourChip`. */}
+            {!onPublicStory && <TourChip />}
             {!onPublicStory && <Worship />}
             {/* No link to /admin. It is reachable by typing the path, which is
                 the point: the controls behind it change every player in the
@@ -141,6 +153,7 @@ export function Shell({ children }: { children: React.ReactNode }) {
             {address ? (
               <Button
                 size="sm" variant="ghost" onClick={connect}
+                data-tour="wallet"
                 title={`Manage ${walletProviderName ?? 'wallet'} and app installation`}
                 icon={<Sigil address={address} size={20} weight={1.7} className="text-rune" />}
               >
@@ -160,21 +173,31 @@ export function Shell({ children }: { children: React.ReactNode }) {
           scene has least going on in — and it is a real button, so it is
           reachable by keyboard even while the chrome it restores is gone. */}
       {headerHidden && (
-        <button
-          type="button"
-          onClick={() => setHeaderOpen(true)}
-          aria-label="Show navigation"
-          className={cx(
-            'fixed right-2 top-2 z-40 hidden h-7 w-7 items-center justify-center lg:flex',
-            'rounded-[3px] border border-rune/20 bg-void/80 text-muted backdrop-blur-sm',
-            'transition-colors hover:border-element/50 hover:text-ink',
-          )}
-        >
-          <svg viewBox="0 0 16 16" className="h-3.5 w-3.5" fill="none"
-               stroke="currentColor" strokeWidth="1.6" strokeLinecap="square">
-            <path d="M3 5h10M3 8h10M3 11h10" />
-          </svg>
-        </button>
+        // The guide comes with it. The arena and the hunt are the two screens
+        // that hide their chrome AND the two with the most to explain, and
+        // leaving the walkthrough behind the collapsed header meant the pages
+        // that need it most were the pages you could not ask from. Only one of
+        // these two `data-tour="guide"` elements is ever on screen — this
+        // cluster is `lg` only, the header's own is hidden at `lg` here — and
+        // the tour takes the first target with a size.
+        <div className="fixed right-2 top-2 z-40 hidden items-center gap-1.5 lg:flex">
+          <TourChip compact />
+          <button
+            type="button"
+            onClick={() => setHeaderOpen(true)}
+            aria-label="Show navigation"
+            className={cx(
+              'flex h-7 w-7 items-center justify-center',
+              'rounded-[3px] border border-rune/20 bg-void/80 text-muted backdrop-blur-sm',
+              'transition-colors hover:border-element/50 hover:text-ink',
+            )}
+          >
+            <svg viewBox="0 0 16 16" className="h-3.5 w-3.5" fill="none"
+                 stroke="currentColor" strokeWidth="1.6" strokeLinecap="square">
+              <path d="M3 5h10M3 8h10M3 11h10" />
+            </svg>
+          </button>
+        </div>
       )}
 
       <main className={cx(
@@ -203,7 +226,7 @@ export function Shell({ children }: { children: React.ReactNode }) {
             {tabs.map(({ to, label, Icon }) => {
               const active = pathname.startsWith(to);
               return (
-                <NavLink key={to} to={to} className={cx(
+                <NavLink key={to} to={to} data-tour-to={to} className={cx(
                   'app-tab flex flex-1 flex-col items-center gap-1 py-2.5 text-[11px] transition-colors',
                   active ? 'text-element' : 'text-faint',
                 )}>

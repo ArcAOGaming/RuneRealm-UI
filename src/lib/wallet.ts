@@ -337,6 +337,20 @@ export function getSelectedProvider(): WalletProviderId | null {
   return selectedProvider;
 }
 
+/**
+ * What to call the extension on screen.
+ *
+ * ArConnect was renamed Wander, and the extension still reports `walletName:
+ * "ArConnect"` — so every label built from it said ArConnect next to Wander's
+ * own logo. The published name is the one people recognise; the old one is a
+ * detail of the injected object, not something to show anybody.
+ */
+export function extensionLabel(name?: string | null): string {
+  const trimmed = (name ?? '').trim();
+  if (!trimmed) return 'Wallet extension';
+  return /^arconnect(\s|$)/i.test(trimmed) ? 'Wander' : trimmed;
+}
+
 export async function walletAvailability(): Promise<WalletAvailability> {
   const [extension, permaweb, stored] = await Promise.all([
     waitForInjectedWallet(250),
@@ -346,7 +360,7 @@ export async function walletAvailability(): Promise<WalletAvailability> {
   return {
     injected: {
       available: !!extension,
-      name: extension?.walletName || 'Arweave wallet extension',
+      name: extensionLabel(extension?.walletName),
     },
     permaweb: {
       available: !!permaweb,
@@ -403,7 +417,7 @@ export async function connectWallet(provider: WalletProviderId): Promise<WalletC
   return {
     address,
     provider: 'injected',
-    providerName: wallet.walletName || 'Wallet extension',
+    providerName: extensionLabel(wallet.walletName),
   };
 }
 
@@ -442,7 +456,7 @@ export async function restoreWallet(): Promise<WalletConnection | null> {
   return {
     address,
     provider: 'injected',
-    providerName: wallet.walletName || 'Wallet extension',
+    providerName: extensionLabel(wallet.walletName),
   };
 }
 

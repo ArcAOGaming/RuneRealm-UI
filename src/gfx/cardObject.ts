@@ -26,7 +26,7 @@ import {
 import { RoomEnvironment } from 'three/examples/jsm/environments/RoomEnvironment.js';
 import { drawMark } from './mark';
 
-export type CardElement = 'fire' | 'water' | 'air' | 'rock' | 'arcane';
+export type CardElement = 'fire' | 'water' | 'air' | 'rock' | 'normal' | 'arcane';
 
 const HUE: Record<CardElement, number> = {
   arcane: 0x967aff,
@@ -34,6 +34,7 @@ const HUE: Record<CardElement, number> = {
   water: 0x4ab0ff,
   air: 0x7ee2c8,
   rock: 0xc9a25d,
+  normal: 0x969fb8,
 };
 
 const GOLD = 0xd6c8a2;

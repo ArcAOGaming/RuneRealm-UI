@@ -19,9 +19,9 @@
  * a drawer written inline would be pinned to whatever panel happened to hold
  * the button rather than to the viewport.
  */
-import { lazy, Suspense, useEffect, useState } from 'react';
+import { lazy, Suspense, useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { useGame } from '../state/GameProvider';
+import { useGame } from '../state/gameContext';
 import * as api from '../lib/game';
 import { ItemId, LootResult } from '../lib/types';
 import { Badge, Button, SectionTitle, cx } from './primitives';
@@ -42,8 +42,21 @@ const LootVault = lazy(() => import('./LootVault').then((m) => ({ default: m.Loo
 export function SatchelDrawer({ className }: { className?: string }) {
   const { player, run } = useGame();
   const [open, setOpen] = useState(false);
-  // The ceremony starts on the click, not on the reply — see `LootVault`.
-  const [opening, setOpening] = useState<{ rarity: number; result: LootResult | null } | null>(null);
+  /*
+    The ceremony starts on the click, not on the reply — see `LootVault`.
+
+    `id` is what makes the SECOND box open. The receipt this leaves behind is
+    part of the same `opening`, so a player who opens another box before
+    dismissing it never unmounts the vault — React reused an instance that had
+    already played its chest, faded itself out and switched to its receipt, and
+    the effect that builds the chest only runs on mount. The chest animated
+    exactly once per page load. Every opening now carries its own id, and the
+    id is the vault's `key`, so a new one is a new component.
+  */
+  const [opening, setOpening] = useState<
+    { id: number; rarity: number; result: LootResult | null } | null
+  >(null);
+  const openingId = useRef(0);
 
   const items = Object.entries(player?.inventory ?? {})
     .filter(([, n]) => (n ?? 0) > 0) as Array<[ItemId, number]>;
@@ -57,9 +70,14 @@ export function SatchelDrawer({ className }: { className?: string }) {
   // to outlive the thing that started it.
   const openBox = async (rarity: number) => {
     setOpen(false);
-    setOpening({ rarity, result: null });
+    openingId.current += 1;
+    const id = openingId.current;
+    setOpening({ id, rarity, result: null });
     const reply = await run(`box:${rarity}`, () => api.openLootbox(rarity));
-    if (reply?.lootResult) setOpening({ rarity, result: reply.lootResult });
+    // Guarded: a slow reply must not reopen a ceremony the player has already
+    // moved past, or push its spoils into a later box's chest.
+    if (openingId.current !== id) return;
+    if (reply?.lootResult) setOpening({ id, rarity, result: reply.lootResult });
     // A refused write leaves nothing to reveal; the toast already said why.
     else setOpening(null);
   };
@@ -82,6 +100,7 @@ export function SatchelDrawer({ className }: { className?: string }) {
       {opening && (
         <Suspense fallback={null}>
           <LootVault
+            key={opening.id}
             rarity={opening.rarity}
             result={opening.result}
             onClose={() => setOpening(null)}

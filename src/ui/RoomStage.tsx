@@ -107,8 +107,10 @@ export default function RoomStage({
   const legacyPlayerSprite = playerSpriteTxId ? `${gateway}/${playerSpriteTxId}` : undefined;
   const playerSprite = playerSpriteUrl
     || (playerOutfit ? builtPlayerSprite : legacyPlayerSprite);
-  const rgb = ELEMENT_RGB[monster.elementType];
-  const berryUrl = ITEM_ART[monster.berryItem] ?? '';
+  const rgb = monster.elementType === 'normal'
+    ? [150, 159, 184] as [number, number, number]
+    : ELEMENT_RGB[monster.elementType];
+  const berryUrl = monster.berryItem ? ITEM_ART[monster.berryItem] ?? '' : '';
 
   const queueActivityFx = useCallback((command: (fx: ActivityFx) => void) => {
     if (activityFxRef.current) command(activityFxRef.current);
@@ -149,15 +151,15 @@ export default function RoomStage({
 
     if (kind === 'Quest') {
       mounted.game.scene.start(QuestScene.KEY, {
-        sprite: monster.sprite, route: questRoute, element: rgb,
+        sprite: monster.sprite, entryNo: monster.entryNo, route: questRoute, element: rgb,
       });
     } else if (kind === 'Play') {
       mounted.game.scene.start(PlayScene.KEY, {
-        sprite: monster.sprite, backdrop: playBackdrop, playerSprite, element: rgb,
+        sprite: monster.sprite, entryNo: monster.entryNo, backdrop: playBackdrop, playerSprite, element: rgb,
       });
     } else {
       mounted.game.scene.start(RoomScene.KEY, {
-        sprite: monster.sprite, backdrop: home, away, element: rgb,
+        sprite: monster.sprite, entryNo: monster.entryNo, backdrop: home, away, element: rgb,
       });
     }
 
@@ -165,7 +167,7 @@ export default function RoomStage({
       if (mountedRef.current === mounted) mountedRef.current = null;
       mounted.destroy();
     };
-  }, [kind, monster.sprite, monster.elementType, playerSprite,
+  }, [kind, monster.sprite, monster.entryNo, monster.elementType, playerSprite,
     home, playBackdrop, questRoute, away]);
 
   // One transparent renderer stays above every room state. It is lazy like
