@@ -1,0 +1,190 @@
+/**
+ * verify-battle-fleet.mjs — put one real arena battle through a fleet worker.
+ *
+ *   HB_WALLET=key.json node backend/native/verify-battle-fleet.mjs
+ *   ... --wallet burner-04 --rounds 40
+ *
+ * WHY THIS EXISTS
+ *
+ * The battle fleet has been written, unit-tested and spawned for a while, and
+ * until today the game published `battlefleet {"enabled":false,"workers":[]}` —
+ * so every arena battle ran in the monolith and no fight had ever crossed the
+ * boundary on a live node. Sealing a manifest turns that path on for every
+ * player at once. This drives it once, on purpose, first.
+ *
+ * There are three separate claims to check and they fail differently:
+ *
+ *   1. the authority ASSIGNS a worker — `Battle.Start` comes back with a route
+ *      naming one of the sealed workers, rather than a monolith battle;
+ *   2. the worker RUNS the fight — rounds are signed straight at the worker and
+ *      it publishes the battle;
+ *   3. the settlement COMES BACK — the exactly-once handshake reaches the game
+ *      and the account's own win/loss counters move.
+ *
+ * (3) is the one worth the script. It is four of the six hops, it runs after
+ * the player is already done watching, and a break there looks exactly like
+ * nothing at all: the battle ends on screen and the ledger never hears. That is
+ * the same shape as the hunt settlement bug — see verify-hunt-settlement.mjs —
+ * and the same reason an offline suite would not have found it.
+ *
+ * Burner, never the owner wallet: entering the arena spends Rune and swearing a
+ * faction is once per account forever.
+ */
+import fs from 'node:fs';
+import path from 'node:path';
+import process from 'node:process';
+import { fileURLToPath } from 'node:url';
+import { installWalletShim, jwkToAddress } from './ans104.mjs';
+import { sendMessage } from './hbclient.mjs';
+import { buildSwarmClient } from './swarm/build-client.mjs';
+import { listBurners } from './burners.mjs';
+
+const HERE = path.dirname(fileURLToPath(import.meta.url));
+const ROOT = path.resolve(HERE, '..', '..');
+const argv = process.argv.slice(2);
+const flag = (name, fallback) => {
+  const i = argv.indexOf(`--${name}`);
+  return i >= 0 ? argv[i + 1] : fallback;
+};
+
+const live = fs.existsSync(path.join(ROOT, 'live-process.txt'))
+  ? fs.readFileSync(path.join(ROOT, 'live-process.txt'), 'utf8').trim().split(/\r?\n/)
+  : [];
+const pid = process.env.GAME_PROCESS || live[0];
+const node = (process.env.NODE_URL || live[1] || '').replace(/\/$/, '');
+if (!/^[A-Za-z0-9_-]{43}$/.test(pid || '')) throw new Error('set GAME_PROCESS or write live-process.txt');
+
+const ownerJwk = JSON.parse(fs.readFileSync(
+  process.env.HB_WALLET || path.join(ROOT, 'arweave-wallet-DA9qhP25.json'), 'utf8'));
+
+const wanted = flag('wallet', 'burner-03');
+const burner = listBurners().find((entry) => entry.name === wanted);
+if (!burner) throw new Error(`no burner named ${wanted}; run \`npm run swarm:wallets\``);
+const player = await jwkToAddress(JSON.parse(fs.readFileSync(burner.file, 'utf8')));
+const maxRounds = Math.max(1, Number(flag('rounds', '60')));
+
+console.log(`game    ${pid}`);
+console.log(`node    ${node}`);
+console.log(`player  ${player} (${wanted})\n`);
+
+const admin = (action, tags, data) => sendMessage({
+  node, jwk: ownerJwk, process: pid, action, tags, ...(data ? { data } : {}),
+});
+
+installWalletShim(JSON.parse(fs.readFileSync(burner.file, 'utf8')));
+const { url } = await buildSwarmClient({
+  root: ROOT, pid, node, outDir: path.join(ROOT, '.verify', 'battle'),
+});
+const api = await import(`${url}?run=${Date.now()}`);
+
+const step = (name) => process.stdout.write(`${name.padEnd(28)}`);
+const done = (text) => console.log(text);
+
+async function settle(predicate, label, timeoutMs = 90_000) {
+  const deadline = Date.now() + timeoutMs;
+  let last = null;
+  while (Date.now() < deadline) {
+    last = await api.readPlayer(player).catch(() => null);
+    if (last && predicate(last)) return last;
+    await new Promise((r) => { setTimeout(r, 1200); });
+  }
+  throw new Error(`timed out waiting for ${label}`);
+}
+
+// -- is the fleet even on? ----------------------------------------------------
+
+step('fleet config');
+const raw = await fetch(`${node}/${pid}~process@1.0/now/battlefleet`, {
+  headers: { accept: 'text/plain' },
+}).then((r) => (r.ok ? r.text() : '')).catch(() => '');
+const fleet = raw && !raw.trimStart().startsWith('<') ? JSON.parse(raw) : null;
+if (!fleet?.enabled) throw new Error('the game publishes no enabled battle fleet; nothing to verify');
+const sealed = new Set((fleet.workers ?? []).map((w) => w.workerProcessId));
+done(`${sealed.size} worker(s), enabled`);
+
+// -- stand the account up -----------------------------------------------------
+
+step('account');
+let me = await api.readPlayer(player).catch(() => null);
+if (!me?.faction) {
+  await api.joinFaction('Sky Nomads');
+  me = await settle((record) => !!record.faction, 'the faction to land');
+}
+done(`${me.faction}, companion ${me.monster?.id ?? '(none)'}`);
+
+if (me.hunt) {
+  step('clear hunt route');
+  await api.huntEnd(me.hunt).catch(() => {});
+  me = await settle((record) => !record.hunt, 'the hunt route to release');
+  done('released');
+}
+
+// Entering the arena costs one Rune for four battles, and 25 each of energy and
+// happiness. Grant the Rune and top the companion up so the entry cannot be
+// refused for a reason that has nothing to do with the fleet.
+step('arena entry cost');
+await admin('Admin.Grant', { PlayerId: player, Item: 'rune', Amount: '5' });
+await admin('Admin.SetStats', { PlayerId: player }, JSON.stringify({
+  level: 12, attack: 90, defense: 60, speed: 60, health: 90,
+  energy: 100, happiness: 100, status: { type: 'Home' },
+}));
+me = await settle((record) => (record.inventory?.rune ?? 0) >= 1
+  && (record.monster?.energy ?? 0) >= 25 && (record.monster?.happiness ?? 0) >= 25,
+'the Rune and the top-up to land');
+done(`${me.inventory.rune} Rune, energy ${me.monster.energy}`);
+
+const winsBefore = me.wins ?? 0;
+const lossesBefore = me.losses ?? 0;
+
+if ((me.battlesRemaining ?? 0) < 1) {
+  step('battle.begin');
+  await api.enterArena();
+  me = await settle((record) => (record.battlesRemaining ?? 0) > 0, 'the arena entry');
+  done(`${me.battlesRemaining} battles`);
+}
+
+// -- 1. the authority assigns a worker ---------------------------------------
+
+step('battle.start');
+let state = await api.startBotBattle(1);
+const route = state.battleFleet;
+if (!route) throw new Error('Battle.Start produced no fleet route — this ran in the monolith');
+if (!sealed.has(route.workerProcessId)) {
+  throw new Error(`assigned worker ${route.workerProcessId} is not in the sealed manifest`);
+}
+if (!state.battle) throw new Error('the worker never published the battle');
+done(`worker ${route.workerProcessId.slice(0, 10)}… battle ${route.battleId}`);
+
+// -- 2. the worker runs the fight --------------------------------------------
+
+step('rounds at the worker');
+let rounds = 0;
+while (state.battle && state.battle.status !== 'ended' && rounds < maxRounds) {
+  rounds += 1;
+  const moves = state.battle.challenger.moves ?? {};
+  const move = Object.keys(moves).find((name) => (moves[name].count ?? 0) > 0) ?? 'struggle';
+  state = await api.attack(route.battleId, move, state.battle.round);
+}
+if (state.battle?.status !== 'ended') throw new Error(`battle did not end in ${rounds} rounds`);
+const iWon = state.battle.challenger.healthPoints > 0;
+done(`${rounds} rounds, ${iWon ? 'won' : 'lost'}`);
+
+// -- 3. the settlement comes back --------------------------------------------
+//
+// The part that is invisible when it breaks. The fight is over on the worker
+// and on screen either way; this asks the AUTHORITY whether it heard.
+
+step('settlement reaches game');
+const after = await settle(
+  (record) => (record.wins ?? 0) > winsBefore || (record.losses ?? 0) > lossesBefore,
+  'the fleet settlement to reach the game ledger',
+  120_000,
+);
+done(`wins ${winsBefore}→${after.wins}, losses ${lossesBefore}→${after.losses}`);
+
+step('route released');
+const clear = await settle((record) => !record.activeBattleId, 'the battle lock to clear', 120_000);
+done(`battlesRemaining ${clear.battlesRemaining}`);
+
+console.log('\nPASS — the authority assigned a sealed worker, the worker ran the');
+console.log('fight, and the settlement reached the game ledger.');
