@@ -1,5 +1,5 @@
 /** One chosen companion, with every other owned card kept in the collection. */
-import { useCallback, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { Navigate } from 'react-router-dom';
 import { useGame } from '../state/gameContext';
 import * as api from '../lib/game';
@@ -33,6 +33,23 @@ export default function Collection() {
     setIntroDone(true);
   }, []);
   const finishSwap = useCallback(() => setSwap(null), []);
+
+  /*
+    A decoration may never be the reason the page is empty.
+
+    `.collection-workspace` starts at `opacity: 0` and is faded in when the
+    entrance calls `onReveal` — which happens inside its animation loop. A tab
+    that is not being painted never gets a frame, so the loop never starts, so
+    the reveal never fires and the cards stay invisible with nothing on screen
+    to say why. Every failure path is already handled; this covers the one that
+    is not a failure, just a scene that has not been given a frame yet. The
+    entrance still plays over the top if it does arrive.
+  */
+  useEffect(() => {
+    if (introVisible) return undefined;
+    const timer = window.setTimeout(revealIntro, 2500);
+    return () => window.clearTimeout(timer);
+  }, [introVisible, revealIntro]);
 
   const active = player?.monster ?? Object.values(player?.monsters ?? {})[0];
   const storedUnordered = Object.values(player?.collection ?? {});

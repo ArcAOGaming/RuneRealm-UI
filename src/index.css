@@ -1751,7 +1751,20 @@ pre,
    snaps now, which is also the clearer read: one element is lit at a time.
 */
 
-.tour-card { max-width: calc(100vw - 1.5rem); }
+/*
+   Opaque, unlike every other panel.
+
+   `.panel` is 72% surface over a blur, which reads as solid on a page and does
+   not here: the step card is laid over a screen that has just been dimmed, and
+   the dim makes the card the brightest thing in the frame — so the berry tiles
+   and the arena's own copy came straight through the sentence explaining them.
+   The blur has nothing to do with it; the alpha does.
+*/
+.tour-card {
+  max-width: calc(100vw - 1.5rem);
+  background: rgb(var(--surface));
+  border: 1px solid rgb(var(--element) / .3);
+}
 
 /* Market ------------------------------------------------------------------ */
 .market-tabs {

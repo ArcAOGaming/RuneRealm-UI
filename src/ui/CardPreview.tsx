@@ -109,7 +109,14 @@ export function CardPreview({
           ref={canvas}
           aria-label={`${monster.name} card`}
           className={cx(
-            'h-full w-full rounded-[3px] transition-opacity duration-200',
+            // `object-contain` is load-bearing, not tidiness. A canvas is a
+            // replaced element, so when the box it is given does not match the
+            // card's own ratio this letterboxes the drawing inside it instead
+            // of stretching it. Without it, any caller that ends up clamped on
+            // one axis — the companion screen's card, whose height comes from
+            // the page and whose width then has to fit a column — gets a
+            // squashed card or, worse, one cropped by an ancestor.
+            'h-full w-full rounded-[3px] object-contain transition-opacity duration-200',
             state === 'drawn' ? 'opacity-100' : 'opacity-0',
           )}
           style={{ imageRendering: 'pixelated' }}
