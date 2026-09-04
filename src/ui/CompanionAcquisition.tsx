@@ -184,6 +184,18 @@ export function CompanionAcquisition({
       data-element={monster.elementType}
       className={cx('acquisition-reveal', `acquisition-phase-${phase}`)}
     >
+      {/*
+        The ground the ceremony stands on, and nothing while it is still being
+        built.
+
+        `loading` is the wait between the signature landing and the art being
+        decoded, and it used to be this screen with EVERYTHING on it except the
+        ceremony: a 58rem square turned forty-five degrees, a circle of grid
+        lines masked out of the dark, and a spinner. A big grey box and a big
+        grey circle, neither of them full screen, on a page whose whole job at
+        that moment is to say "waiting". They fade in with the entrance now, so
+        the wait is the same flat ground the reveal lands on.
+      */}
       <div aria-hidden className="acquisition-grid" />
       <div aria-hidden className="acquisition-glow" />
 
@@ -225,7 +237,15 @@ export function CompanionAcquisition({
           ))}
         </div>
 
-        {phase === 'loading' && <Spinner className="h-8 w-8 text-element" />}
+        {/* Dead centre of the VIEWPORT, not of the stage row: the header row
+            above it is 5.5rem whether or not it has anything in it, and a
+            spinner sitting below the middle of an otherwise empty screen reads
+            as a layout that has half loaded. */}
+        {phase === 'loading' && (
+          <div className="acquisition-waiting">
+            <Spinner className="h-8 w-8 text-element" />
+          </div>
+        )}
 
         {performance && (phase === 'entrance' || phase === 'attack') && (
           <div aria-hidden className="acquisition-creature">

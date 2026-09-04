@@ -19,6 +19,7 @@
     "profile:lua:local": "node backend/native/run-local-profile.mjs",
     "deploy:process": "npm run monster-index:check && node backend/native/deploy.mjs",
     "deploy:hunt": "npm run monster-index:check && node backend/native/deploy-hunt.mjs",
+    "hunt:clear-route": "node backend/native/clear-hunt-route.mjs",
     "deploy:battle-fleet": "node backend/native/battle-fleet/deploy-workers.mjs",
     "deploy:site": "node backend/native/deploy-site.mjs",
     "deploy:site:check": "node backend/native/deploy-site.mjs --check",
