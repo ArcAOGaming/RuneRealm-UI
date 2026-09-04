@@ -36,6 +36,13 @@ Two rules came out of that, and both are enforced:
 - **An id rides two tags.** The settlement id is on `settlement-id` and on
   `reference`, which is what the battle fleet has always done.
 
+`npm run verify:hunt` drives one real signed capture against the live fleet and
+fails unless the run comes back out of `settling` with a receipt. It uses a
+burner, never the owner wallet — swearing a faction is once per account forever.
+Both branches are worth running, because they are different code past the
+boundary: `--bid 1` usually breaks, `--bid 5` usually binds and additionally
+mints the creature into the collection.
+
 When a route is stranded anyway — a worker replaced, a run that can never reach
 a terminal state — `backend/native/clear-hunt-route.mjs` is the door. An
 exported row carries no `hunt` field and `Admin.Load` thaws a `Hunt` status, so
