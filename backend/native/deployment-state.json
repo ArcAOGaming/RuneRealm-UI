@@ -1,20 +1,20 @@
 {
   "version": 1,
-  "deployedAt": "2026-09-03T21:48:20.134Z",
+  "deployedAt": "2026-09-04T12:13:25.526Z",
   "node": "https://hyperbeam.tylerw.ai",
   "owner": "DA9qhP25ZPz6MHIhO-7aNHDN3LsTAL7yCKYIkqr13Z8",
   "processes": {
-    "game": "swZHN8BCgOL0mPu8pwCdajDeKfxlamWzZTrfs1tRwQA",
-    "rune": "xa6UF3wF-Vq57JVa3SQZa9qxhfKrqcwUr577AudWAoI",
-    "amm": "4KcPdg-8hwf7lYDmRR72Kurgfy5k2PM2YNeXiDM_oeU",
-    "quote": "X81wLs7gNXAypYlCJe252hWTiBQm0NwL1W61e6fRsEk"
+    "game": "o_jsAb7YIdJvvWV8Cu3V0pa7QJU9IAteDU8dAP9w1ak",
+    "rune": "C9PFoYKFBCesa3EWfsKaEBfbA1ad0q9AzNJDk0QUtZ4",
+    "amm": "Jy1WAEU0C2wdO6NzmHKHyQYXn9fByhRjIGOFEMgaimI",
+    "quote": "aGC5GNngFoCt5Ros1269LyEPbJJP7HvzYH-jXt7zhIM"
   },
   "wiring": {
-    "runeMinter": "swZHN8BCgOL0mPu8pwCdajDeKfxlamWzZTrfs1tRwQA",
-    "gameRuneToken": "xa6UF3wF-Vq57JVa3SQZa9qxhfKrqcwUr577AudWAoI",
+    "runeMinter": "o_jsAb7YIdJvvWV8Cu3V0pa7QJU9IAteDU8dAP9w1ak",
+    "gameRuneToken": "C9PFoYKFBCesa3EWfsKaEBfbA1ad0q9AzNJDk0QUtZ4",
     "ammPair": [
-      "xa6UF3wF-Vq57JVa3SQZa9qxhfKrqcwUr577AudWAoI",
-      "X81wLs7gNXAypYlCJe252hWTiBQm0NwL1W61e6fRsEk"
+      "C9PFoYKFBCesa3EWfsKaEBfbA1ad0q9AzNJDk0QUtZ4",
+      "aGC5GNngFoCt5Ros1269LyEPbJJP7HvzYH-jXt7zhIM"
     ]
   },
   "build": "passed",
