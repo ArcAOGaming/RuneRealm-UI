@@ -3426,7 +3426,7 @@ local function run(base, req)
     ok("the leaderboard has rows to check", type(board) == "table" and #board > 0,
        type(board) == "table" and #board or type(board))
     if type(board) == "table" and #board > 0 then
-      ok("a leaderboard row carries the whole companion",
+      ok("a leaderboard row carries the companion its card draws",
          type(board[1].monster) == "table" and board[1].monster.moves ~= nil,
          type(board[1].monster))
       ok("with its next level threshold", board[1].monster.nextLevelExp ~= nil,

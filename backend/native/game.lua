@@ -4318,20 +4318,60 @@ end
 --- was already cut to fifty to avoid -- a caller asking for ten thousand rows
 --- would have sorted and cloned ten thousand companions to answer one message.
 --- The published key is unaffected: it asks for fifty and gets fifty.
+--- The companion a standings row actually draws.
+---
+--- `MonsterCard` in `bare` mode -- and `bare` IS the leaderboard, its own
+--- comment says so -- renders the portrait, the name, the faction, the element
+--- and the moves. It does not render attack, defense, speed, health, energy,
+--- happiness or experience. Those are things you ACT on, and none of those
+--- actions exist on a stranger's row.
+---
+--- Publishing them anyway was the most expensive thing in the process. Measured
+--- with `run-profile.sh` against a 51-account table: a Monster.Feed cost 285 ms,
+--- and 135 ms of that was building this board. NOT the bytes -- publishing
+--- 30 kB of board versus 2 B measured 284 ms against 281 ms, which is nothing.
+--- It was the fifty `Battle.clone` calls, on every one of the thirty-five
+--- actions that mark `aggregates` dirty.
+---
+--- Worse, the clone carried ENERGY and HAPPINESS, so feeding a berry changed
+--- the published board and no cache could ever have helped. Projecting instead
+--- of cloning fixes the cost and the volatility together: a row now moves only
+--- when the standings do.
+local function leaderboardCard(m)
+  local entry = monsterIndexEntry(m.entryNo)
+  return {
+    entryNo = m.entryNo,
+    entryKey = (entry and entry.entryKey) or m.entryKey,
+    name = (m.nameMode ~= "custom" and entry and (entry.name or entry.workingName)) or m.name,
+    elementType = (entry and entry.affinity) or m.elementType,
+    evolutionStage = entry and entry.stage or m.evolutionStage,
+    faction = m.faction,
+    level = int(m.level, 0),
+    -- Derived from level rather than stored, so it costs one call and adds no
+    -- volatility: a threshold only moves when the level does, which is a
+    -- standings change anyway.
+    nextLevelExp = C.requiredExp(int(m.level, 0)),
+    image = m.image,
+    sprite = m.sprite,
+    -- `compactMoves` builds and returns a new table rather than editing the one
+    -- it is handed, so this may read the live roster's moves directly.
+    moves = Battle.compactMoves(m.moves),
+  }
+end
+
 local function leaderboard(limit)
   ensureAggregates()
   local want = math.min(limit or 50, AGGREGATE_KEEP)
   local out = {}
   -- `LeaderboardTop` is already in rank order, so this touches `want` accounts
-  -- rather than every account. The full record is fetched only for the rows
-  -- that actually make the board: fifty lookups, not a walk, and the deep clone
-  -- is still paid only by the rows published.
+  -- rather than every account: fifty lookups, not a walk. The row's companion
+  -- is PROJECTED rather than cloned -- see `leaderboardCard` -- because the
+  -- clone was 135 ms of every write and carried fields the board never draws.
   for i = 1, math.min(want, #LeaderboardTop) do
     local ranked = LeaderboardTop[i]
     local p = Players[ranked.id]
     if p and p.monster then
-      local m = forClient(Battle.clone(p.monster))
-      m.nextLevelExp = C.requiredExp(m.level or 0)
+      local m = leaderboardCard(p.monster)
       out[#out + 1] = {
         address = ranked.id,
         faction = p.faction,
