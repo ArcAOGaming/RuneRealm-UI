@@ -56,3 +56,6 @@ undefined/
 # Soak results. The finding goes in a doc; the raw run is machine-local and
 # there is one of these per experiment.
 backend/native/battle-fleet/hblab/soak-*.json
+
+# End-to-end hunt verification scratch
+.verify/
