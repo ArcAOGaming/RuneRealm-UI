@@ -45,9 +45,25 @@ Still worth doing later, and cheap: ack and release could ride on the next
 message to that worker instead of each taking a hop of their own, which would
 take a battle from six hops to four without changing a single guarantee.
 
-**Not yet live:** the game publishes
-`battlefleet = {"enabled":false,"workers":[]}`, so battles run in the monolith
-until `configure:battle-fleet` seals a manifest.
+**LIVE from 2026-09-04.** Sealed into
+`o_jsAb7YIdJvvWV8Cu3V0pa7QJU9IAteDU8dAP9w1ak` as three `lua@5.3a` workers
+(`wOvfPH7n…`, `0o_CK0uE…`, `BigBDSmJ…`). Until then the game published
+`battlefleet = {"enabled":false,"workers":[]}` and every arena battle ran in the
+monolith.
+
+Worth being precise about what that bought, because it is not latency. An
+individual battle got SLOWER — six hops it did not pay before. What it removes
+is serialisation, and the ceiling has moved since this table was written: the
+scheduler's 2.7 assignments/s per process was an inline bundler upload and is
+patched, so **compute is the constraint now**, and every uncomputed compute for
+one process funnels through a single `dev_process_worker:compute_group/3`.
+Concurrent arena battles queued behind each other on the authority.
+
+The larger effect is the published map. A slot costs the size of the WHOLE
+published map, five times over, whatever the handler did — so a battle round in
+the monolith paid for every `player-<address>` key, which is O(wallets ever
+seen). On a worker with bounded state it pays almost nothing. That is the same
+reason hunt does not degrade with the player count and the arena did.
 
 ## 2. The default fleet is half Rust
 
