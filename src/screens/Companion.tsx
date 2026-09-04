@@ -425,10 +425,15 @@ function CompanionCard({ monster, player }: { monster: Monster; player: Player }
           'focus-visible:outline focus-visible:outline-2 focus-visible:outline-element',
         )}
       >
-        {/* Height in, width out. The wrapper is only as wide as the card ends
-            up being, so the hover chip lands on the card's own corner rather
-            than on the corner of whatever space the column had spare. */}
-        <span className="relative block h-full">
+        {/* Height in, width out — but never wider than the column.
+
+            `max-w-full` is the half that was missing. The card is sized from
+            the height the page hands it, and at a wide-but-short window that
+            width came out larger than the panel: 705px of card in a 664px
+            panel, with `overflow-hidden` quietly taking 20px off each side. The
+            first thing you lose is the right edge of the side panel — the
+            frame, the bolts, and the last character of every meter. */}
+        <span className="relative block h-full max-w-full">
           <CardPreview
             monster={monster}
             inventory={player.inventory}

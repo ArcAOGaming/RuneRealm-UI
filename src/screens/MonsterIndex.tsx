@@ -152,11 +152,25 @@ function EntryTile({ entry, status, copies, disabled, selected, onSelect }: {
         {disabled ? 'sealed' : status === 'owned' ? `${copies} owned` : status === 'seen' ? 'seen' : 'unknown'}
       </Badge>
     </div>
-    <div className={cx('mt-3 grid h-40 place-items-center overflow-hidden border border-edge/35 bg-void/45', status === 'seen' && 'grayscale')}>
+    {/*
+      `relative` + an absolutely positioned portrait, NOT `place-items-center`.
+
+      `h-full` on a grid item only means anything when the item is stretched.
+      Centred, the row is treated as indefinite, `height: 100%` quietly computes
+      to `auto`, and the portrait takes its intrinsic 320x448 ratio from the
+      width it was given: 256px of creature in a 160px box, with `object-contain`
+      doing nothing because the BOX is the wrong size and `overflow-hidden`
+      taking the difference off the bottom. Every portrait on this page was
+      missing its lower third.
+
+      Out of flow against a `relative` parent, `inset-0` is a definite box and
+      `object-contain` is measured against the right thing.
+    */}
+    <div className={cx('relative mt-3 h-40 overflow-hidden border border-edge/35 bg-void/45', status === 'seen' && 'grayscale')}>
       {art?.portrait ? <img src={art.portrait} alt="" className={cx(
-        'h-full w-full object-contain [image-rendering:pixelated] transition-all',
+        'absolute inset-0 h-full w-full object-contain [image-rendering:pixelated] transition-all',
         status === 'seen' ? 'opacity-45' : 'opacity-100 group-hover:scale-105',
-      )} /> : <div className="grid place-items-center text-faint/35"><Lock className="h-9 w-9" /><Paw className="mt-2 h-12 w-12" /></div>}
+      )} /> : <div className="grid h-full place-items-center text-faint/35"><Lock className="h-9 w-9" /><Paw className="mt-2 h-12 w-12" /></div>}
     </div>
     <div className="mt-3">
       <h2 className={cx('truncate text-base font-semibold', status === 'unseen' ? 'text-faint' : 'text-ink')}>

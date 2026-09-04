@@ -137,7 +137,13 @@ function Entrance() {
               : null;
 
   return (
-    <div className="mx-auto max-w-2xl animate-rise">
+    /* `my-auto` centres it in the fitted viewport. The arena owns the whole
+       screen height (see `fitted` in Shell), and a content-sized panel in a
+       flex column sits at the very top of it with a third of a screen of empty
+       void underneath — which reads as a page that failed to finish loading
+       rather than as one thing to decide. Inert below `lg`, where the page
+       scrolls like any other. */
+    <div className="mx-auto max-w-2xl animate-rise lg:my-auto">
       <Panel className="p-8 text-center" glow>
         <Sword className="mx-auto h-9 w-9 text-element" />
         <h1 className="mt-4 text-xl font-semibold">Enter the arena</h1>
@@ -411,7 +417,7 @@ function FleetBattleRecovery() {
         : 'The assigned worker is opening your battle. This page is reading its published cache only.';
 
   return (
-    <div className="mx-auto max-w-lg animate-rise">
+    <div className="mx-auto max-w-lg animate-rise lg:my-auto">
       <Panel className="p-8 text-center" glow>
         <Spinner className="mx-auto h-8 w-8 text-element" />
         <h1 className="mt-4 text-lg font-semibold">
@@ -456,7 +462,7 @@ function AwaitingChallenger() {
   }, { intervalMs: PVP_POLL_MS, maxIntervalMs: 20_000, enabled: !taken });
 
   return (
-    <div className="mx-auto max-w-lg animate-rise">
+    <div className="mx-auto max-w-lg animate-rise lg:my-auto">
       <Panel className="p-8 text-center" glow>
         <Spinner className="mx-auto h-8 w-8 text-element" />
         <h1 className="mt-4 text-lg font-semibold">

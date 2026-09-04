@@ -64,6 +64,22 @@ export function mountGame(
   opts: { data?: object; maxZoom?: number; onScale?: (zoom: number) => void } = {},
 ): Mounted {
   LIVE.get(parent)?.destroy(true);
+  /*
+    And then sweep the element, because that destroy is a REQUEST.
+
+    `Game.destroy()` sets `pendingDestroy` and does the actual teardown at the
+    end of the next game step — so a game whose loop has already stopped never
+    reaches it, and its canvas stays in the DOM for good. Under StrictMode
+    (cleanup and re-mount inside one tick) that is the normal path, not the
+    edge case: the companion room came out of it holding two 762x381 canvases,
+    the second parked below the first inside an `overflow-hidden` box where
+    nobody could see it, with a second WebGL context and a second rAF loop
+    behind it.
+
+    Anything still here belongs to a game that has been asked to leave. The new
+    one appends its own canvas below.
+  */
+  for (const stale of [...parent.querySelectorAll('canvas')]) stale.remove();
 
   const game = new Phaser.Game({
     type: Phaser.AUTO,
