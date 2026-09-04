@@ -67,6 +67,13 @@ a working second implementation of the protocol and as the A/B arm. Covered by
 `mixed-runtime-contract.test.mjs`, "the default plan is three Lua workers and no
 Rust".
 
+**Residual, fixed 2026-09-04.** `deploy-workers.mjs` kept its own `?? 2` in the
+guard that resolves the Rust WASM image, and that guard runs BEFORE the fleet is
+planned. So a deploy that asked for nothing still built and published a Rust
+image to Arweave, then stood up three Lua workers that would never run it. Both
+places now read `DEFAULT_BATTLE_FLEET_RUST` from `runtime.mjs`, which is the
+only file that decides the fleet's shape.
+
 ## 3. Hunt is split, and it earns it -- but nobody has counted its actions
 
 **Rule:** fan out only when the session has enough direct actions to amortise

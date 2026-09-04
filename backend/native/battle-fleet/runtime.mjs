@@ -7,6 +7,18 @@ export const BATTLE_RUNTIMES = Object.freeze([
 
 const PROCESS_ID = /^[A-Za-z0-9_-]{43}$/;
 
+/**
+ * The fleet's shape when a deploy does not ask for one.
+ *
+ * Exported because `deploy-workers.mjs` has to know the Rust count BEFORE it
+ * can plan the fleet — it resolves the WASM image first — and it used to carry
+ * its own `?? 2`. That was the old default, so an unset `BATTLE_FLEET_RUST`
+ * built and published a Rust image to Arweave that no worker in the resulting
+ * 3-Lua fleet would ever run.
+ */
+export const DEFAULT_BATTLE_FLEET_LUA = 3;
+export const DEFAULT_BATTLE_FLEET_RUST = 0;
+
 function count(value, name, fallback) {
   const parsed = Number(value === undefined ? fallback : value);
   if (!Number.isSafeInteger(parsed) || parsed < 0 || parsed > 64) {
@@ -25,8 +37,8 @@ export function battleWorkerSpecs(env = process.env) {
   // working second implementation of the protocol and as the A/B arm; it is
   // opt-in now, by setting BATTLE_FLEET_RUST explicitly, and a deploy that does
   // not ask for it does not get it.
-  const lua = count(env.BATTLE_FLEET_LUA, 'BATTLE_FLEET_LUA', 3);
-  const rust = count(env.BATTLE_FLEET_RUST, 'BATTLE_FLEET_RUST', 0);
+  const lua = count(env.BATTLE_FLEET_LUA, 'BATTLE_FLEET_LUA', DEFAULT_BATTLE_FLEET_LUA);
+  const rust = count(env.BATTLE_FLEET_RUST, 'BATTLE_FLEET_RUST', DEFAULT_BATTLE_FLEET_RUST);
   const total = lua + rust;
   if (total < 1 || total > 64) {
     throw new Error('The mixed battle fleet must contain 1 to 64 workers.');

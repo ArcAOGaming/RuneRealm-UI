@@ -13,7 +13,8 @@ import { resolveRustImageId } from './image.mjs';
 import { httpFailureSummary } from './http-error.mjs';
 import { workerReadinessError } from './readiness.mjs';
 import {
-  LUA_BATTLE_RUNTIME, RUST_BATTLE_RUNTIME, battleFleetComposition, battleWorkerSpecs,
+  DEFAULT_BATTLE_FLEET_RUST, LUA_BATTLE_RUNTIME, RUST_BATTLE_RUNTIME,
+  battleFleetComposition, battleWorkerSpecs,
 } from './runtime.mjs';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
@@ -40,7 +41,12 @@ const gameProcess = process.env.BATTLE_GAME_PROCESS || '';
 // exactly those bytes. Set BATTLE_RUST_IMAGE_ID to pin a known image; it is
 // still verified against the build.
 const deployEnv = { ...process.env };
-if (Number(deployEnv.BATTLE_FLEET_RUST ?? 2) > 0 && !deployEnv.BATTLE_RUST_IMAGE_ID) {
+// The default comes from `runtime.mjs`, which is the only place that decides
+// the fleet's shape. This line carried its own `?? 2` long after that default
+// became 0, so a deploy that asked for nothing published a Rust image to
+// Arweave and then built a fleet with no Rust worker in it.
+if (Number(deployEnv.BATTLE_FLEET_RUST ?? DEFAULT_BATTLE_FLEET_RUST) > 0
+    && !deployEnv.BATTLE_RUST_IMAGE_ID) {
   const keyfile = process.env.HB_WALLET || path.join(ROOT, 'arweave-wallet-DA9qhP25.json');
   const { imageId } = await resolveRustImageId({
     node,
