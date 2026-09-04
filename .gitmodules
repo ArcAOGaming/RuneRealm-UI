@@ -10,3 +10,6 @@
 [submodule "RuneRealm-Assets"]
 	path = RuneRealm-Assets
 	url = git@github-ethan:ArcAOGaming/RuneRealm-Assets.git
+[submodule "RuneRealm-Infra"]
+	path = RuneRealm-Infra
+	url = git@github.com:ArcAOGaming/RuneRealm-Infra.git
