@@ -262,24 +262,59 @@ function tradeIntelligence(player, view) {
   const needs = [];
   const excess = [];
   const arbitrage = [];
+
+  /*
+    The book with this actor's own orders taken out of it.
+
+    `view.market[item].bestAsk` is the WHOLE book, and this actor is in it. Once
+    its own sell was the best ask, `needs` concluded that the cheapest source of
+    an item was itself and `goods_take` placed a buy at exactly that price — the
+    process refused it as self-trading, seven times across five wallets in the
+    2026-09-04 soak, and the verifier could not attribute it to concurrency
+    because it was not concurrency. A price you are not allowed to trade against
+    is not a price, so it does not belong in the decision at all.
+  */
+  const others = (view.orders ?? []).filter((order) => order.account !== address);
+  const bestFrom = (item, side) => {
+    const prices = others
+      .filter((order) => order.item === item && order.side === side)
+      .map((order) => Number(order.price))
+      .filter((price) => price > 0);
+    if (!prices.length) return 0;
+    return side === 'sell' ? Math.min(...prices) : Math.max(...prices);
+  };
+
   for (const item of goodsIds) {
     const held = player.inventory?.[item] ?? 0;
     const target = targetHolding(player, item);
     const stats = view.market?.[item] ?? {};
     const desk = view.desks?.[item];
+    /*
+      A desk with an empty shelf is not a source, however good its price looks.
+      `ask` stays quoted while `stock` is zero, so the price alone said "buy
+      here" and the buy came back "Desk is out of stock" — eleven times across
+      seven wallets. `pause` was already respected; stock was not.
+    */
+    const deskStock = Number(desk?.stock ?? 0);
+    const deskRoom = Number(desk?.stockCap ?? 0) - deskStock;
+    const canBuyFromDesk = !desk?.pause?.buy && deskStock > 0;
+    const canSellToDesk = !desk?.pause?.sell && deskRoom > 0
+      && Number(desk?.goldReserve ?? 0) >= Number(desk?.bid ?? 0);
     if (held < target) {
-      const p2p = Number(stats.bestAsk ?? 0);
-      const npc = !desk?.pause?.buy ? Number(desk?.ask ?? 0) : 0;
+      const p2p = bestFrom(item, 'sell');
+      const npc = canBuyFromDesk ? Number(desk?.ask ?? 0) : 0;
       const cheapest = [p2p, npc].filter((price) => price > 0).sort((a, b) => a - b)[0];
-      if (cheapest && gold > cheapest) needs.push({ item, held, target, p2p, npc, cheapest });
+      if (cheapest && gold > cheapest) {
+        needs.push({ item, held, target, p2p, npc, cheapest, deskStock });
+      }
     }
     if (held > target) {
       excess.push({ item, held, target, quantity: held - target, stats, desk });
     }
-    const bestAsk = Number(stats.bestAsk ?? 0);
-    const bestBid = Number(stats.bestBid ?? 0);
-    const npcBid = !desk?.pause?.sell ? Number(desk?.bid ?? 0) : 0;
-    const npcAsk = !desk?.pause?.buy ? Number(desk?.ask ?? 0) : 0;
+    const bestAsk = bestFrom(item, 'sell');
+    const bestBid = bestFrom(item, 'buy');
+    const npcBid = canSellToDesk ? Number(desk?.bid ?? 0) : 0;
+    const npcAsk = canBuyFromDesk ? Number(desk?.ask ?? 0) : 0;
     if (bestAsk > 0 && npcBid > bestAsk && gold > bestAsk + 1) {
       arbitrage.push({ item, direction: 'p2p-to-npc', buy: bestAsk, sell: npcBid, desk });
     }
@@ -324,8 +359,10 @@ async function economicAction(action, player, view, intel) {
     const npcNeeds = intel.needs.filter(({ npc }) => npc > 0);
     if (npcNeeds.length) {
       const opportunity = choose(npcNeeds.sort((a, b) => a.npc - b.npc).slice(0, 2));
+      // Never ask for more than is on the shelf: a desk holding one refuses a
+      // request for three outright rather than filling what it can.
       const quantity = Math.max(1, Math.min(3, opportunity.target - opportunity.held,
-        Math.floor(intel.gold / opportunity.npc)));
+        Math.floor(intel.gold / opportunity.npc), opportunity.deskStock ?? 3));
       const updated = await api.tradeGameShop('buy', opportunity.item, quantity);
       return result('shop.buy', updated, { item: opportunity.item, quantity,
         expectedUnitPrice: opportunity.npc, counterparty: 'NPC' });

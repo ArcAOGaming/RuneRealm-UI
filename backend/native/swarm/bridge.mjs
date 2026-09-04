@@ -79,7 +79,18 @@ export function makeBridge({ api, address, result, random }) {
    */
   async function withdraw(player, amount) {
     const updated = await api.withdrawRune(amount);
-    return result('rune.withdraw', updated, {
+    /*
+      Keep the player we came in with when the reply does not carry one.
+
+      `withdrawRune` normally answers with the account, but when the token's
+      confirmation read times out it falls through to a status-only verdict —
+      deliberately, because reporting a success that did not happen is the worse
+      error. That verdict is the truth about the WITHDRAWAL and is not a player,
+      so passing it through as one printed `L- undefinedr undefinedbox` for every
+      withdraw in the 2026-09-04 soak and threw away the actor's state for that
+      tick. The withdrawal detail below is unaffected either way.
+    */
+    return result('rune.withdraw', updated?.address ? updated : player, {
       amount,
       reference: updated?.withdrawal?.reference ?? null,
       state: updated?.withdrawal?.state ?? 'pending',
@@ -119,13 +130,35 @@ export function makeBridge({ api, address, result, random }) {
     const funded = [];
     let { base, quote } = await credited();
 
-    const wantBase = 2n;
+    /*
+      Enough to actually mint a share, not a fixed two units.
+
+      `Amm.AddLiquidity` mints `min(base*total/reserveBase, quote*total/reserveQuote)`
+      and then consumes only the pool-ratio portion, leaving the remainder
+      credited. Two base units against a pool that has grown rounds that
+      quotient to zero, so the add is refused with "Amounts are too small to
+      mint a share" — fourteen times across eight wallets in the 2026-09-04
+      soak — and the leftover credit guarantees the same actor tries the same
+      doomed amount on its next tick.
+
+      `reserveBase / totalShares` is the base that mints exactly one share, so
+      that is the floor. Doubling it leaves room for the integer division to
+      round against us and still mint.
+    */
+    const totalShares = big(pool.totalShares);
+    const reserveBase = big(pool.reserveBase);
+    const reserveQuote = big(pool.reserveQuote);
+    let wantBase = 2n;
+    if (totalShares > 0n && reserveBase > 0n) {
+      const perShare = (reserveBase + totalShares - 1n) / totalShares;
+      if (perShare * 2n > wantBase) wantBase = perShare * 2n;
+    }
     const quoteUnit = 10n ** BigInt(Number(pool.quoteDenomination ?? 6));
     let wantQuote = wantBase * quoteUnit;
-    if (big(pool.reserveBase) > 0n && big(pool.reserveQuote) > 0n) {
+    if (reserveBase > 0n && reserveQuote > 0n) {
       // Match the pool. Excess would simply stay credited and nothing would
       // break, but matching means the share reflects what was deposited.
-      wantQuote = (wantBase * big(pool.reserveQuote)) / big(pool.reserveBase) + 1n;
+      wantQuote = (wantBase * reserveQuote) / reserveBase + 1n;
     }
 
     await topUpQuote(wantQuote, quote, funded);
@@ -149,6 +182,30 @@ export function makeBridge({ api, address, result, random }) {
         reason: 'transfer sent; pool has not credited it yet',
         base: base.toString(), quote: quote.toString(), funded,
       });
+    }
+
+    /*
+      Ask the same question the contract will, before spending a message on it.
+
+      Credited residue accumulates precisely because an add consumes only the
+      ratio portion, so an actor that once had too little keeps having too
+      little. Predicting the mint turns a refusal that reads as a fault into a
+      skip that states its reason, and leaves the credit for a tick when the
+      deposit above has made it big enough.
+    */
+    if (totalShares > 0n && reserveBase > 0n && reserveQuote > 0n) {
+      const byBase = (base * totalShares) / reserveBase;
+      const byQuote = (quote * totalShares) / reserveQuote;
+      const shares = byBase < byQuote ? byBase : byQuote;
+      const usedBase = (shares * reserveBase) / totalShares;
+      const usedQuote = (shares * reserveQuote) / totalShares;
+      if (shares <= 0n || usedBase <= 0n || usedQuote <= 0n) {
+        return result('amm.liquidity.skipped', player, {
+          reason: 'credited amounts would not mint a share yet',
+          base: base.toString(), quote: quote.toString(),
+          totalShares: totalShares.toString(), funded,
+        });
+      }
     }
 
     const added = await api.ammAddLiquidity(base.toString(), quote.toString());

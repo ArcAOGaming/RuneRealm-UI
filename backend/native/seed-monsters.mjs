@@ -565,6 +565,21 @@ if (problems.length) {
 } else if (unchecked.length) {
   console.log(`\nEvery wallet that could be read is sworn to its plan. `
     + `${unchecked.length} went unchecked; re-run to confirm them.`);
+} else if (skipped.length) {
+  /*
+    Green, but not whole — and the last line has to say so.
+
+    A wallet whose oath is already wrong is skipped rather than blocking the
+    other forty-nine (see the note above), and swearing cannot be undone. That
+    is a deliberate outcome, not a clean one: `fleet:prepare && npm run swarm`
+    would otherwise print an unqualified success over a population the swarm is
+    about to refuse to run part of.
+  */
+  console.log(`\nEvery wallet this run seeded is sworn to its plan. `
+    + `${skipped.length} left out and NOT prepared: ${skipped.join(', ')}.`);
+  console.log('  Those report blocked.faction-plan and sit out; a PvP pair with');
+  console.log('  one of them in it does not duel. Only a redeploy clears it.');
+  console.log('The rest of the fleet can fly: npm run swarm -- --live --cycles 10');
 } else {
   console.log('\nEvery wallet is sworn to its plan and holding what it should.');
   console.log('The fleet can fly: npm run swarm -- --live --cycles 10');

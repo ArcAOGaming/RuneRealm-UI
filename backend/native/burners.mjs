@@ -75,6 +75,34 @@ function writeWallet(name) {
   return { name, file, jwk, address };
 }
 
+/**
+ * Retire one burner and leave a fresh, unsworn key in its place.
+ *
+ * Swearing is irreversible: a wallet that ends up in the wrong faction — a
+ * migration carrying an old oath across a redeploy is how it happens — can
+ * never be corrected on that process. `seed-monsters` skips it, the swarm
+ * reports `blocked.faction-plan`, and the PvP pair it belongs to stops duelling
+ * for as long as the key exists.
+ *
+ * The address is the only thing wrong with it, so the fix is a new address. The
+ * old key is archived rather than deleted: it still owns whatever it holds on
+ * every process it has ever played, and this repository does not get to destroy
+ * that on the operator's behalf.
+ */
+export function retireBurner(name) {
+  if (!/^burner-\d+$/.test(name)) throw new Error(`not a burner name: ${name}`);
+  const file = path.join(DIR, `${name}.json`);
+  if (!fs.existsSync(file)) throw new Error(`${name} does not exist`);
+  const attic = path.join(DIR, 'retired');
+  fs.mkdirSync(attic, { recursive: true });
+  const stamp = new Date().toISOString().replace(/[:.]/g, '-');
+  const archived = path.join(attic, `${name}.${stamp}.json`);
+  const previous = jwkToAddress(JSON.parse(fs.readFileSync(file, 'utf8')));
+  fs.renameSync(file, archived);
+  const made = writeWallet(name);
+  return { name, previous, address: made.address, archived };
+}
+
 export function makeBurners(value) {
   const count = validCount(value);
   fs.mkdirSync(DIR, { recursive: true });
@@ -185,6 +213,15 @@ if (cmd === 'make') {
     throw new Error(`Expected burner-01 through burner-${String(arg).padStart(2, '0')}; found ${selected.length}`);
   }
   await unlockBurners(selected.map((b) => b.address));
+} else if (cmd === 'retire') {
+  if (!arg) throw new Error('usage: burners.mjs retire burner-02');
+  const { previous, address, archived } = retireBurner(arg);
+  console.log(`\n${arg} retired.`);
+  console.log(`  was  ${previous}`);
+  console.log(`  now  ${address}`);
+  console.log(`  old key archived at ${archived}`);
+  console.log('\nIt is unsworn and locked on every process. Next:');
+  console.log('  npm run swarm:unlock && npm run seed:monsters');
 } else if (cmd === 'list' || !cmd) {
   const all = listBurners();
   const { pid, node } = liveProcess();
@@ -194,6 +231,6 @@ if (cmd === 'make') {
   }
   for (const b of all) console.log(`  ${b.name}  ${b.address}`);
 } else {
-  console.error('usage: burners.mjs [make <n> [--no-unlock] | ensure <total> [--unlock] | unlock [total] | list]');
+  console.error('usage: burners.mjs [make <n> [--no-unlock] | ensure <total> [--unlock] | unlock [total] | retire <name> | list]');
   process.exit(1);
 }
