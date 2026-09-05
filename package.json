@@ -16,6 +16,7 @@
     "test:lua:local": "node backend/native/run-local-game-test.mjs",
     "test:minify": "node --test backend/native/lua-minify.test.mjs",
     "test:hunt": "node backend/native/run-local-hunt-test.mjs",
+    "test:economy:local": "node backend/native/run-local-economy-test.mjs",
     "profile:lua:local": "node backend/native/run-local-profile.mjs",
     "deploy:process": "npm run monster-index:check && node backend/native/deploy.mjs",
     "deploy:hunt": "npm run monster-index:check && node backend/native/deploy-hunt.mjs",

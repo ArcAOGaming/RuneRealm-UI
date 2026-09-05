@@ -152,9 +152,16 @@ local function run(base, req)
   ok("alice joins Inferno Blades", r and r.faction == "Inferno Blades", errOf(r))
   ok("joining does not create per-wallet Rune", r and (r.inventory.rune or 0) == 0,
      r and json.encode(r.inventory))
-  -- Three for the starter satchel and three for the companion, because
-  -- swearing does both in the one turn.
-  ok("joining seeds starter loot boxes", r and #r.lootboxes == 6, r and #r.lootboxes)
+  -- THREE, from C.STARTER_LOOTBOXES, once.
+  --
+  -- It used to be six: the seeding block granted the constant and then the
+  -- inline adopt branch a few lines later granted three more, so every wallet
+  -- got a double satchel. The live process showed it plainly -- Faction.Join
+  -- sourced 265 of each berry (53 x 5, right) against 318 tier-1 boxes
+  -- (53 x 6). Unbounded in wallet count, and berries monetise into Gold at the
+  -- NPC desk, which is the contract's only net Gold faucet.
+  ok("joining seeds starter loot boxes once, not twice",
+     r and #r.lootboxes == 3, r and #r.lootboxes)
   ok("and hands over the companion in the same turn",
      r and r.monster ~= nil and r.adopted == true, errOf(r))
   -- The local suite runs the process in its explicit pre-launch testing mode.
@@ -177,7 +184,8 @@ local function run(base, req)
   ok("swearing already produced a companion", r and r.monster ~= nil, errOf(r))
   ok("companion matches faction element", r and r.monster.elementType == "fire", r and r.monster.elementType)
   ok("companion starts at home", r and r.monster.status.type == "Home", r and r.monster.status.type)
-  ok("swearing grants loot boxes", r and #r.lootboxes == 6, r and #r.lootboxes)
+  ok("swearing grants one starter satchel, not two",
+     r and #r.lootboxes == 3, r and #r.lootboxes)
   ok("and it is in the roster, not loose", r and r.activeId
      and r.monsters and r.monsters[r.activeId] ~= nil, r and r.activeId)
   ok("and the oath is recorded as spent", r and r.adopted == true, r and tostring(r.adopted))
@@ -235,7 +243,13 @@ local function run(base, req)
   local runesBefore = send(ALICE, { Action = "User.Info" }).inventory.rune or 0
   r = send(ALICE, { Action = "Monster.Quest" })
   ok("quest starts", r and r.monster.status.type == "Quest", errOf(r))
-  ok("quest costs a Rune", r and (r.inventory.rune or 0) == runesBefore - 1, r and r.inventory.rune)
+  -- v2: FREE. Rune stopped doing the clock's job -- happiness already caps a
+  -- companion at four actions an hour, and charging on top meant zero Rune was
+  -- zero gameplay with no route back. What still costs Rune is ADVANCEMENT.
+  -- Restoring `cost` in C.ACTIVITIES.quest restores the charge; the handler
+  -- keeps the branch. See ECONOMY_V2.md §6.
+  ok("a quest costs no Rune", r and (r.inventory.rune or 0) == runesBefore,
+     r and r.inventory.rune)
 
   T = T + 3600 * 1000
   local boxesBefore = #send(ALICE, { Action = "User.Info" }).lootboxes
@@ -289,19 +303,36 @@ local function run(base, req)
 
   -- Levelling costs Rune ----------------------------------------------------
   --
-  -- One quarter of the level being ENTERED, rounded up. These assert the
-  -- boundaries of each band rather than a single value, because an off-by-one
-  -- in the rounding is the whole risk: `ceil(level/4)` and `level//4` agree
-  -- everywhere except exactly the multiples of four.
+  -- v2: ceil(L^2/16), not ceil(L/4). The core loop is free now, so levelling is
+  -- one of the few things Rune still buys — and `(L + 3) // 4` totalled sixty
+  -- Rune for the whole climb to 20, about five weeks of emission for what the
+  -- exp curve makes a multi-year artifact. See ECONOMY_V2.md §6.
+  --
+  -- The shape is what matters: flat and cheap while a new player is finding
+  -- their feet, steep exactly in the 14-20 band where a high-level companion
+  -- becomes worth owning and the market competes for one.
 
-  ok("levelling to 1 through 4 costs 1 rune",
-     C.levelUpCost(1) == 1 and C.levelUpCost(4) == 1, C.levelUpCost(4))
-  ok("levelling to 5 through 8 costs 2 rune",
-     C.levelUpCost(5) == 2 and C.levelUpCost(8) == 2, C.levelUpCost(8))
-  ok("levelling to 9 through 12 costs 3 rune",
-     C.levelUpCost(9) == 3 and C.levelUpCost(12) == 3, C.levelUpCost(12))
+  ok("levelling to 1 through 3 still costs 1 rune",
+     C.levelUpCost(1) == 1 and C.levelUpCost(3) == 1, C.levelUpCost(3))
+  ok("the early game stays cheap: level 8 costs 4",
+     C.levelUpCost(8) == 4, C.levelUpCost(8))
+  ok("level 12 costs 9", C.levelUpCost(12) == 9, C.levelUpCost(12))
+  ok("and it bites where the market is: level 20 costs 25",
+     C.levelUpCost(20) == 25, C.levelUpCost(20))
+  -- Monotonic, so no level is ever cheaper than the one before it.
+  do
+    local rising = true
+    for level = 2, 30 do
+      if C.levelUpCost(level) < C.levelUpCost(level - 1) then rising = false end
+    end
+    ok("the curve never goes backwards", rising)
+  end
   ok("the cost is an integer, not a float",
      math.type(C.levelUpCost(5)) == "integer", math.type(C.levelUpCost(5)))
+  -- Integer division throughout. `L*L/16` would be float division on Luerl and
+  -- 9.0 would be stored, and stay stored, forever after.
+  ok("and stays an integer at the steep end",
+     math.type(C.levelUpCost(20)) == "integer", math.type(C.levelUpCost(20)))
 
   -- A player who cannot pay is refused, and the refusal costs them NOTHING.
   -- The exp is the thing to watch: it is spent in the same handler, so a
@@ -1206,9 +1237,14 @@ local function run(base, req)
     -- and died at the token with "unknown action 'mint'". A test that pins the
     -- wrong spelling is worse than no test, because it defends the defect.
     ok("aimed at the token's own handler name",
-       mint and mint.action == "Mint"
-       and mint.recipient == WREN and mint.quantity == "10",
+       mint and mint.action == "Mint" and mint.recipient == WREN,
        mint and json.encode(mint))
+    -- ATOMS on the wire. Ten in-game Rune is ten million atoms at the token's
+    -- six decimals, and the token refuses anything that is not a whole
+    -- multiple -- so a mint request in whole units would be rejected there
+    -- after the balance had already been deducted here.
+    ok("asking for the amount in the token's own units",
+       mint and mint.quantity == "10000000", mint and mint.quantity)
     ok("carrying the withdrawal id, so a repeat is recognisable",
        mint and mint.reference ~= nil, mint and mint.reference)
     -- A self-declared sender is a forgery waiting to happen; the node attests
@@ -1252,30 +1288,41 @@ local function run(base, req)
         return json.decode(res.results.output.data)
       end
 
+      --- The token speaks in ATOMS, and this suite must speak what the sender
+      --- actually emits. Rune has six decimals outside the game and none
+      --- inside; the bridge is the only place the units meet. A test that sent
+      --- "10" here would be asserting against a message the token cannot
+      --- produce -- the exact class of mistake the run-id note in CLAUDE.md is
+      --- about.
+      local RUNE_ATOMS = 1000000
+      local function atoms(runes)
+        return string.format("%d", runes * RUNE_ATOMS)
+      end
+
       local forged = delivered(WREN, TOKEN,
-        { Action = "Rune.Minted", Reference = wid, Quantity = "10" })
+        { Action = "Rune.Minted", Reference = wid, Quantity = atoms(10) })
       ok("a wallet cannot forge the token's confirmation",
          errOf(forged) == "Not authorised", json.encode(forged))
 
       local impostor = delivered(SCHED, WREN,
-        { Action = "Rune.Minted", Reference = wid, Quantity = "10" })
+        { Action = "Rune.Minted", Reference = wid, Quantity = atoms(10) })
       ok("nor can a different process, even attested",
          errOf(impostor) == "Not authorised", json.encode(impostor))
 
       local mismatched = delivered(SCHED, TOKEN,
-        { Action = "Rune.Minted", Reference = wid, Quantity = "9" })
+        { Action = "Rune.Minted", Reference = wid, Quantity = atoms(9) })
       ok("a confirmation that disagrees on the amount is refused",
          errOf(mismatched) ~= nil, json.encode(mismatched))
 
       local settled = delivered(SCHED, TOKEN,
-        { Action = "Rune.Minted", Reference = wid, Quantity = "10" })
+        { Action = "Rune.Minted", Reference = wid, Quantity = atoms(10) })
       ok("the token settles its own withdrawal",
          settled and settled.withdrawal and settled.withdrawal.status == "minted",
          json.encode(settled))
 
       -- Deliveries repeat. The reference exists so the second is recognised.
       local again = delivered(SCHED, TOKEN,
-        { Action = "Rune.Minted", Reference = wid, Quantity = "10" })
+        { Action = "Rune.Minted", Reference = wid, Quantity = atoms(10) })
       ok("and a repeated confirmation changes nothing",
          again and again.unchanged == true, json.encode(again))
 
@@ -1312,13 +1359,13 @@ local function run(base, req)
         local before = held(DEPO)
 
         local forgedBurn = delivered(DEPO, TOKEN,
-          { Action = "Burn-Notice", Account = DEPO, Quantity = "5", Reference = "b1" })
+          { Action = "Burn-Notice", Account = DEPO, Quantity = atoms(5), Reference = "b1" })
         ok("a wallet cannot forge a burn notice",
            errOf(forgedBurn) == "Not authorised", json.encode(forgedBurn))
         ok("and forging one credits nothing", held(DEPO) == before, held(DEPO))
 
         local otherProcess = delivered(SCHED, DEPO,
-          { Action = "Burn-Notice", Account = DEPO, Quantity = "5", Reference = "b1" })
+          { Action = "Burn-Notice", Account = DEPO, Quantity = atoms(5), Reference = "b1" })
         ok("nor may a process that is not the token",
            errOf(otherProcess) == "Not authorised", json.encode(otherProcess))
 
@@ -1326,22 +1373,78 @@ local function run(base, req)
         -- rather than paid: an unpayable deposit stays visible, a double
         -- payment does not.
         local anonymous = delivered(SCHED, TOKEN,
-          { Action = "Burn-Notice", Account = DEPO, Quantity = "5" })
+          { Action = "Burn-Notice", Account = DEPO, Quantity = atoms(5) })
         ok("a burn notice with no reference is refused",
            errOf(anonymous) ~= nil, json.encode(anonymous))
         ok("and it credits nothing", held(DEPO) == before, held(DEPO))
 
+        -- QUARANTINED, not refused. Every case below describes Rune the token
+        -- has ALREADY destroyed: answering an error would leave no record at
+        -- all and the holder would be out their Rune with nothing to point
+        -- at. So the row is written `unresolved` and a human closes it.
         local nobody = delivered(SCHED, TOKEN,
-          { Action = "Burn-Notice", Account = "nope", Quantity = "5", Reference = "b9" })
-        ok("a burn notice naming no real account is refused",
-           errOf(nobody) ~= nil, json.encode(nobody))
+          { Action = "Burn-Notice", Account = "nope", Quantity = atoms(5), Reference = "b9" })
+        ok("a burn notice naming no real account is quarantined, not dropped",
+           nobody and nobody.deposit and nobody.deposit.status == "unresolved",
+           json.encode(nobody))
+        ok("and it credits nobody", held(DEPO) == before, held(DEPO))
 
         local zero = delivered(SCHED, TOKEN,
           { Action = "Burn-Notice", Account = DEPO, Quantity = "0", Reference = "b8" })
-        ok("a burn notice for nothing is refused", errOf(zero) ~= nil, json.encode(zero))
+        ok("a burn notice for nothing is quarantined",
+           zero and zero.deposit and zero.deposit.status == "unresolved", json.encode(zero))
+
+        -- Dust. The token refuses a fractional burn, so the only way to reach
+        -- this is the two processes disagreeing about the denomination -- the
+        -- one case that must never be rounded away, and the one case where a
+        -- human has to look before anybody is credited.
+        local dust = delivered(SCHED, TOKEN,
+          { Action = "Burn-Notice", Account = DEPO,
+            Quantity = string.format("%d", 5 * RUNE_ATOMS + 1), Reference = "b7" })
+        ok("a burn notice for a fraction of a Rune is quarantined",
+           dust and dust.deposit and dust.deposit.status == "unresolved", json.encode(dust))
+        ok("and a quarantined fraction credits nothing", held(DEPO) == before, held(DEPO))
+        ok("the quarantined row remembers exactly what arrived",
+           dust and dust.deposit and dust.deposit.atoms == 5 * RUNE_ATOMS + 1,
+           dust and dust.deposit and dust.deposit.atoms)
+
+        -- A repeat of a quarantined notice must not become a second row, or
+        -- the reference stops being an idempotency key for the case that most
+        -- needs one.
+        local dustAgain = delivered(SCHED, TOKEN,
+          { Action = "Burn-Notice", Account = DEPO,
+            Quantity = string.format("%d", 5 * RUNE_ATOMS + 1), Reference = "b7" })
+        ok("and a repeated quarantined notice is recognised",
+           dustAgain and dustAgain.unchanged == true, json.encode(dustAgain))
+
+        -- Closing one by hand: the mirror of Admin.SettleWithdrawal.
+        local stranger = send(DEPO, { Action = "Admin.SettleDeposit", DepositId = "b7" })
+        ok("only the owner may settle a quarantined deposit",
+           errOf(stranger) ~= nil, json.encode(stranger))
+        local settledDust = send(OWNER, {
+          Action = "Admin.SettleDeposit", DepositId = "b7", Amount = "5" })
+        ok("the owner credits the whole part of a quarantined deposit",
+           settledDust and settledDust.deposit
+             and settledDust.deposit.status == "credited"
+             and settledDust.deposit.amount == 5,
+           json.encode(settledDust))
+        ok("and the Rune arrives", held(DEPO) == before + 5, held(DEPO))
+        local twiceSettled = send(OWNER, {
+          Action = "Admin.SettleDeposit", DepositId = "b7", Amount = "5" })
+        ok("settling the same deposit twice pays once",
+           twiceSettled and twiceSettled.unchanged == true and held(DEPO) == before + 5,
+           json.encode(twiceSettled))
+        -- A row naming no usable wallet needs one supplied, and can be voided.
+        local voided = send(OWNER, {
+          Action = "Admin.SettleDeposit", DepositId = "b9", Outcome = "void",
+          Reason = "no such wallet" })
+        ok("an unresolvable deposit can be voided deliberately",
+           voided and voided.deposit and voided.deposit.status == "voided",
+           json.encode(voided))
+        before = held(DEPO)
 
         local credited = delivered(SCHED, TOKEN,
-          { Action = "Burn-Notice", Account = DEPO, Quantity = "5", Reference = "b1" })
+          { Action = "Burn-Notice", Account = DEPO, Quantity = atoms(5), Reference = "b1" })
         ok("the token's burn notice credits the player",
            credited and credited.deposit and credited.deposit.amount == 5,
            json.encode(credited))
@@ -1349,14 +1452,14 @@ local function run(base, req)
 
         -- The half that matters most. Delivery is not exactly-once.
         local twice = delivered(SCHED, TOKEN,
-          { Action = "Burn-Notice", Account = DEPO, Quantity = "5", Reference = "b1" })
+          { Action = "Burn-Notice", Account = DEPO, Quantity = atoms(5), Reference = "b1" })
         ok("a repeated burn notice is recognised", twice and twice.unchanged == true,
            json.encode(twice))
         ok("and does not pay twice", held(DEPO) == before + 5, held(DEPO))
 
         -- A different burn is a different deposit, same account.
         local second = delivered(SCHED, TOKEN,
-          { Action = "Burn-Notice", Account = DEPO, Quantity = "3", Reference = "b2" })
+          { Action = "Burn-Notice", Account = DEPO, Quantity = atoms(3), Reference = "b2" })
         ok("a second burn is credited on its own reference",
            second and second.deposit and second.deposit.amount == 3, json.encode(second))
         ok("and the total is right", held(DEPO) == before + 8, held(DEPO))
@@ -1371,7 +1474,7 @@ local function run(base, req)
             -- Mixed case exercises the same delivery shape a foreign
             -- process may emit. Dispatch, telemetry and dirty publication
             -- must all agree on the resolved canonical handler.
-            Action = "bUrN-NoTiCe", Account = DEPO, Quantity = "2", Reference = "b3",
+            Action = "bUrN-NoTiCe", Account = DEPO, Quantity = atoms(2), Reference = "b3",
           }, { ["scheduler-location"] = SCHED })
           local key = res["player-" .. DEPO]
           ok("a deposit republishes the depositor's own record",
@@ -1625,10 +1728,65 @@ local function run(base, req)
       local d = json.decode(res.results.output.data)
       paid[day] = d.dailyClaimed
     end
-    ok("a streak of 3 does not multiply global emission", paid[3].runes == 0,
-       paid[3] and paid[3].runes)
-    ok("a streak of 10 does not multiply global emission", paid[10].runes == 0,
-       paid[10] and paid[10].runes)
+    -- These used to assert `runes == 0` on every claim after the first, because
+    -- Rune was a single lump gated once per 30-day epoch. It is a DAILY DRIP
+    -- now, so a later claim paying something is correct and expected.
+    --
+    -- The invariant the two assertions existed to protect is untouched and is
+    -- what is pinned here instead: a STREAK MUST NOT MULTIPLY EMISSION. The
+    -- streak buys better crates (C.DAILY.streakTiers) and must never buy more
+    -- Rune, because emission is the one number the whole schedule rests on --
+    -- if coming back more often minted more, total supply would be
+    -- `rate x wallets x visits` and the halving schedule would mean nothing.
+    --
+    -- The walk above steps 20 hours at a time across ten claims -- 200 hours,
+    -- or 8.33 days -- while the streak climbs from 2 to 11. Accrual is per
+    -- calendar DAY, so some of those claims cross a day boundary and pay, and
+    -- some do not and are refused; what none of them may do is pay MORE
+    -- because the streak got longer.
+    local walked, walkedRunes = 0, 0
+    for day = 2, 11 do
+      if paid[day] then
+        walked = walked + 1
+        walkedRunes = walkedRunes + int(paid[day].runes or 0)
+      end
+    end
+    -- 200 hours is 8.33 days; at most 2 Rune can be owed for any one day, and
+    -- the first claim of the block already took day one.
+    ok("ten claims over 8.33 days pay for the days, not the visits",
+       walkedRunes > 0 and walkedRunes <= 9 * 2,
+       walkedRunes .. " Rune across " .. walked .. " claims")
+    -- The load-bearing half: the back of the walk has a streak three times the
+    -- front's and the same elapsed time per claim, so it may not pay more.
+    local early, late = 0, 0
+    for day = 2, 6 do early = early + int(paid[day] and paid[day].runes or 0) end
+    for day = 7, 11 do late = late + int(paid[day] and paid[day].runes or 0) end
+    ok("a streak of 10 does not pay more Rune than a streak of 3",
+       late <= early + 2, "early " .. early .. " vs late " .. late)
+    -- The streak's actual reward: better CRATES, on the ladder in
+    -- C.DAILY.streakTiers. Below 3 it is one tier-2 box; from 3 a tier-1 box
+    -- joins it; from 10 it becomes a single tier-3.
+    --
+    -- Tier 3 is the load-bearing one. No handler in the game had ever issued a
+    -- box above tier 2, so `scroll` -- whose loot-table row is gated at
+    -- `minBox 3` -- had no organic supply at all and tiers 3-5 were dead
+    -- config. This is the emitter, and being streak-gated it is metered by the
+    -- calendar rather than by how long somebody can leave a script running.
+    local function rarities(row)
+      local seen = {}
+      for _, box in ipairs((row and row.lootboxes) or {}) do
+        seen[#seen + 1] = int(box.rarity, 0)
+      end
+      table.sort(seen)
+      return table.concat(seen, ",")
+    end
+    ok("a streak of 2 pays the plain crate", rarities(paid[2]) == "2", rarities(paid[2]))
+    ok("a streak of 3 adds a second crate", rarities(paid[3]) == "1,2", rarities(paid[3]))
+    ok("a streak of 10 pays the tier-3 crate nothing else issues",
+       rarities(paid[10]) == "3", rarities(paid[10]))
+    ok("and the receipt reports the tier that actually arrived",
+       paid[10] and paid[10].lootboxRarity == 3, paid[10] and paid[10].lootboxRarity)
+
     ok("the streak keeps counting", paid[11].streak == 11, paid[11] and paid[11].streak)
     ok("offerings accumulate", paid[11].offerings == 11, paid[11] and paid[11].offerings)
 
@@ -1898,7 +2056,7 @@ local function run(base, req)
       if row.address == OPERATED then found = row break end
     end
     ok("the owner snapshot carries the complete compact roster",
-       found and found.inventory.rune == 23 and found.level == 6,
+       found and found.inventory.rune == 24 and found.level == 6,
        found and json.encode(found))
     ok("the owner snapshot carries battles, factions, metrics and audit",
        type(snapshot.battles) == "table" and #snapshot.factions == 4
@@ -3519,14 +3677,143 @@ local function run(base, req)
       Action = "Economy.Order.Place", Side = "buy", Item = "fire_berry",
       Price = "10", Quantity = "1",
     })
-    ok("self-trading is rejected", errOf(ownBid) ~= nil, json.encode(ownBid))
+    -- Crossing your OWN quote pulls the resting side and lets the new order
+    -- through. Refusing the whole thing was safe and hostile: a maker moving a
+    -- quote got an error and had to cancel and re-place, paying the creation
+    -- cost twice and losing queue position for the privilege. Nothing traded
+    -- against itself either way -- `bestMatch` still refuses to match an
+    -- account with itself; this is only about which side gets pulled.
+    ok("crossing your own quote cancels the resting side rather than refusing",
+       errOf(ownBid) == nil and ownBid.economyResult
+         and ownBid.economyResult.selfCancelled == 1,
+       json.encode((ownBid or {}).economyResult))
+    ok("and nothing is traded against yourself",
+       ownBid and ownBid.economyResult and #ownBid.economyResult.fills == 0,
+       ownBid and ownBid.economyResult and #ownBid.economyResult.fills)
+    local ownStale = ownAsk and ownAsk.economyResult and ownAsk.economyResult.order
+    local stillResting = false
+    for _, order in ipairs(send(SELLER, { Action = "Economy.View" }).orders or {}) do
+      if ownStale and order.id == ownStale.id then stillResting = true end
+    end
+    ok("the crossed quote is gone from the book", stillResting == false, stillResting)
+
+    -- `Stp = Reject` is still available for a maker that would rather be told
+    -- than have an order quietly pulled out from under it.
+    send(SELLER, { Action = "Economy.Order.Place", Side = "sell",
+                   Item = "fire_berry", Price = "10", Quantity = "1" })
+    local goldBeforeStrict = send(SELLER, { Action = "User.Info" }).gold
+    local strict = send(SELLER, {
+      Action = "Economy.Order.Place", Side = "buy", Item = "fire_berry",
+      Price = "10", Quantity = "1", Stp = "Reject",
+    })
+    ok("an explicit Reject still refuses the whole order",
+       errOf(strict) ~= nil, json.encode(strict))
     local afterSelf = send(SELLER, { Action = "User.Info" })
     ok("a refused self-trade changes no Gold or escrow",
-       afterSelf.gold == goldBeforeSelf, afterSelf.gold)
-    if ownAsk and ownAsk.economyResult and ownAsk.economyResult.order then
-      send(SELLER, { Action = "Economy.Order.Cancel",
-                     OrderId = ownAsk.economyResult.order.id })
+       afterSelf.gold == goldBeforeStrict, afterSelf.gold)
+    for _, order in ipairs(send(SELLER, { Action = "Economy.View" }).orders or {}) do
+      if order.account == SELLER then
+        send(SELLER, { Action = "Economy.Order.Cancel", OrderId = order.id })
+      end
     end
+
+    -- The new order verbs, through the message boundary rather than the
+    -- engine. The engine suite proves the mechanics; this proves the TAGS
+    -- reach it -- which is the half that has broken a live deployment before,
+    -- because a browser signs `Time-In-Force` and a handler reading
+    -- `TimeInForce` misses every real message.
+    send(OWNER, { Action = "Admin.Grant", PlayerId = SELLER,
+                  Item = "fire_berry", Amount = "60" })
+    local resting = send(SELLER, {
+      Action = "Economy.Order.Place", Side = "sell", Item = "fire_berry",
+      Price = "11", Quantity = "5",
+    })
+    local restingId = resting.economyResult.order.id
+    ok("an order rests when nothing crosses it",
+       resting.economyResult.open == true and #resting.economyResult.fills == 0,
+       json.encode(resting.economyResult))
+
+    local shrunk = send(SELLER, {
+      Action = "Economy.Order.Amend", OrderId = restingId, Quantity = "2",
+    })
+    ok("an amend that only shrinks keeps the order id and its queue place",
+       errOf(shrunk) == nil and shrunk.economyResult.orderId == restingId
+         and shrunk.economyResult.requeued == false,
+       json.encode((shrunk or {}).economyResult))
+    ok("and returns the difference to the seller",
+       shrunk.inventory.fire_berry == resting.inventory.fire_berry + 3,
+       shrunk.inventory.fire_berry - resting.inventory.fire_berry)
+
+    local goldBeforeMove = shrunk.gold
+    local moved = send(SELLER, {
+      Action = "Economy.Order.Amend", OrderId = restingId, Price = "12",
+    })
+    ok("a re-priced amend re-queues under a new id that names the old one",
+       errOf(moved) == nil and moved.economyResult.requeued == true
+         and moved.economyResult.amendedFrom == restingId,
+       json.encode((moved or {}).economyResult))
+    -- The whole point: moving a quote costs one message and no creation fee,
+    -- where cancel-and-replace cost two of each.
+    ok("and moving a quote is free", moved.gold == goldBeforeMove,
+       goldBeforeMove - moved.gold)
+
+    -- A tag name loses its SEPARATORS on the wire as surely as its case, so
+    -- the handler is sent the spelling a browser would actually sign. Without
+    -- the tag arriving this order rests at 12 and cancels nothing; the refusal
+    -- is the only evidence that `Self-Trade` and `SelfTrade` are one name.
+    local strictDashed = send(SELLER, {
+      Action = "Economy.Order.Place", Side = "buy", Item = "fire_berry",
+      Price = "12", Quantity = "1", ["Self-Trade"] = "Reject",
+    })
+    ok("a hyphenated tag name reaches the handler",
+       errOf(strictDashed) ~= nil, json.encode(strictDashed))
+
+    -- Above the desk's bid, or the house takes the ask before it can rest.
+    send(OWNER, { Action = "Admin.Grant", PlayerId = BUYER,
+                  Item = "fire_berry", Amount = "10" })
+    send(BUYER, { Action = "Economy.Order.Place", Side = "sell",
+                  Item = "fire_berry", Price = "11", Quantity = "2" })
+    -- Two units are resting and four are wanted. Without the tag this fills
+    -- two and rests two; with it, nothing happens at all -- which is the whole
+    -- contract of all-or-none, and the reason its failure has to be free.
+    local goldBeforeKill = send(SELLER, { Action = "User.Info" }).gold
+    local killed = send(SELLER, {
+      Action = "Economy.Order.Place", Side = "buy", Item = "fire_berry",
+      Price = "11", Quantity = "4", Tif = "FOK",
+    })
+    ok("a fill-or-kill that cannot be filled in full is refused",
+       errOf(killed) ~= nil, json.encode(killed))
+    ok("and the killed order costs its sender nothing",
+       send(SELLER, { Action = "User.Info" }).gold == goldBeforeKill,
+       goldBeforeKill - send(SELLER, { Action = "User.Info" }).gold)
+
+    local taken = send(SELLER, {
+      Action = "Economy.Order.Place", Side = "buy", Item = "fire_berry",
+      Price = "11", Quantity = "4", Tif = "ioc",
+    })
+    ok("an IOC takes what is there and rests nothing",
+       errOf(taken) == nil and #taken.economyResult.fills > 0
+         and taken.economyResult.open == false,
+       json.encode((taken or {}).economyResult))
+
+    send(SELLER, { Action = "Economy.Order.Place", Side = "sell",
+                   Item = "fire_berry", Price = "14", Quantity = "2" })
+    send(SELLER, { Action = "Economy.Order.Place", Side = "sell",
+                   Item = "fire_berry", Price = "15", Quantity = "2" })
+    local leftBefore = 0
+    for _, order in ipairs(send(SELLER, { Action = "Economy.View" }).orders or {}) do
+      if order.account == SELLER then leftBefore = leftBefore + 1 end
+    end
+    local emptied = send(SELLER, { Action = "Economy.Order.CancelAll",
+                                   Item = "fire_berry" })
+    ok("cancel-all leaves a market in one message",
+       errOf(emptied) == nil and emptied.economyResult.cancelled == leftBefore,
+       json.encode((emptied or {}).economyResult))
+    local leftAfter = 0
+    for _, order in ipairs(send(SELLER, { Action = "Economy.View" }).orders or {}) do
+      if order.account == SELLER then leftAfter = leftAfter + 1 end
+    end
+    ok("with nothing of theirs still resting", leftAfter == 0, leftAfter)
 
     -- A fresh desk proves the NPC round trip is loss-making without bumping
     -- into the first desk's deliberately tight 2%-of-supply epoch rail.
@@ -3619,9 +3906,13 @@ local function run(base, req)
                   Item = "rune", Amount = "10" })
     send(PASSOLD, { Action = "Economy.Shop.Trade", Item = "rock_berry",
                     Side = "sell", Quantity = "1" })
+    -- Priced ABOVE the desk's bid on purpose. The house quotes into the same
+    -- ladder now, so an ask at or under the desk's bid is taken by the desk
+    -- the instant it is placed -- correct, and the opposite of what this test
+    -- needs, which is an order still resting when the pass is recovered.
     local recoveryOrder = send(PASSOLD, {
       Action = "Economy.Order.Place", Side = "sell", Item = "rock_berry",
-      Price = "5", Quantity = "2",
+      Price = "8", Quantity = "2",
     })
     local recoveryOrderId = recoveryOrder.economyResult.order.id
     local secured = send(PASSOLD, { Action = "Pass.SetRecovery", Recovery = RECOVERY })

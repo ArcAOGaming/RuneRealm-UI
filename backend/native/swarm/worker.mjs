@@ -255,81 +255,244 @@ function targetHolding(player, item) {
   return 5;
 }
 
+/**
+ * How an actor quotes: how wide, how hard it competes, how deep it goes.
+ *
+ * Fifty wallets running one strategy is one trader with fifty hands, and a
+ * book with one opinion in it never moves. These are the differences that make
+ * a spread: a collector quotes tight and improves on the touch nearly every
+ * time, a caretaker quotes wide and sits, and chaos does neither predictably.
+ *
+ * `aggression` is the probability of stepping INSIDE the current best rather
+ * than resting at this actor's own fair-value edge. That single number is the
+ * competitive loop -- it is what makes fifty actors converge a spread instead
+ * of fifty of them stacking at the same price -- and it is bounded by fair
+ * value, so the convergence stops where the trade stops being worth doing.
+ */
+const MAKER_STYLE = {
+  quester: { edgeBps: 900, aggression: 0.35, depth: 4 },
+  caretaker: { edgeBps: 1300, aggression: 0.2, depth: 3 },
+  arena: { edgeBps: 700, aggression: 0.5, depth: 4 },
+  duelist: { edgeBps: 1100, aggression: 0.3, depth: 3 },
+  collector: { edgeBps: 400, aggression: 0.75, depth: 8 },
+  progression: { edgeBps: 600, aggression: 0.55, depth: 5 },
+  chaos: { edgeBps: 1800, aggression: 0.85, depth: 6 },
+};
+
+const style = () => MAKER_STYLE[profile.role] ?? MAKER_STYLE.progression;
+
+/**
+ * What this item is worth, from every source that has an opinion.
+ *
+ * Three independent readings, averaged: what it has actually traded at, where
+ * the realm's desk is quoting, and where the players are quoting. Averaging
+ * them is the point -- any one of them alone is walkable. The realm's desk
+ * never observes the market, so its half cannot be moved by two wallets
+ * printing a fake median; the median cannot be moved by a desk running out of
+ * stock; and the book's own mid is ignored entirely when it is one-sided.
+ */
+function fairValue(stats, desk) {
+  const readings = [];
+  if (stats?.median7d > 0) readings.push(Number(stats.median7d));
+  const houseBid = Number(stats?.houseBid ?? desk?.bid ?? 0);
+  const houseAsk = Number(stats?.houseAsk ?? desk?.ask ?? 0);
+  if (houseBid > 0 && houseAsk > 0) readings.push((houseBid + houseAsk) / 2);
+  const p2pBid = Number(stats?.p2pBid ?? 0);
+  const p2pAsk = Number(stats?.p2pAsk ?? 0);
+  if (p2pBid > 0 && p2pAsk > 0) readings.push((p2pBid + p2pAsk) / 2);
+  if (!readings.length) return 0;
+  return readings.reduce((sum, value) => sum + value, 0) / readings.length;
+}
+
+/** Keep a price inside the corridor the process will actually accept. */
+function inBand(price, band) {
+  if (!Number.isFinite(price)) return 0;
+  let value = Math.max(1, Math.round(price));
+  if (band?.low > 0) value = Math.max(value, Math.ceil(band.low));
+  if (band?.high > 0) value = Math.min(value, Math.floor(band.high));
+  return value;
+}
+
+/**
+ * Walk a published ladder and work out what an immediate order would take.
+ *
+ * The same arithmetic the order ticket does, for the same reason: the process
+ * refuses an unpriced order, so a taker has to name the worst price its sweep
+ * needs. `rows` are price levels, best-first, and they already include the
+ * realm's desk -- which is the whole point of the desk quoting into the book.
+ */
+function sweepLadder(rows, want) {
+  let units = 0; let cost = 0; let limit = 0;
+  for (const row of rows ?? []) {
+    const price = Number(row.price) || 0;
+    const available = Number(row.quantity) || 0;
+    if (price <= 0 || available <= 0) continue;
+    const room = want.gold !== undefined
+      ? Math.min(available, Math.floor((want.gold - cost) / price))
+      : Math.min(available, Math.max(0, (want.units ?? 0) - units));
+    if (room <= 0) break;
+    units += room; cost += room * price; limit = price;
+    if (want.units !== undefined && units >= want.units) break;
+  }
+  return { units, cost, limit, average: units ? cost / units : 0 };
+}
+
+/**
+ * Where this actor wants its quote, on one side, right now.
+ *
+ * Fair value, pushed out by this actor's own edge, pushed further by whichever
+ * way its inventory is lopsided, then -- sometimes -- improved to just inside
+ * the best price a player is showing. The improvement is bounded by fair value
+ * on both sides: an actor will undercut an ask while there is still edge in
+ * doing so and stop when there is not, which is what makes a spread converge
+ * somewhere rather than to zero.
+ *
+ * It can never cross. A quote that crosses is a taker order wearing a maker's
+ * clothes -- it pays the fee, loses the queue position and, sent as PostOnly,
+ * is simply refused and wastes the message.
+ */
+function quotePrice(side, stats, fair, skewBps) {
+  const mine = style();
+  const jitter = 0.7 + random() * 0.6;
+  const edge = mine.edgeBps * jitter;
+  const offset = side === 'buy' ? -(edge + skewBps) : (edge - skewBps);
+  let price = Math.round(fair * (1 + offset / 10000));
+  const bestP2P = Number((side === 'buy' ? stats?.p2pBid : stats?.p2pAsk) ?? 0);
+  if (bestP2P > 0 && random() < mine.aggression) {
+    // Step inside the touch, but only while the trade is still worth doing.
+    // Undercutting past fair value is how a market maker converts a spread
+    // into a loss, and fifty of them doing it is how a book prints nonsense.
+    const improved = side === 'buy' ? bestP2P + 1 : bestP2P - 1;
+    const worthIt = side === 'buy' ? improved < fair : improved > fair;
+    if (worthIt) price = improved;
+  }
+  const bestAsk = Number(stats?.bestAsk ?? 0);
+  const bestBid = Number(stats?.bestBid ?? 0);
+  if (side === 'buy' && bestAsk > 0) price = Math.min(price, bestAsk - 1);
+  if (side === 'sell' && bestBid > 0) price = Math.max(price, bestBid + 1);
+  price = inBand(price, stats?.band);
+  /* The corridor can push a quote back across the touch -- a narrow band with
+     the house sitting on its edge leaves no room to rest inside it. There is
+     no maker price here, and saying so is better than sending a PostOnly order
+     the process will refuse and charge a message for. */
+  if (side === 'buy' && bestAsk > 0 && price >= bestAsk) return 0;
+  if (side === 'sell' && bestBid > 0 && price <= bestBid) return 0;
+  return price;
+}
+
 function tradeIntelligence(player, view) {
   if (!view) return null;
   const gold = player.gold ?? 0;
-  const ownOrders = (view.orders ?? []).filter((order) => order.account === address);
+  /* The caller's own orders come off the PLAYER record now. `view.orders` is a
+     copy of the whole book, and reading all of it to find one wallet's handful
+     is the shape the process is trying to stop paying for. The published book
+     is still there and still read for prices; it is no longer read for
+     identity. */
+  const ownOrders = (player.openOrders ?? [])
+    .map((order) => ({ ...order, account: address }))
+    .concat((view.orders ?? []).filter((order) => order.account === address
+      && !(player.openOrders ?? []).some((own) => own.id === order.id)));
   const needs = [];
   const excess = [];
   const arbitrage = [];
-
-  /*
-    The book with this actor's own orders taken out of it.
-
-    `view.market[item].bestAsk` is the WHOLE book, and this actor is in it. Once
-    its own sell was the best ask, `needs` concluded that the cheapest source of
-    an item was itself and `goods_take` placed a buy at exactly that price — the
-    process refused it as self-trading, seven times across five wallets in the
-    2026-09-04 soak, and the verifier could not attribute it to concurrency
-    because it was not concurrency. A price you are not allowed to trade against
-    is not a price, so it does not belong in the decision at all.
-  */
-  const others = (view.orders ?? []).filter((order) => order.account !== address);
-  const bestFrom = (item, side) => {
-    const prices = others
-      .filter((order) => order.item === item && order.side === side)
-      .map((order) => Number(order.price))
-      .filter((price) => price > 0);
-    if (!prices.length) return 0;
-    return side === 'sell' ? Math.min(...prices) : Math.max(...prices);
-  };
+  const quotes = [];
 
   for (const item of goodsIds) {
     const held = player.inventory?.[item] ?? 0;
     const target = targetHolding(player, item);
     const stats = view.market?.[item] ?? {};
     const desk = view.desks?.[item];
+    const fair = fairValue(stats, desk);
+    const band = stats.band;
+    const asks = stats.depth?.asks ?? [];
+    const bids = stats.depth?.bids ?? [];
+    const liveHere = ownOrders.filter((order) => order.item === item);
     /*
-      A desk with an empty shelf is not a source, however good its price looks.
-      `ask` stays quoted while `stock` is zero, so the price alone said "buy
-      here" and the buy came back "Desk is out of stock" — eleven times across
-      seven wallets. `pause` was already respected; stock was not.
+      The ladder ALREADY has the realm's desk in it.
+
+      This used to compare two venues by hand -- the desk's `ask` against the
+      best P2P order -- because the shop and the floor were two prices and a
+      taker had to pick. They are one ladder now: a taker gets whichever of
+      desk-or-P2P is better without choosing, so the honest thing for an actor
+      to read is the ladder, and the desk's own fields are only worth reading
+      to know whether the house is quoting at all.
     */
-    const deskStock = Number(desk?.stock ?? 0);
-    const deskRoom = Number(desk?.stockCap ?? 0) - deskStock;
-    const canBuyFromDesk = !desk?.pause?.buy && deskStock > 0;
-    const canSellToDesk = !desk?.pause?.sell && deskRoom > 0
-      && Number(desk?.goldReserve ?? 0) >= Number(desk?.bid ?? 0);
-    if (held < target) {
-      const p2p = bestFrom(item, 'sell');
-      const npc = canBuyFromDesk ? Number(desk?.ask ?? 0) : 0;
-      const cheapest = [p2p, npc].filter((price) => price > 0).sort((a, b) => a - b)[0];
-      if (cheapest && gold > cheapest) {
-        needs.push({ item, held, target, p2p, npc, cheapest, deskStock });
+    if (held < target && asks.length) {
+      const want = Math.min(target - held, style().depth);
+      const plan = sweepLadder(asks, { units: want });
+      // Cheap against fair value, or simply needed. Both are real reasons to
+      // take, and separating them is what stops an actor paying up for a berry
+      // it has twenty of.
+      const cheap = fair > 0 && plan.average > 0 && plan.average <= fair * 0.98;
+      if (plan.units > 0 && gold > plan.cost + 1) {
+        needs.push({ item, held, target, plan, fair, cheap, band,
+          urgent: held * 2 < target });
       }
     }
-    if (held > target) {
-      excess.push({ item, held, target, quantity: held - target, stats, desk });
+    if (held > target && bids.length) {
+      const plan = sweepLadder(bids, { units: Math.min(held - target, style().depth) });
+      const rich = fair > 0 && plan.average >= fair * 1.02;
+      excess.push({ item, held, target, quantity: held - target, plan, fair, rich,
+        stats, desk, band });
     }
-    const bestAsk = bestFrom(item, 'sell');
-    const bestBid = bestFrom(item, 'buy');
-    const npcBid = canSellToDesk ? Number(desk?.bid ?? 0) : 0;
-    const npcAsk = canBuyFromDesk ? Number(desk?.ask ?? 0) : 0;
-    if (bestAsk > 0 && npcBid > bestAsk && gold > bestAsk + 1) {
-      arbitrage.push({ item, direction: 'p2p-to-npc', buy: bestAsk, sell: npcBid, desk });
+
+    /*
+      A crossed market between the house and the book, which is a real thing
+      now and was not before.
+
+      The desk does not REST an order -- it quotes when a taker arrives. So a
+      player's bid can sit above the desk's ask indefinitely with nothing to
+      close it, and the actor that notices buys from the house and sells into
+      that bid. This is the arbitrage that survives the desk joining the
+      ladder; the old shop-versus-floor one is closed by the engine itself.
+    */
+    const houseBid = Number(stats.houseBid ?? 0);
+    const houseAsk = Number(stats.houseAsk ?? 0);
+    const p2pBid = Number(stats.p2pBid ?? 0);
+    const p2pAsk = Number(stats.p2pAsk ?? 0);
+    if (houseAsk > 0 && p2pBid > houseAsk && gold > houseAsk + 1) {
+      arbitrage.push({ item, direction: 'house-to-p2p', buy: houseAsk, sell: p2pBid, band });
     }
-    if (npcAsk > 0 && bestBid > npcAsk && gold >= npcAsk) {
-      arbitrage.push({ item, direction: 'npc-to-p2p', buy: npcAsk, sell: bestBid, desk });
+    if (houseBid > 0 && p2pAsk > 0 && houseBid > p2pAsk && gold > p2pAsk + 1) {
+      arbitrage.push({ item, direction: 'p2p-to-house', buy: p2pAsk, sell: houseBid, band });
+    }
+
+    // Where this actor's own two-sided quote should be, and whether what it
+    // already has resting is close enough to leave alone.
+    if (fair > 0) {
+      const skewBps = Math.max(-600, Math.min(600,
+        Math.round(((held - target) / Math.max(1, target)) * 300)));
+      for (const side of ['buy', 'sell']) {
+        const wanted = quotePrice(side, stats, fair, skewBps);
+        if (wanted <= 0) continue;
+        const live = liveHere.find((order) => order.side === side);
+        const drift = live ? Math.abs(Number(live.price) - wanted) : Infinity;
+        quotes.push({ item, side, price: wanted, fair, live, drift, band,
+          held, target, stats });
+      }
     }
   }
+
+  /*
+    What is worth pulling: about to expire, priced where it can no longer
+    trade, or drifted so far from fair value that it is a gift to whoever takes
+    it. The band check is new and it matters -- an order the corridor has moved
+    away from is not refused, it just stops being reachable, and it holds
+    escrow while it does nothing.
+  */
   const stale = ownOrders.filter((order) => {
     if ((order.expiresAt ?? 0) - Date.now() < 24 * 3600_000) return true;
     const stats = view.market?.[order.item] ?? {};
-    if (order.side === 'sell' && stats.bestAsk && order.price > stats.bestAsk * 1.5) return true;
-    if (order.side === 'buy' && stats.bestBid && order.price < stats.bestBid * 0.67) return true;
+    const band = stats.band;
+    if (band?.low > 0 && order.price < band.low) return true;
+    if (band?.high > 0 && order.price > band.high) return true;
+    const fair = fairValue(stats, view.desks?.[order.item]);
+    if (!fair) return false;
+    if (order.side === 'sell' && order.price > fair * 1.5) return true;
+    if (order.side === 'buy' && order.price < fair * 0.6) return true;
     return false;
   });
-  return { gold, ownOrders, needs, excess, arbitrage, stale };
+  return { gold, ownOrders, needs, excess, arbitrage, quotes, stale };
 }
 
 const affordableOrderQuantity = (price, wanted, gold) => {
@@ -338,14 +501,71 @@ const affordableOrderQuantity = (price, wanted, gold) => {
   return Math.max(0, Math.min(Math.max(minimum, wanted), affordable, 20));
 };
 
+/** How many units this actor can legally and affordably show at `price`. */
+function quoteSize(quote, player, gold) {
+  const minimum = Math.max(1, Math.ceil(10 / Math.max(1, quote.price)));
+  const appetite = Math.max(minimum, Math.min(style().depth, Math.max(1, quote.target)));
+  if (quote.side === 'sell') {
+    const spare = (player.inventory?.[quote.item] ?? 0) - Math.floor(quote.target / 2);
+    return Math.max(0, Math.min(appetite, spare));
+  }
+  const affordable = Math.floor(Math.max(0, gold - 1) / Math.max(1, quote.price));
+  return Math.max(0, Math.min(appetite, affordable, Math.max(0, quote.target - quote.held)));
+}
+
 async function economicAction(action, player, view, intel) {
   const choose = (list) => list[Math.floor(random() * list.length)];
+
   if (action === 'goods_cancel') {
+    /* Leaving is one intent, however many quotes it touches. Three or more
+       stale orders in one market is exactly the case batch cancel exists for:
+       one message instead of three, and no window in which half of a maker's
+       book has been pulled and half has not. */
+    const byItem = new Map();
+    for (const order of intel.stale) {
+      byItem.set(order.item, (byItem.get(order.item) ?? 0) + 1);
+    }
+    const worst = [...byItem.entries()].sort((a, b) => b[1] - a[1])[0];
+    if (worst && worst[1] >= 3) {
+      const updated = await api.cancelGoldOrders({ item: worst[0] });
+      return result('goods.order.cancel-all', updated,
+        { item: worst[0], expected: worst[1], strategy: 'batch-withdraw' });
+    }
     const order = choose(intel.stale.length ? intel.stale : intel.ownOrders);
+    if (!order) return result('idle.no-economic-opportunity', player, { requested: action });
     const updated = await api.cancelGoldOrder(order.id);
     return result('goods.order.cancel', updated, { orderId: order.id, item: order.item });
   }
+
+  if (action === 'goods_amend') {
+    /* Moving a quote, in ONE message.
+
+       This is the action the book did not have, and its absence is why a maker
+       either quoted stale prices or paid twice to move: cancel-and-replace is
+       two slots, two creation costs, and the back of a queue it was near the
+       front of. Shrinking at the same price keeps the queue place; a new price
+       re-queues, and the process says which in `requeued`. */
+    const moving = intel.quotes
+      .filter((quote) => quote.live && quote.drift >= 1)
+      .sort((a, b) => b.drift - a.drift)[0];
+    if (moving) {
+      const size = Math.max(1, Math.min(Number(moving.live.remaining) || 1,
+        quoteSize(moving, player, intel.gold) || Number(moving.live.remaining) || 1));
+      const updated = await api.amendGoldOrder(moving.live.id,
+        { price: moving.price, quantity: size });
+      return result('goods.order.amend', updated, {
+        orderId: moving.live.id, item: moving.item, side: moving.side,
+        from: moving.live.price, to: moving.price, quantity: size,
+        fair: Math.round(moving.fair), strategy: 'reprice-to-fair',
+      });
+    }
+  }
+
   if (action === 'shop_trade') {
+    /* The Shop tab still exists and is still the right place to trade at the
+       desk deliberately -- a fixed price, filled immediately, with none of the
+       book's uncertainty. An actor uses it when it needs Gold now or wants to
+       dump inventory the book is not bidding for. */
     const sellable = intel.excess.filter(({ desk, quantity }) => desk && !desk.pause?.sell
       && quantity > 0 && desk.stock < desk.stockCap && desk.goldReserve > 0);
     if (intel.gold < 20 && sellable.length) {
@@ -356,16 +576,20 @@ async function economicAction(action, player, view, intel) {
       return result('shop.sell', updated, { item: opportunity.item, quantity,
         expectedUnitPrice: opportunity.desk.bid, counterparty: 'NPC' });
     }
-    const npcNeeds = intel.needs.filter(({ npc }) => npc > 0);
-    if (npcNeeds.length) {
-      const opportunity = choose(npcNeeds.sort((a, b) => a.npc - b.npc).slice(0, 2));
+    const deskNeeds = intel.needs.filter(({ item }) => {
+      const desk = view.desks?.[item];
+      return desk && !desk.pause?.buy && Number(desk.stock ?? 0) > 0;
+    });
+    if (deskNeeds.length) {
+      const opportunity = choose(deskNeeds);
+      const desk = view.desks[opportunity.item];
       // Never ask for more than is on the shelf: a desk holding one refuses a
       // request for three outright rather than filling what it can.
       const quantity = Math.max(1, Math.min(3, opportunity.target - opportunity.held,
-        Math.floor(intel.gold / opportunity.npc), opportunity.deskStock ?? 3));
+        Math.floor(intel.gold / Math.max(1, Number(desk.ask) || 1)), Number(desk.stock) || 1));
       const updated = await api.tradeGameShop('buy', opportunity.item, quantity);
       return result('shop.buy', updated, { item: opportunity.item, quantity,
-        expectedUnitPrice: opportunity.npc, counterparty: 'NPC' });
+        expectedUnitPrice: desk.ask, counterparty: 'NPC' });
     }
     const opportunity = sellable[0];
     if (opportunity) {
@@ -374,76 +598,114 @@ async function economicAction(action, player, view, intel) {
         expectedUnitPrice: opportunity.desk.bid, counterparty: 'NPC' });
     }
   }
+
   if (action === 'goods_take') {
-    const opportunities = intel.needs.filter(({ p2p }) => p2p > 0)
-      .sort((a, b) => a.p2p - b.p2p);
-    const opportunity = opportunities[0];
-    if (opportunity) {
-      const quantity = affordableOrderQuantity(opportunity.p2p,
-        opportunity.target - opportunity.held, intel.gold);
+    /* Taking is an IOC now, which is what a market order actually is: sweep
+       the ladder at a limit computed from the ladder, and cancel whatever the
+       book could not fill instead of leaving a stray resting order behind at a
+       price this actor chose for a different reason.
+
+       Occasionally it is a FOK instead. An actor that only ever sends one time
+       in force is an actor that never tests the others, and all-or-none is the
+       one whose failure path has to be free -- so it is worth exercising even
+       though it is the rarer real-world choice. */
+    const opportunities = intel.needs
+      .filter(({ cheap, urgent }) => cheap || urgent)
+      .sort((a, b) => a.plan.average - b.plan.average);
+    const opportunity = opportunities[0] ?? choose(intel.needs);
+    if (opportunity?.plan?.units > 0) {
+      const quantity = affordableOrderQuantity(opportunity.plan.limit,
+        opportunity.plan.units, intel.gold);
       if (quantity > 0) {
-        const updated = await api.placeGoldOrder('buy', opportunity.item, opportunity.p2p, quantity);
-        return result('goods.order.buy', updated, { item: opportunity.item,
-          price: opportunity.p2p, quantity, strategy: 'take-cheapest-deficit' });
+        const allOrNone = random() < 0.15 && quantity <= opportunity.plan.units;
+        const tif = allOrNone ? 'FOK' : 'IOC';
+        const updated = await api.placeGoldOrder('buy', opportunity.item,
+          opportunity.plan.limit, quantity, { tif });
+        return result('goods.order.buy', updated, {
+          item: opportunity.item, price: opportunity.plan.limit, quantity, tif,
+          fair: Math.round(opportunity.fair),
+          strategy: opportunity.cheap ? 'take-below-fair' : 'take-to-cover-deficit',
+        });
       }
     }
   }
+
   if (action === 'goods_make') {
-    const opportunities = intel.excess.filter(({ quantity }) => quantity > 0 && intel.gold >= 1);
-    const opportunity = choose(opportunities);
-    if (opportunity) {
-      const market = opportunity.stats;
-      const reference = Number(market.bestAsk ?? opportunity.desk?.ask ?? market.median7d ?? 5);
-      const floor = Number(market.bestBid ?? opportunity.desk?.bid ?? 1);
-      const price = Math.max(1, floor + 1, reference - 1);
-      const minimum = Math.max(1, Math.ceil(10 / price));
-      const quantity = Math.min(opportunity.quantity, Math.max(minimum, Math.min(5, opportunity.quantity)));
-      if (price * quantity >= 10) {
-        const updated = await api.placeGoldOrder('sell', opportunity.item, price, quantity);
-        return result('goods.order.sell', updated, { item: opportunity.item,
-          price, quantity, strategy: 'inside-spread-maker' });
+    /* Quoting, as a maker rather than as somebody dumping stock.
+
+       PostOnly is not decoration: it is the difference between adding
+       liquidity and accidentally paying to remove it. The price is already
+       held off the touch by `quotePrice`, so the tag is the belt to that
+       braces -- if the book moved between the read and the write, the order is
+       refused instead of quietly crossing at a price this actor never chose.
+
+       And when there is already a quote on this side, this MOVES it rather
+       than adding a second one. Twenty stacked quotes from one wallet is not
+       liquidity, it is the per-account cap being burned. */
+    const candidates = intel.quotes
+      .filter((quote) => quoteSize(quote, player, intel.gold) > 0)
+      .filter((quote) => quote.price * quoteSize(quote, player, intel.gold) >= 10);
+    const fresh = candidates.filter((quote) => !quote.live);
+    const quote = fresh.length ? choose(fresh) : candidates.find((entry) => entry.drift >= 1);
+    if (quote) {
+      const size = quoteSize(quote, player, intel.gold);
+      if (quote.live) {
+        const updated = await api.amendGoldOrder(quote.live.id,
+          { price: quote.price, quantity: size });
+        return result('goods.order.amend', updated, {
+          orderId: quote.live.id, item: quote.item, side: quote.side,
+          from: quote.live.price, to: quote.price, quantity: size,
+          strategy: 'requote-existing-side',
+        });
       }
+      const updated = await api.placeGoldOrder(quote.side, quote.item, quote.price, size,
+        { tif: 'PostOnly' });
+      return result(quote.side === 'sell' ? 'goods.order.sell' : 'goods.order.bid', updated, {
+        item: quote.item, price: quote.price, quantity: size, tif: 'PostOnly',
+        fair: Math.round(quote.fair), skew: quote.held - quote.target,
+        strategy: 'two-sided-maker',
+      });
     }
   }
+
   if (action === 'arbitrage') {
     if (tradePlan) {
       const plan = tradePlan;
       tradePlan = null;
-      if (plan.destination === 'npc') {
-        const available = player.inventory?.[plan.item] ?? 0;
-        const quantity = Math.min(plan.quantity, available);
-        if (quantity > 0) {
+      const available = player.inventory?.[plan.item] ?? 0;
+      const quantity = Math.min(plan.quantity, available);
+      if (quantity > 0) {
+        if (plan.destination === 'npc') {
           const updated = await api.tradeGameShop('sell', plan.item, quantity);
           return result('arbitrage.sell.npc', updated, { ...plan, quantity, counterparty: 'NPC' });
         }
-      } else {
-        const available = player.inventory?.[plan.item] ?? 0;
-        const quantity = Math.min(plan.quantity, available);
-        if (quantity > 0) {
-          const updated = await api.placeGoldOrder('sell', plan.item, plan.sell, quantity);
-          return result('arbitrage.sell.p2p', updated, { ...plan, quantity });
-        }
+        // Sold back into the book as an IOC: the resting bid this actor is
+        // hitting is the whole reason the trade exists, so anything that does
+        // not fill against it should not be left behind as a quote.
+        const updated = await api.placeGoldOrder('sell', plan.item, plan.sell, quantity,
+          { tif: 'IOC' });
+        return result('arbitrage.sell.p2p', updated, { ...plan, quantity, tif: 'IOC' });
       }
     }
     const opportunity = intel.arbitrage.sort((a, b) => (b.sell - b.buy) - (a.sell - a.buy))[0];
     if (opportunity) {
-      if (opportunity.direction === 'p2p-to-npc') {
-        const quantity = affordableOrderQuantity(opportunity.buy, 1, intel.gold);
-        if (quantity > 0) {
-          const updated = await api.placeGoldOrder('buy', opportunity.item, opportunity.buy, quantity);
-          tradePlan = { item: opportunity.item, quantity, destination: 'npc',
-            buy: opportunity.buy, sell: opportunity.sell };
-          return result('arbitrage.buy.p2p', updated, { ...tradePlan });
-        }
-      } else {
-        const quantity = Math.max(1, Math.min(3,
-          Math.floor(intel.gold / opportunity.buy), opportunity.desk?.stock ?? 0));
-        if (quantity > 0) {
-          const updated = await api.tradeGameShop('buy', opportunity.item, quantity);
+      const quantity = affordableOrderQuantity(opportunity.buy, 2, intel.gold);
+      if (quantity > 0) {
+        if (opportunity.direction === 'house-to-p2p') {
+          // Buying from the house THROUGH the book, not through the Shop tab:
+          // the desk is in this ladder, so an IOC at its ask takes it, and the
+          // same message takes any player who happens to be cheaper.
+          const updated = await api.placeGoldOrder('buy', opportunity.item,
+            opportunity.buy, quantity, { tif: 'IOC' });
           tradePlan = { item: opportunity.item, quantity, destination: 'p2p',
             buy: opportunity.buy, sell: opportunity.sell };
-          return result('arbitrage.buy.npc', updated, { ...tradePlan, counterparty: 'NPC' });
+          return result('arbitrage.buy.house', updated, { ...tradePlan, tif: 'IOC' });
         }
+        const updated = await api.placeGoldOrder('buy', opportunity.item,
+          opportunity.buy, quantity, { tif: 'IOC' });
+        tradePlan = { item: opportunity.item, quantity, destination: 'npc',
+          buy: opportunity.buy, sell: opportunity.sell };
+        return result('arbitrage.buy.p2p', updated, { ...tradePlan, tif: 'IOC' });
       }
     }
   }
@@ -552,8 +814,11 @@ async function huntTick(player) {
   if (run.status === 'defeated') {
     const spendableRune = Math.max(0,
       (player.inventory?.rune ?? 0) - targetHolding(player, 'rune'));
-    const canCapture = (player.inventory?.scroll ?? 0) > 0
-      && spendableRune > 0;
+    // NO scroll requirement. hunt.lua has no such rule -- this invented one,
+    // and two earlier runs burned 45 hunts and 900 berries for zero captures
+    // because of it. Capture coverage existed at all only because FundTestBots
+    // happened to hand every bot 20 Scroll.
+    const canCapture = spendableRune > 0;
     // Collectors and chaos actors lean into capture; everybody else still
     // takes that branch sometimes, leaving deliberate decline coverage too.
     const tryCapture = canCapture
@@ -678,8 +943,17 @@ async function tick() {
   add('cancel', mine.length > 0);
   add('buy', affordable.length > 0);
   add('give', collection.length > 0 && (workerData.peers?.length ?? 0) > 0);
-  add('goods_make', Boolean(intelligence?.excess.length) && (player.gold ?? 0) >= 1);
-  add('goods_take', Boolean(intelligence?.needs.some(({ p2p }) => p2p > 0)));
+  // Quoting is gated on having somewhere to quote, not on having spare stock.
+  // The old gate was `excess.length`, which meant an actor only ever showed an
+  // ASK -- fifty wallets with nothing to sell produced a book with no bids in
+  // it at all, and the desk was the only thing on that side of every ladder.
+  // One Gold, not eleven: an ASK costs only the creation fee, and gating the
+  // whole verb on being able to fund a BID is how an actor that has run its
+  // Gold down stops quoting at all -- exactly when it most wants to be selling.
+  add('goods_make', Boolean(intelligence?.quotes.some((quote) => !quote.live))
+    && (player.gold ?? 0) >= 1);
+  add('goods_amend', Boolean(intelligence?.quotes.some((quote) => quote.live && quote.drift >= 1)));
+  add('goods_take', Boolean(intelligence?.needs.some(({ plan }) => plan.units > 0)));
   add('goods_cancel', Boolean(intelligence?.ownOrders.length));
   add('shop_trade', Boolean(intelligence?.excess.length || intelligence?.needs.length));
   add('arbitrage', Boolean(tradePlan || intelligence?.arbitrage.length));
@@ -751,15 +1025,22 @@ async function tick() {
     }
     return bridge.liquidity(player);
   }
-  // An item this actor holds spare that nobody is offering at any price. The
-  // maker prices it against the NPC desk, so the first order lands one Gold
-  // inside the shop rather than at a number pulled out of the air.
-  const unquoted = (intelligence?.excess ?? []).filter(({ item, quantity }) =>
-    quantity > 0 && !(economyView?.market?.[item]?.bestAsk > 0)
-    && (economyView?.desks?.[item]?.ask ?? 0) > 0);
+  // A market with no PLAYER on one side of it.
+  //
+  // The realm's desk quotes into every ladder now, so `bestAsk` is almost
+  // never empty and the old emptiness test -- which read `bestAsk` -- stopped
+  // firing the moment the house arrived. What still needs bootstrapping is a
+  // side of the book with no player on it: `p2pBid`/`p2pAsk` are published
+  // separately for exactly this reason, and a book that is only ever the house
+  // is a book that proves nothing about the matching engine.
+  const unquoted = (intelligence?.quotes ?? []).filter((quote) => {
+    if (quote.live) return false;
+    const shown = quote.side === 'buy' ? quote.stats?.p2pBid : quote.stats?.p2pAsk;
+    return !(Number(shown) > 0) && quoteSize(quote, player, intelligence.gold) > 0;
+  });
   if (unquoted.length > 0 && (profile.weights.goods_make ?? 0) > 0 && (player.gold ?? 0) >= 1) {
     return economicAction('goods_make', player, economyView,
-      { ...intelligence, excess: unquoted });
+      { ...intelligence, quotes: unquoted });
   }
 
   const action = tradePlan && intelligence ? 'arbitrage' : weightedChoice(candidates);
@@ -819,7 +1100,7 @@ async function tick() {
     const recipient = choose(workerData.peers);
     player = await api.transferMonster(id, recipient);
     detail = { monsterId: id, recipient };
-  } else if (['goods_make', 'goods_take', 'goods_cancel', 'shop_trade', 'arbitrage'].includes(action)) {
+  } else if (['goods_make', 'goods_amend', 'goods_take', 'goods_cancel', 'shop_trade', 'arbitrage'].includes(action)) {
     return economicAction(action, player, economyView, intelligence);
   } else if (action === 'withdraw') {
     // One at a time. A withdrawal is a queued mint, and the point is to watch
@@ -1038,10 +1319,17 @@ async function preparePvp() {
     return result('pvp.needs-energy', player, { ready: false });
   }
   if (monster.happiness < 25) {
-    const berry = ownBerry(player);
+    // ANY berry, and pass it. game.lua:2345-2352 refuses to require an element
+    // match -- 'Any berry is accepted' -- but this asked ownBerry() for the
+    // faction berry and then called startPlay() with no argument, so the
+    // process fell back to the faction berry anyway. Two reasons for the same
+    // deadlock: all ten duelists froze at happiness 0 / 11 berries for 4.99
+    // hours, emitting 700 pvp.needs-happiness events -- 14.8% of the entire
+    // run -- and only 16 duels ever settled instead of ~200.
+    const berry = availableBerry(player);
     if (berry && monster.energy >= 10) {
-      player = await api.startPlay();
-      return result('activity.start.play', player, { ready: false });
+      player = await api.startPlay(undefined, berry);
+      return result('activity.start.play', player, { ready: false, item: berry });
     }
     return result('pvp.needs-happiness', player, { ready: false });
   }

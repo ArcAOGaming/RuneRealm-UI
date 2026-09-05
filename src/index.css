@@ -31,7 +31,7 @@
     --edge:     46  53  78;
     --ink:     233 236 246;
     --muted:   150 159 184;
-    --faint:    98 108 133;
+    --faint:   128 138 164;
 
     /* The chrome's own colour: carved bone-gold. Used for hairlines, rules and
        the wordmark — never for state, never for emphasis.
@@ -459,7 +459,7 @@ html { scroll-behavior: smooth; }
   gap: 0.6rem;
   padding: 0 0.3rem;
   color: rgb(var(--muted));
-  font-size: 0.8rem;
+  font-size: 0.875rem;
   transition: color 180ms ease, gap 180ms ease;
 }
 
@@ -476,8 +476,8 @@ html { scroll-behavior: smooth; }
   gap: 0.75rem;
   color: rgb(var(--faint));
   font-family: 'JetBrains Mono', ui-monospace, monospace;
-  font-size: 9px;
-  letter-spacing: 0.2em;
+  font-size: 11px;
+  letter-spacing: 0.16em;
   text-transform: uppercase;
 }
 
@@ -490,11 +490,11 @@ html { scroll-behavior: smooth; }
 .landing-section { padding-block: clamp(6rem, 10vw, 10rem); scroll-margin-top: 4rem; }
 
 .landing-kicker {
-  color: rgb(var(--rune) / 0.62);
+  color: rgb(var(--rune) / 0.8);
   font-family: 'JetBrains Mono', ui-monospace, monospace;
-  font-size: 9px;
+  font-size: 11px;
   font-weight: 500;
-  letter-spacing: 0.22em;
+  letter-spacing: 0.16em;
   text-transform: uppercase;
 }
 
@@ -651,21 +651,6 @@ html { scroll-behavior: smooth; }
 
 @keyframes ritual-turn {
   to { transform: translate(-50%, -50%) rotate(384deg); }
-}
-
-.world-card {
-  position: relative;
-  min-height: 20rem;
-  padding: 2rem;
-  border: 1px solid rgb(var(--rune) / 0.11);
-  background: rgb(var(--surface) / 0.48);
-  clip-path: polygon(0 0, calc(100% - 16px) 0, 100% 16px, 100% 100%, 0 100%);
-  transition: border-color 180ms ease, background 180ms ease;
-}
-
-.world-card:hover {
-  border-color: rgb(var(--element) / 0.34);
-  background: rgb(var(--raised) / 0.58);
 }
 
 .hero-monolith {
@@ -923,7 +908,7 @@ html { scroll-behavior: smooth; }
   border-radius: 3px;
   color: rgb(var(--rune));
   font-family: 'JetBrains Mono', ui-monospace, monospace;
-  font-size: 9px;
+  font-size: 11px;
   letter-spacing: 0.14em;
   text-transform: uppercase;
   transition: border-color 180ms ease, background 180ms ease, color 180ms ease;
@@ -933,34 +918,6 @@ html { scroll-behavior: smooth; }
   border-color: rgb(var(--rune) / 0.55);
   background: rgb(var(--rune) / 0.08);
   color: rgb(var(--ink));
-}
-
-.key-lore-section {
-  position: relative;
-  overflow: hidden;
-  border-block: 1px solid rgb(var(--rune) / 0.1);
-  background:
-    linear-gradient(100deg, rgb(var(--arcane) / 0.055), transparent 46%),
-    rgb(var(--surface) / 0.18);
-}
-
-.key-lore-mark {
-  position: absolute;
-  left: -10rem;
-  top: 50%;
-  color: rgb(var(--rune));
-  opacity: 0.025;
-  transform: translateY(-50%) rotate(-11deg);
-}
-
-.key-lore-list { border-top: 1px solid rgb(var(--rune) / 0.12); }
-
-.key-lore-item {
-  display: grid;
-  grid-template-columns: 2.5rem minmax(0, 1fr);
-  gap: 1rem;
-  padding-block: 1.65rem;
-  border-bottom: 1px solid rgb(var(--rune) / 0.12);
 }
 
 /* Hidden lore route. It intentionally uses the public visual language but has
@@ -1994,6 +1951,345 @@ pre,
     rgb(var(--surface) / .78);
 }
 
+/* Goods exchange --------------------------------------------------------- */
+
+/* One compact mode bar replaces two competing hero cards. Rune-gold marks
+   immediate realm trades; arcane marks prices supplied by other players. */
+.market-desk-bar {
+  border-color: rgb(var(--rune) / .18);
+  background:
+    linear-gradient(90deg, rgb(var(--rune) / .045), transparent 42%),
+    rgb(var(--surface) / .82);
+}
+
+.market-desk-switcher {
+  max-width: 34rem;
+  overflow: hidden;
+  border: 1px solid rgb(var(--edge));
+  border-radius: 3px;
+  background: rgb(var(--void) / .52);
+}
+
+.market-desk-bar .market-desk-choice {
+  min-height: 3.35rem;
+  justify-content: center;
+  gap: .16rem;
+  padding: .55rem .85rem;
+  border: 0;
+  clip-path: none;
+  background: transparent;
+  transition: background-color .16s ease, opacity .16s ease;
+}
+
+.market-desk-bar .market-desk-choice + .market-desk-choice { border-left: 1px solid rgb(var(--edge)); }
+.market-desk-bar .market-desk-choice:not(.is-active) { opacity: .58; }
+.market-desk-bar .market-desk-choice:not(.is-active):hover { opacity: .9; background: rgb(var(--raised) / .55); }
+.market-desk-bar .market-desk-choice::before { content: none; }
+.market-desk-bar .market-desk-choice::after {
+  content: '';
+  position: absolute;
+  inset: auto 0 0;
+  height: 2px;
+  opacity: 0;
+  background: rgb(var(--desk-colour));
+  transition: opacity .16s ease;
+}
+.market-desk-bar .market-desk-choice.is-active::after { opacity: 1; }
+.market-desk-bar .market-desk-shop { --desk-colour: var(--rune); }
+.market-desk-bar .market-desk-floor { --desk-colour: var(--arcane); }
+.market-desk-bar .market-desk-shop.is-active { background: rgb(var(--rune) / .09); box-shadow: none; }
+.market-desk-bar .market-desk-floor.is-active {
+  background:
+    linear-gradient(rgb(var(--arcane) / .06) 1px, transparent 1px) 0 0 / 18px 18px,
+    rgb(var(--arcane) / .075);
+}
+
+.market-desk-bar .market-desk-title { font-size: .9rem; font-weight: 650; line-height: 1.1; }
+.market-desk-bar .market-desk-note { font-size: 10px; line-height: 1.3; }
+
+.market-desk-health > div {
+  min-width: 6rem;
+  padding: .35rem .7rem;
+  border-left: 1px solid rgb(var(--edge) / .72);
+}
+.market-desk-health dt {
+  color: rgb(var(--faint));
+  font-size: 8px;
+  letter-spacing: .15em;
+  text-transform: uppercase;
+}
+.market-desk-health dd {
+  margin-top: .15rem;
+  font-family: 'JetBrains Mono', ui-monospace, monospace;
+  font-size: 12px;
+  font-weight: 650;
+}
+
+/* Realm shop ------------------------------------------------------------- */
+
+.market-shop-workspace { display: grid; min-height: 0; gap: .625rem; }
+.market-panel-heading { flex: none; padding: .72rem .85rem; border-bottom: 1px solid rgb(var(--edge) / .75); }
+
+.market-shop-ledger {
+  background:
+    linear-gradient(180deg, rgb(var(--rune) / .045), transparent 35%),
+    rgb(var(--surface) / .78);
+}
+.market-shop-ledger-list {
+  overscroll-behavior: contain;
+  scrollbar-width: thin;
+  scrollbar-color: rgb(var(--rune) / .32) transparent;
+}
+.market-shop-ledger-row {
+  position: relative;
+  display: flex;
+  width: 100%;
+  align-items: center;
+  gap: .65rem;
+  padding: .65rem .75rem;
+  border-bottom: 1px solid rgb(var(--edge) / .62);
+  background: transparent;
+  transition: background-color .15s ease, box-shadow .15s ease;
+}
+.market-shop-ledger-row:hover { background: rgb(var(--raised) / .62); }
+.market-shop-ledger-row.is-active {
+  background:
+    linear-gradient(90deg, rgb(var(--element) / .12), transparent 72%),
+    rgb(var(--raised) / .54);
+  box-shadow: inset 2px 0 0 rgb(var(--element));
+}
+.market-shop-ledger-row img,
+.market-shop-ledger-row svg { filter: drop-shadow(0 4px 7px rgb(var(--void) / .9)); }
+.market-shop-ledger-quote { display: grid; min-width: 7rem; grid-template-columns: 1fr 1fr; gap: .12rem .45rem; text-align: right; }
+.market-shop-ledger-quote span { display: flex; flex-direction: column; }
+.market-shop-ledger-quote i {
+  color: rgb(var(--faint));
+  font-size: 7px;
+  font-style: normal;
+  letter-spacing: .13em;
+  text-transform: uppercase;
+}
+.market-shop-ledger-quote b { color: rgb(var(--muted)); font-family: 'JetBrains Mono', ui-monospace, monospace; font-size: 10px; font-weight: 500; }
+.market-shop-ledger-quote small { grid-column: 1 / -1; color: rgb(var(--faint)); font-family: 'JetBrains Mono', ui-monospace, monospace; font-size: 8px; }
+
+.market-shop-showcase {
+  background:
+    linear-gradient(135deg, rgb(var(--element) / .035), transparent 45%),
+    rgb(var(--surface) / .68);
+}
+.market-shop-showcase-art {
+  border-bottom: 1px solid rgb(var(--edge) / .75);
+  background:
+    linear-gradient(135deg, rgb(var(--arcane) / .08), transparent 48%),
+    rgb(var(--raised) / .92);
+}
+.market-shop-room-backdrop { width: 100%; height: 100%; background: linear-gradient(145deg, rgb(var(--muted) / .2), rgb(var(--raised))); }
+.market-diorama { overflow: hidden; }
+.market-diorama canvas { display: block; width: 100%; height: 100%; image-rendering: auto; touch-action: pan-y; }
+.market-pixel-inventory { z-index: 2; pointer-events: none; }
+.market-pixel-bay {
+  position: absolute;
+  width: 27%;
+  border: 1px solid transparent;
+  border-radius: 2px;
+  text-align: left;
+  pointer-events: auto;
+  transition: border-color .14s ease, background-color .14s ease, box-shadow .14s ease;
+}
+.market-pixel-bay:hover { border-color: rgb(var(--element) / .34); background: rgb(var(--element) / .035); }
+.market-pixel-bay.is-selected {
+  border-color: rgb(var(--element) / .62);
+  background: linear-gradient(135deg, rgb(var(--element) / .08), transparent 58%);
+  box-shadow: inset 0 0 20px rgb(var(--element) / .055);
+}
+.market-pixel-bay-mark {
+  display: flex;
+  align-items: center;
+  gap: .25rem;
+  color: rgb(var(--rune) / .72);
+  font-family: 'JetBrains Mono', ui-monospace, monospace;
+  font-size: 7px;
+  letter-spacing: .1em;
+  text-transform: uppercase;
+}
+.market-pixel-bay-mark img,
+.market-pixel-bay-mark svg { width: 1.25rem; height: 1.25rem; object-fit: contain; image-rendering: pixelated; filter: drop-shadow(0 3px 5px rgb(var(--void) / .9)); }
+.market-pixel-bay-mark i { font-style: normal; }
+.market-pixel-bay-data {
+  position: absolute;
+  top: .22rem;
+  right: .28rem;
+  display: flex;
+  max-width: 62%;
+  flex-direction: column;
+  align-items: flex-end;
+  padding: .18rem .26rem;
+  background: rgb(var(--void) / .62);
+  color: rgb(var(--muted));
+  font-family: 'JetBrains Mono', ui-monospace, monospace;
+  font-size: 6px;
+  line-height: 1.35;
+  text-align: right;
+}
+.market-pixel-bay-data b { color: rgb(var(--ink)); font-size: 8px; font-weight: 600; }
+.market-pixel-bay-data small { font-size: inherit; white-space: nowrap; }
+.market-container-decal {
+  position: absolute;
+  z-index: 3;
+  display: flex;
+  transform: translate(-50%, -50%);
+  flex-direction: column;
+  align-items: center;
+  line-height: 1;
+  pointer-events: none;
+}
+.market-container-decal img,
+.market-container-decal svg {
+  width: 15px;
+  height: 15px;
+  object-fit: contain;
+  image-rendering: pixelated;
+  filter: drop-shadow(0 2px 3px rgb(var(--void) / .9));
+}
+.market-container-decal b {
+  margin-top: 1px;
+  padding: 1px 2px;
+  border: 1px solid rgb(var(--rune) / .2);
+  background: rgb(var(--void) / .82);
+  color: rgb(var(--rune));
+  font-family: 'JetBrains Mono', ui-monospace, monospace;
+  font-size: 7px;
+  font-weight: 600;
+}
+.market-container-decal.is-100 img,
+.market-container-decal.is-100 svg { width: 18px; height: 18px; }
+.market-container-decal.is-1000 img,
+.market-container-decal.is-1000 svg { width: 22px; height: 22px; }
+.market-container-decal.is-1000 b { font-size: 8px; }
+.market-order-basket-decal { z-index: 5; }
+.market-pixel-stock-unit,
+.market-pixel-order-unit,
+.market-pixel-flight,
+.market-stock-flight {
+  position: absolute;
+  width: clamp(15px, 1.55vw, 25px);
+  height: auto;
+  object-fit: contain;
+  image-rendering: pixelated;
+  filter: drop-shadow(0 3px 4px rgb(var(--void) / .92));
+}
+.market-pixel-order-unit { z-index: 4; }
+.market-pixel-flight { top: 76%; z-index: 5; opacity: 0; }
+.market-pixel-flight.is-in { animation: market-pixel-drop .76s cubic-bezier(.3,.05,.3,1) forwards; }
+.market-pixel-flight.is-out { animation: market-pixel-fall-through .7s cubic-bezier(.5,0,.8,.45) forwards; }
+.market-stock-flight { z-index: 6; opacity: 0; }
+.market-stock-flight.is-to-counter { animation: market-stock-to-counter .82s cubic-bezier(.32,.02,.28,1) forwards; }
+.market-stock-flight.is-to-shelf { animation: market-stock-to-shelf .82s cubic-bezier(.32,.02,.28,1) forwards; }
+@keyframes market-pixel-drop {
+  0% { opacity: 0; transform: translateY(-280px) rotate(-12deg); }
+  12% { opacity: 1; }
+  78% { opacity: 1; transform: translateY(0) rotate(7deg); }
+  100% { opacity: 0; transform: translateY(5px) scale(.86); }
+}
+@keyframes market-pixel-fall-through {
+  0% { opacity: 1; transform: translateY(0) rotate(0); }
+  68% { opacity: 1; }
+  100% { opacity: 0; transform: translateY(185px) rotate(18deg); }
+}
+@keyframes market-stock-to-counter {
+  0% { opacity: 1; transform: scale(.82); }
+  72% { opacity: 1; left: 85%; top: 76%; transform: scale(1); }
+  100% { opacity: 0; left: 85%; top: 76%; transform: scale(.82); }
+}
+@keyframes market-stock-to-shelf {
+  0% { opacity: 1; transform: scale(.9); }
+  72% { opacity: 1; left: var(--stock-target-x); top: var(--stock-target-y); transform: scale(.82); }
+  100% { opacity: 0; left: var(--stock-target-x); top: var(--stock-target-y); transform: scale(.72); }
+}
+.market-shop-showcase-copy { flex: none; padding: .85rem; }
+.market-shop-showcase-metrics > div { min-width: 0; padding: .55rem .65rem; background: rgb(var(--surface)); }
+.market-shop-showcase-metrics dt { color: rgb(var(--faint)); font-size: 8px; letter-spacing: .13em; text-transform: uppercase; }
+.market-shop-showcase-metrics dd { margin-top: .25rem; overflow: hidden; text-overflow: ellipsis; font-family: 'JetBrains Mono', ui-monospace, monospace; font-size: 11px; white-space: nowrap; }
+
+.market-shop-ticket,
+.market-order-ticket {
+  background:
+    linear-gradient(180deg, rgb(var(--element) / .055), transparent 34%),
+    rgb(var(--surface) / .82);
+}
+.market-ticket-item { background: linear-gradient(90deg, rgb(var(--element) / .045), transparent); }
+.market-ticket-summary > div { display: flex; align-items: baseline; justify-content: space-between; gap: 1rem; }
+.market-ticket-summary dt { color: rgb(var(--faint)); font-size: 10px; }
+.market-ticket-summary dd { font-family: 'JetBrains Mono', ui-monospace, monospace; font-size: 11px; text-align: right; }
+
+.market-venue-compare {
+  overflow: hidden;
+  border: 1px solid rgb(var(--edge) / .8);
+  border-radius: 3px;
+  background: rgb(var(--void) / .35);
+}
+.market-venue-compare > div,
+.market-venue-compare > button {
+  display: flex;
+  width: 100%;
+  align-items: center;
+  justify-content: space-between;
+  gap: .75rem;
+  padding: .45rem .55rem;
+  text-align: left;
+  transition: background-color .14s ease;
+}
+.market-venue-compare > * + * { border-top: 1px solid rgb(var(--edge) / .62); }
+.market-venue-compare > button:hover { background: rgb(var(--arcane) / .09); }
+.market-venue-compare > .is-best { background: linear-gradient(90deg, rgb(var(--good) / .07), transparent); }
+.market-venue-compare span { display: flex; min-width: 0; flex-direction: column; }
+.market-venue-compare i { color: rgb(var(--ink)); font-size: 10px; font-style: normal; }
+.market-venue-compare small { color: rgb(var(--faint)); font-size: 8px; }
+.market-venue-compare b { color: rgb(var(--muted)); font-family: 'JetBrains Mono', ui-monospace, monospace; font-size: 12px; font-weight: 500; }
+.market-venue-compare .is-best b { color: rgb(var(--good)); }
+.market-better-route { display: flex; width: 100%; align-items: center; justify-content: space-between; gap: .5rem; color: rgb(var(--good)); font-size: 10px; transition: color .14s ease; }
+.market-better-route:hover { color: rgb(var(--ink)); }
+
+.market-depth-row {
+  position: relative;
+  display: flex;
+  width: 100%;
+  align-items: center;
+  justify-content: space-between;
+  gap: .75rem;
+  overflow: hidden;
+  border-radius: 2px;
+  padding: .28rem .5rem;
+  font-family: 'JetBrains Mono', ui-monospace, monospace;
+  font-size: 12px;
+  transition: background-color .14s ease;
+}
+.market-depth-row:hover { background: rgb(var(--raised) / .8); }
+
+.market-depth-mountain {
+  border: 1px solid rgb(var(--arcane) / .15);
+  background:
+    linear-gradient(90deg, rgb(var(--good) / .025), transparent 45%, rgb(var(--bad) / .025)),
+    rgb(var(--void) / .46);
+}
+.market-depth-caption,
+.market-depth-axis {
+  position: absolute;
+  right: .55rem;
+  left: .55rem;
+  z-index: 2;
+  display: flex;
+  justify-content: space-between;
+  gap: .5rem;
+  font-family: 'JetBrains Mono', ui-monospace, monospace;
+  font-size: 8px;
+  pointer-events: none;
+}
+.market-depth-caption { top: .45rem; color: rgb(var(--faint)); text-transform: uppercase; }
+.market-depth-axis { bottom: .35rem; color: rgb(var(--faint)); }
+.market-depth-axis span:nth-child(2) { color: rgb(var(--arcane)); text-transform: uppercase; }
+.market-depth-ladders { scrollbar-width: thin; scrollbar-color: rgb(var(--arcane) / .35) transparent; }
+
 /* Floor tiles ------------------------------------------------------------ */
 
 .market-floor { --element: var(--arcane); }
@@ -2017,11 +2313,104 @@ pre,
   background: rgb(var(--arcane) / .09);
 }
 
+.market-floor-quotes { overflow: hidden; border: 1px solid rgb(var(--edge) / .58); background: rgb(var(--edge) / .58); }
+.market-floor-quotes > span { display: flex; align-items: baseline; justify-content: space-between; gap: .35rem; padding: .2rem .35rem; background: rgb(var(--void) / .7); }
+.market-floor-quotes i { color: rgb(var(--faint)); font-size: 7px; font-style: normal; letter-spacing: .12em; text-transform: uppercase; }
+.market-floor-quotes b { font-family: 'JetBrains Mono', ui-monospace, monospace; font-size: 9px; font-weight: 500; }
+
 .market-price-chart {
   border: 1px solid rgb(var(--arcane) / .16);
   background:
     linear-gradient(rgb(var(--arcane) / .05) 1px, transparent 1px) 0 0 / 100% 25%,
     rgb(var(--void) / .55);
+}
+
+.market-chart-control {
+  min-height: 1.6rem;
+  padding: .2rem .45rem;
+  border: 1px solid rgb(var(--edge));
+  border-radius: 2px;
+  color: rgb(var(--faint));
+  font-family: 'JetBrains Mono', ui-monospace, monospace;
+  font-size: 9px;
+  text-transform: uppercase;
+  transition: border-color .14s ease, background-color .14s ease, color .14s ease;
+}
+.market-chart-control:hover { color: rgb(var(--ink)); border-color: rgb(var(--arcane) / .42); }
+.market-chart-control.is-active { color: rgb(var(--arcane)); border-color: rgb(var(--arcane) / .62); background: rgb(var(--arcane) / .1); }
+.market-chart-divider { width: 1px; min-height: 1.4rem; margin-inline: .15rem; background: rgb(var(--edge)); }
+
+/* Time in force.
+   Four chips, because the choice is genuinely four-way and a dropdown would
+   hide the one thing that matters -- what happens to the part that does not
+   trade. Same visual language as the chart controls: this is a mode switch on
+   a ticket, not a decision the player commits to. */
+.market-tif-choice {
+  min-height: 1.9rem;
+  padding: .3rem .2rem;
+  border: 1px solid rgb(var(--edge));
+  border-radius: 2px;
+  background: rgb(var(--void) / .3);
+  color: rgb(var(--faint));
+  font-family: 'JetBrains Mono', ui-monospace, monospace;
+  font-size: 9px;
+  line-height: 1.1;
+  text-transform: uppercase;
+  transition: border-color .14s ease, background-color .14s ease, color .14s ease;
+}
+.market-tif-choice:hover { color: rgb(var(--ink)); border-color: rgb(var(--arcane) / .42); }
+.market-tif-choice.is-active {
+  color: rgb(var(--arcane));
+  border-color: rgb(var(--arcane) / .62);
+  background: rgb(var(--arcane) / .1);
+}
+
+/* The realm's desk, marked on the level it is quoting.
+   The house is in the same ladder as everyone else, so it gets a mark rather
+   than a panel of its own -- the whole point of it being there is that a
+   trader does not have to compare two venues. */
+.market-depth-house {
+  margin-left: .3rem;
+  color: rgb(var(--bone, var(--arcane)));
+  font-size: 8px;
+  vertical-align: .1em;
+}
+
+/* An inline action inside the ticket: amend, withdraw-all. Quiet enough not to
+   compete with the submit button, findable enough to be used. */
+.market-ticket-link {
+  color: rgb(var(--faint));
+  font-family: 'JetBrains Mono', ui-monospace, monospace;
+  font-size: 9px;
+  text-transform: uppercase;
+  letter-spacing: .06em;
+  transition: color .14s ease;
+}
+.market-ticket-link:hover:not(:disabled) { color: rgb(var(--arcane)); }
+.market-ticket-link:disabled { opacity: .45; }
+
+.market-amend-input {
+  height: 1.9rem;
+  width: 100%;
+  border: 1px solid rgb(var(--edge));
+  border-radius: 2px;
+  background: rgb(var(--void) / .35);
+  padding-inline: .4rem;
+  font-family: 'JetBrains Mono', ui-monospace, monospace;
+  font-size: 11px;
+}
+.market-amend-input:focus { outline: none; border-color: rgb(var(--arcane) / .6); }
+.market-candle-readout {
+  position: absolute;
+  top: .45rem;
+  left: .55rem;
+  z-index: 2;
+  display: flex;
+  gap: .55rem;
+  color: rgb(var(--muted));
+  font-family: 'JetBrains Mono', ui-monospace, monospace;
+  font-size: 8px;
+  pointer-events: none;
 }
 
 .market-monster-card:hover {
@@ -2081,6 +2470,10 @@ pre,
     min-height: 0;
     flex: 1;
   }
+
+  .market-shop-workspace { grid-template-columns: minmax(0, 3fr) minmax(17rem, 1fr); }
+
+  .market-shop-workspace > * { min-width: 0; min-height: 0; }
 
   .market-shop-stock { grid-auto-rows: minmax(0, 1fr); }
 
@@ -2163,6 +2556,20 @@ pre,
 
 @media (max-width: 1023px) {
   .market-tabs { top: calc(var(--app-header-height, 4rem) + .25rem); }
+  .market-shop-ledger-list { max-height: 27rem; }
+  .market-shop-showcase-art { min-height: 20rem; }
+}
+
+@media (max-width: 700px) {
+  .market-desk-switcher { width: 100%; max-width: none; }
+  .market-desk-health { width: 100%; justify-content: stretch; }
+  .market-desk-health > div { min-width: 0; flex: 1; border-top: 1px solid rgb(var(--edge) / .72); border-left: 0; }
+  .market-desk-health > div + div { border-left: 1px solid rgb(var(--edge) / .72); }
+  .market-shop-showcase-art { min-height: 16rem; }
+  .market-shop-showcase-metrics { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .market-chart-toolbar { justify-content: flex-start; }
+  .market-chart-divider { display: none; }
+  .market-depth-caption { font-size: 7px; }
 }
 
 @media (prefers-reduced-motion: reduce) {

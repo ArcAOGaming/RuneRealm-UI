@@ -18,10 +18,25 @@
 --- reserve: the in-game balances it holds and the supply circulating here are
 --- two halves of one number, and no third party can move either.
 ---
---- Denomination is 0 — deliberately. A Rune buys one quest or one arena
---- session; a thousandth of a Rune is not a thing the game can express. Whole
---- units also keep every number here an integer, and integers are the one thing
---- to stay careful about on Luerl (see the `int` note below).
+--- Denomination is 6, and the BRIDGE only moves whole Runes. Those two facts
+--- are one design, not a contradiction:
+---
+---   * OUTSIDE, Rune is an ordinary divisible token. Wallets, pools and an
+---     order book quoting other assets against it all need fractions — a quote
+---     asset with no decimals has a one-Rune minimum tick, which at the
+---     intended price is a ten-cent tick and makes anything cheap untradeable.
+---   * INSIDE, a Rune buys one quest or one arena session, and a thousandth of
+---     a Rune is not a thing the game can express.
+---
+--- `Mint` and `Burn` are the only two handlers that cross that line, and both
+--- refuse an amount that is not a whole multiple of `UNIT` — refuse, never
+--- truncate, because truncating a bridge amount destroys the remainder. So the
+--- game never sees a fraction, and TotalSupply is always a whole number of
+--- Runes even though individual balances need not be.
+---
+--- 6 rather than AO's usual 12: twelve decimals against a supply in the
+--- millions is more than int64 holds, and every number here is a Luerl
+--- integer (see the `int` note below).
 ---
 --- Deployed exactly like the game process: bundled after hyper-aos.lua and
 --- jsonenc.lua, with its own `compute()` replacing the one hyper-aos installs.
@@ -38,9 +53,9 @@
 ---
 --- Where it deliberately differs, and why
 --- -------------------------------------
----   * `Denomination` is 0, not 12. A Rune buys one quest or one arena session
----     and does not divide. Whole units also keep every number an integer,
----     which on Luerl is worth going out of the way for.
+---   * `Denomination` is 6, not 12, and the bridge is whole-unit only. See the
+---     note above. Twelve decimals against a million-unit supply exceeds int64,
+---     and every number here is a Luerl integer.
 ---
 ---   * `Mint` answers the GAME process, not the owner. The standard mints to
 ---     whoever deployed it; here every Rune must be backed by one deducted from
@@ -69,10 +84,37 @@
 --- underneath this is not settled yet. Dropping the prefix is a release step.
 Name = "TEST-Rune"
 Ticker = "TEST-RUNE"
-Denomination = 0
+Denomination = 6
 Logo = Logo or ""
 
---- address -> whole Runes. Absent means zero; a balance is never stored as 0,
+--- Atoms in one whole Rune, i.e. 10^Denomination.
+---
+--- DUPLICATED BY NECESSITY. The game process carries the same number as
+--- `C.RUNE_UNITS`; this is a separate process and cannot read the game's
+--- constants. If the two ever disagree, every withdrawal mints the wrong
+--- amount and reconciliation reports a permanent difference, so
+--- `deploy-rune.mjs` reads `Denomination` back off the deployed token and
+--- refuses to wire a game whose constant does not match.
+local UNIT = 1000000
+
+--- Whole Runes only, for the two handlers that cross into the game.
+---
+--- Truncating would be the tempting alternative and it is the wrong one: the
+--- remainder would simply cease to exist, with nothing recording that it did.
+--- Refusing leaves the dust where it is, in the holder's balance, spendable
+--- outside the game.
+local function wholeRunes(amount, verb)
+  -- `string.format` rather than `asString`: that helper is a local declared
+  -- further down this file, so the name here would resolve to a nil global.
+  if amount % UNIT ~= 0 then
+    return nil, verb .. " a whole number of Rune: " .. string.format("%d", UNIT)
+      .. " is one Rune, and " .. string.format("%d", amount)
+      .. " is not a multiple of it"
+  end
+  return amount
+end
+
+--- address -> atoms. Absent means zero; a balance is never stored as 0,
 --- so `Balances` stays the list of people who actually hold something.
 Balances = Balances or {}
 
@@ -94,6 +136,34 @@ Burned = Burned or 0
 --- withdrawal id as `reference` for exactly this reason; this is the same idea
 --- travelling the other way.
 BurnSeq = BurnSeq or 0
+
+--- withdrawal reference -> the amount already minted for it. THE MINT GUARD.
+---
+--- The comment above says "the mint path already carries the game's withdrawal
+--- id as `reference` for exactly this reason". It carried it and then did
+--- nothing with it: `H["Mint"]` credited and incremented `TotalSupply`
+--- unconditionally, and `Reference` was echoed into the reply and never read.
+--- HANDOFF.md asserted this guard existed. It did not.
+---
+--- The incident is recorded three lines into the outbox comment in `H["Mint"]`
+--- itself: a push of a successful withdrawal returned HTTP 500 *after* both
+--- hops had landed, the client read that as failure and retried, and the retry
+--- re-ran the handler -- 80 Rune deducted in-game became 224 Rune minted.
+--- Removing the `credit-notice` removed one CAUSE of that retry. It did not
+--- make the handler safe, and delivery is not exactly-once, so a second cause
+--- is a matter of time.
+---
+--- This is the bridge, and the bridge is where in-game fuel becomes an asset
+--- with real value. Nothing else in this repo can create value out of nothing;
+--- this handler could.
+---
+--- NEVER BOUND THIS TABLE. The trimming pattern MarketHistory uses is right for
+--- a history and catastrophic here: an aged-out reference becomes mintable
+--- again and the attacker simply waits. It costs nothing to keep -- rune.lua
+--- publishes only tokeninfo, balances, totalsupply, ticker and minter, so this
+--- is heap and snapshot state and never enters the published map that every
+--- `~lua@5.3a` slot pays for five times over.
+MintReceipts = MintReceipts or {}
 
 --- The game process, and the ONLY address that may mint or burn. Empty until
 --- the owner sets it, and mint/burn refuse while it is empty rather than
@@ -470,10 +540,60 @@ H["Mint"] = function(base, msg)
 
   local amount, why = quantity(msg.Quantity)
   if not amount then return fail(base, why) end
+  amount, why = wholeRunes(amount, "Mint")
+  if not amount then return fail(base, why) end
+
+  -- Both spellings: a tag name becomes an HTTP header and headers are
+  -- lowercased, so the live node writes `reference` where the test harness
+  -- writes `Reference`. Reading one spelling makes the suite pass and the
+  -- deployed process refuse every real withdrawal -- see CLAUDE.md.
+  local reference = msg.Reference or msg.reference
+  if type(reference) ~= "string" or reference == "" then
+    return fail(base, "Reference is required")
+  end
+
+  -- Replay: answer exactly as the first delivery did, and mint NOTHING.
+  --
+  -- Success rather than a refusal, deliberately. The caller that retries is a
+  -- client that believes the first attempt failed, and it is right to retry --
+  -- what it must not do is cause a second mint. Handing it the original result
+  -- lets it settle the withdrawal it already has instead of treating a correct
+  -- refusal as a new error and escalating.
+  local already = MintReceipts[reference]
+  if already ~= nil then
+    base.results = {
+      output = { data = encode({
+        Action = "Mint-Success",
+        Recipient = to,
+        Quantity = asString(already),
+        Balance = asString(balanceOf(to)),
+        TotalSupply = asString(TotalSupply),
+        Reference = reference,
+        Replayed = "true",
+      }) },
+      outbox = {
+        -- Re-emit the notice, minting nothing. A retry means the caller did not
+        -- learn the first attempt landed, and the game most likely did not
+        -- either -- that withdrawal is still sitting at `pending`, which is the
+        -- exact state this notice exists to clear. Suppressing it here would
+        -- make the guard safe and the withdrawal permanently stuck, and closing
+        -- one by hand with `Admin.SettleWithdrawal` is what the notice replaced.
+        ["mint-notice"] = {
+          target = from, Action = "Rune.Minted",
+          Recipient = to, Quantity = asString(already),
+          Reference = reference,
+        },
+      },
+    }
+    return base
+  end
 
   credit(to, amount)
   TotalSupply = TotalSupply + amount
   Minted = Minted + amount
+  -- After the credit, never before: a failure between the two would otherwise
+  -- burn the reference and strand the withdrawal permanently unmintable.
+  MintReceipts[reference] = amount
 
   base.results = {
     output = { data = encode({
@@ -540,6 +660,8 @@ H["Burn"] = function(base, msg)
   end
 
   local amount, why = quantity(msg.Quantity)
+  if not amount then return fail(base, why) end
+  amount, why = wholeRunes(amount, "Burn")
   if not amount then return fail(base, why) end
 
   local held = balanceOf(account)

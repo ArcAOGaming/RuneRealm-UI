@@ -10,6 +10,12 @@
 
 local M = {}
 local pushHistory
+--- Declared here because `M.ensureState` builds the book index and the index
+--- is defined with the rest of the order book, far below it. The version is
+--- declared with it for the same reason: `ensureState` is what notices a
+--- process whose index is missing or built to an older shape.
+local rebuildIndex
+local BOOK_INDEX_VERSION = 1
 
 local DAY = 24 * 3600 * 1000
 local BPS = 10000
@@ -20,6 +26,10 @@ local ITEM_IDS = {
 local BERRY = {
   air_berry = true, water_berry = true, fire_berry = true, rock_berry = true,
 }
+--- Who the NPC desk is, in a fill. Deliberately not 43 characters: no wallet
+--- can ever be spelled this, so nothing that filters a book by account can
+--- confuse the house with a player.
+local HOUSE = "desk"
 
 local function int(value, fallback)
   local narrowed = math.tointeger(tonumber(value))
@@ -32,6 +42,14 @@ local function clamp(value, low, high)
   if value < low then return low end
   if value > high then return high end
   return value
+end
+
+local function median(values)
+  if #values == 0 then return nil end
+  table.sort(values)
+  local middle = (#values + 1) // 2
+  if (#values % 2) == 1 then return values[middle] end
+  return (values[middle] + values[middle + 1]) // 2
 end
 
 local function copy(value)
@@ -47,7 +65,9 @@ local function countMap(value)
   return total
 end
 
-local function sortedKeys(value)
+--- Unused since the book grew an index: kept because it is the obvious helper
+--- to reach for and re-deriving it is worse than leaving four lines here.
+local function sortedKeys(value) -- luacheck: ignore
   local keys = {}
   for key in pairs(value or {}) do keys[#keys + 1] = key end
   table.sort(keys)
@@ -88,6 +108,68 @@ local function newDesk(item, goldReserve, prices, limits, stockBps, stockMax)
     epochUsage = { epoch = -1, quantity = 0 },
     traded = { bought = 0, sold = 0, goldIn = 0, goldOut = 0 },
   }
+end
+
+--- The market registry.
+---
+--- Today "the market" is an item name and the quote asset is Gold, implicitly.
+--- This is the table that makes it explicit, and it is the difference between
+--- a game feature and a venue: a market is a `(base, quote)` pair with its own
+--- tick, lot, limits and fee. Every current row is `<item>/gold` with a lot of
+--- one, so nothing about the game changes -- and listing an asset against
+--- something other than Gold becomes a row rather than a rewrite.
+---
+--- `lot` is the one that earns its place immediately. Price is quote units per
+--- LOT of base, so an asset worth a third of a Rune lists with `lot = 10` and
+--- trades at 3. Without it, an indivisible quote asset (Rune has no decimals
+--- in the game, and Gold has none anywhere) forces a minimum price increment
+--- of one whole unit and anything cheap is untradeable. See ORDERBOOK.md §7.1.
+---
+--- `takerBps` is 0 on every in-game market deliberately -- the NPC desk spread
+--- is the Gold sink, not the book. The external deployment sets 30. `feeCarry`
+--- is the fractional remainder that makes a percentage fee exact against an
+--- indivisible asset; see §7.2.
+local function marketId(base, quote) return base .. "/" .. quote end
+
+local function newMarket(base, quote, overrides)
+  local cfg = C.ECONOMY.orderbook
+  local market = {
+    id = marketId(base, quote), base = base, quote = quote,
+    tick = 1, lot = 1,
+    minValue = cfg.minValue,
+    maxPrice = cfg.maxUnitPrice,
+    maxQuantity = cfg.maxQuantity,
+    takerBps = 0, makerBps = 0, rebateBps = 0,
+    feeCarry = 0,
+    --- How far from the reference price an order may be priced, either side.
+    --- Zero switches the guard off for this market; see `priceBand`.
+    bandBps = cfg.bandBps,
+    --- Whether the NPC desk for this base asset quotes into the ladder.
+    --- Only true where the quote asset is Gold and a lot is one unit: the desk
+    --- holds Gold and whole items, not lots of something else.
+    houseQuotes = quote == "gold",
+    status = "open",
+  }
+  for key, value in pairs(overrides or {}) do market[key] = value end
+  return market
+end
+
+local function newMarkets()
+  local markets = {}
+  for _, item in ipairs(ITEM_IDS) do
+    local market = newMarket(item, "gold")
+    markets[market.id] = market
+  end
+  return markets
+end
+
+--- Find a market by id, or by base asset for a caller that only knows the
+--- item. Every existing message says `Item = "fire_berry"` and means
+--- `fire_berry/gold`; a client that names a full market id gets that instead.
+function M.resolveMarket(state, name)
+  if type(name) ~= "string" or name == "" then return nil end
+  local markets = state.markets or {}
+  return markets[name] or markets[marketId(name, "gold")]
 end
 
 local function newDesks()
@@ -157,7 +239,7 @@ function M.newState()
   local cfg = C.ECONOMY
   return {
     version = 1,
-    normalisedVersion = 1,
+    normalisedVersion = 5,
     mode = "testing",
     assets = assets,
     lootboxes = boxRows(),
@@ -176,11 +258,21 @@ function M.newState()
     orders = {},
     orderSeq = 0,
     fills = {},
+    fillSeq = 0,
     orderHistory = {},
     rejected = {},
     actionReceipts = {},
     actionReceiptOrder = {},
     desks = newDesks(),
+    markets = newMarkets(),
+    --- Fees collected, per asset, for markets whose quote is not Gold.
+    ---
+    --- Gold fees keep going through `routeGoldFee`, which decides burn or
+    --- treasury against the supply target -- a decision that only makes sense
+    --- for an asset this process issues. Somebody else's token cannot be
+    --- burned to hit our target, so it accrues here and who may withdraw it is
+    --- a policy question rather than a constant.
+    fees = {},
     policy = {
       emergency = { paused = false, reason = nil, at = 0 },
       gold = {
@@ -217,7 +309,15 @@ function M.newState()
         genesisAt = 0,
         epochBudget = 0,
         epochLength = (C.ECONOMY.rune or {}).epochLength or (30 * DAY),
-        accountNet30Cap = 20,
+        --- v2: what one account is paid per epoch, flat. See the note on
+        --- `emissionPerAccount` in constants.lua -- this is an engagement
+        --- assumption (48/240 = the 20% of passholders expected to play
+        --- properly), not a free parameter.
+        emissionPerAccount = (C.ECONOMY.rune or {}).emissionPerAccount or 48,
+        --- Matches `emissionPerAccount`: an account that spends nothing is paid
+        --- once and then capped, and spending buys headroom back. Raising one
+        --- without the other silently re-tunes the faucet.
+        accountNet30Cap = (C.ECONOMY.rune or {}).emissionPerAccount or 48,
         newcomerFloor = 0,
         reserveBalance = 0,
         bondedRune = 0,
@@ -268,9 +368,79 @@ local function normaliseAsset(row)
   return row
 end
 
+--- The highest numeric suffix behind a one-letter id prefix, over a list.
+---
+--- Used to restart a sequence after a migration without ever reissuing an id
+--- that something already refers to.
+local function highestId(list, prefix)
+  local highest = 0
+  for _, row in ipairs(list or {}) do
+    local digits = type(row) == "table" and type(row.id) == "string"
+      and string.match(row.id, "^" .. prefix .. "(%d+)$") or nil
+    local value = int(digits, 0)
+    if value > highest then highest = value end
+  end
+  return highest
+end
+
 function M.ensureState(state)
   if type(state) ~= "table" or int(state.version, 0) < 1 then state = M.newState() end
-  if int(state.normalisedVersion, 0) >= 1 then return state end
+  if int(state.normalisedVersion, 0) < 1 then state = M.normaliseV1(state) end
+  if int(state.normalisedVersion, 0) < 2 then
+    -- Fill ids used to be `"F" .. #state.fills + 1`, and `#state.fills` is
+    -- pinned at the history cap by `appendBounded` -- so every fill after the
+    -- five-hundredth was called `F501`. A monotonic sequence fixes it going
+    -- forward; seeding past the highest id still visible stops the repair
+    -- itself from minting a third `F501`.
+    state.fillSeq = math.max(int(state.fillSeq, 0), highestId(state.fills, "F"))
+    state.normalisedVersion = 2
+  end
+  if int(state.normalisedVersion, 0) < 3 then
+    -- The registry. A process that has been trading since before it existed
+    -- gets the default rows, which describe exactly what it was already doing.
+    state.markets = type(state.markets) == "table" and state.markets or {}
+    for id, market in pairs(newMarkets()) do
+      if type(state.markets[id]) ~= "table" then
+        state.markets[id] = market
+      else
+        for field, value in pairs(market) do
+          if state.markets[id][field] == nil then state.markets[id][field] = value end
+        end
+      end
+    end
+    state.normalisedVersion = 3
+  end
+  if int(state.normalisedVersion, 0) < 4 then
+    state.fees = type(state.fees) == "table" and state.fees or {}
+    state.normalisedVersion = 4
+  end
+  if int(state.normalisedVersion, 0) < 5 then
+    -- The price band, the house quote flag and the trader-chosen lifetime.
+    -- A process that has been trading without any of them gets the defaults,
+    -- and every order already resting keeps the lifetime it was given.
+    for id, defaults in pairs(newMarkets()) do
+      local market = state.markets[id]
+      if type(market) == "table" then
+        for _, field in ipairs({ "bandBps", "houseQuotes" }) do
+          if market[field] == nil then market[field] = defaults[field] end
+        end
+      end
+    end
+    state.normalisedVersion = 5
+  end
+  -- The book index is DERIVED, so it is not a migration and does not get a
+  -- `normalisedVersion`: it is absent from every export and every published
+  -- view on purpose, and a process restored from either simply builds it here.
+  -- The same check catches a version bump to the index's own shape without a
+  -- migration having to know anything about it.
+  if type(state.bookIndex) ~= "table"
+     or int(state.bookIndex.version, 0) ~= BOOK_INDEX_VERSION then
+    rebuildIndex(state)
+  end
+  return state
+end
+
+function M.normaliseV1(state)
   local fresh = M.newState()
   state.assets = type(state.assets) == "table" and state.assets or {}
   for _, item in ipairs(ITEM_IDS) do state.assets[item] = normaliseAsset(state.assets[item]) end
@@ -321,6 +491,9 @@ function M.ensureState(state)
   state.activity = type(state.activity) == "table" and state.activity or {}
   state.version = 1
   state.normalisedVersion = 1
+  -- `state.orders` may have just been replaced wholesale; anything the index
+  -- remembered about it is now a claim about a book that no longer exists.
+  state.bookIndex = nil
   return state
 end
 
@@ -501,6 +674,11 @@ function M.rotateAccount(state, players, oldAddress, newAddress, timestamp)
       desk.accountUsage[oldAddress] = nil
     end
   end
+  -- Every counter and ring in the book index is keyed by address, and this
+  -- has just walked the whole book and the whole fills list to move one.
+  -- Rebuilding from what they now say is cheaper to reason about than
+  -- rewriting six structures in place, and impossible to get subtly wrong.
+  rebuildIndex(state)
   return player, nil
 end
 
@@ -725,17 +903,96 @@ end
 --- `genesisAt` is stamped on first use rather than at spawn so that a migrated
 --- process starts its schedule when it starts paying, not at some epoch it
 --- inherited from a predecessor's export.
-function M.emissionBudget(state, timestamp)
+--- The fractional-Rune roll for one account on one day, in basis points.
+---
+--- >>> PLACEHOLDER ENTROPY. INTENDED TO BE REPLACED. <<<
+---
+--- This is FNV-1a over `address#day`. It is deterministic, uniform enough for
+--- a coin flip, and NOT cryptographically secure -- anybody can compute it.
+--- Swap the body for real entropy when it is available; the signature and the
+--- call site do not change.
+---
+--- What it already gets right, and what a replacement must keep:
+---
+---   * Keyed to (address, DAY), never to the claiming message. Day N's outcome
+---     is fixed the moment day N happens, so it pays the same whether it is
+---     collected that evening or three weeks later. This is what stops the two
+---     attacks that matter, and it does so WITHOUT needing to be secret:
+---       - waiting: there is no better day to claim on, because the days you
+---         are claiming for have already happened;
+---       - grinding: the player signs the claim, so anything derived from the
+---         signed message could be re-signed until it came up good. Nothing
+---         here reads the message.
+---
+--- So predictability is a cosmetic weakness here rather than an economic one:
+--- a player can see tomorrow's roll and can do precisely nothing with it. That
+--- is the property to preserve if this is swapped -- a "more secure" source
+--- that keys on the message id would be strictly worse.
+function M.dayRollBps(address, day)
+  local h = 2166136261
+  local s = tostring(address) .. "#" .. string.format("%d", int(day, 0))
+  for i = 1, #s do
+    h = (h ~ string.byte(s, i)) & 0xFFFFFFFF
+    h = (h * 16777619) & 0xFFFFFFFF
+  end
+  return h % BPS
+end
+
+--- How many halvings the schedule has reached. One clock, read in two places.
+local function emissionHalvings(state, timestamp)
   local policy = state.policy.runeRewards
   local cfg = C.ECONOMY.rune or {}
   local now = int(timestamp, 0)
   if int(policy.genesisAt, 0) <= 0 then policy.genesisAt = now end
   local elapsed = math.max(0, now - int(policy.genesisAt, 0))
   local period = math.max(1, int(cfg.halvingPeriod, 365 * DAY))
-  local halvings = math.min(int(cfg.maxHalvings, 8), elapsed // period)
-  local budget = int(cfg.emissionPerEpoch, 2000)
-  for _ = 1, halvings do budget = budget // 2 end
-  budget = math.max(int(cfg.minEmissionPerEpoch, 0), budget)
+  return math.min(int(cfg.maxHalvings, 8), elapsed // period)
+end
+
+--- What ONE account is paid this epoch. The supply schedule, per player.
+---
+--- The halving has to live here, on the rate an account actually receives.
+--- Applying it only to the global pot -- which is what happened when emission
+--- first became per-account -- left the per-account rate flat forever while the
+--- ceiling above it halved, so the schedule both failed to decay AND started
+--- strangling the game: a 2,000 ceiling pays 48 to 41 accounts, and 20 after
+--- one halving.
+---
+--- 48 integer-halves to 24, 12, 6, 3, 1, then 0 -- reaching the floor in the
+--- SIXTH year, not the eighth `maxHalvings` allows. Lifetime emission per
+--- account is therefore 12.17 epochs x (48+24+12+6+3+1) = ~1,144 Rune, and
+--- total supply is that times the number of passes ever sold. Bounded,
+--- knowable in advance, and publishable -- which is the whole point of a
+--- schedule a holder can price.
+---
+--- The floor is one Rune an epoch, NOT zero. Zero means an account created in
+--- year seven earns nothing ever, which is a dead first week that never ends;
+--- one an epoch is ~1% of the genesis rate, small enough to be a rounding error
+--- against total supply and large enough that arriving late is not pointless.
+function M.emissionPerAccount(state, timestamp)
+  local cfg = C.ECONOMY.rune or {}
+  local halvings = emissionHalvings(state, timestamp)
+  local rate = int(cfg.emissionPerAccount, 48)
+  for _ = 1, halvings do rate = rate // 2 end
+  return math.max(int(cfg.minEmissionPerAccount, 0), rate), halvings
+end
+
+--- The global epoch CEILING. A circuit breaker, not a divisor.
+---
+--- Nothing is divided by this any more, and it must never bind in normal
+--- operation -- if it does, accounts that claim late in an epoch are paid less
+--- than accounts that claimed early, which is a race, not a policy. So it is
+--- derived from what the schedule could legitimately owe: every pass ever sold,
+--- plus headroom, at this epoch's per-account rate. `emissionPerEpoch` is the
+--- floor under that, so a tiny deployment still has a sane backstop.
+function M.emissionBudget(state, timestamp)
+  local policy = state.policy.runeRewards
+  local perAccount, halvings = M.emissionPerAccount(state, timestamp)
+  local passes = int((state.policy.passes or {}).lifetimePassCount, 0)
+  local owed = perAccount * (passes + 100)
+  local budget = math.max(int((C.ECONOMY.rune or {}).emissionPerEpoch, 2000), owed)
+  budget = math.max(int((C.ECONOMY.rune or {}).minEmissionPerEpoch, 0), budget)
+  policy.epochBudget = budget
   return budget, halvings
 end
 
@@ -747,7 +1004,15 @@ end
 --- claimant of the day would have taken the ENTIRE global pot. The candidate
 --- count is computed either way; fall back to it so the split is always against
 --- the real population.
-local function emissionPopulation(state)
+--- UNUSED in v2 and kept deliberately.
+---
+--- Emission is per account now, so nothing divides by a population. This is
+--- retained because reinstating a fixed pot means reinstating exactly this
+--- function, and because its fall-through to 1 is the bug worth remembering:
+--- `candidateQualified` needs three distinct active days, so the divisor is
+--- structurally zero for the first three days of any deployment. Restore it and
+--- floor the result at `emissionPerEpoch // accountNet30Cap`, never at 1.
+local function emissionPopulation(state) -- luacheck: ignore
   local gold = state.policy.gold
   local adopted = int(gold.qualifiedActive, 0)
   if adopted > 0 then return adopted end
@@ -783,7 +1048,16 @@ function M.claimRuneReward(state, player, address, timestamp)
   if not policy.currentEpoch or int(policy.currentEpoch.id, -1) ~= epochId then
     policy.currentEpoch = { id = epochId, spent = 0, claims = {} }
   end
-  if policy.currentEpoch.claims[address] then return 0, "Reward already claimed this epoch" end
+  -- NOT once per epoch any more. The allowance accrues DAILY and is collected
+  -- whenever the player next worships; `claims[address]` is now a running
+  -- per-epoch total rather than a gate. A single 48-Rune payday every thirty
+  -- days left a new account dry for a month, which is a strange thing to do to
+  -- the person most likely to leave.
+  --
+  -- Accrual is keyed to the DAY, deliberately, and not to the worship claim.
+  -- Worship runs on a 20-hour interval, so paying per claim would hand 36
+  -- payments per 30-day epoch instead of 30 -- a silent 20% bonus for setting
+  -- an alarm. Claiming more often now collects the same Rune, sooner.
 
   local activity = state.activity[address] or { days = {}, sinkActions = 0, runeFlow = {} }
   local firstDay, distinct = nil, 0
@@ -792,41 +1066,149 @@ function M.claimRuneReward(state, player, address, timestamp)
     if firstDay == nil or int(day, 0) < firstDay then firstDay = int(day, 0) end
   end
   local ageDays = firstDay and (timestamp // DAY - firstDay) or 0
-  local weightBps = ageDays >= 30 and BPS or (ageDays >= 7 and 5000 or 0)
-  local population = emissionPopulation(state)
-  local perCapita = budget // population
-  -- The newcomer floor is DERIVED from the same pot, not configured. An account
-  -- too young to be weighted still gets a slice of one per-capita share, and
-  -- because it comes out of `remainingEpoch` like every other claim, any number
-  -- of newcomers dilutes the day rather than inflating it.
-  local floorShare = (perCapita * int((C.ECONOMY.rune or {}).newcomerFloorBps, 2500)) // BPS
-  policy.newcomerFloor = floorShare
-  local share = (budget * weightBps) // (population * BPS)
-  if share <= 0 then share = floorShare end
-  -- A pot that cannot pay one whole Rune to a matured account is not a
-  -- rounding problem to paper over; say so rather than silently paying zero.
+  -- NO MATURITY RAMP. A fresh account earns the full rate from its first day.
+  --
+  -- This used to be `ageDays >= 30 and BPS or (ageDays >= 7 and 5000 or 0)`,
+  -- the ramp ECONOMY_MARKETPLACE_PLAN.md §8.6 lists as a locked default:
+  -- 25% for the first week, 50% to day 30, full afterwards. It was there to
+  -- make a freshly-minted farm wallet earn a quarter rate while it was cheap
+  -- to make one.
+  --
+  -- Wallets are not cheap to make any more -- entry is a paid pass, and §8.7's
+  -- payback model is what prices the farm now. What the ramp actually cost was
+  -- the honest newcomer: a dead first week, at the exact moment somebody is
+  -- deciding whether this game is worth their time. Removed deliberately, and
+  -- the trade is recorded in ECONOMY_V2.md §2 -- the pass carries the whole
+  -- sybil defence, so if the pass price ever stops tracking the Rune price this
+  -- is one of the things that was holding the line and no longer is.
+  --
+  -- `maturityBps` still ramps NPC DESK quotas (economy.lua, 10%/50%/100%).
+  -- That is a separate mechanism on a separate surface and is untouched here.
+  -- v2: a flat PER-ACCOUNT rate, not a pot divided by a population.
+  --
+  -- The divisor is gone, and with it the launch-window hole it opened:
+  -- `emissionPopulation` fell through to 1 whenever nothing had qualified yet
+  -- -- which is structurally the case for the first three days of ANY
+  -- deployment, and was the case on the live process -- so `perCapita` was the
+  -- entire epoch budget and the newcomer floor was a quarter of it, 500 Rune,
+  -- reachable in a single claim.
+  --
+  -- Entry is a paid pass, so wallet count is no longer free and no longer needs
+  -- to be divided by. See the note on `emissionPerAccount` in constants.lua for
+  -- what that trade gives up.
+  local perCapita = M.emissionPerAccount(state, timestamp)
+  policy.newcomerFloor = perCapita
+  -- The schedule has run out, which is a different thing from a busy epoch and
+  -- is permanent. Say so plainly rather than reporting a sharing-out that will
+  -- never come round again.
+  if perCapita <= 0 then
+    return 0, "The emission schedule has completed; Rune is no longer minted"
+  end
+  local epochDays = math.max(1,
+    int((C.ECONOMY.rune or {}).epochLength, 30 * DAY) // DAY)
+  local perDayBps = (perCapita * BPS) // epochDays
+
+  -- How many whole days are owed. First claim ever pays one day, not the age
+  -- of the universe: `runeAccruedThrough` is stamped on the account the first
+  -- time it is read, so a wallet that sat dormant for a year cannot come back
+  -- and collect the year.
+  local today = timestamp // DAY
+  local through = int(activity.runeAccruedThrough, 0)
+  if through <= 0 then through = today - 1 end
+  local owedDays = math.max(0, today - through)
+  if owedDays <= 0 then return 0, "Today's Rune has already been claimed" end
+  -- One epoch of accrual is the ceiling, so time away banks a month at most.
+  if owedDays > epochDays then owedDays = epochDays end
+
+  -- Pay the whole part of every owed day, then roll ONLY the fraction.
+  --
+  -- Rolling the whole amount would let a new account come up empty for a week
+  -- at 1.6/day -- `0.6^7` is about a 2.8% chance of nothing at all, landing on
+  -- the people likeliest to leave. Rolling the remainder alone keeps the swing
+  -- to a single Rune a day: you get 1 or 2, never nothing.
+  --
+  -- The roll is keyed to (address, day) and NOT to the claiming message. That
+  -- is the whole anti-grind property: day N's outcome is fixed the moment day N
+  -- happens, so collecting it on day 30 pays exactly what collecting it on day
+  -- 3 would have. Nobody can look at a roll and decline it, and nobody can
+  -- re-sign a claim until it comes up good -- which is the shape of the hunt
+  -- capture defect, where every input to the roll was client-derivable before
+  -- the player had to commit.
+  local wholePerDay = perDayBps // BPS
+  local fracPerDay = perDayBps % BPS
+  local share = wholePerDay * owedDays
+  for day = through + 1, through + owedDays do
+    if fracPerDay > 0 and M.dayRollBps(address, day) < fracPerDay then
+      share = share + 1
+    end
+  end
   if share <= 0 then
     return 0, "The day's emission is fully shared out"
   end
   local remainingEpoch = budget - int(policy.currentEpoch.spent, 0)
 
+  -- `consumed30` must mean what the asset ledger means by consumed: BURNED.
+  --
+  -- It used to count every negative delta, so the net-30 cap was self-raisable
+  -- at zero cost. Market.Buy has no fee and no price ceiling, and Rune.Withdraw,
+  -- Pass.Bond and every refund path (Admin.MintFailed, a withdrawal refund,
+  -- Pass.CompleteUnbond, Burn-Notice) turn a matched debit into permanent faucet
+  -- headroom. On the live process 256 of one epoch's 1,056 Rune -- 24% -- was
+  -- credit bought that way, and ECONOMY_MARKETPLACE_PLAN.md §8.6's "the bond
+  -- cannot be counted as consumed Rune" was violated verbatim.
+  --
+  -- `actionKind` already draws exactly this line: TRANSFER_ACTIONS are moves,
+  -- not burns. Gate on it rather than on the sign of the delta.
+  --
+  -- Deliberately NOT the mirror fix on `issued30`. Counting every positive
+  -- delta as issuance would charge a player for their own refunded withdrawal
+  -- and for getting their bond back, permanently shrinking an honest account's
+  -- allowance. The cap is a NET cap by design: spending legitimately buys
+  -- headroom, and that is the intent.
   local issued30, consumed30 = 0, 0
   for _, flow in ipairs(activity.runeFlow or {}) do
     if timestamp - int(flow.timestamp, 0) < 30 * DAY then
-      if int(flow.delta, 0) > 0 and flow.action == "Daily.Claim" then
-        issued30 = issued30 + int(flow.delta, 0)
-      elseif int(flow.delta, 0) < 0 then consumed30 = consumed30 - int(flow.delta, 0) end
+      local delta = int(flow.delta, 0)
+      if delta > 0 and flow.action == "Daily.Claim" then
+        issued30 = issued30 + delta
+      elseif delta < 0 and actionKind(flow.action, delta) == "consume" then
+        consumed30 = consumed30 - delta
+      end
     end
   end
   local accountRemaining = int(policy.accountNet30Cap, 20) + consumed30 - issued30
   local amount = math.max(0, math.min(share, remainingEpoch, accountRemaining))
-  -- Record the claim only when it actually paid. `claims[address]` is the
-  -- once-per-epoch gate and `0` is TRUTHY in Lua, so writing a zero here
-  -- locked the wallet out of the faucet for the whole 30-day epoch on the
-  -- first claim that happened to be capped to nothing.
+  -- Record nothing when nothing was paid, and in particular do NOT advance
+  -- `runeAccruedThrough`: a day the caps refused is a day still owed, not a day
+  -- spent. Advancing it here would quietly burn the accrual every time an
+  -- account was at its net-30 cap.
   if amount <= 0 then return 0, "Rune reward caps leave no available amount" end
-  policy.currentEpoch.claims[address] = amount
+  -- A RUNNING TOTAL now, not a once-per-epoch gate. `claims[address]` is read
+  -- by the published view as "what this account has drawn this epoch", and with
+  -- a daily drip that is a sum over many claims rather than a single payment.
+  policy.currentEpoch.claims[address] =
+    int(policy.currentEpoch.claims[address], 0) + amount
   policy.currentEpoch.spent = int(policy.currentEpoch.spent, 0) + amount
+  -- Advance the accrual only for days actually paid for. `amount` can be less
+  -- than `share` when a cap bit, so credit the whole-Rune days that were paid
+  -- and leave the rest owed.
+  do
+    local paidDays = owedDays
+    if amount < share and wholePerDay > 0 then
+      paidDays = math.min(owedDays, amount // wholePerDay)
+    end
+    if paidDays > 0 then
+      -- `state.activity[address]` may not exist yet: the local `activity` above
+      -- falls back to a fresh table that is not in the store, so writing to it
+      -- alone would forget the stamp and pay the same day forever.
+      local row = state.activity[address]
+      if not row then
+        row = { days = {}, sinkActions = 0, runeFlow = {} }
+        state.activity[address] = row
+      end
+      row.runeAccruedThrough = through + paidDays
+    end
+  end
   return amount, nil
 end
 
@@ -879,18 +1261,35 @@ local function playerGold(player)
   return math.max(0, int(player and player.gold, 0))
 end
 
-local function debitGold(state, player, amount)
+--- The ACCOUNT half of a Gold move, with no supply accounting.
+---
+--- Items already worked this way -- `takeItem`/`giveItem` touch the player and
+--- the caller moves `assets[item].player`/`.escrow` itself -- and Gold did
+--- both at once. Splitting them is what lets an account live somewhere other
+--- than a player record: the ledger moves the account, the engine moves the
+--- pool, and neither needs to know how the other is implemented.
+local function takeGold(player, amount)
   amount = math.max(0, int(amount, 0))
   if playerGold(player) < amount then return false end
   player.gold = playerGold(player) - amount
-  state.gold.player = math.max(0, int(state.gold.player, 0) - amount)
+  return true
+end
+
+local function giveGold(player, amount)
+  amount = math.max(0, int(amount, 0))
+  if amount > 0 then player.gold = playerGold(player) + amount end
+end
+
+local function debitGold(state, player, amount)
+  if not takeGold(player, amount) then return false end
+  state.gold.player = math.max(0, int(state.gold.player, 0) - math.max(0, int(amount, 0)))
   return true
 end
 
 local function creditGold(state, player, amount)
   amount = math.max(0, int(amount, 0))
   if amount == 0 then return end
-  player.gold = playerGold(player) + amount
+  giveGold(player, amount)
   state.gold.player = int(state.gold.player, 0) + amount
 end
 
@@ -939,12 +1338,534 @@ local function giveItem(player, item, amount)
   if amount > 0 then player.inventory[item] = inventory(player, item) + amount end
 end
 
-local function openOrdersFor(state, address)
-  local total = 0
-  for _, order in pairs(state.orders) do
-    if order.account == address then total = total + 1 end
+--- How many orders this account has that can still trade.
+---
+--- Expired-but-unswept orders are deliberately NOT counted. They cannot match
+--- (see `bestMatch`), so counting them against the per-account cap would let a
+--- month of stale orders lock a player out of their own book while the sweep,
+--- which is bounded, got around to them.
+--- The supply row for an asset. Gold keeps its own because it is issued
+--- rather than dropped, but it has the same `player`/`escrow` shape, so the
+--- book can treat the quote asset as just another asset -- which is what makes
+--- a market against something other than Gold a registry row rather than a
+--- rewrite.
+local function pool(state, asset)
+  if asset == "gold" then return state.gold end
+  return state.assets[asset]
+end
+
+--- The ledger: the ONLY thing the matching engine knows about an account.
+---
+--- Everything else in the book works on `state`. Two implementations, one
+--- book: in the game an account is a player record, with Gold on `player.gold`
+--- and the rest in `player.inventory`; standalone it is a credit balance fed
+--- by a token's `Credit-Notice` and drained by a signed withdrawal. The engine
+--- cannot tell which it has, and that is the entire point -- see ORDERBOOK.md
+--- §6 and §10.
+---
+--- `debit` returns false rather than erroring when the balance is short, the
+--- same contract `takeItem` already had.
+function M.playerLedger(players)
+  players = type(players) == "table" and players or {}
+  return {
+    kind = "player",
+    exists = function(account) return players[account] ~= nil end,
+    -- The account's game record, or nil. The ONLY caller is the NPC desk's
+    -- maturity limit, which is a game rule rather than a book rule; a
+    -- standalone ledger returns nil and the desk treats that as unmatured.
+    record = function(account) return players[account] end,
+    balance = function(account, asset)
+      local p = players[account]
+      if not p then return 0 end
+      if asset == "gold" then return playerGold(p) end
+      return inventory(p, asset)
+    end,
+    debit = function(account, asset, amount)
+      local p = players[account]
+      if not p then return false end
+      if asset == "gold" then return takeGold(p, amount) end
+      return takeItem(p, asset, amount)
+    end,
+    credit = function(account, asset, amount)
+      local p = players[account]
+      if not p then return end
+      if asset == "gold" then giveGold(p, amount) else giveItem(p, asset, amount) end
+    end,
+  }
+end
+
+--- Accept either a ledger or a plain players table.
+---
+--- Every caller in the game still passes `Players`, and every existing test
+--- does too. Rather than churn all of them for a seam they do not use, the
+--- book wraps what it is given. A real ledger is recognised by having the
+--- functions; anything else is a player table.
+local function asLedger(value)
+  if type(value) == "table" and type(value.balance) == "function" then return value end
+  return M.playerLedger(value)
+end
+
+--- Normalise a tag value that names a mode.
+---
+--- Separators do not survive the trip. A browser signs `Tif = "post-only"`,
+--- a process emits `post_only`, HTTP lowercases both, and a handler comparing
+--- against `postonly` misses all three. Strip the separators before comparing
+--- and every spelling of the same word means the same thing. See the tag rule
+--- in CLAUDE.md; this is the same defect that cost a live deployment every
+--- hunt capture.
+local function mode(value, fallback)
+  if type(value) ~= "string" then return fallback end
+  local plain = string.gsub(string.lower(value), "[%-%_%s]", "")
+  if plain == "" then return fallback end
+  return plain
+end
+
+--- The NPC desk, as seen from inside the matching engine.
+---
+--- These three are defined further down, with the rest of the desk, because
+--- they are priced off stock, reserves and rate limits that the book does not
+--- otherwise touch. They are declared here because the book calls them: the
+--- desk quotes into the ladder, so a taker automatically gets whichever of
+--- desk-or-P2P is better instead of having to compare two tabs. That is what
+--- makes "P2P wins unless it leaves the corridor" a property of the book
+--- rather than a hope about which screen the player opened. ORDERBOOK.md §3.1.
+local deskQuote, deskSettle, deskAnchors
+
+--- The book, held the way the engine asks for it.
+---
+--- Every question the matching path asks is about ONE market, ONE side and the
+--- best price on it -- and every one of them used to be answered by walking
+--- all of `state.orders`. Placing an order did five of those walks and two
+--- sorts before it matched anything, then one more per fill; publishing did
+--- one per market, seven markets over. At the configured cap of 2,000 resting
+--- orders that is tens of thousands of table lookups for a single placement,
+--- and none of it is work anybody would have chosen to do.
+---
+--- So the same orders are ALSO held as item -> side -> price -> ids, with each
+--- side's prices kept sorted, a live count per account, and a min-heap on
+--- expiry. Nothing here is a source of truth: `state.orders` is, every entry
+--- is an id rather than a reference, and `rebuildIndex` reconstructs the whole
+--- thing in one pass. That is what makes it safe to leave out of every export
+--- and every published view -- a process restored from an `Admin.Load`, or
+--- from an export taken before this existed, builds it on first use and gets
+--- the same answers.
+---
+--- EXPIRY IS RECONCILED, not filtered. An order leaves the levels and the
+--- counts the instant the clock passes its `expiresAt`, so every reader is
+--- already looking at live liquidity and no reader re-checks a timestamp.
+--- Releasing its escrow stays a separate, bounded job: `expireOrders` drains
+--- the queue the reconciliation fills. That is the same split the scanning
+--- code drew -- `bestMatch` ignored what the bounded sweep had not reached --
+--- only now the sweep costs what it releases instead of what the book holds.
+local function marketBook(index, item)
+  local book = index.books[item]
+  if not book then
+    book = { rev = 0,
+      buy = { levels = {}, prices = {} }, sell = { levels = {}, prices = {} } }
+    index.books[item] = book
   end
-  return total
+  return book
+end
+
+--- Where `price` belongs in an ascending array: the first slot not below it.
+local function priceSlot(prices, price)
+  local low, high = 1, #prices
+  while low <= high do
+    local middle = (low + high) // 2
+    if prices[middle] < price then low = middle + 1 else high = middle - 1 end
+  end
+  return low
+end
+
+--- A min-heap on `expiresAt`, with the position of every id, so an order that
+--- is cancelled or filled leaves it in log time rather than being tombstoned.
+--- A tombstone would be cheaper to write and would make the heap grow with
+--- every order the book has EVER held, which is the one shape this file is
+--- not allowed to have.
+---
+--- The expiry is copied onto the heap at insert rather than read back off the
+--- order, so nothing an amend does to a record can silently break the ordering
+--- of a structure that is only ever compared, never re-sorted.
+local function heapBefore(index, left, right)
+  local a, b = int(index.due[left], 0), int(index.due[right], 0)
+  if a ~= b then return a < b end
+  return left < right
+end
+
+local function heapSwap(index, at, with)
+  local moved, other = index.heap[at], index.heap[with]
+  index.heap[at], index.heap[with] = other, moved
+  index.slot[moved], index.slot[other] = with, at
+end
+
+local function siftUp(index, at)
+  while at > 1 do
+    local parent = at // 2
+    if not heapBefore(index, index.heap[at], index.heap[parent]) then return end
+    heapSwap(index, at, parent)
+    at = parent
+  end
+end
+
+local function siftDown(index, at)
+  local size = #index.heap
+  while true do
+    local left, best = at * 2, at
+    if left <= size and heapBefore(index, index.heap[left], index.heap[best]) then
+      best = left
+    end
+    if left + 1 <= size and heapBefore(index, index.heap[left + 1], index.heap[best]) then
+      best = left + 1
+    end
+    if best == at then return end
+    heapSwap(index, at, best)
+    at = best
+  end
+end
+
+local function heapPush(index, id, due)
+  index.due[id] = due
+  local at = #index.heap + 1
+  index.heap[at] = id
+  index.slot[id] = at
+  siftUp(index, at)
+end
+
+local function heapDrop(index, id)
+  local at = index.slot[id]
+  if not at then return false end
+  local last = #index.heap
+  heapSwap(index, at, last)
+  index.heap[last] = nil
+  index.slot[id] = nil
+  index.due[id] = nil
+  if at <= last - 1 then siftDown(index, at); siftUp(index, at) end
+  return true
+end
+
+--- Ids inside a price level are kept in `seq` order, because that IS the
+--- tie-break the engine promises: at one price the order that rested first
+--- trades first. Placement always appends, which is already in order; only a
+--- revived order ever lands anywhere but the end.
+local function levelAdd(state, rows, price, order)
+  local level = rows.levels[price]
+  if not level then
+    level = {}
+    rows.levels[price] = level
+    table.insert(rows.prices, priceSlot(rows.prices, price), price)
+  end
+  local at = #level + 1
+  while at > 1 do
+    local prior = state.orders[level[at - 1]]
+    if prior and int(prior.seq, 0) > int(order.seq, 0) then at = at - 1 else break end
+  end
+  table.insert(level, at, order.id)
+end
+
+local function levelRemove(rows, price, id)
+  local level = rows.levels[price]
+  if not level then return false end
+  for at = 1, #level do
+    if level[at] == id then
+      table.remove(level, at)
+      if #level == 0 then
+        rows.levels[price] = nil
+        local slot = priceSlot(rows.prices, price)
+        if rows.prices[slot] == price then table.remove(rows.prices, slot) end
+      end
+      return true
+    end
+  end
+  return false
+end
+
+--- An order is IN the index exactly while it has a heap slot. An expired one
+--- that the sweep has not reached yet has none: it is out of the levels, out
+--- of the counts, and waiting in `dead` for its escrow to be released.
+---
+--- An account's row is DELETED when its last order leaves, rather than left
+--- at zero. A map keyed by every wallet that has ever placed an order is the
+--- `player-<address>` growth shape all over again, and this one would be paid
+--- for by every reader rather than only the wallet it belongs to.
+local function indexAdd(state, index, order)
+  local id = order.id
+  if type(id) ~= "string" or index.slot[id] ~= nil then return end
+  local book = marketBook(index, order.item)
+  local rows = order.side == "buy" and book.buy or book.sell
+  levelAdd(state, rows, int(order.price, 0), order)
+  book.rev = book.rev + 1
+  heapPush(index, id, int(order.expiresAt, 0))
+  index.open = index.open + 1
+  local held = index.accounts[order.account]
+  if not held then held = { open = 0, ids = {} }; index.accounts[order.account] = held end
+  if not held.ids[id] then
+    held.ids[id] = true
+    held.open = held.open + 1
+  end
+end
+
+local function indexDrop(index, order)
+  local id = order.id
+  if index.slot[id] == nil then return false end
+  local book = marketBook(index, order.item)
+  local rows = order.side == "buy" and book.buy or book.sell
+  levelRemove(rows, int(order.price, 0), id)
+  book.rev = book.rev + 1
+  heapDrop(index, id)
+  index.open = math.max(0, index.open - 1)
+  local held = index.accounts[order.account]
+  if held and held.ids[id] then
+    held.ids[id] = nil
+    held.open = held.open - 1
+    if held.open <= 0 then index.accounts[order.account] = nil end
+  end
+  return true
+end
+
+--- A trader's own recent fills, where they can find them again.
+---
+--- `state.fills` is a 500-row ring shared by every market, so a busy day
+--- pushes a player's own trades off the end. This keeps the last few per
+--- account, and it is a DERIVED ring like everything else in the index: never
+--- exported, never published, rebuilt from `state.fills` when it is missing --
+--- which is the honest cost of not carrying it, and the reason it is allowed
+--- to hold rows the global list has already dropped.
+---
+--- Bounded at the point of append, per the rule in CLAUDE.md, and comfortably
+--- above the twenty a caller asks for.
+local ACCOUNT_FILL_RING = 24
+
+local function indexFill(index, fill)
+  for _, account in ipairs({ fill.buyer, fill.seller }) do
+    if type(account) == "string" and account ~= "" then
+      local ring = index.trades[account]
+      if not ring then ring = {}; index.trades[account] = ring end
+      ring[#ring + 1] = fill
+      while #ring > ACCOUNT_FILL_RING do table.remove(ring, 1) end
+    end
+  end
+end
+
+rebuildIndex = function(state)
+  local index = {
+    version = BOOK_INDEX_VERSION, at = 0, open = 0,
+    accounts = {}, books = {}, ladders = {}, trades = {},
+    heap = {}, slot = {}, due = {},
+    dead = {}, deadHead = 1, deadTail = 0,
+    fillsRev = 0, fillDigest = nil,
+  }
+  state.bookIndex = index
+  for _, order in pairs(state.orders or {}) do
+    if type(order) == "table" then indexAdd(state, index, order) end
+  end
+  -- Oldest first, so the per-account rings end up in the same order appending
+  -- would have produced.
+  for _, fill in ipairs(state.fills or {}) do
+    if type(fill) == "table" then indexFill(index, fill) end
+  end
+  return index
+end
+
+--- Move the index's idea of "now", in whichever direction it is asked to.
+---
+--- Forward is the real case and the cheap one: pop everything the clock has
+--- passed off the heap and queue it for the sweep. Backwards happens only when
+--- something reads the book at an earlier instant than the last write, and it
+--- is answered rather than ignored because the alternative is an index that
+--- disagrees with `state.orders` about what was resting at a given moment --
+--- which is precisely the class of bug an index exists to not introduce.
+local function reconcile(state, index, timestamp)
+  local now = int(timestamp, 0)
+  if now >= int(index.at, 0) then
+    while #index.heap > 0 do
+      local id = index.heap[1]
+      if int(index.due[id], 0) > now then break end
+      local order = state.orders[id]
+      if order then
+        indexDrop(index, order)
+        index.deadTail = index.deadTail + 1
+        index.dead[index.deadTail] = id
+      else
+        heapDrop(index, id)
+      end
+    end
+  else
+    while index.deadTail >= index.deadHead do
+      local id = index.dead[index.deadTail]
+      local order = state.orders[id]
+      if order and int(order.expiresAt, 0) <= now then break end
+      if order then indexAdd(state, index, order) end
+      index.dead[index.deadTail] = nil
+      index.deadTail = index.deadTail - 1
+    end
+  end
+  if index.deadHead > index.deadTail then index.deadHead = 1; index.deadTail = 0 end
+  index.at = now
+  return index
+end
+
+local function bookIndex(state, timestamp)
+  local index = state.bookIndex
+  if type(index) ~= "table" or int(index.version, 0) ~= BOOK_INDEX_VERSION then
+    index = rebuildIndex(state)
+  end
+  return reconcile(state, index, timestamp)
+end
+
+--- THE ONLY TWO WAYS AN ORDER ENTERS OR LEAVES THE BOOK.
+---
+--- `state.orders` is the truth and the index is derived from it, so the two
+--- have to move together or the index is not slow, it is WRONG: an order left
+--- in it after a bulk cancel is matchable after its owner's escrow has already
+--- been returned, which is a double spend rather than a stale reading. Making
+--- that impossible is not a matter of remembering to call a hook at five call
+--- sites -- new call sites get added -- so the map itself is only ever written
+--- through here. There is no direct `state.orders[id] = ...` anywhere else in
+--- this file, and there must not be.
+---
+--- Both are no-ops against a state whose index has not been built yet, because
+--- whatever is written before the rebuild is read out of `state.orders` by the
+--- rebuild itself.
+local function putOrder(state, order)
+  state.orders[order.id] = order
+  local index = state.bookIndex
+  if type(index) == "table" then indexAdd(state, index, order) end
+end
+
+local function dropOrder(state, order)
+  state.orders[order.id] = nil
+  local index = state.bookIndex
+  if type(index) == "table" then indexDrop(index, order) end
+end
+
+--- An order stayed where it is but is no longer for what it was.
+---
+--- A partial fill and an in-place amend both change what a resting order still
+--- offers without moving it, so the market's revision has to move even though
+--- its levels did not -- otherwise a cached ladder keeps publishing the
+--- quantity that order had before it traded.
+local function touchBook(state, item)
+  local index = state.bookIndex
+  if type(index) ~= "table" then return end
+  local book = index.books[item]
+  if book then book.rev = book.rev + 1 end
+end
+
+--- A fill was written, so everything derived from `state.fills` has moved.
+local function fillRecorded(state, fill)
+  local index = state.bookIndex
+  if type(index) ~= "table" then return end
+  index.fillsRev = int(index.fillsRev, 0) + 1
+  indexFill(index, fill)
+end
+
+--- Everything the published view wants out of `state.fills`, per market, in
+--- ONE pass over the list instead of one pass per market.
+---
+--- `publicView` asked seven markets for their medians, their volumes and
+--- their unique participants, and each of those questions walked all five
+--- hundred fills -- so a read cost 3,500 iterations to answer a question that
+--- is 500 iterations wide. It is keyed on the timestamp because every one of
+--- these is an age window, and on the fill revision because a fill is the only
+--- thing that can change the answer.
+---
+--- `band7` is separate from `prices7` and the difference is deliberate: the
+--- price corridor never checked the SIGN of the age, so a fill stamped in the
+--- future anchors the band while it is excluded from the published median.
+--- Both spellings are preserved exactly as they were.
+local function fillDigest(state, timestamp)
+  local index = bookIndex(state, timestamp)
+  local now = int(timestamp, 0)
+  local cached = index.fillDigest
+  if cached and cached.rev == int(index.fillsRev, 0) and cached.at == now then
+    return cached.rows
+  end
+  local rows = {}
+  local rowFor = function(item)
+    local row = rows[item]
+    if not row then
+      row = { prices7 = {}, prices30 = {}, band7 = {}, volume24 = 0, volume7 = 0,
+        makers = {}, takers = {} }
+      rows[item] = row
+    end
+    return row
+  end
+  for _, fill in ipairs(state.fills or {}) do
+    local row = rowFor(fill.item)
+    local age = now - int(fill.filledAt, 0)
+    local price = int(fill.price, 0)
+    if age < 7 * DAY then row.band7[#row.band7 + 1] = price end
+    if age >= 0 and age < 30 * DAY then row.prices30[#row.prices30 + 1] = price end
+    if age >= 0 and age < DAY then row.volume24 = row.volume24 + int(fill.quantity, 0) end
+    if age >= 0 and age < 7 * DAY then
+      row.prices7[#row.prices7 + 1] = price
+      row.volume7 = row.volume7 + int(fill.quantity, 0)
+      row.makers[fill.maker] = true; row.takers[fill.taker] = true
+    end
+  end
+  index.fillDigest = { rev = int(index.fillsRev, 0), at = now, rows = rows }
+  return rows
+end
+
+local EMPTY_DIGEST = { prices7 = {}, prices30 = {}, band7 = {}, volume24 = 0,
+  volume7 = 0, makers = {}, takers = {} }
+
+--- One side of one market, collapsed to the ten price levels anybody draws.
+---
+--- Cached against that market's own revision, which moves when an order of
+--- ITS is placed, cancelled, filled or reconciled away and never when another
+--- market trades. A market nobody touched is not recomputed, which is the
+--- whole reason `publicView` can afford to publish seven of these.
+---
+--- Only the levels that can survive the truncation are summed. A level outside
+--- the best ten is worse than ten prices that are already in, so nothing the
+--- house adds later can promote it -- and the summing is what costs, because
+--- an order's remaining quantity is read from the order rather than mirrored
+--- into the level. A mirror would be one more number to keep true on every
+--- partial fill, for a saving nobody would measure.
+local function p2pLadder(state, timestamp, item)
+  local index = bookIndex(state, timestamp)
+  local book = index.books[item]
+  local rev = book and book.rev or -1
+  local cached = index.ladders[item]
+  if cached and cached.rev == rev then return cached.value end
+  local value = { bestBid = nil, bestAsk = nil, bids = {}, asks = {} }
+  if book then
+    local sides = { { rows = book.buy, out = value.bids, best = true },
+                    { rows = book.sell, out = value.asks, best = false } }
+    for _, side in ipairs(sides) do
+      local prices = side.rows.prices
+      local at, step = #prices, -1               -- bids: highest first
+      if not side.best then at, step = 1, 1 end  -- asks: lowest first
+      local taken = 0
+      while prices[at] ~= nil and taken < 10 do
+        local price = prices[at]
+        local quantity, orders = 0, 0
+        for _, id in ipairs(side.rows.levels[price]) do
+          local order = state.orders[id]
+          if order then
+            quantity = quantity + int(order.remaining, 0)
+            orders = orders + 1
+          end
+        end
+        if orders > 0 then
+          taken = taken + 1
+          side.out[taken] = { price = price, quantity = quantity, orders = orders }
+          if side.best then
+            if not value.bestBid or price > value.bestBid then value.bestBid = price end
+          elseif not value.bestAsk or price < value.bestAsk then value.bestAsk = price end
+        end
+        at = at + step
+      end
+    end
+  end
+  index.ladders[item] = { rev = rev, value = value }
+  return value
+end
+
+local function openOrdersFor(state, address, timestamp)
+  local held = bookIndex(state, timestamp).accounts[address]
+  return held and int(held.open, 0) or 0
 end
 
 local function recordRejected(state, reason)
@@ -985,75 +1906,107 @@ local function rememberAction(state, key, kind, timestamp)
   end
 end
 
-local function cancelOrder(state, players, order, timestamp, reason)
+local function cancelOrder(state, ledger, order, timestamp, reason)
   if not order or not state.orders[order.id] then return end
-  local player = players[order.account]
+  local present = ledger.exists(order.account)
   local remaining = math.max(0, int(order.remaining, 0))
   if order.side == "sell" then
-    if player then giveItem(player, order.item, remaining) end
-    state.assets[order.item].escrow = math.max(0,
-      int(state.assets[order.item].escrow, 0) - remaining)
-    state.assets[order.item].player = int(state.assets[order.item].player, 0) + remaining
+    local baseUnits = remaining * math.max(1, int(order.lot, 1))
+    if present then ledger.credit(order.account, order.item, baseUnits) end
+    local row = pool(state, order.item)
+    row.escrow = math.max(0, int(row.escrow, 0) - baseUnits)
+    row.player = int(row.player, 0) + baseUnits
   else
     local refund = int(order.price, 0) * remaining
     state.gold.escrow = math.max(0, int(state.gold.escrow, 0) - refund)
-    if player then creditGold(state, player, refund)
-    else state.gold.locked = int(state.gold.locked, 0) + refund end
+    if present then
+      ledger.credit(order.account, "gold", refund)
+      state.gold.player = int(state.gold.player, 0) + refund
+    else
+      -- Nobody to pay. Park it rather than lose it: the Gold invariant counts
+      -- `locked`, so dropping it here would fail conservation on the next read.
+      state.gold.locked = int(state.gold.locked, 0) + refund
+    end
   end
-  state.orders[order.id] = nil
+  dropOrder(state, order)
   appendBounded(state.orderHistory, {
     id = order.id, account = order.account, item = order.item, side = order.side,
+    market = order.market or marketId(order.item, "gold"),
     price = order.price, quantity = order.quantity, remaining = remaining,
     status = reason or "cancelled", closedAt = timestamp,
   }, C.ECONOMY.orderbook.historyLimit)
 end
 
-local function expiredCount(state, timestamp)
-  local total = 0
-  for _, order in pairs(state.orders) do
-    if int(order.expiresAt, 0) <= timestamp then total = total + 1 end
-  end
-  return total
-end
-
-local function expireOrders(state, players, timestamp, limit)
-  local ids = sortedKeys(state.orders)
+--- Release the escrow of orders the clock has already retired, up to `limit`.
+---
+--- The reconciliation in `bookIndex` has already taken them out of the book,
+--- so this is only ever about giving the money and the goods back -- and it
+--- costs what it releases rather than what the book holds. It used to sort
+--- every id in `state.orders` to find at most twenty-five of them, on every
+--- placement, which is the single most expensive thing a placement did before
+--- it had even validated its price.
+---
+--- Sweep order is by expiry now rather than by the lexicographic accident of
+--- sorting `"O1", "O10", "O2"` as strings: the order that died first is the
+--- one whose owner has been waiting longest.
+local function expireOrders(state, ledger, timestamp, limit)
+  local index = bookIndex(state, timestamp)
   local expired = 0
-  for _, id in ipairs(ids) do
+  while expired < limit and index.deadTail >= index.deadHead do
+    local id = index.dead[index.deadHead]
+    index.dead[index.deadHead] = nil
+    index.deadHead = index.deadHead + 1
+    -- An expired order the owner cancelled themselves is already gone; it
+    -- leaves the queue without being counted, exactly as the scan skipped it.
     local order = state.orders[id]
-    if order and int(order.expiresAt, 0) <= timestamp and expired < limit then
-      cancelOrder(state, players, order, timestamp, "expired")
+    if order then
+      cancelOrder(state, ledger, order, timestamp, "expired")
       expired = expired + 1
     end
   end
+  if index.deadHead > index.deadTail then index.deadHead = 1; index.deadTail = 0 end
   return expired
 end
 
-local function bestMatch(state, taker)
-  local best = nil
-  for _, candidate in pairs(state.orders) do
-    if candidate.id ~= taker.id and candidate.item == taker.item
-       and candidate.side ~= taker.side and candidate.account ~= taker.account
-       and int(candidate.remaining, 0) > 0 then
-      local crosses = taker.side == "buy"
-        and int(candidate.price, 0) <= int(taker.price, 0)
-        or taker.side == "sell" and int(candidate.price, 0) >= int(taker.price, 0)
-      if crosses then
-        if not best then
-          best = candidate
-        elseif taker.side == "buy" then
-          if candidate.price < best.price
-             or (candidate.price == best.price and candidate.seq < best.seq) then
-            best = candidate
-          end
-        elseif candidate.price > best.price
-           or (candidate.price == best.price and candidate.seq < best.seq) then
-          best = candidate
-        end
+--- The best resting order a taker can hit, or nil.
+---
+--- `timestamp` is not optional and the expiry check is not decoration. Expiry
+--- used to be enforced only by the sweep in `placeOrder`, which is bounded at
+--- 25 against a global cap of 2,000 -- so the twenty-sixth expired order was
+--- still live liquidity and would fill at a price its owner walked away from a
+--- month earlier. Expiry is a property of the order, checked here, and the
+--- sweep now only releases escrow.
+--- Walk one side of one market, best price first, and stop at the first price
+--- that does not cross. Price priority is the order of `rows.prices` and time
+--- priority is the order inside a level, so the first eligible candidate IS
+--- the answer -- where the scan this replaces compared every resting order in
+--- the process against the taker, once per fill.
+local function bestMatch(state, taker, timestamp)
+  local index = bookIndex(state, timestamp)
+  local book = index.books[taker.item]
+  if not book then return nil end
+  local rows = taker.side == "buy" and book.sell or book.buy
+  local prices = rows.prices
+  local at, step = 1, 1
+  if taker.side == "sell" then at, step = #prices, -1 end
+  local limit = int(taker.price, 0)
+  while prices[at] ~= nil do
+    local price = prices[at]
+    local crosses = taker.side == "buy" and price <= limit
+      or taker.side == "sell" and price >= limit
+    if not crosses then return nil end
+    local level = rows.levels[price]
+    for slot = 1, #level do
+      local candidate = state.orders[level[slot]]
+      if candidate and candidate.id ~= taker.id
+         and candidate.account ~= taker.account
+         and int(candidate.remaining, 0) > 0 then
+        return candidate
       end
     end
+    at = at + step
   end
-  return best
+  return nil
 end
 
 local function marketDay(state, timestamp, item)
@@ -1071,53 +2024,150 @@ local function marketDay(state, timestamp, item)
   return asset
 end
 
-local function settleFill(state, players, taker, maker, timestamp)
+--- Fold one fill into the day's candle and its volume.
+---
+--- Open/high/low/close live on the row that already carries volume, so a
+--- candle costs four integers a day per market and no new key. The chart used
+--- to reconstruct a line from `state.fills` client-side, which is capped at
+--- 500 rows -- so a busy market went blank the moment its own history rolled
+--- off the end. A candle is permanent, and 30 days of them is smaller than
+--- the fills they replace. ORDERBOOK.md §2.8.
+local function recordCandle(day, price, quantity, gross, maker, taker)
+  day.volume = int(day.volume, 0) + quantity
+  day.gold = int(day.gold, 0) + gross
+  day.fills = int(day.fills, 0) + 1
+  if day.o == nil then day.o = price end
+  day.h = math.max(int(day.h, price), price)
+  day.l = day.l ~= nil and math.min(int(day.l, price), price) or price
+  day.c = price
+  -- The house is not a participant. `uniqueMakers7d` is a reading of how many
+  -- PLAYERS are willing to quote; counting the desk in it would report one
+  -- extra maker in every market forever, including the empty ones.
+  if maker then day.makers[maker] = true end
+  if taker then day.takers[taker] = true end
+end
+
+--- A percentage fee against an asset that does not divide.
+---
+--- `ceil(gross * bps / BPS)` is what this used to be, and on a Gold market it
+--- is a rounding detail. Against an indivisible quote it is not: at 200 bps a
+--- three-unit fill pays `ceil(0.06) = 1`, a 33% fee, and small fills in a new
+--- market are exactly where a venue cannot afford to be extortionate.
+---
+--- So the fee accrues in basis-point units and only whole units are ever
+--- moved. Over any sequence of fills the venue collects precisely
+--- `floor(total_gross * bps / BPS)` -- exact in aggregate, no minimum-fee
+--- cliff, no floating point. The carry is always below `BPS`, so the most
+--- anybody can gain or lose from where they land in the sequence is less than
+--- one unit, and there is no way to extract that: skipping a fill only leaves
+--- the shortfall for the next one. See ORDERBOOK.md §7.2.
+local function accrueFee(market, gross, bps)
+  bps = math.max(0, int(bps, 0))
+  if bps == 0 or gross <= 0 then return 0 end
+  local units = int(market.feeCarry, 0) + gross * bps
+  local fee = units // BPS
+  market.feeCarry = units % BPS
+  if fee > gross then fee = gross end
+  return fee
+end
+
+--- Route a collected fee to wherever that asset's fees go.
+local function routeFee(state, asset, amount, timestamp, reason)
+  if amount <= 0 then return end
+  if asset == "gold" then routeGoldFee(state, amount, timestamp, reason); return end
+  state.fees = type(state.fees) == "table" and state.fees or {}
+  state.fees[asset] = int(state.fees[asset], 0) + amount
+end
+
+local function settleFill(state, ledger, taker, maker, timestamp)
   local buy = taker.side == "buy" and taker or maker
   local sell = taker.side == "sell" and taker or maker
   local quantity = math.min(int(buy.remaining, 0), int(sell.remaining, 0))
   local price = int(maker.price, 0) -- price-time: the resting order sets price
   local committed = int(buy.price, 0) * quantity
   local gross = price * quantity
-  local fee = (gross * C.ECONOMY.orderbook.feeBps + BPS - 1) // BPS
-  if fee > gross then fee = gross end
-  local buyer = players[buy.account]
-  local seller = players[sell.account]
+  -- THE TAKER PAYS. The maker is never charged.
+  --
+  -- This used to charge the SELLER whatever side had rested, which is
+  -- backwards: it penalised the person supplying liquidity and rewarded the
+  -- person removing it. A maker quoting a new market is the one participant a
+  -- venue cannot afford to tax, so the maker rate is zero on every market and
+  -- there is no rebate -- a rebate is the single easiest thing to farm with a
+  -- second wallet. See ORDERBOOK.md §7.3.
+  local market = M.resolveMarket(state, maker.market or maker.item) or {}
+  local quote = market.quote or "gold"
+  local fee = accrueFee(market, gross, market.takerBps)
+  local buyerHere = ledger.exists(buy.account)
+  local sellerHere = ledger.exists(sell.account)
+  local takerIsBuyer = taker.side == "buy"
 
-  state.gold.escrow = math.max(0, int(state.gold.escrow, 0) - committed)
+  local quotePool = pool(state, quote)
+  quotePool.escrow = math.max(0, int(quotePool.escrow, 0) - committed)
   local refund = committed - gross
-  if buyer and refund > 0 then creditGold(state, buyer, refund) end
-  if seller then creditGold(state, seller, gross - fee) end
-  routeGoldFee(state, fee, timestamp, "P2P fee")
+  if buyerHere and refund > 0 then
+    ledger.credit(buy.account, quote, refund)
+    quotePool.player = int(quotePool.player, 0) + refund
+  end
+  -- A taking BUYER pays the fee out of free balance rather than escrow. That
+  -- is safe because every fill a taker causes happens inside the same
+  -- `placeOrder` call that checked their balance -- nothing else runs in
+  -- between -- and `placeOrder` requires the fee on top of the escrow before
+  -- it will take the order at all.
+  if takerIsBuyer and fee > 0 and buyerHere then
+    if ledger.debit(buy.account, quote, fee) then
+      quotePool.player = math.max(0, int(quotePool.player, 0) - fee)
+    end
+  end
+  -- A taking SELLER pays out of proceeds; there is always something to take it
+  -- from, because they are receiving the quote asset.
+  local sellerGets = takerIsBuyer and gross or (gross - fee)
+  if sellerHere then
+    ledger.credit(sell.account, quote, sellerGets)
+    quotePool.player = int(quotePool.player, 0) + sellerGets
+  end
+  routeFee(state, quote, fee, timestamp, "P2P taker fee")
 
-  local asset = state.assets[buy.item]
-  asset.escrow = math.max(0, int(asset.escrow, 0) - quantity)
-  asset.player = int(asset.player, 0) + quantity
-  if buyer then giveItem(buyer, buy.item, quantity) end
+  -- `quantity` is lots; the base asset moves `quantity * lot` units. Both
+  -- orders in a fill are on the same market, so either side's `lot` will do.
+  local lot = math.max(1, int(maker.lot, int(taker.lot, 1)))
+  local baseUnits = quantity * lot
+  local asset = pool(state, buy.item)
+  asset.escrow = math.max(0, int(asset.escrow, 0) - baseUnits)
+  asset.player = int(asset.player, 0) + baseUnits
+  if buyerHere then ledger.credit(buy.account, buy.item, baseUnits) end
 
   buy.remaining = int(buy.remaining, 0) - quantity
   sell.remaining = int(sell.remaining, 0) - quantity
+  touchBook(state, buy.item)
+  -- Monotonic, NOT `#state.fills + 1`: `appendBounded` pins that length at the
+  -- history cap, so the old expression named every fill past the cap `F501`.
+  state.fillSeq = int(state.fillSeq, 0) + 1
   local fill = {
-    id = "F" .. tostring(#state.fills + 1), item = buy.item,
+    id = "F" .. string.format("%d", state.fillSeq), item = buy.item,
+    -- The pair this happened on, said rather than inferred. A consumer that
+    -- rebuilt it as `item .. "/gold"` is right until the day an item lists
+    -- against a quote that is not Gold, and then it is confidently wrong
+    -- about a permanent record.
+    market = market.id or maker.market or marketId(buy.item, "gold"),
     buyOrder = buy.id, sellOrder = sell.id,
     buyer = buy.account, seller = sell.account,
     maker = maker.account, taker = taker.account,
     price = price, quantity = quantity, gross = gross, fee = fee,
+    feePayer = taker.account, feeAsset = quote,
     filledAt = timestamp,
   }
   appendBounded(state.fills, fill, C.ECONOMY.orderbook.historyLimit)
-  local day = marketDay(state, timestamp, buy.item)
-  day.volume = int(day.volume, 0) + quantity
-  day.gold = int(day.gold, 0) + gross
-  day.fills = int(day.fills, 0) + 1
-  day.makers[maker.account] = true
-  day.takers[taker.account] = true
+  fillRecorded(state, fill)
+  recordCandle(marketDay(state, timestamp, buy.item), price, quantity, gross,
+    maker.account, taker.account)
 
   for _, order in ipairs({ buy, sell }) do
     if int(order.remaining, 0) <= 0 and state.orders[order.id] then
-      state.orders[order.id] = nil
+      dropOrder(state, order)
       appendBounded(state.orderHistory, {
         id = order.id, account = order.account, item = order.item,
-        side = order.side, price = order.price, quantity = order.quantity,
+        side = order.side, market = order.market or marketId(order.item, "gold"),
+        price = order.price, quantity = order.quantity,
         remaining = 0, status = "filled", closedAt = timestamp,
       }, C.ECONOMY.orderbook.historyLimit)
     end
@@ -1125,8 +2175,196 @@ local function settleFill(state, players, taker, maker, timestamp)
   return fill
 end
 
-function M.placeOrder(state, players, account, side, item, price, quantity, timestamp, actionId)
+--- Time in force. Four values on one tag, and everything else is a special
+--- case of them.
+---
+--- `gtc` rests whatever it could not fill, which is the only behaviour this
+--- book used to have. `ioc` is the market order -- take what is there at this
+--- limit or better and cancel the rest -- so a client offering "spend N Gold"
+--- reads the ask ladder, computes a limit and sends an IOC. `fok` refuses
+--- unless the whole quantity can be taken at once. `postonly` refuses to
+--- cross, which is what a maker needs in order to never pay a taker fee by
+--- accident.
+---
+--- The process NEVER accepts an unpriced order. A market order with no limit
+--- is a promise to pay whatever the worst resting order asks, and against a
+--- 1,000,000 price ceiling that is a loaded gun pointed at the person sending
+--- it. The limit is the client's job. ORDERBOOK.md §3.2.
+local TIF = { gtc = true, ioc = true, fok = true, postonly = true }
+
+--- Self-trade prevention: three modes, cancelling the resting side by default.
+---
+--- Refusing the whole order is correct on safety and hostile in use. A market
+--- maker adjusting a quote got an error instead of a trade and the only remedy
+--- was cancel-then-place, paying the creation cost twice and losing queue
+--- position -- so the book punished exactly the participant it needs.
+--- `cancelresting` cancels the account's own crossing orders and carries on
+--- matching, which is what every real venue does. `reject` is the old
+--- behaviour, kept because an automated maker may prefer to be told rather
+--- than to have an order quietly pulled. `cancelboth` walks away from both
+--- sides and places nothing.
+---
+--- The `candidate.account ~= taker.account` guard in `bestMatch` stays in
+--- place under all three. This is the belt; that is the braces.
+local STP = { cancelresting = true, reject = true, cancelboth = true }
+
+--- Every resting order an incoming one would trade with, best price first.
+---
+--- Both of the callers below used to walk the whole book to ask this, one of
+--- them once per placement and the other once per placement AND once per
+--- amend. It is one walk of one side of one market now, and it stops at the
+--- first price that does not cross -- an order that crosses nothing looks at
+--- exactly one price level, which is the common case.
+local function crossingOrders(state, item, side, price, timestamp, visit)
+  local book = bookIndex(state, timestamp).books[item]
+  if not book then return end
+  local rows = side == "buy" and book.sell or book.buy
+  local prices = rows.prices
+  local at, step = 1, 1
+  if side == "sell" then at, step = #prices, -1 end
+  while prices[at] ~= nil do
+    local level = prices[at]
+    local crosses = side == "buy" and level <= price or side == "sell" and level >= price
+    if not crosses then return end
+    local ids = rows.levels[level]
+    for slot = 1, #ids do
+      local resting = state.orders[ids[slot]]
+      -- Expiry is not re-checked: the index has already taken every order the
+      -- clock passed out of the levels, which is the whole point of it.
+      if resting and int(resting.remaining, 0) > 0 then visit(resting) end
+    end
+    at = at + step
+  end
+end
+
+--- The account's own resting orders that an incoming order would trade with.
+local function selfCrossing(state, account, item, side, price, timestamp)
+  local rows = {}
+  crossingOrders(state, item, side, price, timestamp, function(own)
+    if own.account == account then rows[#rows + 1] = own end
+  end)
+  return rows
+end
+
+--- How many lots of `order` could be filled right now, book and house.
+---
+--- Read-only, and that is the point: `fok` has to know before any escrow is
+--- taken, because a fill-or-kill that is going to be killed must leave the
+--- book exactly as it found it, and `postonly` has to refuse before it has
+--- charged anybody anything.
+local function crossingDepth(state, order, timestamp, house)
+  local total = 0
+  for _, level in ipairs(house and house.levels or {}) do
+    local crosses = order.side == "buy" and level.price <= int(order.price, 0)
+      or order.side == "sell" and level.price >= int(order.price, 0)
+    if crosses then total = total + int(level.units, 0) end
+  end
+  crossingOrders(state, order.item, order.side, int(order.price, 0), timestamp,
+    function(candidate)
+      if candidate.id ~= order.id and candidate.account ~= order.account then
+        total = total + int(candidate.remaining, 0)
+      end
+    end)
+  return total
+end
+
+--- The corridor an order may be priced in.
+---
+--- Without one, `maxPrice` is the only limit: a single crossing order can
+--- print 1,000,000 and that print becomes the 7-day median every other system
+--- reads as the truth. The guard is anchored on the NPC desk's own bid and ask
+--- wherever there is a desk -- so it can never refuse a price the house itself
+--- is quoting -- widened by `bandBps` on each side, and falls back to the
+--- recent median and then to the book's own resting prices.
+---
+--- A market with no desk, no fills and no orders has NO reference and is not
+--- checked at all. That is deliberate: the first order in a market is what
+--- establishes the reference, and there is nothing to compare it against.
+local function priceBand(state, market, item, timestamp)
+  local bps = math.max(0, int(market and market.bandBps, 0))
+  if bps == 0 then return nil, nil end
+  local low, high = nil, nil
+  local anchor = function(value)
+    value = int(value, 0)
+    if value <= 0 then return end
+    if not low or value < low then low = value end
+    if not high or value > high then high = value end
+  end
+  local bid, ask = deskAnchors(state, item)
+  anchor(bid); anchor(ask)
+  if not low then
+    anchor(median(copy((fillDigest(state, timestamp)[item] or EMPTY_DIGEST).band7)))
+  end
+  if not low then
+    -- The book's own extremes. Each side's prices are already sorted, so the
+    -- widest pair of resting prices is four lookups rather than a walk of
+    -- every order in the process.
+    local book = bookIndex(state, timestamp).books[item]
+    if book then
+      for _, rows in ipairs({ book.buy, book.sell }) do
+        anchor(rows.prices[1]); anchor(rows.prices[#rows.prices])
+      end
+    end
+  end
+  if not low then return nil, nil end
+  return math.max(1, (low * (BPS - math.min(bps, BPS - 1))) // BPS),
+    (high * (BPS + bps) + BPS - 1) // BPS
+end
+
+--- Match an order against the book and the house, best price first.
+---
+--- The house is the NPC desk quoting into the same ladder, and at any given
+--- price it is deliberately the LAST choice: a resting player order at the
+--- same price wins because it was there first, and because the whole point of
+--- the desk is to be the price you get when nobody better is quoting. That is
+--- the invariant ORDERBOOK.md §9 asks for by name -- while the P2P best sits
+--- inside the desk's band the desk is never the best price on either side, and
+--- the moment P2P leaves the band it is.
+local function matchOrder(state, ledger, order, timestamp, house)
+  local fills = {}
+  local levels = house and house.levels or {}
+  while int(order.remaining, 0) > 0 do
+    local maker = bestMatch(state, order, timestamp)
+    local level = levels[1]
+    while level and int(level.units, 0) <= 0 do
+      table.remove(levels, 1); level = levels[1]
+    end
+    local houseCrosses = level ~= nil and (order.side == "buy"
+      and level.price <= int(order.price, 0)
+      or order.side == "sell" and level.price >= int(order.price, 0))
+    local takeMaker = maker ~= nil
+    if takeMaker and houseCrosses then
+      takeMaker = order.side == "buy" and int(maker.price, 0) <= level.price
+        or order.side == "sell" and int(maker.price, 0) >= level.price
+    end
+    if takeMaker then
+      fills[#fills + 1] = settleFill(state, ledger, order, maker, timestamp)
+    elseif houseCrosses then
+      local units = math.min(int(order.remaining, 0), int(level.units, 0))
+      local fill = deskSettle(state, ledger, house.desk, order, level.price, units, timestamp)
+      if not fill then break end
+      level.units = int(level.units, 0) - units
+      fills[#fills + 1] = fill
+    else
+      break
+    end
+  end
+  return fills
+end
+
+--- Retire whatever an `ioc` or `fok` order did not fill.
+local function retireRemainder(state, ledger, order, timestamp, tif)
+  if int(order.remaining, 0) <= 0 or not state.orders[order.id] then return false end
+  if tif ~= "ioc" and tif ~= "fok" then return false end
+  cancelOrder(state, ledger, order, timestamp,
+    tif == "fok" and "killed" or "expired-immediately")
+  return true
+end
+
+function M.placeOrder(state, players, account, side, item, price, quantity, timestamp, actionId, opts)
   state = M.ensureState(state)
+  local ledger = asLedger(players)
+  opts = type(opts) == "table" and opts or {}
   local wasReplay, receiptKey, replayProblem = replayedAction(
     state, account, actionId, "order.place")
   if replayProblem then return nil, replayProblem end
@@ -1135,71 +2373,315 @@ function M.placeOrder(state, players, account, side, item, price, quantity, time
   side = tostring(side or ""):lower()
   price = int(price, 0)
   quantity = int(quantity, 0)
-  local player = players[account]
+  local tif = mode(opts.tif, "gtc")
+  local stp = mode(opts.stp, "cancelresting")
+  -- The trader picks the lifetime, capped at the configured maximum and
+  -- floored so nothing can be placed already dead. ORDERBOOK.md §9.
+  local lifetime = clamp(int(opts.expiresIn, cfg.expiry), cfg.minExpiry, cfg.expiry)
+  -- Before validating, not after: a sweep returns escrow to its owner, and an
+  -- account whose own stale orders are holding its Gold should be able to fund
+  -- the order it is placing right now out of that release.
+  expireOrders(state, ledger, timestamp, 25)
+  local held = function(asset) return ledger.balance(account, asset) end
+  local market = M.resolveMarket(state, item)
+  -- `quantity` is in LOTS; the base asset moves `quantity * lot` units. Both
+  -- are 1:1 on every market that exists today, so this is arithmetic waiting
+  -- for a market that needs it rather than a change in behaviour.
+  local lot = market and math.max(1, int(market.lot, 1)) or 1
+  local baseUnits = quantity * lot
+  local quote = market and market.quote or "gold"
+  -- The most a taking buy could owe in fees, checked up front.
+  --
+  -- A taking buyer pays the fee from free balance at fill time (see
+  -- `settleFill`), so the balance has to be known good BEFORE the order is
+  -- taken -- otherwise a sweep could reach a maker it cannot pay, and the
+  -- maker is already entitled by then. `gross` never exceeds `committed`, so
+  -- the ceiling on the limit price is a true upper bound.
+  local takerFeeCeiling = 0
+  if market and side == "buy" then
+    local bps = math.max(0, int(market.takerBps, 0))
+    if bps > 0 then
+      takerFeeCeiling = (price * quantity * bps + BPS - 1) // BPS
+    end
+  end
+  local bandLow, bandHigh = nil, nil
+  if market then bandLow, bandHigh = priceBand(state, market, item, timestamp) end
   local problem = nil
   if state.policy.emergency and state.policy.emergency.paused then
     problem = "Economy is paused: " .. tostring(state.policy.emergency.reason or "emergency pause")
-  elseif not player then problem = "No such player"
+  elseif not ledger.exists(account) then problem = "No such player"
   elseif side ~= "buy" and side ~= "sell" then problem = "Side must be buy or sell"
-  elseif not state.assets[item] then problem = "That item is not traded for Gold"
-  elseif price <= 0 or price > cfg.maxUnitPrice then problem = "Invalid unit price"
-  elseif quantity <= 0 or quantity > cfg.maxQuantity then problem = "Invalid quantity"
-  elseif price * quantity < cfg.minValue then problem = "Order value is below 10 Gold"
-  elseif openOrdersFor(state, account) >= cfg.maxPerAccount then problem = "Open-order account limit reached"
-  elseif countMap(state.orders) - expiredCount(state, timestamp) >= cfg.maxGlobal then
+  elseif not TIF[tif] then problem = "Time in force must be GTC, IOC, FOK or PostOnly"
+  elseif not STP[stp] then problem = "Self-trade mode must be CancelResting, Reject or CancelBoth"
+  elseif not market or not state.assets[item] then
+    problem = "That item is not traded for Gold"
+  elseif market.status ~= "open" then
+    problem = "That market is " .. tostring(market.status)
+  elseif price <= 0 or price > int(market.maxPrice, cfg.maxUnitPrice) then
+    problem = "Invalid unit price"
+  elseif price % math.max(1, int(market.tick, 1)) ~= 0 then
+    problem = "Price must be a multiple of " .. string.format("%d", int(market.tick, 1))
+  elseif bandLow and price < bandLow then
+    problem = "Price is below the " .. string.format("%d", bandLow) .. " Gold price band"
+  elseif bandHigh and price > bandHigh then
+    problem = "Price is above the " .. string.format("%d", bandHigh) .. " Gold price band"
+  elseif quantity <= 0 or quantity > int(market.maxQuantity, cfg.maxQuantity) then
+    problem = "Invalid quantity"
+  elseif price * quantity < int(market.minValue, cfg.minValue) then
+    problem = "Order value is below 10 Gold"
+  elseif openOrdersFor(state, account, timestamp) >= cfg.maxPerAccount then
+    problem = "Open-order account limit reached"
+  elseif bookIndex(state, timestamp).open >= cfg.maxGlobal then
     problem = "Global open-order limit reached"
-  elseif side == "sell" and inventory(player, item) < quantity then
+  elseif side == "sell" and held(item) < baseUnits then
     problem = "Not enough " .. tostring(item)
-  elseif side == "sell" and playerGold(player) < cfg.creationCost then
+  elseif side == "sell" and held(quote) < cfg.creationCost then
     problem = "The order-creation cost is 1 Gold"
-  elseif side == "buy" and playerGold(player) < price * quantity + cfg.creationCost then
+  elseif side == "buy"
+     and held(quote) < price * quantity + cfg.creationCost + takerFeeCeiling then
     problem = "Not enough Gold for order escrow and creation cost"
   end
+
+  -- The house quote, and every check that depends on knowing what is
+  -- available. Nothing below this line may mutate until every refusal has been
+  -- taken: a killed `fok` and a crossing `postonly` must leave the book
+  -- exactly as they found it, including the orders STP would have cancelled.
+  local house, mine = nil, {}
   if not problem then
-    for _, own in pairs(state.orders) do
-      if own.account == account and own.item == item and own.side ~= side then
-        local crosses = side == "buy" and int(own.price, 0) <= price
-          or side == "sell" and int(own.price, 0) >= price
-        if crosses then problem = "Self-trading is not allowed" break end
-      end
+    house = deskQuote(state, ledger, item, side, account, timestamp,
+      opts.withdrawals, opts.deposits)
+    mine = selfCrossing(state, account, item, side, price, timestamp)
+    local probe = { id = "", item = item, side = side, price = price,
+      account = account, remaining = quantity }
+    local depth = crossingDepth(state, probe, timestamp, house)
+    if tif == "postonly" and (depth > 0 or #mine > 0) then
+      problem = "A post-only order may not cross the book"
+    elseif tif == "fok" and depth < quantity then
+      problem = "Fill-or-kill could not be filled in full"
+    elseif stp == "reject" and #mine > 0 then
+      problem = "Self-trading is not allowed"
     end
   end
   if problem then recordRejected(state, problem); return nil, problem end
 
   rememberAction(state, receiptKey, "order.place", timestamp)
-  expireOrders(state, players, timestamp, 25)
-  debitGold(state, player, cfg.creationCost)
+  -- Self-trade prevention, applied. `cancelboth` leaves the account flat and
+  -- places nothing, which is a result rather than an error.
+  for _, own in ipairs(mine) do
+    cancelOrder(state, ledger, own, timestamp, "self-trade")
+  end
+  if stp == "cancelboth" and #mine > 0 then
+    return { order = nil, fills = {}, open = false,
+      selfCancelled = #mine, tif = tif, stp = stp }, nil
+  end
+
+  if ledger.debit(account, "gold", cfg.creationCost) then
+    state.gold.player = math.max(0, int(state.gold.player, 0) - cfg.creationCost)
+  end
   routeGoldFee(state, cfg.creationCost, timestamp, "Order creation")
 
   state.orderSeq = int(state.orderSeq, 0) + 1
   local order = {
     id = "O" .. string.format("%d", state.orderSeq), seq = state.orderSeq,
     account = account, side = side, item = item, price = price,
+    market = market.id, lot = lot,
     quantity = quantity, remaining = quantity,
-    createdAt = timestamp, expiresAt = timestamp + cfg.expiry,
+    createdAt = timestamp, expiresAt = timestamp + lifetime,
   }
+  -- Lock, in one shape for both sides: take it off the account, move the same
+  -- amount from the asset's `player` bucket into its `escrow` bucket. The only
+  -- difference between a bid and an ask is which asset moves.
   if side == "sell" then
-    takeItem(player, item, quantity)
-    state.assets[item].player = math.max(0, int(state.assets[item].player, 0) - quantity)
-    state.assets[item].escrow = int(state.assets[item].escrow, 0) + quantity
+    ledger.debit(account, item, baseUnits)
+    local row = pool(state, item)
+    row.player = math.max(0, int(row.player, 0) - baseUnits)
+    row.escrow = int(row.escrow, 0) + baseUnits
   else
     local commitment = price * quantity
-    debitGold(state, player, commitment)
+    ledger.debit(account, "gold", commitment)
+    state.gold.player = math.max(0, int(state.gold.player, 0) - commitment)
     state.gold.escrow = int(state.gold.escrow, 0) + commitment
   end
-  state.orders[order.id] = order
+  putOrder(state, order)
 
-  local fills = {}
-  local maker = bestMatch(state, order)
-  while maker and int(order.remaining, 0) > 0 do
-    fills[#fills + 1] = settleFill(state, players, order, maker, timestamp)
-    maker = bestMatch(state, order)
+  local fills = matchOrder(state, ledger, order, timestamp, house)
+  local killed = retireRemainder(state, ledger, order, timestamp, tif)
+  return {
+    order = copy(order), fills = fills, open = state.orders[order.id] ~= nil,
+    tif = tif, stp = stp, selfCancelled = #mine, killed = killed,
+    bandLow = bandLow, bandHigh = bandHigh,
+  }, nil
+end
+
+--- Move a quote without leaving the book.
+---
+--- Cancel-and-replace is two messages (~200 ms), two creation costs and a lost
+--- place in the queue, and a maker adjusting a quote is the single most common
+--- thing anybody does on a book. So: an amend that only LOWERS quantity at the
+--- same price keeps its `seq` and its id, because nobody behind it in the
+--- queue is disadvantaged by it asking for less. Anything else -- a new price,
+--- or more quantity -- goes to the back with a new id, because it is a new
+--- order in every sense that matters to the person it queue-jumped.
+---
+--- No creation cost either way. The whole reason to have an amend is that
+--- charging for a re-quote taxes precisely the behaviour a book needs.
+function M.amendOrder(state, players, account, orderId, price, quantity, timestamp, actionId, opts)
+  state = M.ensureState(state)
+  local ledger = asLedger(players)
+  opts = type(opts) == "table" and opts or {}
+  local wasReplay, receiptKey, replayProblem = replayedAction(
+    state, account, actionId, "order.amend")
+  if replayProblem then return nil, replayProblem end
+  if wasReplay then return { replayed = true, actionId = actionId, fills = {} }, nil end
+  local cfg = C.ECONOMY.orderbook
+  local order = state.orders[orderId or ""]
+  local problem = nil
+  if state.policy.emergency and state.policy.emergency.paused then
+    problem = "Economy is paused: " .. tostring(state.policy.emergency.reason or "emergency pause")
+  elseif not order then problem = "No such order"
+  elseif order.account ~= account then problem = "That is not your order"
+  elseif int(order.expiresAt, 0) <= timestamp then problem = "That order has expired"
   end
-  return { order = copy(order), fills = fills, open = state.orders[order.id] ~= nil }, nil
+  if problem then recordRejected(state, problem); return nil, problem end
+
+  local market = M.resolveMarket(state, order.market or order.item)
+  price = int(price, int(order.price, 0))
+  quantity = int(quantity, int(order.remaining, 0))
+  local tif = mode(opts.tif, "gtc")
+  local stp = mode(opts.stp, "cancelresting")
+  local inPlace = price == int(order.price, 0) and quantity <= int(order.remaining, 0)
+  local bandLow, bandHigh = priceBand(state, market, order.item, timestamp)
+  if not market then problem = "That item is not traded for Gold"
+  elseif market.status ~= "open" then problem = "That market is " .. tostring(market.status)
+  elseif tif == "fok" or tif == "ioc" then
+    -- An amend is a resting instruction. A trader who wants to take liquidity
+    -- sends an order; there is nothing for an immediate-or-cancel amend to
+    -- leave behind, so asking for one is a mistake worth naming.
+    problem = "An amend may only be GTC or PostOnly"
+  elseif price <= 0 or price > int(market.maxPrice, cfg.maxUnitPrice) then
+    problem = "Invalid unit price"
+  elseif price % math.max(1, int(market.tick, 1)) ~= 0 then
+    problem = "Price must be a multiple of " .. string.format("%d", int(market.tick, 1))
+  elseif bandLow and price < bandLow then
+    problem = "Price is below the " .. string.format("%d", bandLow) .. " Gold price band"
+  elseif bandHigh and price > bandHigh then
+    problem = "Price is above the " .. string.format("%d", bandHigh) .. " Gold price band"
+  elseif quantity <= 0 or quantity > int(market.maxQuantity, cfg.maxQuantity) then
+    problem = "Invalid quantity"
+  elseif price * quantity < int(market.minValue, cfg.minValue) then
+    problem = "Order value is below 10 Gold"
+  end
+  if problem then recordRejected(state, problem); return nil, problem end
+
+  local lot = math.max(1, int(order.lot, 1))
+  local quote = market.quote or "gold"
+  -- What the amended order needs held, against what this one already holds.
+  local wanted = order.side == "sell" and quantity * lot or price * quantity
+  local locked = order.side == "sell" and int(order.remaining, 0) * lot
+    or int(order.price, 0) * int(order.remaining, 0)
+  local asset = order.side == "sell" and order.item or quote
+  if wanted > locked and ledger.balance(account, asset) < wanted - locked then
+    problem = order.side == "sell"
+      and ("Not enough " .. tostring(order.item))
+      or "Not enough Gold to increase the order"
+    recordRejected(state, problem); return nil, problem
+  end
+
+  local house, mine = nil, {}
+  if not inPlace then
+    house = deskQuote(state, ledger, order.item, order.side, account, timestamp,
+      opts.withdrawals, opts.deposits)
+    -- The order being amended is not competing with itself: it is about to
+    -- stop existing at its old price.
+    mine = {}
+    for _, own in ipairs(selfCrossing(state, account, order.item, order.side, price, timestamp)) do
+      if own.id ~= order.id then mine[#mine + 1] = own end
+    end
+    local probe = { id = order.id, item = order.item, side = order.side,
+      price = price, account = account, remaining = quantity }
+    local depth = crossingDepth(state, probe, timestamp, house)
+    if tif == "postonly" and (depth > 0 or #mine > 0) then
+      problem = "A post-only order may not cross the book"
+    elseif stp == "reject" and #mine > 0 then
+      problem = "Self-trading is not allowed"
+    end
+    if problem then recordRejected(state, problem); return nil, problem end
+  end
+
+  rememberAction(state, receiptKey, "order.amend", timestamp)
+
+  if inPlace then
+    -- Same price, same or smaller size: keep the id, keep the queue position,
+    -- and release the difference. Nothing else in the book moves.
+    local release = locked - wanted
+    -- `quantity` is the order's original size and `remaining` what is left of
+    -- it, so shrinking one shrinks the other: the amount already filled does
+    -- not change, and `remaining/quantity` has to keep meaning what it says.
+    local filled = int(order.quantity, 0) - int(order.remaining, 0)
+    order.remaining = quantity
+    order.quantity = filled + quantity
+    touchBook(state, order.item)
+    if release > 0 then
+      if order.side == "sell" then
+        local row = pool(state, order.item)
+        row.escrow = math.max(0, int(row.escrow, 0) - release)
+        row.player = int(row.player, 0) + release
+        ledger.credit(account, order.item, release)
+      else
+        state.gold.escrow = math.max(0, int(state.gold.escrow, 0) - release)
+        state.gold.player = int(state.gold.player, 0) + release
+        ledger.credit(account, "gold", release)
+      end
+    end
+    return { order = copy(order), fills = {}, open = true, requeued = false,
+      orderId = order.id, released = math.max(0, release) }, nil
+  end
+
+  -- A re-queue. Return everything the old order held, then take exactly what
+  -- the new one needs: two moves in the same message, so nothing is ever
+  -- unfunded in between and the conservation invariants hold throughout.
+  for _, own in ipairs(mine) do
+    cancelOrder(state, ledger, own, timestamp, "self-trade")
+  end
+  if stp == "cancelboth" and #mine > 0 then
+    cancelOrder(state, ledger, order, timestamp, "self-trade")
+    return { order = nil, fills = {}, open = false, requeued = false,
+      selfCancelled = #mine + 1 }, nil
+  end
+  local previous = order.id
+  cancelOrder(state, ledger, order, timestamp, "amended")
+  state.orderSeq = int(state.orderSeq, 0) + 1
+  local replacement = {
+    id = "O" .. string.format("%d", state.orderSeq), seq = state.orderSeq,
+    account = account, side = order.side, item = order.item, price = price,
+    market = market.id, lot = lot,
+    quantity = quantity, remaining = quantity,
+    createdAt = timestamp, expiresAt = int(order.expiresAt, timestamp),
+    amendedFrom = previous,
+  }
+  if replacement.side == "sell" then
+    ledger.debit(account, order.item, quantity * lot)
+    local row = pool(state, order.item)
+    row.player = math.max(0, int(row.player, 0) - quantity * lot)
+    row.escrow = int(row.escrow, 0) + quantity * lot
+  else
+    ledger.debit(account, "gold", price * quantity)
+    state.gold.player = math.max(0, int(state.gold.player, 0) - price * quantity)
+    state.gold.escrow = int(state.gold.escrow, 0) + price * quantity
+  end
+  putOrder(state, replacement)
+  local fills = matchOrder(state, ledger, replacement, timestamp, house)
+  return {
+    order = copy(replacement), fills = fills,
+    open = state.orders[replacement.id] ~= nil,
+    requeued = true, orderId = replacement.id, amendedFrom = previous,
+    selfCancelled = #mine,
+  }, nil
 end
 
 function M.cancelOrder(state, players, account, orderId, timestamp, actionId)
   state = M.ensureState(state)
+  local ledger = asLedger(players)
   local wasReplay, receiptKey, replayProblem = replayedAction(
     state, account, actionId, "order.cancel")
   if replayProblem then return nil, replayProblem end
@@ -1211,13 +2693,141 @@ function M.cancelOrder(state, players, account, orderId, timestamp, actionId)
     return nil, "That is not your order"
   end
   rememberAction(state, receiptKey, "order.cancel", timestamp)
-  cancelOrder(state, players, order, timestamp, "cancelled")
-  return { cancelled = orderId }, nil
+  cancelOrder(state, ledger, order, timestamp, "cancelled")
+  return { cancelled = orderId, cancelledIds = { orderId } }, nil
 end
+
+--- Leave the book in one message.
+---
+--- A maker with twenty quotes paid twenty messages to step away, which is
+--- ~2 seconds of being unable to withdraw a price that has gone wrong. This is
+--- the one place batching is legitimate under the repo's "do not batch
+--- interactive actions" rule: it is a single user intent -- *get me out* --
+--- over many state transitions, and there is no decision between them for the
+--- player to make. ORDERBOOK.md §2.3.
+---
+--- It is bounded by construction: `maxPerAccount` is the most orders an
+--- account can have, so a cancel-all is at most that many releases.
+---
+--- `ids` cancels exactly those, `item` everything in one market, and neither
+--- cancels the whole account's book. Ownership is checked on every single id,
+--- because the ids are guessable (`O` + sequence) and a verb that acts on an
+--- order id without an ownership check is the one way this book leaks.
+function M.cancelOrders(state, players, account, filter, timestamp, actionId)
+  state = M.ensureState(state)
+  local ledger = asLedger(players)
+  filter = type(filter) == "table" and filter or {}
+  local wasReplay, receiptKey, replayProblem = replayedAction(
+    state, account, actionId, "order.cancelAll")
+  if replayProblem then return nil, replayProblem end
+  if wasReplay then return { replayed = true, actionId = actionId, cancelledIds = {} }, nil end
+  local wanted = nil
+  if type(filter.ids) == "table" and #filter.ids > 0 then
+    wanted = {}
+    for _, id in ipairs(filter.ids) do wanted[tostring(id)] = true end
+  end
+  local item = type(filter.item) == "string" and filter.item ~= "" and filter.item or nil
+  -- The account's own ids, not everybody's. This walked and sorted the whole
+  -- book to find at most twenty orders belonging to one wallet.
+  --
+  -- Both halves are needed and the second one is the easy half to forget: an
+  -- expired order is out of the index but its escrow has not been released
+  -- yet, and cancel-all always could -- and still must -- take it with the
+  -- rest rather than leave the trader holding an order they were told was
+  -- cancelled. The ids are sorted so the receipt lists them in the same order
+  -- it always did.
+  local index = bookIndex(state, timestamp)
+  local held = index.accounts[account]
+  local ids = {}
+  if held then for id in pairs(held.ids) do ids[#ids + 1] = id end end
+  for at = index.deadHead, index.deadTail do
+    local waiting = state.orders[index.dead[at] or ""]
+    if waiting and waiting.account == account then ids[#ids + 1] = waiting.id end
+  end
+  table.sort(ids)
+  local doomed = {}
+  for _, id in ipairs(ids) do
+    local order = state.orders[id]
+    if order and (not wanted or wanted[id])
+       and (not item or order.item == item) then
+      doomed[#doomed + 1] = order
+    end
+  end
+  if #doomed == 0 then
+    local problem = "No open orders matched"
+    recordRejected(state, problem); return nil, problem
+  end
+  rememberAction(state, receiptKey, "order.cancelAll", timestamp)
+  local cancelled = {}
+  for _, order in ipairs(doomed) do
+    cancelled[#cancelled + 1] = order.id
+    cancelOrder(state, ledger, order, timestamp, "cancelled")
+  end
+  return { cancelled = #cancelled, cancelledIds = cancelled, item = item }, nil
+end
+
 
 function M.maintain(state, players, timestamp, limit)
   state = M.ensureState(state)
-  return expireOrders(state, players, timestamp, clamp(limit, 1, 100))
+  return expireOrders(state, asLedger(players), timestamp, clamp(limit, 1, 100))
+end
+
+--- What a caller needs to render one player's own book, without reading it.
+---
+--- `playerView` runs twice a message for the acting wallet on EVERY verb, and
+--- it was walking two thousand orders and five hundred fills to fill in two
+--- fields that come back nil for a player who has never traded. These three
+--- answer the same questions off the index.
+---
+--- `accountOpenCount` is the one that matters: it is a counter lookup, so the
+--- overwhelmingly common answer -- zero -- costs nothing and the caller can
+--- stop there. The other two return NIL rather than an empty table when there
+--- is nothing, because an empty Lua table encodes as `[]` and these go into
+--- `player-<address>`, which is written once per wallet ever seen and paid for
+--- by every message afterwards.
+---
+--- `timestamp` is optional on all three: without one they answer as of the
+--- last instant the book was reconciled to, which is the last thing that
+--- happened. Rows are copies; nothing hands a caller a live order.
+function M.accountOpenCount(state, account, timestamp)
+  state = M.ensureState(state)
+  local index = bookIndex(state, timestamp or state.bookIndex.at)
+  local held = index.accounts[account or ""]
+  return held and int(held.open, 0) or 0
+end
+
+function M.accountOrders(state, account, timestamp)
+  state = M.ensureState(state)
+  local index = bookIndex(state, timestamp or state.bookIndex.at)
+  local held = index.accounts[account or ""]
+  if not held then return nil end
+  local rows = {}
+  local now = int(timestamp, int(index.at, 0))
+  for id in pairs(held.ids) do
+    local order = state.orders[id]
+    -- Belt to the reconciliation's braces. A caller that hands over no
+    -- timestamp is answered as of the last instant something happened, and on
+    -- a process that has not acted since it was restored that is instant zero.
+    if order and int(order.expiresAt, 0) > now then rows[#rows + 1] = copy(order) end
+  end
+  if #rows == 0 then return nil end
+  -- Newest first: the quote a trader just placed is the one they are looking
+  -- for, and `seq` is the only total order the book guarantees.
+  table.sort(rows, function(a, b) return int(a.seq, 0) > int(b.seq, 0) end)
+  return rows
+end
+
+function M.accountFills(state, account, limit)
+  state = M.ensureState(state)
+  local ring = state.bookIndex.trades[account or ""]
+  if not ring or #ring == 0 then return nil end
+  local wanted = limit == nil and ACCOUNT_FILL_RING or clamp(limit, 1, ACCOUNT_FILL_RING)
+  local rows = {}
+  for at = #ring, 1, -1 do
+    if #rows >= wanted then break end
+    rows[#rows + 1] = copy(ring[at])
+  end
+  return rows
 end
 
 local function assetSupply(state, item)
@@ -1225,12 +2835,65 @@ local function assetSupply(state, item)
   return math.max(0, int(row and row.issued, 0) - int(row and row.consumed, 0))
 end
 
+--- How much stock the desk may HOLD. A share of outstanding supply, and that
+--- is the right shape for an inventory even though it is the wrong shape for a
+--- flow (see `epochFlowLimit`). A stock measured against a stock does not
+--- invert: outstanding berries grow with the playerbase, because every player
+--- carries a working balance of them, so the desk's position grows with the
+--- game and is still bounded at a share of it. `stockMax` is the hard ceiling
+--- for the day the ratio stops being the binding one.
 local function deskCap(state, desk)
   local supply = assetSupply(state, desk.item)
   if supply <= 0 then return 0 end
   local relative = (supply * int(desk.stockBps, 0)) // BPS
   if relative < 1 then relative = 1 end
   return math.min(int(desk.stockMax, 0), relative)
+end
+
+--- How many units a desk will move in a policy epoch, and it counts PLAYERS.
+---
+--- The rate per account is DERIVED from the desk's own 20-hour cap rather than
+--- typed beside it, because the two limits have to stay coherent and a second
+--- constant is a second thing to forget. `limits.global // flowFloorAccounts`
+--- is 25 on a berry desk and 1 on scroll and Rune, and 25 is the number the
+--- rest of this comment is about:
+---
+--- * The daily worship box pays 5 berries of each kind (0.95 x 5 from the
+---   tier-2 row plus 0.25 x 1 from the tier-1 row), so 35 of each kind an
+---   epoch. That is the whole item faucet now -- ECONOMY_V2.md §7 moved it off
+---   the battle.
+--- * Eight actions a day burn ~22 berries, but not evenly: ~1.75 OWN-ELEMENT
+---   berries for the 35 energy plus one of anything for the Play. So a player
+---   runs a surplus in three kinds and a deficit of ~9 a day in the fourth,
+---   and a hunt entry takes another 5 of each on top (`C.HUNT.entry.berries`).
+--- * 25 a kind an epoch is ~70% of what one kind pays out, and it CLOSES: at
+---   the desk's opening band (bid 5, ask 12) selling 25 of each of three
+---   off-element kinds pays 375 Gold and buying 25 of the fourth costs 300.
+---   That is the desk doing the job it exists for -- convert the surplus into
+---   the shortage -- without being the whole market, which is what the player
+---   exchange is for.
+---
+--- The floor of 20 accounts makes the cap exactly `limits.global` on a fresh
+--- berry desk, so the desk is never throttled below one 20-hour window's
+--- allowance. Above the floor the two caps hand over instead of shadowing each
+--- other: an epoch holds 8.4 twenty-hour windows, so 500 a window is 4,200 a
+--- week, the epoch cap binds up to 4,200/25 = 168 accounts, and the 20-hour
+--- rate limiter binds above it. Both are live, which is the entire point --
+--- under the old rule one of them could never fire.
+---
+--- 168 is also, exactly, the recovery set. `legacy-players.json` is 168
+--- accounts holding ~7,400 berries of each kind, so loading it in step 4 moves
+--- outstanding supply ~15x, moves this cap NOT AT ALL, and lands the two caps
+--- on the same number -- which is the coherence being bought, checked against
+--- the one population this game is certain to have. What the load does move is
+--- `deskCap` above, and that is correct: a bigger world supports a bigger
+--- inventory.
+local function epochFlowLimit(state, desk)
+  local floor = math.max(1, int(C.ECONOMY.shop.flowFloorAccounts, 20))
+  local perAccount = math.max(1, int(desk.limits and desk.limits.global, 0) // floor)
+  local accounts = math.max(floor,
+    int((state.policy.passes or {}).lifetimePassCount, 0))
+  return perAccount * accounts
 end
 
 local function deskBand(desk, cap, stock)
@@ -1332,8 +2995,7 @@ local function shopPauseReason(state, desk, side, withdrawals, deposits, timesta
     return "Global 20-hour quantity limit reached"
   end
   local epoch = int(timestamp, 0) // C.ECONOMY.shop.policyEpoch
-  local epochLimit = math.max(1,
-    (assetSupply(state, desk.item) * C.ECONOMY.shop.flowSupplyBps) // BPS)
+  local epochLimit = epochFlowLimit(state, desk)
   if int(desk.epochUsage.epoch, -1) == epoch
      and int(desk.epochUsage.quantity, 0) >= epochLimit then
     return "Policy-epoch supply-flow limit reached"
@@ -1348,6 +3010,224 @@ local function shopPauseReason(state, desk, side, withdrawals, deposits, timesta
     end
   elseif int(desk.stock, 0) <= 0 then return "Desk is out of stock" end
   return nil
+end
+
+-- The desk, quoting into the book -------------------------------------------
+--
+-- Everything below fills in the three functions declared at the head of the
+-- order book. The Shop tab and `Economy.Shop.Trade` are untouched and stay
+-- exactly as they are, for trading at the desk deliberately; this is the same
+-- desk, the same stock, the same Gold reserve and the same 20-hour limits,
+-- reached through the ladder instead. A fill here consumes them identically,
+-- or the desk gets drained twice for one shelf. ORDERBOOK.md §9.
+
+--- What the desk would charge, or pay, for the NEXT single unit.
+--- `side` is player-facing: `buy` means the player is buying and the desk is
+--- selling at its ask; `sell` means the desk is buying at its bid.
+local function deskUnitPrice(desk, cap, stock, side)
+  if cap <= 0 then return nil end
+  if side == "sell" and stock >= cap then return nil end
+  if side == "buy" and stock <= 0 then return nil end
+  local band = deskBand(desk, cap, stock)
+  if not band then return nil end
+  if side == "sell" then return anchoredPrice(desk, band.bid, "bid") end
+  return anchoredPrice(desk, band.ask, "ask")
+end
+
+--- The desk's current two-sided quote, ignoring every reason it might refuse.
+---
+--- This is the price band's anchor and nothing else. It is deliberately blind
+--- to pauses and rate limits: a fat-finger guard should describe where a price
+--- IS, and a desk that has hit its 20-hour limit has not changed its opinion
+--- of what a berry is worth.
+deskAnchors = function(state, item)
+  local desk = state.desks[item or ""]
+  if not desk then return nil, nil end
+  local cap = deskCap(state, desk)
+  local band = deskBand(desk, cap, int(desk.stock, 0))
+  if not band then return nil, nil end
+  return anchoredPrice(desk, band.bid, "bid"), anchoredPrice(desk, band.ask, "ask")
+end
+
+--- How many units the desk may still trade with this account, this window.
+---
+--- Read-only on purpose. `usageRows` creates a per-account row on the desk,
+--- and the published view calls this for every market on every read -- so a
+--- version of this that used `usageRows` would mint a usage row for every
+--- address that ever looked at the screen, and every slot afterwards would
+--- pay for all of them. Quoting is not usage.
+local function deskHeadroom(state, desk, ledger, account, side, timestamp)
+  local shop = C.ECONOMY.shop
+  local window = int(timestamp, 0) // shop.accountWindow
+  local perAccount = int(desk.limits.perAction, 0)
+  if account then
+    local player = type(ledger.record) == "function" and ledger.record(account) or nil
+    local mature = math.max(1,
+      (int(desk.limits.perAccount, 0) * maturityBps(state, player, timestamp)) // BPS)
+    local row = desk.accountUsage[account]
+    local used = (row and int(row.window, -1) == window) and int(row[side], 0) or 0
+    perAccount = math.min(perAccount, math.max(0, mature - used))
+  end
+  local globalUsed = int(desk.globalUsage.window, -1) == window
+    and int(desk.globalUsage[side], 0) or 0
+  local epoch = int(timestamp, 0) // shop.policyEpoch
+  local epochLimit = epochFlowLimit(state, desk)
+  local epochUsed = int(desk.epochUsage.epoch, -1) == epoch
+    and int(desk.epochUsage.quantity, 0) or 0
+  return math.max(0, math.min(
+    perAccount,
+    int(desk.limits.global, 0) - globalUsed,
+    epochLimit - epochUsed,
+    C.ECONOMY.orderbook.deskSweepMax))
+end
+
+--- The house side of the ladder: a price-ordered run of units the desk will
+--- trade right now, best first.
+---
+--- Best-first is a property of the band curve rather than a sort. The desk
+--- reprices against its own stock, so every unit it sells makes the next one
+--- dearer and every unit it buys makes the next one cheaper -- which is what
+--- makes a precomputed ladder exact. Nothing else moves the desk's stock
+--- inside one message, so this list can be consumed as it stands.
+---
+--- `account` may be nil, for the published view, which asks what the desk
+--- would do for anybody rather than for someone in particular.
+deskQuote = function(state, ledger, item, takerSide, account, timestamp, withdrawals, deposits)
+  local market = M.resolveMarket(state, item)
+  -- Only a Gold market with a one-unit lot. The desk holds Gold and whole
+  -- items; it has no opinion about lots of something else, and pretending
+  -- otherwise is how a registry field becomes a rounding bug.
+  if not market or market.houseQuotes ~= true then return nil end
+  if int(market.lot, 1) ~= 1 or (market.quote or "gold") ~= "gold" then return nil end
+  if takerSide ~= "buy" and takerSide ~= "sell" then return nil end
+  local desk = state.desks[item or ""]
+  if not desk then return nil end
+  -- The desk's side of the trade is the player's side of the trade: the
+  -- pause reasons, the limits and the public view all use the same
+  -- player-facing spelling.
+  if shopPauseReason(state, desk, takerSide, withdrawals, deposits, timestamp) then return nil end
+  local room = deskHeadroom(state, desk, ledger, account, takerSide, timestamp)
+  if room <= 0 then return nil end
+  local cap = deskCap(state, desk)
+  local stock = int(desk.stock, 0)
+  local reserve = int(desk.goldReserve, 0)
+  local levels, spend, units = {}, 0, 0
+  while units < room do
+    local price = deskUnitPrice(desk, cap, stock, takerSide)
+    if not price then break end
+    -- The desk cannot pay out more Gold than it holds, and it must refuse
+    -- before the fill rather than go negative during it.
+    if takerSide == "sell" then
+      if spend + price > reserve then break end
+      spend = spend + price
+    end
+    local top = levels[#levels]
+    if top and top.price == price then top.units = int(top.units, 0) + 1
+    else levels[#levels + 1] = { price = price, units = 1 } end
+    stock = stock + (takerSide == "sell" and 1 or -1)
+    units = units + 1
+  end
+  if units == 0 then return nil end
+  return { desk = desk, item = item, side = takerSide, levels = levels, units = units }
+end
+
+--- Settle one run of units against the desk, at one price.
+---
+--- This is `shopTrade`'s accounting with the taker's side already escrowed by
+--- the book, and it moves the same five things: the desk's stock, the desk's
+--- Gold reserve, the item's `shop`/`player`/`escrow` buckets, the Gold
+--- buckets, and the three rate-limit counters. No book fee is charged on a
+--- house fill -- the desk's spread IS the charge, and taking a percentage on
+--- top would bill the player twice for the same trade.
+deskSettle = function(state, ledger, desk, order, price, units, timestamp)
+  units = math.max(0, int(units, 0))
+  if units <= 0 then return nil end
+  local account = order.account
+  local item = order.item
+  local side = order.side
+  local gross = price * units
+  local asset = pool(state, item)
+  local present = ledger.exists(account)
+  if side == "buy" then
+    if int(desk.stock, 0) < units then return nil end
+    -- Gold: the taker committed `order.price` a unit into escrow, and the
+    -- desk is charging `price`. The difference is price improvement and goes
+    -- straight back, exactly as it does against a resting player order.
+    local committed = int(order.price, 0) * units
+    state.gold.escrow = math.max(0, int(state.gold.escrow, 0) - committed)
+    local refund = committed - gross
+    if refund > 0 and present then
+      ledger.credit(account, "gold", refund)
+      state.gold.player = int(state.gold.player, 0) + refund
+    end
+    local policyShare = (gross * int(state.policy.gold.shopBurnBps, 2500) + BPS - 1) // BPS
+    if policyShare > gross then policyShare = gross end
+    local reserveShare = gross - policyShare
+    desk.goldReserve = int(desk.goldReserve, 0) + reserveShare
+    state.gold.shop = int(state.gold.shop, 0) + reserveShare
+    routeGoldFee(state, policyShare, timestamp, "NPC desk sale")
+    -- Item: off the shelf and into the buyer's hands.
+    asset.shop = math.max(0, int(asset.shop, 0) - units)
+    asset.player = int(asset.player, 0) + units
+    if present then ledger.credit(account, item, units) end
+    desk.stock = math.max(0, int(desk.stock, 0) - units)
+    desk.traded.sold = int(desk.traded.sold, 0) + units
+    desk.traded.goldIn = int(desk.traded.goldIn, 0) + gross
+  else
+    if int(desk.goldReserve, 0) < gross then return nil end
+    -- Item: out of the seller's escrow and onto the shelf.
+    asset.escrow = math.max(0, int(asset.escrow, 0) - units)
+    asset.shop = int(asset.shop, 0) + units
+    desk.stock = int(desk.stock, 0) + units
+    -- Gold: out of the desk's reserve and into the seller's balance.
+    desk.goldReserve = int(desk.goldReserve, 0) - gross
+    state.gold.shop = math.max(0, int(state.gold.shop, 0) - gross)
+    if present then
+      ledger.credit(account, "gold", gross)
+      state.gold.player = int(state.gold.player, 0) + gross
+    else
+      state.gold.locked = int(state.gold.locked, 0) + gross
+    end
+    desk.traded.bought = int(desk.traded.bought, 0) + units
+    desk.traded.goldOut = int(desk.traded.goldOut, 0) + gross
+  end
+
+  -- The same three counters `Economy.Shop.Trade` moves. A desk fill reached
+  -- through the ladder has to consume them identically or the two paths drain
+  -- one shelf twice.
+  local accountUsage, globalUsage, epochUsage = usageRows(desk, account, timestamp)
+  accountUsage[side] = int(accountUsage[side], 0) + units
+  globalUsage[side] = int(globalUsage[side], 0) + units
+  epochUsage.quantity = int(epochUsage.quantity, 0) + units
+
+  order.remaining = int(order.remaining, 0) - units
+  touchBook(state, item)
+  state.fillSeq = int(state.fillSeq, 0) + 1
+  local fill = {
+    id = "F" .. string.format("%d", state.fillSeq), item = item,
+    market = order.market or marketId(item, "gold"),
+    buyOrder = side == "buy" and order.id or HOUSE,
+    sellOrder = side == "sell" and order.id or HOUSE,
+    buyer = side == "buy" and account or HOUSE,
+    seller = side == "sell" and account or HOUSE,
+    maker = HOUSE, taker = account,
+    price = price, quantity = units, gross = gross, fee = 0,
+    feePayer = HOUSE, feeAsset = "gold", house = true,
+    filledAt = timestamp,
+  }
+  appendBounded(state.fills, fill, C.ECONOMY.orderbook.historyLimit)
+  fillRecorded(state, fill)
+  recordCandle(marketDay(state, timestamp, item), price, units, gross, nil, account)
+  if int(order.remaining, 0) <= 0 and state.orders[order.id] then
+    dropOrder(state, order)
+    appendBounded(state.orderHistory, {
+      id = order.id, account = account, item = item, side = side,
+      market = order.market or marketId(item, "gold"),
+      price = order.price, quantity = order.quantity, remaining = 0,
+      status = "filled", closedAt = timestamp,
+    }, C.ECONOMY.orderbook.historyLimit)
+  end
+  return fill
 end
 
 function M.shopTrade(state, players, withdrawals, deposits, account, item, side, quantity, timestamp, actionId)
@@ -1381,8 +3261,7 @@ function M.shopTrade(state, players, withdrawals, deposits, account, item, side,
   elseif int(globalUsage[side], 0) + quantity > int(desk.limits.global, 0) then
     problem = "Global 20-hour quantity limit reached"
   end
-  local supply = assetSupply(state, item)
-  local epochLimit = math.max(1, (supply * C.ECONOMY.shop.flowSupplyBps) // BPS)
+  local epochLimit = epochFlowLimit(state, desk)
   if not problem and int(epochUsage.quantity, 0) + quantity > epochLimit then
     problem = "Policy-epoch supply-flow limit reached"
   end
@@ -1467,56 +3346,137 @@ local function rollingAsset(row, timestamp, days)
   return { issued = issued, consumed = consumed }
 end
 
-local function median(values)
-  if #values == 0 then return nil end
-  table.sort(values)
-  local middle = (#values + 1) // 2
-  if (#values % 2) == 1 then return values[middle] end
-  return (values[middle] + values[middle + 1]) // 2
+--- Collapse a side of the book into a price ladder.
+---
+--- One row per PRICE, not one row per order. Ten orders resting at the same
+--- price are one level with the quantity summed and `orders` counting them --
+--- which is both what a trader reads and, at the cap, strictly fewer bytes to
+--- publish than ten identical lines that hid the next nine price levels.
+local function ladder(levels, descending, limit)
+  local rows = {}
+  for price, level in pairs(levels) do
+    rows[#rows + 1] = { price = price, quantity = level.quantity,
+      orders = level.orders, house = level.house > 0 and level.house or nil }
+  end
+  table.sort(rows, function(a, b)
+    if descending then return a.price > b.price end
+    return a.price < b.price
+  end)
+  while #rows > limit do table.remove(rows) end
+  return rows
 end
 
-local function marketStats(state, timestamp, item)
-  local bestBid, bestAsk = nil, nil
-  local bids, asks = {}, {}
-  for _, order in pairs(state.orders) do
-    if order.item == item then
-      local row = { price = int(order.price, 0), quantity = int(order.remaining, 0) }
-      if order.side == "buy" then
-        bids[#bids + 1] = row
-        if not bestBid or row.price > bestBid then bestBid = row.price end
+--- The reference price the corridor is measured against, for the client.
+--- Published so the order ticket can say WHY a price will be refused before
+--- the player pays a message to find out.
+local function bandView(state, item, timestamp)
+  local market = M.resolveMarket(state, item)
+  if not market then return nil end
+  local low, high = priceBand(state, market, item, timestamp)
+  if not low then return nil end
+  return { low = low, high = high, bps = int(market.bandBps, 0) }
+end
+
+local function marketStats(state, timestamp, item, withdrawals, deposits)
+  local bidLevels, askLevels = {}, {}
+  local level = function(levels, price)
+    local row = levels[price]
+    if not row then row = { quantity = 0, orders = 0, house = 0 }; levels[price] = row end
+    return row
+  end
+  -- The player side of the ladder, cached against this market's revision.
+  -- Expired orders are not liquidity and are not in it: the index took them
+  -- out when the clock passed them, so a ladder can no longer advertise a
+  -- price nobody is allowed to trade at.
+  local top = p2pLadder(state, timestamp, item)
+  local bestBid, bestAsk = top.bestBid, top.bestAsk
+  for _, row in ipairs(top.bids) do
+    local target = level(bidLevels, row.price)
+    target.quantity = row.quantity; target.orders = row.orders
+  end
+  for _, row in ipairs(top.asks) do
+    local target = level(askLevels, row.price)
+    target.quantity = row.quantity; target.orders = row.orders
+  end
+  -- The house, in the same ladder. Two tabs and two prices is a venue that
+  -- asks the player to arbitrage it; one ladder with the desk in it is a
+  -- market. The corridor then enforces itself, because a taker gets whichever
+  -- of desk-or-P2P is better without having to know there is a choice.
+  local houseP2P = { bid = bestBid, ask = bestAsk }
+  local stub = {}
+  local houseBid = deskQuote(state, stub, item, "sell", nil, timestamp, withdrawals, deposits)
+  local houseAsk = deskQuote(state, stub, item, "buy", nil, timestamp, withdrawals, deposits)
+  for _, quote in ipairs({ houseBid, houseAsk }) do
+    if quote then
+      local levels = quote.side == "sell" and bidLevels or askLevels
+      for _, row in ipairs(quote.levels) do
+        local target = level(levels, row.price)
+        target.quantity = target.quantity + int(row.units, 0)
+        target.house = target.house + int(row.units, 0)
+      end
+      if quote.side == "sell" then
+        for _, row in ipairs(quote.levels) do
+          if not bestBid or row.price > bestBid then bestBid = row.price end
+        end
       else
-        asks[#asks + 1] = row
-        if not bestAsk or row.price < bestAsk then bestAsk = row.price end
+        for _, row in ipairs(quote.levels) do
+          if not bestAsk or row.price < bestAsk then bestAsk = row.price end
+        end
       end
     end
   end
-  table.sort(bids, function(a, b) return a.price > b.price end)
-  table.sort(asks, function(a, b) return a.price < b.price end)
-  while #bids > 10 do table.remove(bids) end
-  while #asks > 10 do table.remove(asks) end
-  local prices7, prices30 = {}, {}
-  local volume24, volume7 = 0, 0
-  local makers, takers = {}, {}
-  for _, fill in ipairs(state.fills) do
-    if fill.item == item then
-      local age = timestamp - int(fill.filledAt, 0)
-      if age >= 0 and age < 30 * DAY then prices30[#prices30 + 1] = int(fill.price, 0) end
-      if age >= 0 and age < 7 * DAY then prices7[#prices7 + 1] = int(fill.price, 0) end
-      if age >= 0 and age < DAY then volume24 = volume24 + int(fill.quantity, 0) end
-      if age >= 0 and age < 7 * DAY then
-        volume7 = volume7 + int(fill.quantity, 0)
-        makers[fill.maker] = true; takers[fill.taker] = true
-      end
-    end
-  end
+  local bids = ladder(bidLevels, true, 10)
+  local asks = ladder(askLevels, false, 10)
+  -- `median` sorts what it is given, so the digest's own lists are handed over
+  -- as copies. They are shared with every other market's view of this call.
+  local digest = fillDigest(state, timestamp)[item] or EMPTY_DIGEST
+  local prices7, prices30 = copy(digest.prices7), copy(digest.prices30)
+  local volume24, volume7 = digest.volume24, digest.volume7
+  local makers, takers = digest.makers, digest.takers
   return {
     bestBid = bestBid, bestAsk = bestAsk,
+    -- What the players alone are quoting. The invariant in ORDERBOOK.md §9 is
+    -- stated over these two: while the P2P best sits inside the desk's band
+    -- the desk is never the best price on either side, and the moment P2P
+    -- leaves the band it is. Publishing both halves is what lets a client --
+    -- or a test -- check that rather than take it on trust.
+    p2pBid = houseP2P.bid, p2pAsk = houseP2P.ask,
+    houseBid = houseBid and houseBid.levels[1] and houseBid.levels[1].price or nil,
+    houseAsk = houseAsk and houseAsk.levels[1] and houseAsk.levels[1].price or nil,
+    houseBidUnits = houseBid and houseBid.units or 0,
+    houseAskUnits = houseAsk and houseAsk.units or 0,
+    band = bandView(state, item, timestamp),
     depth = { bids = bids, asks = asks },
     volume24h = volume24, volume7d = volume7,
     median7d = median(prices7), median30d = median(prices30),
     medianSamples7d = #prices7, medianSamples30d = #prices30,
     uniqueMakers7d = countMap(makers), uniqueTakers7d = countMap(takers),
   }
+end
+
+--- Daily OHLCV, newest last, for as many days as the config keeps.
+---
+--- The whole reason candles exist here is that `state.fills` is a 500-row
+--- ring: a chart drawn from it goes blank as soon as the window it is drawing
+--- is older than the last five hundred trades. A candle is permanent, four
+--- integers wide, and already sitting on the row that carries the day's
+--- volume -- so publishing it costs a handful of bytes per market per day and
+--- removes the only reason the client needed the raw fills at all.
+local function candleView(state, timestamp, item)
+  local today = timestamp // DAY
+  local keep = math.max(1, int(C.ECONOMY.orderbook.candleDays, 30))
+  local days = {}
+  for day, row in pairs(state.marketDaily or {}) do
+    local age = today - int(day, today)
+    local candle = type(row) == "table" and row[item] or nil
+    if age >= 0 and age < keep and candle and candle.o ~= nil then
+      days[#days + 1] = { d = int(day, 0), o = int(candle.o, 0), h = int(candle.h, 0),
+        l = int(candle.l, 0), c = int(candle.c, 0),
+        v = int(candle.volume, 0), g = int(candle.gold, 0), n = int(candle.fills, 0) }
+    end
+  end
+  table.sort(days, function(a, b) return a.d < b.d end)
+  return days
 end
 
 local function orderView(state)
@@ -1577,12 +3537,17 @@ function M.publicView(state, withdrawals, deposits, timestamp)
     local budget = M.emissionBudget(state, timestamp)
     local policy = state.policy.runeRewards
     policy.epochBudget = budget
-    local population = emissionPopulation(state)
+    -- v2: derived from the per-account rate, matching what `claimRuneReward`
+    -- actually pays. Dividing the budget by a population here published a
+    -- floor of 500 while the claim path paid something else entirely.
+    local perCapita = M.emissionPerAccount(state, timestamp)
+    policy.emissionPerAccount = perCapita
     policy.newcomerFloor =
-      ((budget // population) * int((C.ECONOMY.rune or {}).newcomerFloorBps, 2500)) // BPS
+      (perCapita * int((C.ECONOMY.rune or {}).newcomerFloorBps, 2500)) // BPS
   end
   local assets = {}
   local markets = {}
+  local candles = {}
   for _, item in ipairs(ITEM_IDS) do
     local row = state.assets[item]
     assets[item] = {
@@ -1592,7 +3557,9 @@ function M.publicView(state, withdrawals, deposits, timestamp)
       rolling30d = rollingAsset(row, timestamp, 30),
       sources = copy(row.sources), sinks = copy(row.sinks),
     }
-    markets[item] = marketStats(state, timestamp, item)
+    markets[item] = marketStats(state, timestamp, item, withdrawals, deposits)
+    local bars = candleView(state, timestamp, item)
+    if #bars > 0 then candles[item] = bars end
   end
   local boxes = {}
   for rarity = 1, C.MAX_LOOT_RARITY do
@@ -1639,8 +3606,9 @@ function M.publicView(state, withdrawals, deposits, timestamp)
       rolling7d = rollingAsset({ daily = gold.daily }, timestamp, 7),
       rolling30d = rollingAsset({ daily = gold.daily }, timestamp, 30),
     },
+    markets = copy(state.markets),
     assets = assets, lootboxes = boxes, orders = orderView(state),
-    fills = copy(state.fills), market = markets, desks = desks,
+    fills = copy(state.fills), market = markets, candles = candles, desks = desks,
     rejected = copy(state.rejected),
     policy = copy(state.policy), passQuote = M.passQuote(state),
   }
@@ -1661,13 +3629,32 @@ end
 
 function M.observeRuneSupply(state, actor, supply, timestamp, reason)
   state = M.ensureState(state)
-  supply = int(supply, -1)
-  if supply < 0 then return nil, "Rune token supply must be a non-negative integer" end
-  state.policy.externalRuneSupply = supply
+  -- The token reports ATOMS; everything in this engine counts whole Rune.
+  -- Normalise at the boundary rather than at every comparison, so there is
+  -- exactly one unit inside.
+  --
+  -- Refusing a non-whole supply is safe rather than strict: total supply only
+  -- moves through `Mint` and `Burn`, both of which the token refuses unless
+  -- the amount is a whole multiple of a Rune. Transfers move balances between
+  -- holders and never change the total. So a fractional total supply is not a
+  -- number the token can legitimately produce, and reading one back means the
+  -- two processes disagree about the denomination -- which is exactly the
+  -- condition reconciliation exists to catch, and must not be rounded away.
+  local atoms = int(supply, -1)
+  if atoms < 0 then return nil, "Rune token supply must be a non-negative integer" end
+  local units = C.ECONOMY.runeUnits
+  if atoms % units ~= 0 then
+    return nil, "Rune token supply is not a whole number of Rune: "
+      .. string.format("%d", atoms) .. " atoms against " .. string.format("%d", units)
+      .. " to a Rune. Check the token's Denomination."
+  end
+  local supplyUnits = atoms // units
+  state.policy.externalRuneSupply = supplyUnits
   state.policy.externalRuneObservedAt = timestamp
   pushHistory(state, { action = "rune-supply-observed", actor = actor,
-    value = supply, reason = reason or "token reconciliation", timestamp = timestamp })
-  return supply, nil
+    value = supplyUnits, atoms = atoms,
+    reason = reason or "token reconciliation", timestamp = timestamp })
+  return supplyUnits, nil
 end
 
 local ALLOWED_CHANGES = {
@@ -1962,8 +3949,17 @@ function M.releaseGold(state, actor, item, amount, reason, timestamp)
     reserve = desk.goldReserve }, nil
 end
 
+--- The index is DERIVED and is never exported.
+---
+--- It is a second copy of the book in a different arrangement: exporting it
+--- would double what an `Admin.Load` carries and what a migration writes, for
+--- something `rebuildIndex` reconstructs from the orders in the same export.
+--- The rule is the same one `publicView` follows, and it is what allows the
+--- index to exist at all -- see the note on `dev_lua` in CLAUDE.md.
 function M.exportState(state)
-  return copy(M.ensureState(state))
+  local out = copy(M.ensureState(state))
+  out.bookIndex = nil
+  return out
 end
 
 function M.importState(current, incoming)

@@ -40,18 +40,27 @@ local function run(base, req)
   local function errOf(r) return type(r) == "table" and r.error or nil end
   local function num(s) return math.tointeger(tonumber(s or "0")) end
 
+  --- Atoms in one whole Rune. The token carries six decimals so it can be a
+  --- quote asset on an order book; the GAME is indivisible and the bridge
+  --- refuses anything that is not a whole multiple. So every mint, burn and
+  --- balance in this suite is expressed in atoms, because that is what the
+  --- token actually speaks -- a suite written in whole Rune would be green
+  --- against a token that refuses every real bridge message.
+  local U = 1000000
+  local function q(runes) return string.format("%d", runes * U) end
+
   -- Identity ------------------------------------------------------------------
 
   local r = send(OWNER, { Action = "Info" })
   ok("Info answers", r ~= nil and r.Ticker == "TEST-RUNE", json.encode(r))
-  ok("Rune does not divide", r and r.Denomination == "0", r and r.Denomination)
-  ok("supply starts at zero", r and r.TotalSupply == "0", r and r.TotalSupply)
+  ok("Rune divides outside the game", r and r.Denomination == "6", r and r.Denomination)
+  ok("supply starts at zero", r and r.TotalSupply == q(0), r and r.TotalSupply)
   ok("owner resolved from the process commitment", r and r.Owner == OWNER, r and r.Owner)
   ok("no minter yet", r and r.Minter == "", r and r.Minter)
 
   -- Nothing can be printed before the game is named ---------------------------
 
-  r = send(OWNER, { Action = "Mint", Recipient = ALICE, Quantity = "100" })
+  r = send(OWNER, { Action = "Mint", Reference = "t63", Recipient = ALICE, Quantity = q(100) })
   ok("the owner cannot mint before a minter is set", errOf(r) ~= nil, json.encode(r))
 
   r = send(ALICE, { Action = "Admin.SetMinter", Minter = ALICE })
@@ -65,18 +74,18 @@ local function run(base, req)
 
   -- Minting is the withdraw half of the bridge --------------------------------
 
-  r = send(OWNER, { Action = "Mint", Recipient = ALICE, Quantity = "100" })
+  r = send(OWNER, { Action = "Mint", Reference = "t77", Recipient = ALICE, Quantity = q(100) })
   ok("even the owner cannot mint", errOf(r) == "Not authorised", json.encode(r))
 
-  r = send(ALICE, { Action = "Mint", Recipient = ALICE, Quantity = "100" })
+  r = send(ALICE, { Action = "Mint", Reference = "t80", Recipient = ALICE, Quantity = q(100) })
   ok("a player cannot mint themselves Rune", errOf(r) == "Not authorised", json.encode(r))
 
-  r = send(GAME, { Action = "Mint", Recipient = ALICE, Quantity = "100" })
-  ok("the game mints on withdraw", r and r.Balance == "100", json.encode(r))
-  ok("supply follows the mint", r and r.TotalSupply == "100", r and r.TotalSupply)
+  r = send(GAME, { Action = "Mint", Reference = "t83", Recipient = ALICE, Quantity = q(100) })
+  ok("the game mints on withdraw", r and r.Balance == q(100), json.encode(r))
+  ok("supply follows the mint", r and r.TotalSupply == q(100), r and r.TotalSupply)
 
-  r = send(GAME, { Action = "Mint", Recipient = BOB, Quantity = "40" })
-  ok("a second withdraw adds to supply", r and r.TotalSupply == "140", r and r.TotalSupply)
+  r = send(GAME, { Action = "Mint", Reference = "t87", Recipient = BOB, Quantity = q(40) })
+  ok("a second withdraw adds to supply", r and r.TotalSupply == q(140), r and r.TotalSupply)
 
   -- Numeric, NOT ipairs. `compute` ends with `collectgarbage("collect")`, and
   -- Luerl kills the VM if a collect runs while an ipairs iterator is open on
@@ -85,41 +94,41 @@ local function run(base, req)
   local badQuantities = { "0", "-5", "1.5", "abc", "" }
   for qi = 1, #badQuantities do
     local bad = badQuantities[qi]
-    r = send(GAME, { Action = "Mint", Recipient = ALICE, Quantity = bad })
+    r = send(GAME, { Action = "Mint", Reference = "t97", Recipient = ALICE, Quantity = bad })
     ok("mint refuses a quantity of '" .. bad .. "'", errOf(r) ~= nil, json.encode(r))
   end
 
   -- Transfer ------------------------------------------------------------------
 
-  r = send(ALICE, { Action = "Transfer", Recipient = BOB, Quantity = "30" })
-  ok("a holder transfers", r and r.Balance == "70", json.encode(r))
+  r = send(ALICE, { Action = "Transfer", Recipient = BOB, Quantity = q(30) })
+  ok("a holder transfers", r and r.Balance == q(70), json.encode(r))
 
   local _, raw = send(BOB, { Action = "Balance" })
   local b = json.decode(raw.results.output.data)
-  ok("the recipient received it", b and b.Balance == "70", json.encode(b))
+  ok("the recipient received it", b and b.Balance == q(70), json.encode(b))
 
-  r = send(ALICE, { Action = "Transfer", Recipient = BOB, Quantity = "1000" })
+  r = send(ALICE, { Action = "Transfer", Recipient = BOB, Quantity = q(1000) })
   ok("an overdraft is refused", errOf(r) ~= nil, json.encode(r))
 
-  r = send(ALICE, { Action = "Transfer", Recipient = ALICE, Quantity = "1" })
+  r = send(ALICE, { Action = "Transfer", Recipient = ALICE, Quantity = q(1) })
   ok("a transfer to yourself is refused", errOf(r) ~= nil, json.encode(r))
 
-  r = send(ALICE, { Action = "Transfer", Quantity = "1" })
+  r = send(ALICE, { Action = "Transfer", Quantity = q(1) })
   ok("a transfer needs a recipient", errOf(r) ~= nil, json.encode(r))
 
   -- A process has no private key. process-outbox attests it in `from-process`,
   -- which lets an AMM spend only the balance held under its own process id.
-  send(ALICE, { Action = "Transfer", Recipient = AMM, Quantity = "2" })
+  send(ALICE, { Action = "Transfer", Recipient = AMM, Quantity = q(2) })
   do
     T = T + 1000
     local res = compute({ process = PROCESS }, { body = {
       commitments = { hmac = { type = "hmac-sha256", keyid = "constant:ao" } },
       ["from-process"] = AMM,
-      Action = "Transfer", Recipient = BOB, Quantity = "1",
+      Action = "Transfer", Recipient = BOB, Quantity = q(1),
     }, timestamp = T }, {})
     local decoded = json.decode(res.results.output.data)
     ok("an attested process can spend its own Rune balance",
-       decoded and decoded.From == AMM and decoded.Quantity == "1", json.encode(decoded))
+       decoded and decoded.From == AMM and decoded.Quantity == q(1), json.encode(decoded))
   end
 
   do
@@ -128,7 +137,7 @@ local function run(base, req)
     local res = compute({ process = PROCESS }, { body = {
       commitments = { sig1 = { committer = ALICE, alg = "rsa-pss-sha512" } },
       ["from-process"] = AMM,
-      Action = "Transfer", Recipient = BOB, Quantity = "1",
+      Action = "Transfer", Recipient = BOB, Quantity = q(1),
     }, timestamp = T }, {})
     local decoded = json.decode(res.results.output.data)
     ok("a from-process tag cannot replace a wallet signer",
@@ -141,10 +150,10 @@ local function run(base, req)
   -- moves.
   do
     local before = send(BOB, { Action = "Balance" })
-    r = send(BOB, { Action = "Transfer", Recipient = ALICE, Quantity = "5",
+    r = send(BOB, { Action = "Transfer", Recipient = ALICE, Quantity = q(5),
                     From = ALICE, Address = ALICE, Sender = ALICE })
     ok("the signer pays, not the address named in a tag",
-       r and r.error == nil and num(r.Balance) == num(before.Balance) - 5,
+       r and r.error == nil and num(r.Balance) == num(before.Balance) - 5 * U,
        json.encode(r))
   end
 
@@ -170,7 +179,7 @@ local function run(base, req)
     T = T + 1000
     local res = compute({ process = PROCESS }, { body = {
       commitments = { hmac = { committer = GAME, alg = "hmac-sha256" } },
-      Action = "Mint", Recipient = ALICE, Quantity = "1000000",
+      Action = "Mint", Reference = "t182", Recipient = ALICE, Quantity = q(1000000),
     }, timestamp = T }, {})
     local decoded = json.decode(res.results.output.data)
     -- This once minted a million Rune. An hmac names whoever it claims to;
@@ -179,14 +188,14 @@ local function run(base, req)
        decoded and decoded.error ~= nil, json.encode(decoded))
     local after = send(OWNER, { Action = "Info" })
     ok("and the supply is untouched by the attempt",
-       num(after.TotalSupply) == 140, after.TotalSupply)
+       num(after.TotalSupply) == 140 * U, after.TotalSupply)
   end
 
   do
     T = T + 1000
     local res = compute({ process = PROCESS }, { body = {
       commitments = { sig1 = { committer = ALICE, alg = "rsa-pss-sha512" } },
-      Action = "Mint", Recipient = ALICE, Quantity = "1000000", Address = GAME, From = GAME,
+      Action = "Mint", Reference = "t198", Recipient = ALICE, Quantity = q(1000000), Address = GAME, From = GAME,
     }, timestamp = T }, {})
     local decoded = json.decode(res.results.output.data)
     ok("an Address tag cannot impersonate the minter",
@@ -198,7 +207,7 @@ local function run(base, req)
     T = T + 1000
     local res = compute({ process = PROCESS }, { body = {
       commitments = { hmac = { committer = ALICE, alg = "hmac-sha256" } },
-      Action = "Transfer", Recipient = BOB, Quantity = "10",
+      Action = "Transfer", Recipient = BOB, Quantity = q(10),
     }, timestamp = T }, {})
     local decoded = json.decode(res.results.output.data)
     ok("an hmac-only commitment cannot spend somebody's balance",
@@ -213,25 +222,46 @@ local function run(base, req)
   do
     local before = send(BOB, { Action = "Balance" })
     local supplyBefore = send(OWNER, { Action = "Info" })
-    r = send(BOB, { Action = "Burn", Quantity = "10" })
+    r = send(BOB, { Action = "Burn", Quantity = q(10) })
     ok("a holder burns their own on deposit",
-       r and num(r.Balance) == num(before.Balance) - 10, json.encode(r))
+       r and num(r.Balance) == num(before.Balance) - 10 * U, json.encode(r))
     ok("supply falls with the burn",
-       r and num(r.TotalSupply) == num(supplyBefore.TotalSupply) - 10, r and r.TotalSupply)
+       r and num(r.TotalSupply) == num(supplyBefore.TotalSupply) - 10 * U, r and r.TotalSupply)
   end
 
-  r = send(ALICE, { Action = "Burn", Account = BOB, Quantity = "5" })
+  r = send(ALICE, { Action = "Burn", Account = BOB, Quantity = q(5) })
   ok("a stranger cannot burn somebody else's", errOf(r) == "Not authorised", json.encode(r))
 
   do
     local before = send(BOB, { Action = "Balance" })
-    r = send(GAME, { Action = "Burn", Account = BOB, Quantity = "10" })
+    r = send(GAME, { Action = "Burn", Account = BOB, Quantity = q(10) })
     ok("the game can burn from an account",
-       r and num(r.Balance) == num(before.Balance) - 10, json.encode(r))
+       r and num(r.Balance) == num(before.Balance) - 10 * U, json.encode(r))
   end
 
-  r = send(BOB, { Action = "Burn", Quantity = "9999" })
+  r = send(BOB, { Action = "Burn", Quantity = q(9999) })
   ok("burning more than you hold is refused", errOf(r) ~= nil, json.encode(r))
+
+  -- The bridge is whole-unit; the token is not ---------------------------------
+  --
+  -- This is the whole design in four assertions. Rune divides so it can be
+  -- quoted against on an order book, and the two handlers that cross into the
+  -- game refuse a fraction rather than truncating it -- a truncated bridge
+  -- amount is a remainder that ceases to exist with nothing recording that it
+  -- did. Dust stays where it is: in the holder's balance, spendable outside.
+  do
+    local dustMint = send(GAME, { Action = "Mint", Reference = "t253", Recipient = ALICE, Quantity = "1500000" })
+    ok("minting a fraction of a Rune is refused", errOf(dustMint) ~= nil, json.encode(dustMint))
+    local dustBurn = send(BOB, { Action = "Burn", Quantity = "1500000" })
+    ok("burning a fraction of a Rune is refused", errOf(dustBurn) ~= nil, json.encode(dustBurn))
+
+    local before = num(send(BOB, { Action = "Balance" }).Balance)
+    local split = send(BOB, { Action = "Transfer", Recipient = ALICE, Quantity = "1500000" })
+    ok("but a TRANSFER may move a fraction of a Rune",
+       errOf(split) == nil, json.encode(split))
+    ok("and the fraction actually moves",
+       split and num(split.Balance) == before - 1500000, split and split.Balance)
+  end
 
   -- The books balance ---------------------------------------------------------
 
@@ -266,7 +296,7 @@ local function run(base, req)
         sig = { committer = GAME, type = "rsa-pss-sha512", keyid = "publickey:xyz" },
         hmac = { type = "hmac-sha256", keyid = "constant:ao" },
       },
-      Action = "Mint", Recipient = BOB, Quantity = "7",
+      Action = "Mint", Reference = "t299", Recipient = BOB, Quantity = q(7),
     }, timestamp = T }, {})
     local decoded = json.decode(res.results.output.data)
     ok("a commitment spelled `type` (as a live node sends it) is accepted",
@@ -278,7 +308,7 @@ local function run(base, req)
     T = T + 1000
     local res = compute({ process = PROCESS }, { body = {
       commitments = { hmac = { committer = GAME, type = "hmac-sha256" } },
-      Action = "Mint", Recipient = BOB, Quantity = "1000000",
+      Action = "Mint", Reference = "t311", Recipient = BOB, Quantity = q(1000000),
     }, timestamp = T }, {})
     local decoded = json.decode(res.results.output.data)
     ok("an hmac spelled `type` still cannot mint",
@@ -294,11 +324,11 @@ local function run(base, req)
   do
     -- A Credit-Notice carries the X- tags that say why the payment was made.
     -- That is the mechanism the whole ecosystem uses for transfer-with-intent.
-    send(GAME, { Action = "Mint", Recipient = ALICE, Quantity = "20" })
+    send(GAME, { Action = "Mint", Reference = "t327", Recipient = ALICE, Quantity = q(20) })
     T = T + 1000
     local res = compute({ process = PROCESS }, { body = {
       commitments = { sig1 = { committer = ALICE, alg = "rsa-pss-sha512" } },
-      Action = "Transfer", Recipient = BOB, Quantity = "1",
+      Action = "Transfer", Recipient = BOB, Quantity = q(1),
       ["X-Reason"] = "tribute", ["X-Order"] = "42",
     }, timestamp = T }, {})
     local notice = res.results.outbox and res.results.outbox["credit-notice"]
@@ -319,7 +349,7 @@ local function run(base, req)
     T = T + 1000
     local res = compute({ process = PROCESS }, { body = {
       commitments = { sig1 = { committer = ALICE, alg = "rsa-pss-sha512" } },
-      Action = "Transfer", Recipient = BOB, Quantity = "1", Cast = "true",
+      Action = "Transfer", Recipient = BOB, Quantity = q(1), Cast = "true",
     }, timestamp = T }, {})
     local box = res.results.outbox or {}
     local n = 0
@@ -336,7 +366,7 @@ local function run(base, req)
     T = T + 1000
     local res = compute({ process = PROCESS }, { body = {
       commitments = { sig1 = { committer = ALICE, alg = "rsa-pss-sha512" } },
-      Action = "Transfer", Recipient = BOB, Quantity = "999999",
+      Action = "Transfer", Recipient = BOB, Quantity = q(999999),
     }, timestamp = T }, {})
     local err = res.results.outbox and res.results.outbox["error-notice"]
     ok("a refused transfer emits Transfer-Error",
@@ -347,7 +377,7 @@ local function run(base, req)
   -- Integers stay integers ----------------------------------------------------
 
   do
-    local _, res = send(GAME, { Action = "Mint", Recipient = ALICE, Quantity = "3" })
+    local _, res = send(GAME, { Action = "Mint", Reference = "t380", Recipient = ALICE, Quantity = q(3) })
     local text = res.results.output.data
     ok("no float leaks into a reply", text:match("[%d]%.[%d]") == nil, text:sub(1, 120))
     ok("the published supply is an integer",
@@ -373,7 +403,7 @@ local function run(base, req)
     T = T + 1000
     local res = compute({ process = PROCESS }, { body = {
       commitments = { sig1 = { committer = GAME, alg = "rsa-pss-sha512" } },
-      Action = "Mint", Recipient = WHO, Quantity = "12", Reference = "w42",
+      Action = "Mint", Recipient = WHO, Quantity = q(12), Reference = "w42",
     }, timestamp = T }, {})
 
     local outbox = res.results and res.results.outbox
@@ -389,7 +419,68 @@ local function run(base, req)
     ok("carrying the withdrawal reference back",
        notice and notice.Reference == "w42", notice and notice.Reference)
     ok("and the amount actually minted",
-       notice and notice.Quantity == "12", notice and notice.Quantity)
+       notice and notice.Quantity == q(12), notice and notice.Quantity)
+
+    -- THE MINT GUARD. Re-deliver the exact message that just landed.
+    --
+    -- This is the whole reason `reference` is carried: delivery is not
+    -- exactly-once, and the measured incident is written three comments up --
+    -- a push returned HTTP 500 after both hops had landed, the client retried,
+    -- and 80 Rune deducted in-game became 224 minted. Removing the
+    -- credit-notice removed one CAUSE of that retry; it did not make this
+    -- handler safe. Nothing else in this repo can create value from nothing.
+    local supplyBefore = TotalSupply
+    local mintedBefore = Minted
+    local balanceBefore = Balances[WHO]
+    T = T + 1000
+    local again = compute({ process = PROCESS }, { body = {
+      commitments = { sig1 = { committer = GAME, alg = "rsa-pss-sha512" } },
+      Action = "Mint", Recipient = WHO, Quantity = q(12), Reference = "w42",
+    }, timestamp = T }, {})
+    local replay = json.decode(again.results.output.data)
+
+    ok("a replayed mint mints nothing", TotalSupply == supplyBefore,
+       tostring(supplyBefore) .. " -> " .. tostring(TotalSupply))
+    ok("and does not move the running mint total", Minted == mintedBefore,
+       tostring(mintedBefore) .. " -> " .. tostring(Minted))
+    ok("and does not credit the recipient twice", Balances[WHO] == balanceBefore,
+       tostring(balanceBefore) .. " -> " .. tostring(Balances[WHO]))
+    -- Success, not a refusal: the caller retrying believes the first attempt
+    -- failed and is right to retry. It must be told the Rune is there so it can
+    -- settle, rather than reading a correct refusal as a fresh error.
+    ok("and answers success rather than an error", replay.error == nil,
+       replay.error)
+    ok("saying plainly that it was a replay", replay.Replayed == "true",
+       replay.Replayed)
+    -- Re-emitted deliberately. A retry means the caller did not learn the first
+    -- attempt landed -- and nor, most likely, did the game, whose withdrawal is
+    -- still sitting at `pending`. Suppressing the notice here would make the
+    -- guard safe and the withdrawal permanently stuck.
+    local replayNotice = again.results.outbox and again.results.outbox["mint-notice"]
+    ok("but still re-sends the notice so the withdrawal can settle",
+       replayNotice ~= nil and replayNotice.Reference == "w42",
+       replayNotice and replayNotice.Reference)
+
+    -- A DIFFERENT reference for the same recipient and amount is a real second
+    -- withdrawal and must mint. The guard keys on the reference, never on the
+    -- shape of the message.
+    T = T + 1000
+    local second = compute({ process = PROCESS }, { body = {
+      commitments = { sig1 = { committer = GAME, alg = "rsa-pss-sha512" } },
+      Action = "Mint", Recipient = WHO, Quantity = q(12), Reference = "w43",
+    }, timestamp = T }, {})
+    ok("a genuinely new withdrawal still mints",
+       TotalSupply == supplyBefore + 12 * 1000000,
+       tostring(supplyBefore) .. " -> " .. tostring(TotalSupply))
+    ok("and it was not reported as a replay",
+       json.decode(second.results.output.data).Replayed == nil)
+
+    -- Refused, never minted-anyway. A mint with no reference cannot be
+    -- recognised on redelivery, so accepting one reopens the hole for every
+    -- caller that forgets the tag.
+    local noRef = send(GAME, { Action = "Mint", Recipient = WHO, Quantity = q(5) })
+    ok("a mint with no reference is refused",
+       errOf(noRef) == "Reference is required", json.encode(noRef))
     -- Mint deliberately emits NO credit-notice, and this asserts the absence
     -- so it cannot be re-added by someone reading the token standard.
     --
@@ -441,28 +532,28 @@ local function run(base, req)
     local before = num(send(GAME, { Action = "Total-Supply" }).TotalSupply)
 
     -- 1. Our scheduler vouching for the game: this is a real delivery.
-    local ok1 = deliver(SCHED, GAME, { Action = "Mint", Recipient = VICTIM, Quantity = "9" })
+    local ok1 = deliver(SCHED, GAME, { Action = "Mint", Reference = "t474", Recipient = VICTIM, Quantity = q(9) })
     ok("a scheduler-signed delivery mints for the game it names",
-       errOf(ok1) == nil and ok1.Balance == "9", json.encode(ok1))
+       errOf(ok1) == nil and ok1.Balance == q(9), json.encode(ok1))
 
     -- 2. Someone else's wallet signature carrying a from-process tag. The tag is
     --    a claim about itself and must be inert, or the mint is public.
-    local forged = deliver(ALICE, GAME, { Action = "Mint", Recipient = ALICE, Quantity = "1000000" })
+    local forged = deliver(ALICE, GAME, { Action = "Mint", Reference = "t480", Recipient = ALICE, Quantity = q(1000000) })
     ok("a wallet cannot forge from-process to mint",
        errOf(forged) ~= nil, json.encode(forged))
 
     -- 3. The scheduler vouching for a process that is NOT the minter.
-    local wrong = deliver(SCHED, ALICE, { Action = "Mint", Recipient = ALICE, Quantity = "50" })
+    local wrong = deliver(SCHED, ALICE, { Action = "Mint", Reference = "t485", Recipient = ALICE, Quantity = q(50) })
     ok("a scheduler-signed delivery from a non-minter is still refused",
        errOf(wrong) ~= nil, json.encode(wrong))
 
     -- 4. The scheduler must never become an account in its own right.
     local sched = deliver(SCHED, GAME, { Action = "Balance", Recipient = SCHED })
     ok("the scheduler holds nothing",
-       sched and (sched.Balance == "0" or sched.Balance == nil), json.encode(sched))
+       sched and (sched.Balance == q(0) or sched.Balance == nil), json.encode(sched))
 
     local after = num(send(GAME, { Action = "Total-Supply" }).TotalSupply)
-    ok("only the legitimate delivery moved supply", after == before + 9,
+    ok("only the legitimate delivery moved supply", after == before + 9 * U,
        string.format("%d -> %d", before, after))
   end
 
@@ -486,27 +577,27 @@ local function run(base, req)
     end
     local before = heldBy(CASE)
 
-    local r1 = send(GAME, { Action = "mint", Recipient = CASE, Quantity = "7" })
+    local r1 = send(GAME, { Action = "mint", reference = "t519", Recipient = CASE, Quantity = q(7) })
     ok("a lowercase 'mint' from the game is honoured", errOf(r1) == nil, json.encode(r1))
     local afterLower = heldBy(CASE)
-    ok("and it actually credited", afterLower == before + 7, afterLower)
+    ok("and it actually credited", afterLower == before + 7 * U, afterLower)
 
-    local r2 = send(GAME, { Action = "MINT", Recipient = CASE, Quantity = "3" })
+    local r2 = send(GAME, { Action = "MINT", Reference = "t524", Recipient = CASE, Quantity = q(3) })
     ok("a shouted 'MINT' is honoured too", errOf(r2) == nil, json.encode(r2))
 
     -- The exact name must still win, and the case-insensitive fallback must not
     -- have made an unknown verb resolve to something that happens to be close.
-    local r3 = send(GAME, { Action = "Mint", Recipient = CASE, Quantity = "1" })
+    local r3 = send(GAME, { Action = "Mint", Reference = "t529", Recipient = CASE, Quantity = q(1) })
     ok("the declared spelling still works", errOf(r3) == nil, json.encode(r3))
-    local r4 = send(GAME, { Action = "minty", Recipient = CASE, Quantity = "1" })
+    local r4 = send(GAME, { Action = "minty", Recipient = CASE, Quantity = q(1) })
     ok("a verb that does not exist is still refused", errOf(r4) ~= nil, json.encode(r4))
 
     local total = heldBy(CASE)
-    ok("every spelling moved exactly what it said", total == before + 11, total)
+    ok("every spelling moved exactly what it said", total == before + 11 * U, total)
 
     -- And authority is unchanged by any of it: a non-minter is still refused
     -- however they spell it.
-    local r5 = send(ALICE, { Action = "mint", Recipient = ALICE, Quantity = "1000" })
+    local r5 = send(ALICE, { Action = "mint", Reference = "t539", Recipient = ALICE, Quantity = q(1000) })
     ok("case-insensitivity does not grant anyone authority",
        errOf(r5) ~= nil, json.encode(r5))
   end

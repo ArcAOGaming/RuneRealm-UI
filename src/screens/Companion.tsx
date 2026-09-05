@@ -77,12 +77,12 @@ const COMPANION_TOUR: TourStep[] = [
   {
     target: '[data-tour="worship"]',
     title: 'Daily worship',
-    body: 'One claim a day, free — Runes and a loot box. It is the realm’s only faucet, so it is worth coming back for.',
+    body: 'Claim every day. The crate is where your berries come from, and an unbroken streak makes it better — a second crate from three days, a rare one from ten. Rune drips daily alongside it, and this is the only place in the realm it is ever minted.',
   },
   {
     target: '[data-tour-to="/arena"]',
     title: 'Arena',
-    body: 'A Rune buys a session of four battles. Fight a trainer, or challenge another player.',
+    body: 'Free to enter — a session is four battles. What it costs is 25 energy and 25 happiness, and happiness only comes back from playing. Fight a trainer, or challenge another player.',
   },
   {
     target: '[data-tour-to="/market"]',
@@ -713,7 +713,6 @@ function Activities({
     ? HUNT_BERRY_IDS.find((item) => (player!.inventory[item] ?? 0) > 0) ?? 'air_berry'
     : BERRY_FOR[monster.elementType];
   const berries = player!.inventory[ownBerry] ?? 0;
-  const runes = player!.inventory.rune ?? 0;
   const huntConfigured = HUNT_PROCESS.length === 43;
   const huntBerryCosts = catalog?.hunt?.entry?.berries ?? FALLBACK_HUNT_BERRIES;
   const huntShort = HUNT_BERRY_IDS.filter((item) => (
@@ -729,7 +728,7 @@ function Activities({
   const blocked = [
     away || monster.energy >= 100 || berries < 1,
     away || monster.energy < 10 || berries < 1,
-    away || runes < 1 || monster.energy < 25 || monster.happiness < 25,
+    away || monster.energy < 25 || monster.happiness < 25,
     away || !huntConfigured || !canPayHunt,
   ];
   /*
@@ -884,25 +883,23 @@ function Activities({
           onHover={(on) => setHovered(on ? 2 : null)}
           title="Quest"
           costs={[
-            { icon: <Rune className="h-3.5 w-3.5 shrink-0" />, value: '−1', title: 'Rune', short: runes < 1 },
             { icon: energy, value: '−25', title: 'Energy', short: monster.energy < 25 },
             { icon: happy, value: '−25', title: 'Happiness', short: monster.happiness < 25 },
             { icon: clock, value: '1h', title: 'Away for an hour' },
           ]}
           gains={[
-            { icon: <Sparkle className="h-3.5 w-3.5 shrink-0" />, value: '+1', title: 'Experience' },
+            { icon: <Sparkle className="h-3.5 w-3.5 shrink-0" />, value: '+7', title: 'Experience' },
             { icon: <Gift className="h-3.5 w-3.5 shrink-0" />, value: '×1', title: 'Uncommon loot box' },
           ]}
           reason={
             away ? null
-              : runes < 1 ? 'No Runes'
-                : monster.energy < 25 ? 'Not enough energy'
-                  : monster.happiness < 25 ? 'Not happy enough' : null
+              : monster.energy < 25 ? 'Not enough energy'
+                : monster.happiness < 25 ? 'Not happy enough' : null
           }
           away={away}
           action="Send on a quest"
           busy={isPending('quest')}
-          disabled={busy || away || runes < 1 || monster.energy < 25 || monster.happiness < 25}
+          disabled={busy || away || monster.energy < 25 || monster.happiness < 25}
           onClick={() => run('quest', api.startQuest, 'Your companion sets out.')}
         />
 

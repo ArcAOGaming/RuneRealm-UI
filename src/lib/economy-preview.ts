@@ -13,10 +13,22 @@ const ledger = (issued: number, consumed: number, player: number, escrow: number
   sources: { 'Lootbox.Open': 24, 'Admin.Load restoration': issued - 24 },
   sinks: { 'Monster.Feed': consumed },
 });
+/* The preview book has the house in it, because the real one does: the desk
+   quotes into the same ladder, so a screenshot without a house level is a
+   screenshot of a market that does not exist. The house sits two Gold outside
+   the players on each side — inside the corridor, never the best price. */
 const market = (bid?: number, ask?: number): EconomyMarketStats => ({
   bestBid: bid, bestAsk: ask,
-  depth: { bids: bid ? [{ price: bid, quantity: 18 }, { price: bid - 1, quantity: 35 }] : [],
-    asks: ask ? [{ price: ask, quantity: 14 }, { price: ask + 1, quantity: 27 }] : [] },
+  p2pBid: bid, p2pAsk: ask,
+  houseBid: bid ? bid - 2 : undefined, houseAsk: ask ? ask + 2 : undefined,
+  houseBidUnits: bid ? 60 : 0, houseAskUnits: ask ? 60 : 0,
+  band: bid && ask ? { low: Math.max(1, Math.floor(bid / 2)), high: ask * 2, bps: 5000 } : undefined,
+  depth: { bids: bid ? [{ price: bid, quantity: 18, orders: 2 },
+      { price: bid - 1, quantity: 35, orders: 4 },
+      { price: bid - 2, quantity: 60, house: 60 }] : [],
+    asks: ask ? [{ price: ask, quantity: 14, orders: 1 },
+      { price: ask + 1, quantity: 27, orders: 3 },
+      { price: ask + 2, quantity: 60, house: 60 }] : [] },
   volume24h: 46, volume7d: 281, median7d: bid && ask ? Math.round((bid + ask) / 2) : undefined,
   median30d: bid && ask ? Math.round((bid + ask) / 2) : undefined,
   medianSamples7d: 31, medianSamples30d: 92, uniqueMakers7d: 17, uniqueTakers7d: 21,

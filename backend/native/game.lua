@@ -545,6 +545,15 @@ end
 -- from the handlers, for the changes a battle lookup cannot find.
 local alsoTouched = {}
 
+--- The timestamp of the message being computed, for the views that need "now".
+---
+--- `playerView` has ~60 call sites and one of them needs to know the time: an
+--- expired order is not liquidity, so it must not be published as open. Passing
+--- it through every caller would be sixty edits to teach one function a fact
+--- `compute` already knows. Set once, before any handler runs, exactly like
+--- `alsoTouched` is emptied there.
+local messageTimestamp = 0
+
 local function touchAlso(address)
   if type(address) == "string" and address ~= "" then
     alsoTouched[address] = true
@@ -763,6 +772,106 @@ local function mintPayload(m)
   return snapshot
 end
 
+--- How many of an account's own fills ride along on its own record.
+---
+--- The global history is 500 and a trader wants the last few, not all of them.
+local OWN_FILLS_PUBLISHED = 20
+
+--- The caller's OWN open orders, and nowhere else's.
+---
+--- `economy` publishes `orders` -- a copy of the whole book -- and the Trading
+--- Floor walked all of it to find the rows where `account == address`. That is
+--- every open order in the process marshalled five times a slot so one player
+--- can see their own handful. `player-<address>` is already republished exactly
+--- when that player trades, so their own slice belongs in it.
+---
+--- Expired-but-unswept orders are deliberately excluded. `bestMatch` skips them
+--- and `openOrderCount` does not count them, so an expired row published as
+--- open would offer a cancel button for something that can no longer trade and
+--- would show liquidity the book will never honour.
+---
+--- Returns nil, never an empty table: an empty Lua table encodes as `[]`, and
+--- this key is written for every wallet the process has ever seen. Two empty
+--- arrays on every record of everyone who has never traded is exactly the
+--- per-wallet growth the published-state rule in CLAUDE.md exists to refuse.
+---
+--- No second cap. `maxPerAccount` bounds an account at 20 open orders inside
+--- `placeOrder`, so this list is bounded at its source; a cap here would only
+--- hide the day that stopped being true.
+--- The caller's OWN open orders, newest first, or nil when they have none.
+---
+--- Asks the ENGINE rather than walking the book. The first version of this
+--- iterated `EconomyState.orders` and `EconomyState.fills` in full, and
+--- `playerView` runs on nearly every verb -- twice for the acting wallet, once
+--- more per `touchAlso`d address -- so feeding a companion paid a scan of
+--- 2,000 orders and 500 fills to compute two fields that came back nil. That
+--- is the exact scan the engine's index exists to delete, re-added to every
+--- message in the game.
+---
+--- `accountOpenCount` is O(1), so the common case -- a player who has never
+--- traded -- costs one table lookup and stops here.
+local function ownOpenOrders(address, timestamp)
+  if EconomyEngine.accountOpenCount(EconomyState, address, timestamp) == 0 then
+    return nil
+  end
+  local mine = EconomyEngine.accountOrders(EconomyState, address, timestamp)
+  if not mine or #mine == 0 then return nil end
+  local rows = {}
+  for i = 1, #mine do
+    local o = mine[i]
+    rows[i] = {
+      id = o.id,
+      -- Pre-registry orders carry no `market`; every one of them was
+      -- `<item>/gold`, which is what the registry named them.
+      market = o.market or (tostring(o.item) .. "/gold"),
+      -- The base asset, kept beside the market id because the client indexes
+      -- art and display names by it.
+      item = o.item,
+      side = o.side,
+      -- Narrowed on the way out. Luerl hands back floats, and a price that
+      -- publishes as `5.00000000000` is stored that way in every record.
+      price = int(o.price, 0),
+      quantity = int(o.quantity, 0),
+      remaining = int(o.remaining, 0),
+      createdAt = int(o.createdAt, 0),
+      expiresAt = int(o.expiresAt, 0),
+    }
+  end
+  return rows
+end
+
+--- The caller's OWN recent fills, newest first, capped at `OWN_FILLS_PUBLISHED`.
+---
+--- Also the engine's, off a per-account ring, for the same reason: the previous
+--- version walked all 500 global fills looking for matches and only stopped
+--- early if it found twenty, so an account with no fills scanned every one of
+--- them on every message.
+---
+--- `side` and `role` are this account's own, not the fill's: a fill has a buyer
+--- and a seller and a maker and a taker, and which of those the reader was is
+--- the only part of it they cannot work out from their own record.
+local function ownRecentFills(address)
+  local fills = EconomyEngine.accountFills(EconomyState, address, OWN_FILLS_PUBLISHED)
+  if not fills or #fills == 0 then return nil end
+  local rows = {}
+  for i = 1, #fills do
+    local f = fills[i]
+    rows[i] = {
+      id = f.id,
+      market = f.market or (tostring(f.item) .. "/gold"),
+      item = f.item,
+      side = f.buyer == address and "buy" or "sell",
+      price = int(f.price, 0),
+      quantity = int(f.quantity, 0),
+      gross = int(f.gross, 0),
+      fee = int(f.fee, 0),
+      filledAt = int(f.filledAt, 0),
+      role = f.maker == address and "maker" or "taker",
+    }
+  end
+  return rows
+end
+
 local function playerView(player)
   local v = Battle.clone(player)
   if C.PUBLIC_ACCESS == true then v.unlocked = true end
@@ -833,6 +942,19 @@ local function playerView(player)
       -- client would use to build a resume screen for nothing.
       v.activeBattleId = nil
     end
+  end
+  -- This player's own book. Absent entirely when they have never traded, which
+  -- is almost everyone -- see `ownOpenOrders` for why that is not a nicety.
+  --
+  -- Only here. The derived views build their own rows and must keep doing so:
+  -- `aggregateRow` feeds the leaderboard and the faction rosters,
+  -- `adminPlayerSummary` feeds the admin snapshot, and `Admin.Export` lists its
+  -- fields by hand. A leaderboard row carrying twenty fills would be fifty
+  -- copies of somebody else's trade history rewritten whenever the board moves.
+  local address = v.address
+  if type(address) == "string" and address ~= "" then
+    v.openOrders = ownOpenOrders(address, messageTimestamp)
+    v.recentFills = ownRecentFills(address)
   end
   return v
 end
@@ -1741,7 +1863,13 @@ H["Faction.Join"] = function(base, msg, timestamp)
     local monster = createMonster(p.faction, timestamp)
     if not monster then return fail(base, "Faction has no companion configured") end
     addToRoster(p, monster)
-    if not (p.pass and p.pass.origin == "promised") then addLootboxes(p, 3, 1) end
+    -- NO starter boxes here. The `p.seeded` block above already granted
+    -- `C.STARTER_LOOTBOXES` a few lines earlier in this same handler, and this
+    -- line granted three more on top -- so every new wallet received SIX
+    -- tier-1 boxes, not three. The live process shows it plainly: Faction.Join
+    -- sourced 265 of each berry (53 x 5, correct) against 318 tier-1 boxes
+    -- (53 x 6). Unbounded in wallet count, and berries monetise into Gold at
+    -- the NPC desk, which is the contract's only net Gold faucet.
     -- Once per account, ever. The oath is spent even if the companion is later
     -- sold or given away, which is what stops two wallets trading one creature
     -- back and forth to draw an endless free supply out of the process.
@@ -1791,7 +1919,17 @@ H["Monster.Adopt"] = function(base, msg, timestamp)
     addToCollection(p, monster)
   end
   p.adopted = true
-  if not (p.pass and p.pass.origin == "promised") then addLootboxes(p, 3, 1) end
+  -- Seed ONCE, from the constant, and only if nothing seeded this account
+  -- already. This door exists for a legacy record that has a faction and no
+  -- companion, and such a record may never have passed through Faction.Join --
+  -- but one that did is already holding its starter boxes, and the hardcoded
+  -- grant that used to sit here handed it a second set.
+  if not p.seeded then
+    if not (p.pass and p.pass.origin == "promised") then
+      for rarity, count in pairs(C.STARTER_LOOTBOXES) do addLootboxes(p, count, rarity) end
+    end
+    p.seeded = true
+  end
   return reply(base, playerView(p))
 end
 
@@ -2080,6 +2218,55 @@ H["Economy.View"] = function(base, msg, timestamp)
   return reply(base, EconomyEngine.publicView(EconomyState, Withdrawals, Deposits, timestamp))
 end
 
+--- Republish everybody a fill touched.
+---
+--- The maker is not in the message, so nothing else would make their record
+--- current again after somebody else's order filled it -- and their own copy
+--- of the fill is `ownRecentFills`, which is derived at publish time from the
+--- record this marks dirty.
+---
+--- The NPC desk appears in a fill as `desk`: not 43 characters, in nobody's
+--- roster, so the `Players` lookup is what keeps the house out of the sweep.
+local function settleFillsFor(address, fills)
+  for _, fill in ipairs(fills or {}) do
+    for _, party in ipairs({ fill.buyer, fill.seller }) do
+      if party ~= address and Players[party] then touchAlso(party) end
+    end
+  end
+end
+
+--- The tags every order verb reads the same way.
+---
+--- `Tif`, `Stp` and `ExpiresIn` are optional and default to the behaviour the
+--- book had before they existed, so an old client keeps working unchanged.
+--- `Withdrawals`/`Deposits` are not tags -- they are the ledgers the NPC desk
+--- needs in order to know whether it may quote Rune at all, and they are
+--- handed in here rather than reached for inside the engine so that a
+--- standalone deployment of the same book has nothing to supply.
+local function orderOptions(msg)
+  -- Every spelling of each name, because a tag's SEPARATORS do not survive the
+  -- trip any more than its case does. The envelope wrapper lowercases, so
+  -- `Time-In-Force` arrives readable as `time-in-force` and `TimeInForce` as
+  -- `timeinforce` -- two different keys for one intent, and a handler that
+  -- knows only one of them refuses every message written the other way. That
+  -- is the defect in CLAUDE.md that cost a live deployment every hunt capture;
+  -- the engine normalises the VALUE the same way, in `mode()`.
+  local tag = function(...)
+    for _, name in ipairs({ ... }) do
+      local value = msg[name]
+      if value ~= nil and value ~= "" then return value end
+    end
+    return nil
+  end
+  local expires = tag("ExpiresIn", "expires-in", "expiresin")
+  return {
+    tif = tag("Tif", "TimeInForce", "time-in-force", "time_in_force"),
+    stp = tag("Stp", "SelfTrade", "self-trade", "self_trade"),
+    expiresIn = expires ~= nil and int(expires, 0) or nil,
+    withdrawals = Withdrawals, deposits = Deposits,
+  }
+end
+
 H["Economy.Order.Place"] = function(base, msg, timestamp)
   local address = signer(msg)
   local p = getPlayer(address, timestamp)
@@ -2087,14 +2274,35 @@ H["Economy.Order.Place"] = function(base, msg, timestamp)
   if denied then return denied end
   local placed, problem = EconomyEngine.placeOrder(
     EconomyState, Players, address, msg.Side, msg.Item,
-    int(msg.Price, 0), int(msg.Quantity, 0), timestamp, msg.ActionId)
+    int(msg.Price, 0), int(msg.Quantity, 0), timestamp, msg.ActionId,
+    orderOptions(msg))
   if problem then return fail(base, problem) end
-  for _, fill in ipairs(placed.fills or {}) do
-    if fill.buyer ~= address then touchAlso(fill.buyer) end
-    if fill.seller ~= address then touchAlso(fill.seller) end
-  end
+  settleFillsFor(address, placed.fills)
   local view = playerView(p)
   view.economyResult = placed
+  return reply(base, view)
+end
+
+--- Move a quote in one message instead of two.
+---
+--- Cancel-and-replace costs two slots, two creation costs and the order's
+--- place in the queue, and adjusting a quote is the most common thing anybody
+--- does on a book. An amend that only shrinks at the same price keeps both;
+--- anything else re-queues under a new id, which the reply names.
+H["Economy.Order.Amend"] = function(base, msg, timestamp)
+  local address = signer(msg)
+  local p = getPlayer(address, timestamp)
+  local denied = requireAccess(base, p)
+  if denied then return denied end
+  local amended, problem = EconomyEngine.amendOrder(
+    EconomyState, Players, address, msg.OrderId,
+    msg.Price ~= nil and int(msg.Price, 0) or nil,
+    msg.Quantity ~= nil and int(msg.Quantity, 0) or nil,
+    timestamp, msg.ActionId, orderOptions(msg))
+  if problem then return fail(base, problem) end
+  settleFillsFor(address, amended.fills)
+  local view = playerView(p)
+  view.economyResult = amended
   return reply(base, view)
 end
 
@@ -2105,6 +2313,32 @@ H["Economy.Order.Cancel"] = function(base, msg, timestamp)
   if denied then return denied end
   local cancelled, problem = EconomyEngine.cancelOrder(
     EconomyState, Players, address, msg.OrderId, timestamp, msg.ActionId)
+  if problem then return fail(base, problem) end
+  local view = playerView(p)
+  view.economyResult = cancelled
+  return reply(base, view)
+end
+
+--- Leave the book in one message.
+---
+--- `Item` narrows it to one market and `OrderIds` to a named list; with
+--- neither, it is everything the account has resting. This is the one place
+--- batching is legitimate under the repo's rule against it: one intent -- get
+--- me out -- over many transitions, with no decision in between, and bounded
+--- by the per-account open-order cap rather than by anything the sender says.
+H["Economy.Order.CancelAll"] = function(base, msg, timestamp)
+  local address = signer(msg)
+  local p = getPlayer(address, timestamp)
+  local denied = requireAccess(base, p)
+  if denied then return denied end
+  local ids = nil
+  if type(msg.OrderIds) == "string" and msg.OrderIds ~= "" then
+    ids = {}
+    for id in string.gmatch(msg.OrderIds, "[^,%s]+") do ids[#ids + 1] = id end
+  end
+  local cancelled, problem = EconomyEngine.cancelOrders(
+    EconomyState, Players, address, { ids = ids, item = msg.Item },
+    timestamp, msg.ActionId)
   if problem then return fail(base, problem) end
   local view = playerView(p)
   view.economyResult = cancelled
@@ -2370,7 +2604,10 @@ H["Monster.Quest"] = function(base, msg, timestamp)
   local cfg = C.ACTIVITIES.quest
   if m.energy < cfg.energyCost then return fail(base, "Not enough energy") end
   if m.happiness < cfg.happinessCost then return fail(base, "Not happy enough") end
-  if not spend(p, cfg.cost.item, cfg.cost.amount) then
+  -- v2: free when `cfg.cost` is absent, which it now is. Charging still works
+  -- and is one line in constants.lua away; the guard is what makes that
+  -- reversible rather than a rewrite. See ECONOMY_V2.md §6.
+  if cfg.cost and not spend(p, cfg.cost.item, cfg.cost.amount) then
     return fail(base, "A quest costs " .. cfg.cost.amount .. " " .. C.ITEMS[cfg.cost.item].name)
   end
 
@@ -2616,13 +2853,37 @@ H["Daily.Claim"] = function(base, msg, timestamp)
     Offerings[p.faction] = int(Offerings[p.faction], 0) + 1
   end
   if runes > 0 then grant(p, "rune", runes) end
-  addLootboxes(p, C.DAILY.lootboxes, C.DAILY.lootboxRarity)
+  -- The streak decides the crate. Highest matching tier wins, and the table is
+  -- ordered descending so the first match is the best one. An empty
+  -- `streakTiers` falls back to the flat box every claim used to pay.
+  local awarded = {}
+  for _, tier in ipairs(C.DAILY.streakTiers or {}) do
+    if p.dailyStreak >= int(tier.minStreak, 1) then
+      for _, box in ipairs(tier.boxes or {}) do
+        local count, rarity = int(box.count, 1), int(box.rarity, 1)
+        if count > 0 then
+          addLootboxes(p, count, rarity)
+          awarded[#awarded + 1] = { rarity = rarity, count = count }
+        end
+      end
+      break
+    end
+  end
+  if #awarded == 0 then
+    addLootboxes(p, C.DAILY.lootboxes, C.DAILY.lootboxRarity)
+    awarded[1] = { rarity = C.DAILY.lootboxRarity, count = C.DAILY.lootboxes }
+  end
 
   local v = playerView(p)
   v.dailyClaimed = {
     runes = runes,
     runeRewardReason = runeRewardReason,
-    lootboxRarity = C.DAILY.lootboxRarity,
+    -- The best tier actually awarded, so the client reports what arrived rather
+    -- than the constant. `lootboxRarity` was a flat 2 and is now whatever the
+    -- streak earned; `lootboxes` carries the full award so a multi-box tier is
+    -- not silently shown as one.
+    lootboxRarity = awarded[1] and awarded[1].rarity or C.DAILY.lootboxRarity,
+    lootboxes = awarded,
     streak = p.dailyStreak,
     offerings = p.offerings,
     factionOfferings = p.faction and int(Offerings[p.faction], 0) or 0,
@@ -2741,7 +3002,11 @@ H["Rune.Withdraw"] = function(base, msg, timestamp)
         -- carries — a self-declared sender is exactly the forgery that
         -- `signer()` above exists to refuse.
         recipient = address,
-        quantity = string.format("%d", amount),
+        -- ATOMS, not whole Rune. The token is divisible (6 decimals) so it can
+        -- be quoted against on an order book; the game is not. This
+        -- multiplication and the division in `Burn-Notice` are the only two
+        -- places the two units meet, and both refuse rather than round.
+        quantity = string.format("%d", amount * C.ECONOMY.runeUnits),
         reference = id,
       },
     },
@@ -2783,10 +3048,12 @@ H["Rune.Minted"] = function(base, msg, timestamp)
   -- The token is the authority on the amount it minted. A confirmation that
   -- disagrees with what was deducted is not a settlement, it is a bug worth
   -- seeing rather than papering over.
+  -- The token answers in ATOMS; the withdrawal row is in whole Rune.
   local minted = int(msg.Quantity, -1)
-  if minted >= 0 and minted ~= int(w.amount, 0) then
+  local owed = int(w.amount, 0) * C.ECONOMY.runeUnits
+  if minted >= 0 and minted ~= owed then
     return fail(base, "Confirmed " .. string.format("%d", minted)
-      .. " against a withdrawal of " .. string.format("%d", int(w.amount, 0)))
+      .. " against a withdrawal of " .. string.format("%d", owed))
   end
 
   w.status = "minted"
@@ -2841,14 +3108,49 @@ H["Burn-Notice"] = function(base, msg, timestamp)
     return reply(base, { deposit = seen, unchanged = true })
   end
 
+  -- QUARANTINE, not refusal, for anything we cannot credit.
+  --
+  -- This is the direction where the supply is already destroyed by the time
+  -- the message exists. `fail` would answer an error and leave NO record --
+  -- the burn would be invisible forever and the holder would simply be out
+  -- their Rune with nothing to point at. So a notice that cannot be credited
+  -- is written down as `unresolved` and settled by hand with
+  -- `Admin.SettleDeposit`, the mirror of `Admin.SettleWithdrawal`.
+  --
+  -- This costs nothing: it is keyed on the same `Reference`, so a repeated
+  -- delivery still hits the `seen` branch above and cannot pay twice.
+  local function quarantine(why, claimed, atoms)
+    Deposits[reference] = {
+      id = reference, address = claimed, amount = 0,
+      atoms = int(atoms, 0), status = "unresolved", reason = why,
+      creditedAt = 0, noticedAt = timestamp,
+    }
+    return reply(base, { deposit = Deposits[reference] })
+  end
+
+  local atoms = int(msg.Quantity, 0)
   local account = msg.Account or msg.account
   if type(account) ~= "string" or #account ~= 43 then
-    return fail(base, "Burn notice names no account")
+    return quarantine("Burn notice names no account", nil, atoms)
   end
-  local amount = int(msg.Quantity, 0)
-  if amount <= 0 then
-    return fail(base, "A deposit must be a positive whole number of Rune")
+  if atoms <= 0 then
+    return quarantine("A deposit must be a positive whole number of Rune", account, atoms)
   end
+  -- ATOMS on the wire, whole Rune in the game. The token refuses to burn
+  -- anything that is not a whole multiple, so the only way to reach this is
+  -- the two processes disagreeing about the denomination -- which is exactly
+  -- the case that must not be rounded away, and exactly the case where a
+  -- human needs to look before anybody is credited.
+  --
+  -- Note what this check does NOT catch: a token at a HIGHER denomination
+  -- burns amounts that are still clean multiples of ours, and would be
+  -- credited a factor of a thousand too generously. Nothing at runtime can
+  -- see that. `deploy-rune.mjs` refuses to wire a mismatched pair, and that
+  -- is the only place it can be caught.
+  if atoms % C.ECONOMY.runeUnits ~= 0 then
+    return quarantine("A deposit must be a whole number of Rune", account, atoms)
+  end
+  local amount = atoms // C.ECONOMY.runeUnits
 
   local p = getPlayer(account, timestamp)
   grant(p, "rune", amount)
@@ -2856,6 +3158,7 @@ H["Burn-Notice"] = function(base, msg, timestamp)
     id = reference,
     address = account,
     amount = amount,
+    atoms = atoms,
     status = "credited",
     creditedAt = timestamp,
   }
@@ -3389,7 +3692,9 @@ H["Battle.Begin"] = function(base, msg, timestamp)
   if berry and itemCount(p, berryId) < int(berry.cost, 0) then
     return fail(base, "You need " .. berry.cost .. " " .. C.ITEMS[berryId].name)
   end
-  if not spend(p, cfg.cost.item, cfg.cost.amount) then
+  -- v2: free when `cfg.cost` is absent. What bounds a session now is the 25
+  -- happiness it costs, which only a fifteen-minute Play restores.
+  if cfg.cost and not spend(p, cfg.cost.item, cfg.cost.amount) then
     return fail(base, "Entering the arena costs " .. cfg.cost.amount .. " " .. C.ITEMS[cfg.cost.item].name)
   end
   if berry then spend(p, berryId, int(berry.cost, 0)) end
@@ -5259,6 +5564,58 @@ H["Admin.SettleWithdrawal"] = function(base, msg, timestamp)
   return reply(base, { withdrawal = w })
 end
 
+--- Resolve a deposit the process could not credit on its own.
+---
+--- The mirror of `Admin.SettleWithdrawal`, and it exists for the same reason:
+--- a burn notice that named no account, or an amount that is not a whole
+--- number of Rune, describes value that has ALREADY been destroyed. Refusing
+--- it outright would lose it silently, so `Burn-Notice` writes an `unresolved`
+--- row and this is how a human closes one.
+---
+--- `Account` may name the wallet to pay when the notice did not carry a usable
+--- one. `Amount` is in whole Rune and defaults to the whole part of what was
+--- burned -- deliberately explicit, because the case this handles is the two
+--- processes disagreeing about units, and in that case the arithmetic is the
+--- thing under suspicion.
+H["Admin.SettleDeposit"] = function(base, msg, timestamp)
+  local denied = requireOwner(base, msg)
+  if denied then return denied end
+
+  local d = Deposits[msg.DepositId or ""]
+  if not d then return fail(base, "No such deposit") end
+  if d.status ~= "unresolved" then
+    return reply(base, { deposit = d, unchanged = true })
+  end
+
+  local outcome = msg.Outcome or "credit"
+  if outcome == "void" then
+    d.status = "voided"
+    d.reason = msg.Reason or d.reason
+    d.creditedAt = timestamp
+    return reply(base, { deposit = d })
+  end
+  if outcome ~= "credit" then
+    return fail(base, "Outcome must be 'credit' or 'void'")
+  end
+
+  local account = msg.Account or d.address
+  if type(account) ~= "string" or #account ~= 43 then
+    return fail(base, "Account must be a 43-character address")
+  end
+  local amount = int(msg.Amount, int(d.atoms, 0) // C.ECONOMY.runeUnits)
+  if amount <= 0 then return fail(base, "Amount must be a positive number of Rune") end
+
+  local p = getPlayer(account, timestamp)
+  grant(p, "rune", amount)
+  d.address = account
+  d.amount = amount
+  d.status = "credited"
+  d.creditedAt = timestamp
+  -- The depositor is not the sender here either.
+  touchAlso(account)
+  return reply(base, { deposit = d, player = playerView(p) })
+end
+
 H["Admin.Unlock"] = function(base, msg, timestamp)
   local denied = requireOwner(base, msg)
   if denied then return denied end
@@ -6476,6 +6833,7 @@ local TRACKED_MUTATIONS = {
   ["Admin.SetRuneToken"] = "adminActions",
   ["Admin.SetHuntProcess"] = "adminActions",
   ["Admin.SettleWithdrawal"] = "adminActions",
+  ["Admin.SettleDeposit"] = "adminActions",
   ["Admin.Unlock"] = "adminActions",
   ["Admin.Lock"] = "adminActions",
   ["Admin.Grant"] = "adminActions",
@@ -7005,6 +7363,7 @@ local ACTION_DIRTY = {
   ["admin.setrunetoken"] = {},
   ["admin.sethuntprocess"] = {},
   ["admin.settlewithdrawal"] = { bridge = true, users = true },
+  ["admin.settledeposit"] = { bridge = true, users = true },
   ["admin.unlock"] = { users = true },
   -- `users` because a revocation can now remove an ADMISSION rather than clear
   -- a flag on a record, and the admission count is published beside it.
@@ -7086,6 +7445,8 @@ function compute(base, req, opts)
   local tags = caseInsensitive(msg.Tags or msg)
   local requestedAction = tags.Action or tags.action or "none"
   local timestamp = int((req and (req.timestamp or req.Timestamp)) or tags.Timestamp, 0)
+  -- Every view computed by this message sees the same "now".
+  messageTimestamp = timestamp
   local actor = signer(msg)
   local handler, action = resolveHandler(requestedAction)
   -- Every decision after dispatch uses the canonical handler name. Dispatch has
@@ -7404,8 +7765,15 @@ function compute(base, req, opts)
       levelUp = {
         points = C.LEVEL_UP_POINTS,
         maxPerStat = C.LEVEL_UP_MAX_PER_STAT,
-        -- cost = ceil(targetLevel / levelsPerRune)
-        levelsPerRune = 4,
+        -- v2: cost = ceil(targetLevel^2 / costDivisor), NOT the old
+        -- ceil(targetLevel / levelsPerRune).
+        --
+        -- `levelsPerRune` is gone rather than left at 4, deliberately. A client
+        -- reading a stale field would quote 5 Rune for level 20 against the 25
+        -- the handler charges, and the comment above this block is about
+        -- exactly that class of bug -- a number on screen the engine disagrees
+        -- with. Absent, it breaks loudly; wrong, it lies quietly.
+        costDivisor = 16,
         costItem = "rune",
       },
       monsterIndex = {

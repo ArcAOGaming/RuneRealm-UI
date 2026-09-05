@@ -101,6 +101,40 @@ const readKey = async (pid, key, { attempts = 6, delayMs = 1000 } = {}) => {
 const info = await readKey(token, 'tokeninfo');
 console.log(`info:   ${info}\n`);
 
+// The denomination lives in TWO processes and they cannot read each other.
+//
+// `rune.lua` sets `Denomination` and its own `UNIT`; the game carries the same
+// number as `C.ECONOMY.runeUnits`, and the bridge multiplies by it on the way
+// out and divides by it on the way in. If the two ever disagree, every
+// withdrawal mints the wrong amount by a factor of ten, and reconciliation
+// reports a difference that no amount of staring at the game will explain.
+// Nothing at runtime can catch it -- the two processes never see each other's
+// constant -- so it is caught here, at the one moment both numbers are in the
+// same place.
+{
+  let declared = NaN;
+  try { declared = Number(JSON.parse(info).Denomination); } catch { /* left NaN */ }
+  const gameUnits = Number(/runeUnits\s*=\s*(\d+)/.exec(read('constants.lua'))?.[1]);
+  if (!Number.isFinite(declared) || !Number.isFinite(gameUnits)) {
+    console.error(`
+Cannot verify the denomination.`);
+    console.error(`  token tokeninfo: ${info}`);
+    console.error(`  constants.lua C.ECONOMY.runeUnits: ${gameUnits}`);
+    process.exit(1);
+  }
+  const expected = 10 ** declared;
+  if (expected !== gameUnits) {
+    console.error(`
+DENOMINATION MISMATCH -- refusing to wire.`);
+    console.error(`  token Denomination ${declared} means ${expected} atoms to a Rune`);
+    console.error(`  constants.lua C.ECONOMY.runeUnits is ${gameUnits}`);
+    console.error(`Every withdrawal would mint the wrong amount. Fix one of them.`);
+    process.exit(1);
+  }
+  console.log(`units:  ${gameUnits} atoms per Rune, token and game agree
+`);
+}
+
 if (!wire) {
   console.log('--no-wire: nothing is minted until you run:');
   console.log(`  token Admin.SetMinter   Minter=<game>`);

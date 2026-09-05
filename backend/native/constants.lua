@@ -218,16 +218,29 @@ C.ACTIVITIES = {
     energyCost = 10,
     happinessGain = 25,
   },
+  --- v2: the core loop is FREE. `cost` is absent on both, and its absence is
+  --- the feature -- `Monster.Quest` and `Battle.Begin` skip the charge when
+  --- there is no `cost` table, so restoring one line here restores the fee.
+  ---
+  --- Rune stopped doing the clock's job. Happiness already caps a companion at
+  --- four actions an hour; charging a Rune on top meant zero Rune was zero
+  --- gameplay, and a player with nothing had no route back. Rune now buys
+  --- ADVANCEMENT -- levels, captures, storage, the pass -- never the right to
+  --- play. Demand for it is elastic on purpose: people who buy to get further
+  --- lift the price steadily, where people forced to buy to act at all gap it
+  --- and lock out the newcomer (ECONOMY_V2.md §6).
   quest = {
-    cost = { item = "rune", amount = 1 },
     duration = 3600 * 1000,  -- 1 hour
     energyCost = 25,
     happinessCost = 25,
-    expGain = 1,
+    --- Was 1, against an arena session's measured 6.84 in about two minutes.
+    --- Identical price on every other axis -- 25 energy, 25 happiness -- so the
+    --- quest was strictly dominated, and it is the verb the tutorial teaches.
+    --- Seven makes the slow, fire-and-forget option worth choosing.
+    expGain = 7,
     lootRarity = 2,
   },
   battle = {
-    cost = { item = "rune", amount = 1 },
     energyCost = 25,
     happinessCost = 25,
   },
@@ -236,7 +249,9 @@ C.ACTIVITIES = {
 C.MAX_ENERGY = 100
 C.MAX_HAPPINESS = 100
 
---- Battles granted per paid session. Spending them is what a Rune buys.
+--- Battles granted per arena session. The session is free in v2; what bounds it
+--- is the 25 happiness it costs to enter, and happiness comes only from a
+--- fifteen-minute Play. Four actions an hour is the ceiling, for everyone.
 C.BATTLES_PER_SESSION = 4
 
 -- Hunt ----------------------------------------------------------------------
@@ -288,11 +303,39 @@ C.HUNT = {
 --- Now: no Runes below tier 2, and a modest chance above it. Every activity is
 --- a net Rune sink, and the faucet is the daily claim in game.lua — once per
 --- wallet per day, which cannot be farmed by playing more.
+--- v2: the item faucet moved from PER BATTLE to PER DAY, and that is the
+--- change that stops a bot out-earning a person.
+---
+--- Loot used to be proportional to playtime, which is exactly the shape a
+--- machine beats: one arena entry paid ~45 berries against the ~2.75 an action
+--- consumes, a 20:1 surplus, so 96 actions a day beat 8 by 96 to 8. Now a
+--- battle win pays roughly what one action costs, and the DAILY WORSHIP BOX is
+--- where the day's supply actually comes from. A wallet sitting on the game for
+--- twenty-four hours and a person checking in twice collect the same box.
+---
+--- Tier 1 is what a battle win pays: ~2.84 berries a session against the 2.75
+--- an action spends (one berry for the Play, plus 35 energy at 20 per
+--- own-element berry). Break-even, deliberately -- NOT a surplus. Battle loot
+--- may only go item-positive once the timers are long; at a fifteen-minute
+--- Play a per-battle surplus is a bot subsidy, and that is a v3 change that
+--- lands with the timers or not at all (ECONOMY_V2.md §7).
+---
+--- Tier 2+ is the worship box: 4 x 0.95 x 5 from the rows below plus the tier-1
+--- rows firing too, so ~20 berries, which funds ~7 actions.
+---
+--- Runes remain absent from this table at every tier, which is the fix from
+--- HANDOFF §5.18 and must stay: a tier-1 box that paid Rune made winning half
+--- your fights roughly double your money, and two players trading PvP wins
+--- could farm it indefinitely.
 C.LOOT_TABLE = {
-  { item = "fire_berry",       chance = 800, minBox = 1, amount = 5 },
-  { item = "water_berry",      chance = 800, minBox = 1, amount = 5 },
-  { item = "rock_berry",       chance = 800, minBox = 1, amount = 5 },
-  { item = "air_berry",        chance = 800, minBox = 1, amount = 5 },
+  { item = "fire_berry",       chance = 250, minBox = 1, amount = 1 },
+  { item = "water_berry",      chance = 250, minBox = 1, amount = 1 },
+  { item = "rock_berry",       chance = 250, minBox = 1, amount = 1 },
+  { item = "air_berry",        chance = 250, minBox = 1, amount = 1 },
+  { item = "fire_berry",       chance = 800, minBox = 2, amount = 5 },
+  { item = "water_berry",      chance = 800, minBox = 2, amount = 5 },
+  { item = "rock_berry",       chance = 800, minBox = 2, amount = 5 },
+  { item = "air_berry",        chance = 800, minBox = 2, amount = 5 },
   { item = "scroll",           chance = 200, minBox = 3, amount = 1 },
 }
 
@@ -333,7 +376,41 @@ C.DAILY = {
   -- Rune is allocated by EconomyState.policy.runeRewards. The old 1/2/3 per
   -- wallet stipend multiplied global emission by wallet count and is disabled.
   runes = 0,
-  streakTiers = {},
+  --- What the streak is FOR. It was tracked and paid nothing.
+  ---
+  --- `dailyStreak` and `bestStreak` are counted, break after `breakAfter`,
+  --- survive an Admin.Load by taking the max, get bucketed into high/medium/low
+  --- for the `Checkins` census and are published in the claim receipt -- and
+  --- until now the reward was `lootboxes = 1` at `lootboxRarity = 2` no matter
+  --- what the streak said. Fully wired retention machinery with the reward torn
+  --- out.
+  ---
+  --- Boxes rather than Rune, deliberately, and the two are on different clocks
+  --- for different reasons:
+  ---
+  ---   * RUNE is the faucet, so it is flat and daily. Nothing about coming back
+  ---     more often may increase total emission -- that is the property the
+  ---     whole schedule rests on.
+  ---   * BOXES are berries, which are consumed rather than banked, so scaling
+  ---     them with a streak rewards the habit without touching supply. A streak
+  ---     is also wall-clock-bound and resets on a miss, which is the one thing
+  ---     a bot cannot compress.
+  ---
+  --- The tier-3 box at ten days is doing a second job. NOTHING in the game has
+  --- ever issued a box above tier 2 -- every `addLootboxes` site pays 1 or 2 --
+  --- so `scroll`, whose loot-table row is gated at `minBox 3`, has had no
+  --- organic supply at all and tiers 3-5 were dead config. This is the emitter,
+  --- and it is metered by the calendar rather than by playtime.
+  ---
+  --- Ordered by `minStreak` DESCENDING; the first match wins. Emptying this
+  --- table falls back to `lootboxes`/`lootboxRarity` below.
+  streakTiers = {
+    { minStreak = 10, boxes = { { rarity = 3, count = 1 } } },
+    { minStreak = 3,  boxes = { { rarity = 2, count = 1 }, { rarity = 1, count = 1 } } },
+    { minStreak = 1,  boxes = { { rarity = 2, count = 1 } } },
+  },
+  --- The fallback when `streakTiers` matches nothing, and what every claim paid
+  --- before the tiers existed.
   lootboxRarity = 2,
   lootboxes = 1,
 }
@@ -401,10 +478,27 @@ C.LEVEL_UP_MAX_PER_STAT = 5
 --- and the result would be stored as 1.0 rather than 1, which is the defect
 --- CLAUDE.md warns about. `(level + 3) // 4` is exactly ceil for positive
 --- integers and never leaves the integer domain.
+--- v2: quadratic, not linear-in-quarters.
+---
+--- `(L + 3) // 4` totalled SIXTY Rune to carry a companion from 0 to 20 --
+--- about five weeks of emission for what the exp curve makes a multi-year
+--- artifact. With the core loop now free (see C.ACTIVITIES), levelling is one
+--- of the few things Rune still buys, and it is the one the market actually
+--- competes over, so the cost has to bite where the competition is.
+---
+--- `(L*L + 15) // 16` is ceil(L^2/16): levels 1-3 cost 1, level 8 costs 4,
+--- level 12 costs 9, level 16 costs 16, level 20 costs 25 -- ~190 Rune for the
+--- full climb. Cheap enough to stay out of a new player's way for the first
+--- fortnight, steep exactly in the 14-20 band where a high-level companion
+--- becomes worth owning.
+---
+--- Integer division throughout, never `/`: Luerl's `/` is float division and
+--- the result would be stored as 9.0 rather than 9, which is the defect
+--- CLAUDE.md warns about.
 function C.levelUpCost(level)
   local target = math.tointeger(level) or 0
   if target < 1 then target = 1 end
-  return (target + 3) // 4
+  return (target * target + 15) // 16
 end
 
 -- One active companion and a collection --------------------------------------
@@ -471,6 +565,16 @@ C.ECONOMY = {
     shopBurnBps = 2500,
     burnAboveTargetBps = 11000,
   },
+  --- Atoms in one whole Rune on the TOKEN process (10^Denomination).
+  ---
+  --- In-game Rune is indivisible and always counted in whole units; the token
+  --- outside is divisible so it can be quoted against on an order book. The
+  --- bridge is the only place the two units meet, and it refuses anything that
+  --- is not a whole multiple of this -- see the header of `rune.lua`, which
+  --- carries the same number because it is a separate process and cannot read
+  --- this file. `deploy-rune.mjs` checks the two agree.
+  runeUnits = 1000000,
+
   orderbook = {
     maxPerAccount = 20,
     maxGlobal = 2000,
@@ -481,11 +585,58 @@ C.ECONOMY = {
     feeBps = 200,
     expiry = 30 * 24 * 3600 * 1000,
     historyLimit = 500,
+    --- The trader picks how long a quote lives; this is the ceiling and the
+    --- default. A maker wants an order that retires itself; the cap is what
+    --- keeps published state bounded. See ORDERBOOK.md §9.
+    minExpiry = 5 * 60 * 1000,
+    --- The fat-finger guard, in basis points either side of a reference price.
+    ---
+    --- Without it `maxUnitPrice` is the only limit, so one crossing order can
+    --- print 1,000,000 and that print becomes the 7-day median that the desk
+    --- charts, the swarm and every other reader take as the truth. 5,000 is
+    --- +-50%, measured from a corridor that already spans the NPC desk's own
+    --- bid and ask -- so it never refuses a price the house itself would
+    --- quote, and it refuses five orders of magnitude above it.
+    ---
+    --- A market with no desk, no fills and no book has NO reference, and an
+    --- unpriced market is not band-checked at all. That is deliberate: the
+    --- first order in a new market is what establishes the reference, and
+    --- there is nothing to compare it against.
+    bandBps = 5000,
+    --- How many units of a per-unit-repriced NPC desk one order may sweep.
+    --- The desk quotes into the ladder (ORDERBOOK.md §3.1) and reprices after
+    --- every unit, so the fill loop is bounded here as well as by the desk's
+    --- own 20-hour limits.
+    deskSweepMax = 100,
+    --- Days of OHLCV kept and published per market. Candles are what the
+    --- chart reads past the end of the fills list; ~40 bytes a day each.
+    candleDays = 30,
   },
   shop = {
     accountWindow = 20 * 3600 * 1000,
     policyEpoch = 7 * 24 * 3600 * 1000,
-    flowSupplyBps = 200,
+    --- How many accounts a desk is sized for before anyone has bought a pass.
+    ---
+    --- The epoch flow cap used to be `flowSupplyBps = 200` -- 2% of OUTSTANDING
+    --- item supply, issued minus consumed -- and that scaled the wrong way
+    --- twice. It bounded a FLOW with a STOCK, and the two are inversely
+    --- correlated here: eating a berry removes it from outstanding supply AND
+    --- creates the demand to replace it, so the desk tightened exactly as the
+    --- game got busier, and tightened again with every extra player eating
+    --- alongside. Live it resolved to 9-11 units a week per berry against a
+    --- 20-hour `limits.global` of 500 sitting beside it -- 50x apart, so the
+    --- 20-hour limits were unreachable and every desk read
+    --- "Policy-epoch supply-flow limit reached" on both sides.
+    ---
+    --- It is now an allowance per PASS EVER SOLD, which is the one number that
+    --- grows with the game, in the same shape `emissionBudget` uses: a
+    --- per-account rate times the lifetime pass count, with a floor of accounts
+    --- underneath so a process that has sold no passes yet -- a fresh deploy,
+    --- a test fixture, the recovery set before it is loaded -- still has a
+    --- working desk. `epochFlowLimit` in economy.lua derives the per-account
+    --- rate from this number and the desk's own 20-hour cap, and carries the
+    --- arithmetic for why it is 20.
+    flowFloorAccounts = 20,
     policyDelay = 24 * 3600 * 1000,
     anchorWeeklyBps = 500,
   },
@@ -524,12 +675,66 @@ C.ECONOMY = {
   --- Rune split across 200 players is zero each after integer division, which
   --- is the same "the faucet pays nothing" bug in a new costume.
   rune = {
+    --- v2: emission is PER ACCOUNT, not a pot divided among claimants.
+    ---
+    --- The fixed pot existed because a per-wallet faucet makes total emission
+    --- `rate x wallets x time` and wallets were free. They are not free any
+    --- more: entry is a paid pass, so multiplying wallets multiplies COST as
+    --- well as yield, and that is what now bounds the faucet.
+    ---
+    --- This is a real trade and ECONOMY_MARKETPLACE_PLAN.md §8.7 names what it
+    --- gives up -- its pass-pricing test assumes "adding attacker passes
+    --- divides fixed reward pools rather than multiplying them", which is no
+    --- longer true. The pass price now carries the sybil defence alone, which
+    --- is exactly why it is denominated in Rune (ECONOMY_V2.md §5): a
+    --- dollar-priced pass paying a Rune-denominated yield has a fixed strike
+    --- above which farming is free money, and the whole design exists to push
+    --- the price through that strike.
+    ---
+    --- 48 a month is the number, and it is an ENGAGEMENT ASSUMPTION wearing a
+    --- rate's clothing. A full-intensity player burns ~240 Rune a month, so
+    --- the economy deflates whenever more than 48/240 = 20% of passholders play
+    --- properly. Move this and you are moving that assumption; see
+    --- ECONOMY_V2.md §3 before you do.
+    ---
+    --- It also leaves ~24 minutes a day of play funded by emission alone, so a
+    --- new or broke account is never locked out -- the deficit above that is
+    --- what they buy from someone who would rather sell.
+    emissionPerAccount = 48,
+    --- ZERO: the schedule TERMINATES. Emission stops completely in year six.
+    ---
+    --- 48 integer-halves 24, 12, 6, 3, 1, 0, so the sixth halving is the last
+    --- one and there is no floor under it. Lifetime emission per account is
+    --- 12.17 epochs x (48+24+12+6+3+1) = ~1,144 Rune, and TOTAL SUPPLY IS HARD
+    --- CAPPED at that times the number of passes ever sold. Nothing about time
+    --- passing can add to it -- which is the strongest form of the guarantee
+    --- the halving schedule exists to make.
+    ---
+    --- Known and accepted: an account created after year six earns nothing from
+    --- the faucet, ever. It buys Rune from someone who has it, which is the
+    --- end state the whole design points at anyway -- but it does mean the
+    --- secondary market has to exist by then, not merely be planned.
+    ---
+    --- Set this to 1 to floor the schedule instead of ending it (~1% of the
+    --- genesis rate, 12 Rune a year forever). That trades the hard cap for a
+    --- newcomer who always has somewhere to start. REVISIT BEFORE YEAR SIX.
+    minEmissionPerAccount = 0,
+    --- A CIRCUIT BREAKER, not a divisor. Nothing is divided by the population
+    --- any more; this only stops a runaway if something upstream goes wrong, so
+    --- it must sit well above `emissionPerAccount x passes` and must never bind
+    --- in normal operation.
     emissionPerEpoch = 2000,
     epochLength = 30 * 24 * 3600 * 1000,
     halvingPeriod = 365 * 24 * 3600 * 1000,
     -- After eight halvings the pot is 7 Rune an epoch; the floor takes over so
     -- emission goes flat rather than asymptotically to zero.
     maxHalvings = 8,
+    --- GLOBAL ONLY. Never apply this per account.
+    ---
+    --- This is the one line that decides bounded versus infinite. Per account it
+    --- is 100 Rune an epoch forever -- 1,217 a year, per wallet, with no end --
+    --- and total supply has no upper bound at all. As a global floor it does
+    --- what it says: emission goes flat rather than asymptotically to zero.
     minEmissionPerEpoch = 100,
     --- What an account too young to be weighted still receives, as a share of
     --- one per-capita slice.
