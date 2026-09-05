@@ -1,5 +1,5 @@
 /**
- * Daily worship — the realm's one faucet, kept in the top bar.
+ * Daily worship — the realm's one Rune faucet, kept in the top bar.
  *
  * It used to be a banner on the companion screen, which meant the one thing a
  * returning player should do first was invisible from every other page and
@@ -46,7 +46,7 @@ export function Worship() {
         <Button
           size="sm" variant="primary" busy={isPending('daily')} onClick={claim}
           data-tour="worship"
-          title="Claim your daily worship: Runes and a loot box"
+          title="Claim your daily worship: Rune and a crate that grows with your streak"
           icon={<Sparkle className="h-4 w-4" />}
         >
           Worship
@@ -70,8 +70,22 @@ export function Worship() {
           <div className="mt-4">
             <Sparkle className="mx-auto h-10 w-10 text-element" />
             {(() => {
-              const tier = (LOOTBOX_TIER[reward.lootboxRarity]
-                ?? `tier ${reward.lootboxRarity}`).toLowerCase();
+              const name = (rarity: number) => (
+                LOOTBOX_TIER[rarity] ?? `tier ${rarity}`).toLowerCase();
+              // A claim is no longer always ONE box. The streak ladder pays a
+              // second crate from three days and a tier-3 from ten, so read the
+              // award the process actually reported rather than naming the best
+              // tier and quietly not mentioning the rest. `lootboxes` is absent
+              // on a deployment predating the ladder; there, the single rarity
+              // still is the whole award.
+              const awarded = reward.lootboxes?.length
+                ? reward.lootboxes
+                : [{ rarity: reward.lootboxRarity, count: 1 }];
+              const tier = awarded
+                .map((box) => (box.count > 1
+                  ? `${box.count}× ${name(box.rarity)} loot boxes`
+                  : `${article(name(box.rarity))} ${name(box.rarity)} loot box`))
+                .join(' and ');
               // A zero payout is a real, deliberate state — Rune emission ships
               // paused — so say what was actually received and why, rather than
               // printing "+0 Runes" and leaving the player to conclude the
@@ -86,7 +100,7 @@ export function Worship() {
                         <span className="font-mono text-element">+{reward.runes}</span> Runes and{' '}
                       </>
                     )}
-                    {`${article(tier)} ${tier} loot box.`}
+                    {`${tier}.`}
                   </p>
                   {!paid && (
                     <p className="mt-2 text-xs text-faint">

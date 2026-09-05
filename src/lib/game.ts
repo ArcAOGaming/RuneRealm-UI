@@ -23,8 +23,9 @@ import {
   AdminAuditEntry, AdminFactionStats, AdminMetrics, AdminPlayerPatch,
   AdminPlayerSummary, AdminSnapshot, Battle, BattleFleetConfig, BattleFleetRoute, BerryItemId,
   MonsterIndexEntry, MonsterIndexLifecycle, MonsterIndexView, Catalog, CharacterOutfit, EconomyPolicyChange, EconomyView, Element, Faction,
-  GoldMarketItemId, GoldOrderSide,
+  GoldMarketItemId, GoldOrderSide, GoldOrderStp, GoldOrderTif,
   GameError, GameStats, ItemId, LeaderboardRow, Listing, Move, OpenChallenge, Player,
+  PlayerFill, PlayerOpenOrder,
   RegistryAsset, Reply, RuneWithdrawal, Sale,
 } from './types';
 
@@ -940,24 +941,179 @@ export const readMarketStats = (opts: ReadOpts = {}) =>
 /** Exact ledgers, Gold order book, finite NPC desks and public policy state. */
 export const readEconomy = (opts: ReadOpts = {}) => readJSON<EconomyView>('economy', opts);
 
+/**
+ * How an order should behave beyond its price and size.
+ *
+ * All three are optional and all three default to what the book did before
+ * they existed, so nothing that does not care has to say anything. `expiresIn`
+ * is milliseconds and is clamped by the process to its own maximum lifetime.
+ */
+export interface GoldOrderOptions {
+  tif?: GoldOrderTif;
+  stp?: GoldOrderStp;
+  expiresIn?: number;
+}
+
+/* Only send a tag that was actually asked for. An order that says nothing
+   about time in force is a GTC order, and spelling that out on every message
+   would put three tags on the wire for every player who never opens the
+   advanced panel. */
+const orderTags = (options: GoldOrderOptions = {}) => ({
+  ...(options.tif ? { Tif: options.tif } : {}),
+  ...(options.stp ? { Stp: options.stp } : {}),
+  ...(options.expiresIn ? { ExpiresIn: String(Math.floor(options.expiresIn)) } : {}),
+});
+
 export const placeGoldOrder = (
   side: GoldOrderSide,
   item: GoldMarketItemId,
   price: number,
   quantity: number,
+  options: GoldOrderOptions = {},
 ) => write<Player>({
   Action: 'Economy.Order.Place', Side: side, Item: item,
   ActionId: economyActionId('order'),
   Price: String(Math.max(1, Math.floor(price))),
   Quantity: String(Math.max(1, Math.floor(quantity))),
+  ...orderTags(options),
+});
+
+/**
+ * Move a resting order without leaving the book.
+ *
+ * One message where cancel-and-replace was two, and no creation cost either
+ * way. An amend that only lowers quantity at the same price keeps the order's
+ * id and its place in the queue; a new price re-queues under a new id, which
+ * comes back as `economyResult.orderId`.
+ */
+export const amendGoldOrder = (
+  orderId: string,
+  changes: { price?: number; quantity?: number },
+  options: GoldOrderOptions = {},
+) => write<Player>({
+  Action: 'Economy.Order.Amend', OrderId: orderId,
+  ActionId: economyActionId('amend'),
+  ...(changes.price !== undefined ? { Price: String(Math.max(1, Math.floor(changes.price))) } : {}),
+  ...(changes.quantity !== undefined
+    ? { Quantity: String(Math.max(1, Math.floor(changes.quantity))) } : {}),
+  ...orderTags(options),
 });
 
 export const cancelGoldOrder = (orderId: string) =>
   write<Player>({ Action: 'Economy.Order.Cancel', OrderId: orderId,
     ActionId: economyActionId('cancel') });
 
+/**
+ * Leave the book in one message.
+ *
+ * `item` narrows it to one market and `orderIds` to a named list; with
+ * neither, it is everything this account has resting. Bounded by the process's
+ * own per-account open-order cap, not by anything sent here.
+ */
+export const cancelGoldOrders = (
+  filter: { item?: GoldMarketItemId; orderIds?: string[] } = {},
+) => write<Player>({
+  Action: 'Economy.Order.CancelAll',
+  ActionId: economyActionId('cancelall'),
+  ...(filter.item ? { Item: filter.item } : {}),
+  ...(filter.orderIds?.length ? { OrderIds: filter.orderIds.join(',') } : {}),
+});
+
 export const maintainGoldOrders = (limit = 25) =>
   write<Player>({ Action: 'Economy.Order.Maintain', Limit: String(Math.max(1, Math.floor(limit))) });
+
+// A trader's own orders and own fills ---------------------------------------
+//
+// These moved onto the player's record, because the global arrays they came
+// from are the single largest thing the process publishes and every message
+// pays for all of it. A redeployed process carries `openOrders`/`recentFills`;
+// one that has NOT been redeployed yet still publishes only `economy.orders`
+// and `economy.fills`, and both are live at the same time — so the screen goes
+// through these two selectors instead of filtering either array itself, and
+// keeps working against whichever shape the node happens to be serving.
+
+/** `market` is absent on the fallback path: a global order carries no registry id. */
+export type OwnOrder = Omit<PlayerOpenOrder, 'market'> & { market?: string };
+
+/** Same absence; `side` and `role` are recovered from the addresses on a global fill. */
+export type OwnFill = Omit<PlayerFill, 'market'> & { market?: string };
+
+/**
+ * The caller's open orders, newest first.
+ *
+ * Only the FALLBACK drops expired rows, and that asymmetry is deliberate:
+ * `player.openOrders` is written by the process with the expired ones already
+ * gone, whereas `economy.orders` holds expired-but-unswept orders — placing an
+ * order sweeps at most 25 of them against a cap of 2,000 — so a month-old
+ * order whose owner walked away is still sitting in that array. It is not
+ * liquidity and must never be shown to a player as live.
+ */
+export function ownOrders(
+  player: Player | null | undefined,
+  economy: EconomyView | null | undefined,
+  address: string | null | undefined,
+): OwnOrder[] {
+  if (player?.openOrders) return player.openOrders;
+  if (!economy || !address) return [];
+  const now = Date.now();
+  return economy.orders
+    .filter((order) => order.account === address && order.expiresAt > now)
+    .slice()
+    .sort((a, b) => b.createdAt - a.createdAt)
+    .map((order): OwnOrder => ({
+      id: order.id,
+      item: order.item,
+      side: order.side,
+      price: order.price,
+      quantity: order.quantity,
+      remaining: order.remaining,
+      createdAt: order.createdAt,
+      expiresAt: order.expiresAt,
+    }));
+}
+
+/** How many of the caller's own fills either path returns. Matches the cap the
+ *  process applies when it writes `recentFills`, so the two agree. */
+const OWN_FILL_LIMIT = 20;
+
+/**
+ * The caller's recent fills, newest first.
+ *
+ * A global fill names four addresses and no perspective, so the fallback
+ * derives the two fields the record already carries: which side of the trade
+ * this account was on, and whether it was the resting order.
+ *
+ * It also sorts and truncates, which the record path gets from the process.
+ * Without that the two shapes disagree — `economy.fills` is appended oldest
+ * first and holds up to 500 — and the screen would list a trader's history
+ * backwards, or not, depending on whether the node had been redeployed. A
+ * selector that returns a different order on each path is worse than either
+ * order.
+ */
+export function ownFills(
+  player: Player | null | undefined,
+  economy: EconomyView | null | undefined,
+  address: string | null | undefined,
+): OwnFill[] {
+  if (player?.recentFills) return player.recentFills.slice(0, OWN_FILL_LIMIT);
+  if (!economy || !address) return [];
+  return economy.fills
+    .filter((fill) => fill.buyer === address || fill.seller === address)
+    .slice()
+    .sort((a, b) => b.filledAt - a.filledAt)
+    .slice(0, OWN_FILL_LIMIT)
+    .map((fill): OwnFill => ({
+      id: fill.id,
+      item: fill.item,
+      side: fill.buyer === address ? 'buy' : 'sell',
+      price: fill.price,
+      quantity: fill.quantity,
+      gross: fill.gross,
+      fee: fill.fee,
+      filledAt: fill.filledAt,
+      role: fill.maker === address ? 'maker' : 'taker',
+    }));
+}
 
 /** `buy` buys from the NPC; `sell` sells the named inventory item to it. */
 export const tradeGameShop = (

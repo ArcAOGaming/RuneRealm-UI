@@ -18,6 +18,31 @@ export type ItemId = BerryItemId | 'rune' | 'scroll' | 'legendary_scroll';
 export type GoldMarketItemId = ItemId;
 export type GoldOrderSide = 'buy' | 'sell';
 
+/**
+ * Time in force. Everything else a book does is a special case of these four.
+ *
+ * `GTC` rests whatever it could not fill. `IOC` is the market order — take what
+ * is there at this limit or better and cancel the rest — which is how "spend N
+ * Gold" is expressed: the client reads the ask ladder, computes the limit, and
+ * sends an IOC. `FOK` refuses unless the whole quantity can be taken at once.
+ * `PostOnly` refuses to cross, so a maker can never pay a taker fee by
+ * accident.
+ *
+ * The process never accepts an unpriced order, so the limit is always ours to
+ * work out. See ORDERBOOK.md §2.1.
+ */
+export type GoldOrderTif = 'GTC' | 'IOC' | 'FOK' | 'PostOnly';
+
+/**
+ * What happens when an order would trade with the sender's own resting one.
+ *
+ * `CancelResting` is the default and pulls the account's own crossing quote so
+ * the new order can go on; `Reject` is the old refuse-everything behaviour, for
+ * an automated maker that would rather be told; `CancelBoth` leaves the account
+ * flat.
+ */
+export type GoldOrderStp = 'CancelResting' | 'Reject' | 'CancelBoth';
+
 export interface EconomyOrder {
   id: string;
   seq: number;
@@ -29,6 +54,12 @@ export interface EconomyOrder {
   remaining: number;
   createdAt: number;
   expiresAt: number;
+  /** `<base>/<quote>`. Absent on orders placed before the market registry. */
+  market?: string;
+  /** Base units per lot. One on every current market. */
+  lot?: number;
+  /** Set on an order produced by a re-queueing amend: the id it replaced. */
+  amendedFrom?: string;
 }
 
 export interface EconomyFill {
@@ -45,9 +76,77 @@ export interface EconomyFill {
   gross: number;
   fee: number;
   filledAt: number;
+  /** True when the counterparty was the NPC desk quoting into the ladder. */
+  house?: boolean;
+}
+
+/**
+ * One of the caller's own open orders, carried on the PLAYER record.
+ *
+ * Not a convenience copy of `EconomyOrder` — it is where own-orders now live.
+ * The published book is a tax on every message the process handles rather than
+ * a market-screen cost: `economy.orders` is a full copy of every open order,
+ * and the whole published map is marshalled five times per slot whatever the
+ * handler did. A trader only ever draws their own handful, so it goes per
+ * wallet and bounded, and the global array shrinks to the aggregated ladder.
+ *
+ * `account` and `seq` are gone because the record the list hangs off already
+ * says whose it is; `market` arrives instead, because the registry id is the
+ * one thing the item alone no longer tells you.
+ *
+ * Absent when there are none: `nil` in Lua is a key that is simply not there.
+ */
+export interface PlayerOpenOrder {
+  id: string;
+  /** Registry market id, `<base>/<quote>`. */
+  market: string;
+  item: GoldMarketItemId;
+  side: GoldOrderSide;
+  price: number;
+  quantity: number;
+  remaining: number;
+  createdAt: number;
+  expiresAt: number;
+}
+
+/**
+ * One of the caller's own fills, on the player record for the same reason and
+ * bounded the same way.
+ *
+ * `side` and `role` are THIS account's, which is the thing a global
+ * `EconomyFill` cannot state without being read back against an address.
+ */
+export interface PlayerFill {
+  id: string;
+  market: string;
+  item: GoldMarketItemId;
+  side: GoldOrderSide;
+  price: number;
+  quantity: number;
+  gross: number;
+  fee: number;
+  filledAt: number;
+  role: 'maker' | 'taker';
 }
 
 export interface EconomyRollingFlow { issued: number; consumed: number }
+
+/**
+ * One day of a market, as open/high/low/close plus volume.
+ *
+ * Compact on purpose: this is published for every market, every day, forever,
+ * and every published byte is marshalled five times on every message the
+ * process handles — see the note at the head of `CLAUDE.md`. Four letters and
+ * four integers is a chart the raw fills cannot draw, at a fraction of what
+ * the raw fills cost.
+ */
+export interface EconomyCandle {
+  /** Day index: epoch milliseconds divided by 86_400_000. */
+  d: number;
+  o: number; h: number; l: number; c: number;
+  /** Base units traded, Gold turned over, and how many fills made it up. */
+  v: number; g: number; n: number;
+}
 
 export interface EconomyAssetLedger {
   issued: number;
@@ -88,9 +187,26 @@ export interface EconomyDesk {
 export interface EconomyMarketStats {
   bestBid?: number;
   bestAsk?: number;
+  /* One row per PRICE LEVEL, with `orders` counting how many rest there.
+     Older deployments publish one row per order and no `orders` field, which
+     is why the renderer still collapses by price defensively. */
+  /* What the PLAYERS alone are quoting, with the house taken out.
+     `bestBid`/`bestAsk` include the NPC desk, because a taker gets whichever
+     of the two is better without choosing a venue. These two are what the
+     corridor is stated over: while the P2P best sits inside the desk's band
+     the desk is never the best price on either side. */
+  p2pBid?: number;
+  p2pAsk?: number;
+  /** The desk's own quote, and how deep it is before the band moves. */
+  houseBid?: number;
+  houseAsk?: number;
+  houseBidUnits: number;
+  houseAskUnits: number;
+  /** The corridor an order must be priced inside, or absent if unpriced. */
+  band?: { low: number; high: number; bps: number };
   depth: {
-    bids: Array<{ price: number; quantity: number }>;
-    asks: Array<{ price: number; quantity: number }>;
+    bids: Array<{ price: number; quantity: number; orders?: number; house?: number }>;
+    asks: Array<{ price: number; quantity: number; orders?: number; house?: number }>;
   };
   volume24h: number;
   volume7d: number;
@@ -151,7 +267,26 @@ export interface EconomyView {
   orders: EconomyOrder[];
   fills: EconomyFill[];
   market: Record<GoldMarketItemId, EconomyMarketStats>;
+  /* Daily OHLCV, oldest first, one array per market that has ever traded.
+     `d` is a day index (epoch ms / 86_400_000), `v` base volume, `g` Gold
+     turned over and `n` the number of fills. These are permanent; `fills` is a
+     500-row ring, so anything older than the last five hundred trades exists
+     here and nowhere else. */
+  candles?: Partial<Record<GoldMarketItemId, EconomyCandle[]>>;
   desks: Partial<Record<GoldMarketItemId, EconomyDesk>>;
+  /* The market registry, keyed `<base>/<quote>`. Fees, tick, lot and status
+     are per market and are read from here, never assumed. */
+  markets?: Record<string, {
+    id: string; base: string; quote: string;
+    tick: number; lot: number; minValue: number;
+    maxPrice: number; maxQuantity: number;
+    takerBps: number; makerBps: number; rebateBps: number;
+    feeCarry: number; status: string;
+    /** Basis points either side of the reference price. 0 switches it off. */
+    bandBps?: number;
+    /** Whether the NPC desk quotes into this market's ladder. */
+    houseQuotes?: boolean;
+  }>;
   rejected: Record<string, number>;
   policy: {
     emergency: { paused: boolean; reason?: string; at: number; actor?: string };
@@ -531,18 +666,47 @@ export interface Player {
    */
   dailyClaimed?: {
     runes: number;
+    /** The best tier awarded. With a streak ladder this is no longer a constant. */
     lootboxRarity: number;
+    /**
+     * Everything the streak actually paid, because it is no longer always one
+     * box: `C.DAILY.streakTiers` gives a second crate from a 3-day streak and a
+     * tier-3 from ten. Absent on a deployment predating the ladder, in which
+     * case `lootboxRarity` alone is the whole award.
+     */
+    lootboxes?: Array<{ rarity: number; count: number }>;
     runeRewardReason?: string;
     streak?: number;
     offerings?: number;
     factionOfferings?: number;
   };
+  /** This account's live orders on the Gold book, already free of expired ones. */
+  openOrders?: PlayerOpenOrder[];
+  /** This account's own fills, newest first and bounded by the process. */
+  recentFills?: PlayerFill[];
   economyResult?: {
     order?: EconomyOrder;
     fills?: EconomyFill[];
     open?: boolean;
-    cancelled?: string;
+    cancelled?: string | number;
+    /** Every id a batch cancel released. */
+    cancelledIds?: string[];
     expired?: number;
+    /** Echoed back so the ticket can say what it actually sent. */
+    tif?: string;
+    stp?: string;
+    /** How many of the sender's own resting orders were pulled. */
+    selfCancelled?: number;
+    /** True when an IOC or FOK remainder was retired rather than rested. */
+    killed?: boolean;
+    /** The corridor the order was checked against. */
+    bandLow?: number;
+    bandHigh?: number;
+    /** Amend only: the live id, and whether it went to the back of the queue. */
+    orderId?: string;
+    requeued?: boolean;
+    amendedFrom?: string;
+    released?: number;
     item?: GoldMarketItemId;
     side?: GoldOrderSide;
     quantity?: number;
@@ -891,7 +1055,8 @@ export interface Catalog {
   levelUp?: {
     points: number;
     maxPerStat: number;
-    levelsPerRune: number;
+    /** Divisor in `ceil(targetLevel^2 / costDivisor)`. Replaced `levelsPerRune`. */
+    costDivisor: number;
     costItem: ItemId;
   };
   /**
@@ -911,14 +1076,28 @@ export interface Catalog {
 }
 
 /**
- * Rune cost of reaching `targetLevel`: one per `levelsPerRune` levels, rounded
- * up. Returns 0 when the deployment predates the charge, so an older process
- * keeps working rather than showing a price it will not take.
+ * Rune cost of reaching `targetLevel`: `ceil(targetLevel^2 / costDivisor)`.
+ *
+ * v2 made this quadratic. It was `ceil(targetLevel / levelsPerRune)`, which
+ * totalled sixty Rune for the whole climb to level 20 — and with the core loop
+ * now free, levelling is one of the few things Rune still buys. The curve stays
+ * flat and cheap early and bites in the 14-20 band, which is where a companion
+ * becomes worth owning and where the market competes for one.
+ *
+ * Mirrors `C.levelUpCost` in constants.lua exactly, and MUST keep mirroring it:
+ * this is a price the player is about to be charged, so a client that disagrees
+ * with the engine quotes a number the process will not take.
+ *
+ * Returns 0 when the deployment publishes no `costDivisor` — an older process,
+ * or one predating the charge — so it keeps working rather than showing a price
+ * that is wrong. The old `levelsPerRune` is deliberately NOT read as a
+ * fallback: it would quote 5 Rune for level 20 against a charge of 25.
  */
 export function levelUpCost(catalog: Catalog | null | undefined, targetLevel: number): number {
-  const per = catalog?.levelUp?.levelsPerRune;
-  if (!per || per <= 0) return 0;
-  return Math.ceil(Math.max(1, targetLevel) / per);
+  const divisor = catalog?.levelUp?.costDivisor;
+  if (!divisor || divisor <= 0) return 0;
+  const level = Math.max(1, targetLevel);
+  return Math.ceil((level * level) / divisor);
 }
 
 export interface GameStats {

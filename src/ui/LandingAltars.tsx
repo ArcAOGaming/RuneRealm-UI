@@ -35,7 +35,7 @@ export default function LandingAltars() {
       sworn={sworn}
       selected={selected}
       onSelect={setSelected}
-      hint="Touch an altar to wake its current"
+      hint="Select an altar to preview"
       className="landing-altar-hall"
     />
   );

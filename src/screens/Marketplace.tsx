@@ -12,10 +12,10 @@ import {
 } from '../lib/marketplace';
 import {
   EconomyDesk, EconomyFill, EconomyMarketStats, EconomyOrder, EconomyView, Element,
-  GoldMarketItemId, GoldOrderSide, Listing, Monster, Sale,
+  GoldMarketItemId, GoldOrderSide, GoldOrderTif, Listing, Monster, PlayerFill, Sale,
 } from '../lib/types';
 import { ELEMENT_LABEL, ITEM_NAME, shortAddress } from '../lib/format';
-import { Badge, Button, Empty, ErrorNote, Panel, Skeleton, Spinner, cx } from '../ui/primitives';
+import { Badge, Button, Empty, ErrorNote, Panel, Skeleton, cx } from '../ui/primitives';
 import { Dialog } from '../ui/Dialog';
 import { CardPreview } from '../ui/CardPreview';
 import { CardViewer } from '../ui/CardViewer';
@@ -24,6 +24,8 @@ import { useToast } from '../ui/toastContext';
 import { useTourSteps, type TourStep } from '../ui/tourContext';
 import { Arrow, ELEMENT_ICON, Exchange, Refresh, Rune, Sparkle, Wallet } from '../ui/icons';
 import { MarketForge, MarketForgeMode } from '../ui/MarketForge';
+import { MarketDiorama } from '../ui/MarketDiorama';
+import type { MarketDioramaStockItem } from '../gfx/marketDiorama';
 import { economyPreview } from '../lib/economy-preview';
 
 type MarketTab = 'goods' | 'rune' | 'monsters';
@@ -38,13 +40,16 @@ const inputClass = 'h-11 w-full rounded-[3px] border border-edge bg-void/35 px-3
 /**
  * The market's walkthrough.
  *
- * Three sentences, and each one is about a rule rather than a control: which
- * counter you are standing at, who is setting the price, and what the fee is.
- * Those are the things that cost somebody gold when they are not known.
+ * Four sentences, and each one is about a rule rather than a control: which
+ * counter you are standing at, who is setting the price, what happens to the
+ * part of your order that does not trade, and how far from the realm's own
+ * price it will let you go. Those are the things that cost somebody gold when
+ * they are not known.
  *
- * **It states the seller fee and what each desk is.** If the fee changes, or a
- * desk is added, or the shop stops being fixed-price, this list is part of that
- * change — see the note at the head of `ui/Tour.tsx`.
+ * **It states the fee, the corridor and where the realm's desk is.** If the
+ * fee changes, if the desk stops quoting into the ladder, or if the price band
+ * moves, this list is part of that change — see the note at the head of
+ * `ui/Tour.tsx` and the walkthrough rule in `CLAUDE.md`.
  */
 const MARKET_TOUR: TourStep[] = [
   {
@@ -54,13 +59,18 @@ const MARKET_TOUR: TourStep[] = [
   },
   {
     target: '[data-tour="market-desks"]',
-    title: 'Who sets the price',
-    body: 'The realm’s shop is fixed price and always there. The trading floor is other players’ limit orders, and it charges the seller 2%.',
+    title: 'Choose your counter',
+    body: 'The realm’s shop fills immediately at a fixed price. The player exchange is a live limit-order book, and trading on it is free — the shop’s spread is what the realm takes.',
   },
   {
-    target: '[data-tour="market-purse"]',
-    title: 'What you are spending',
-    body: 'Gold is what the goods counter takes, and it is not Rune. Your satchel underneath is what you have to sell.',
+    target: '[data-tour="market-desks"]',
+    title: 'The realm quotes on the floor too',
+    body: 'The shop’s bid and ask sit in the exchange’s own ladder, marked with a ◆. So you never have to compare the two counters: whichever is better fills you, and a player quoting inside the realm’s spread is always taken first.',
+  },
+  {
+    target: '[data-tour="market-ticket"]',
+    title: 'Read the trade ticket',
+    body: 'Limit rests at your price; Market takes what the ladder has now and cancels the rest; All-or-none does the whole size or nothing; Maker-only refuses to cross. Prices must sit inside the band shown here — the realm refuses anything far outside its own quote, so one fat finger cannot set the market’s price.',
   },
 ];
 
@@ -121,21 +131,19 @@ const ITEM_ELEMENT: Partial<Record<GoldMarketItemId, Element>> = {
   fire_berry: 'fire', water_berry: 'water', air_berry: 'air', rock_berry: 'rock',
 };
 
-/** What the thing does. A tooltip now — the tiles are art and numbers. */
-const ITEM_BLURB: Partial<Record<GoldMarketItemId, string>> = {
-  fire_berry: '+5 attack for four battles',
-  water_berry: '+5 health for four battles',
-  air_berry: '+5 speed for four battles',
-  rock_berry: '+5 defense for four battles',
-  scroll: 'Calls a defeated creature into your collection',
-  rune: 'The realm currency: arena, hunts and cards',
-};
-
 type GoodsDesk = 'shop' | 'floor';
-type FloorRange = '24h' | '7d' | '30d';
+type FloorRange = '12h' | '24h' | '7d' | '30d';
+type ChartMode = 'line' | 'candles';
+type CandleInterval = '5m' | '30m' | '1h' | '4h' | '1d';
 
 const RANGE_MS: Record<FloorRange, number> = {
-  '24h': 24 * 3600_000, '7d': 7 * 24 * 3600_000, '30d': 30 * 24 * 3600_000,
+  '12h': 12 * 3600_000, '24h': 24 * 3600_000,
+  '7d': 7 * 24 * 3600_000, '30d': 30 * 24 * 3600_000,
+};
+
+const CANDLE_MS: Record<CandleInterval, number> = {
+  '5m': 5 * 60_000, '30m': 30 * 60_000, '1h': 3600_000,
+  '4h': 4 * 3600_000, '1d': 24 * 3600_000,
 };
 
 /**
@@ -148,6 +156,13 @@ function pausedFor(desk: EconomyDesk | undefined, side: GoldOrderSide): string |
   return desk.pause?.[side] || undefined;
 }
 
+function shopPauseCopy(reason: string): string {
+  if (reason === 'Policy-epoch supply-flow limit reached') {
+    return 'The realm desk reached its 7-day supply-flow cap. Player exchange orders are still open.';
+  }
+  return reason;
+}
+
 function GoodsMarket() {
   const { address, player, connect, connecting, run, isPending, refresh } = useGame();
   const [economy, setEconomy] = useState<EconomyView | null>(null);
@@ -155,9 +170,12 @@ function GoodsMarket() {
   const [deskTab, setDeskTab] = useState<GoodsDesk>('shop');
   const [item, setItem] = useState<GoldMarketItemId>('fire_berry');
   const [side, setSide] = useState<GoldOrderSide>('buy');
-  const [range, setRange] = useState<FloorRange>('7d');
+  const [range, setRange] = useState<FloorRange>('12h');
+  const [chartMode, setChartMode] = useState<ChartMode>('line');
+  const [candleInterval, setCandleInterval] = useState<CandleInterval>('30m');
   const [price, setPrice] = useState('');
-  const [quantity, setQuantity] = useState('1');
+  const [quantity, setQuantity] = useState('5');
+  const [tif, setTif] = useState<GoldOrderTif>('GTC');
   const [counts, setCounts] = useState<Partial<Record<GoldMarketItemId, number>>>({});
 
   const load = useCallback(async (signal?: AbortSignal) => {
@@ -189,13 +207,43 @@ function GoodsMarket() {
       setError(new Error('Price and quantity must be positive whole numbers.'));
       return;
     }
-    const result = await run('gold-order', () => game.placeGoldOrder(side, item, unit, count),
-      `${side === 'buy' ? 'Bid' : 'Ask'} entered for ${formatInteger(count)} ${ITEM_NAME[item]}.`);
+    const result = await run('gold-order',
+      () => game.placeGoldOrder(side, item, unit, count, { tif }),
+      TIF_RECEIPT[tif](side, count, item));
     if (result) { setPrice(''); await Promise.all([load(), refresh()]); }
   };
 
+  /* Moving a quote, in one message.
+
+     The old way was cancel-then-place: two slots, two creation costs, and the
+     order went to the back of a queue it was already near the front of. An
+     amend that only shrinks at the same price keeps both; anything else
+     re-queues, and the process says which in `requeued`. */
+  const amend = async (orderId: string, changes: { price?: number; quantity?: number }) => {
+    const result = await run(`gold-amend-${orderId}`, () => game.amendGoldOrder(orderId, changes),
+      'Quote moved.');
+    if (result) await Promise.all([load(), refresh()]);
+    return result;
+  };
+
+  const cancelAll = async (only?: GoldMarketItemId) => {
+    const result = await run('gold-cancel-all',
+      () => game.cancelGoldOrders(only ? { item: only } : {}),
+      only ? `Every ${ITEM_NAME[only]} order withdrawn.` : 'Every order withdrawn.');
+    if (result) await Promise.all([load(), refresh()]);
+  };
+
   const shopTrade = async (id: GoldMarketItemId, tradeSide: GoldOrderSide, count: number) => {
-    const result = await run(`npc-${tradeSide}-${id}`, () => game.tradeGameShop(tradeSide, id, count),
+    const trade = async () => {
+      try { return await game.tradeGameShop(tradeSide, id, count); }
+      catch (caught) {
+        if (caught instanceof Error && caught.message.includes('Policy-epoch supply-flow limit reached')) {
+          throw new Error(shopPauseCopy('Policy-epoch supply-flow limit reached'));
+        }
+        throw caught;
+      }
+    };
+    const result = await run(`npc-${tradeSide}-${id}`, trade,
       tradeSide === 'buy'
         ? `Bought ${formatInteger(count)} ${ITEM_NAME[id]}.`
         : `Sold ${formatInteger(count)} ${ITEM_NAME[id]}.`);
@@ -224,26 +272,40 @@ function GoodsMarket() {
 
   const gold = player?.gold ?? 0;
   const ownOrders = economy.orders.filter((order) => order.account === address);
+  const openPlayerExchange = () => {
+    const book = economy.market[item];
+    const best = side === 'buy' ? book?.bestAsk : book?.bestBid;
+    if (best) setPrice(String(best));
+    setDeskTab('floor');
+  };
 
   return (
     <div className="market-goods">
       <GoodsDeskChooser desk={deskTab} onDesk={setDeskTab}
-                        gold={gold} liveOrders={economy.orders.length} />
+                        gold={gold} liveOrders={economy.orders.length} ok={economy.invariants.ok} />
 
       {error !== null && <ErrorNote error={error} onRetry={() => void load()} />}
 
       {deskTab === 'shop' ? (
         <RealmShop economy={economy} gold={gold} inventory={player?.inventory}
+                   item={item} onItem={setItem} side={side} onSide={setSide}
                    connected={Boolean(address)} connecting={connecting} onConnect={connect}
                    counts={counts} onCount={(id, value) => setCounts((current) => ({ ...current, [id]: value }))}
-                   isPending={isPending} onTrade={shopTrade} onRefresh={() => void load()} />
+                   isPending={isPending} onTrade={shopTrade} onRefresh={() => void load()}
+                   onOpenFloor={openPlayerExchange} />
       ) : (
-        <TradingFloor economy={economy} address={address} item={item} onItem={setItem}
-                      range={range} onRange={setRange} side={side} onSide={setSide}
+        <TradingFloor economy={economy} address={address} gold={gold} inventory={player?.inventory}
+                      item={item} onItem={setItem}
+                      range={range} onRange={setRange} chartMode={chartMode} onChartMode={setChartMode}
+                      candleInterval={candleInterval} onCandleInterval={setCandleInterval}
+                      side={side} onSide={setSide} tif={tif} onTif={setTif}
                       price={price} onPrice={setPrice} quantity={quantity} onQuantity={setQuantity}
-                      ownOrders={ownOrders} connecting={connecting} onConnect={connect}
+                      ownOrders={ownOrders} recentFills={player?.recentFills}
+                      connecting={connecting} onConnect={connect}
                       isPending={isPending} onSubmit={() => void submitOrder()}
-                      onCancel={(id) => void cancel(id)} />
+                      onCancel={(id) => void cancel(id)}
+                      onCancelAll={(only) => void cancelAll(only)}
+                      onAmend={amend} />
       )}
     </div>
   );
@@ -254,189 +316,216 @@ function GoodsMarket() {
  * colour, the realm's voice — against arcane violet for the floor, which is
  * the only place in the app where a number moving is somebody else's decision.
  */
-function GoodsDeskChooser({ desk, onDesk, gold, liveOrders }: {
-  desk: GoodsDesk; onDesk: (desk: GoodsDesk) => void; gold: number; liveOrders: number;
+function GoodsDeskChooser({ desk, onDesk, gold, liveOrders, ok }: {
+  desk: GoodsDesk; onDesk: (desk: GoodsDesk) => void; gold: number; liveOrders: number; ok: boolean;
 }) {
   return (
-    <div role="tablist" aria-label="Goods desks" data-tour="market-desks"
-         className="market-desks grid gap-2 sm:grid-cols-2">
-      <button type="button" role="tab" aria-selected={desk === 'shop'} onClick={() => onDesk('shop')}
-              className={cx('market-desk-choice market-desk-shop', desk === 'shop' && 'is-active')}>
-        <span className="eyebrow">Fixed price &middot; the realm sets it</span>
-        <span className="market-desk-title font-display">The realm&rsquo;s shop</span>
-        <span className="market-desk-note">Trade against the game. Nobody bids against you.</span>
-        <span className="market-desk-stat">
-          <b className="font-mono text-rune">{formatInteger(gold)}</b> gold in your purse
-        </span>
-      </button>
-      <button type="button" role="tab" aria-selected={desk === 'floor'} onClick={() => onDesk('floor')}
-              className={cx('market-desk-choice market-desk-floor', desk === 'floor' && 'is-active')}>
-        <span className="eyebrow">Live book &middot; players set the price</span>
-        <span className="market-desk-title font-mono">Trading floor</span>
-        <span className="market-desk-note">Limit orders against other players. 2% seller fee.</span>
-        <span className="market-desk-stat">
-          <b className="font-mono text-arcane">{formatInteger(liveOrders)}</b> orders live on the book
-        </span>
-      </button>
-    </div>
+    <Panel data-tour="market-desks" className="market-desk-bar flex flex-wrap items-stretch gap-2 p-2">
+      <div role="tablist" aria-label="Goods desks" className="market-desk-switcher grid min-w-0 flex-1 grid-cols-2">
+        <button type="button" role="tab" aria-selected={desk === 'shop'} onClick={() => onDesk('shop')}
+                className={cx('market-desk-choice market-desk-shop', desk === 'shop' && 'is-active')}>
+          <span className="market-desk-title font-display">Realm shop</span>
+          <span className="market-desk-note">Fixed price &middot; instant trade</span>
+        </button>
+        <button type="button" role="tab" aria-selected={desk === 'floor'} onClick={() => onDesk('floor')}
+                className={cx('market-desk-choice market-desk-floor', desk === 'floor' && 'is-active')}>
+          <span className="market-desk-title font-mono">Player exchange</span>
+          <span className="market-desk-note">Live book &middot; no trading fee</span>
+        </button>
+      </div>
+      <dl className="market-desk-health flex items-center justify-end gap-2">
+        <div><dt>Gold</dt><dd className="text-rune">{formatInteger(gold)}</dd></div>
+        <div><dt>Book orders</dt><dd className="text-arcane">{formatInteger(liveOrders)}</dd></div>
+        <div><dt>Market</dt><dd className={ok ? 'text-good' : 'text-bad'}>{ok ? 'Stable' : 'Paused'}</dd></div>
+      </dl>
+    </Panel>
   );
 }
 
 // The realm's shop ----------------------------------------------------------
 
 function RealmShop({
-  economy, gold, inventory, connected, connecting, onConnect,
-  counts, onCount, isPending, onTrade, onRefresh,
+  economy, gold, inventory, item, onItem, side, onSide, connected, connecting, onConnect,
+  counts, onCount, isPending, onTrade, onRefresh, onOpenFloor,
 }: {
   economy: EconomyView; gold: number; inventory: Partial<Record<GoldMarketItemId, number>> | undefined;
+  item: GoldMarketItemId; onItem: (item: GoldMarketItemId) => void;
+  side: GoldOrderSide; onSide: (side: GoldOrderSide) => void;
   connected: boolean; connecting: boolean; onConnect: () => void;
   counts: Partial<Record<GoldMarketItemId, number>>;
   onCount: (item: GoldMarketItemId, value: number) => void;
   isPending: (key: string) => boolean;
   onTrade: (item: GoldMarketItemId, side: GoldOrderSide, count: number) => Promise<void>;
-  onRefresh: () => void;
+  onRefresh: () => void; onOpenFloor: () => void;
 }) {
+  const desk = economy.desks[item];
+  const held = inventory?.[item] ?? 0;
+  const count = counts[item] ?? (item.endsWith('_berry') ? 5 : 1);
+  const sceneInventory = GOLD_ITEMS.map((id) => ({
+    id,
+    name: ITEM_NAME[id],
+    art: ITEM_ART[id],
+    element: ITEM_ELEMENT[id] ?? 'arcane',
+    berry: id.endsWith('_berry'),
+    stock: economy.desks[id]?.stock ?? 0,
+    stockCap: economy.desks[id]?.stockCap ?? 0,
+    bid: economy.desks[id]?.bid,
+    ask: economy.desks[id]?.ask,
+    bestBid: economy.market[id]?.bestBid,
+    bestAsk: economy.market[id]?.bestAsk,
+    held: inventory?.[id] ?? 0,
+  }));
   return (
-    <div className="market-goods-body market-shop grid gap-2.5 lg:grid-cols-[minmax(0,1fr)_16rem]">
-      <div className="market-shop-stock grid gap-2.5 sm:grid-cols-2 xl:grid-cols-3">
-        {GOLD_ITEMS.map((id) => (
-          <ShopTile key={id} item={id} desk={economy.desks[id]} gold={gold}
-                    held={inventory?.[id] ?? 0} count={counts[id] ?? 1}
-                    onCount={(value) => onCount(id, value)}
-                    connected={connected} connecting={connecting} onConnect={onConnect}
-                    busyBuy={isPending(`npc-buy-${id}`)} busySell={isPending(`npc-sell-${id}`)}
-                    onBuy={() => void onTrade(id, 'buy', counts[id] ?? 1)}
-                    onSell={() => void onTrade(id, 'sell', counts[id] ?? 1)} />
-        ))}
-      </div>
-      <PurseRail gold={gold} inventory={inventory} ok={economy.invariants.ok} onRefresh={onRefresh} />
+    <div className="market-goods-body market-shop-workspace">
+      <ShopShowcase item={item} desk={desk} side={side} count={count} sceneInventory={sceneInventory}
+                    onItem={onItem} onRefresh={onRefresh} />
+
+      <ShopTradeTicket item={item} desk={desk} market={economy.market[item]} held={held} gold={gold}
+                       count={count} onCount={(value) => onCount(item, value)}
+                       side={side} onSide={onSide} connected={connected}
+                       connecting={connecting} onConnect={onConnect}
+                       busy={isPending(`npc-${side}-${item}`)}
+                       onTrade={() => void onTrade(item, side, count)} onOpenFloor={onOpenFloor} />
     </div>
   );
 }
 
-/**
- * One good, as a counter tile: what it is, how many the shop has left, and the
- * two prices as struck plaques you press. The prices are the buttons because
- * in a shop the price tag IS the offer, and a separate row of verbs underneath
- * only repeated it.
- */
-function ShopTile({
-  item, desk, held, gold, count, onCount, connected, connecting, onConnect,
-  busyBuy, busySell, onBuy, onSell,
-}: {
-  item: GoldMarketItemId; desk: EconomyDesk | undefined; held: number; gold: number;
-  count: number; onCount: (value: number) => void;
-  connected: boolean; connecting: boolean; onConnect: () => void;
-  busyBuy: boolean; busySell: boolean; onBuy: () => void; onSell: () => void;
+function ShopShowcase({ item, desk, side, count, sceneInventory, onItem, onRefresh }: {
+  item: GoldMarketItemId; desk: EconomyDesk | undefined;
+  side: GoldOrderSide; count: number; sceneInventory: MarketDioramaStockItem[];
+  onItem: (item: GoldMarketItemId) => void; onRefresh: () => void;
 }) {
-  const buyPaused = pausedFor(desk, 'buy');
-  const sellPaused = pausedFor(desk, 'sell');
-  const ask = desk?.ask ?? 0;
-  const bid = desk?.bid ?? 0;
-  const perAction = Math.max(1, desk?.limits?.perAction ?? 1);
-  const cap = Math.max(1, desk?.stockCap ?? 1);
   const stock = desk?.stock ?? 0;
-  const cost = ask * count;
-  const short = gold < cost;
-
+  const cap = Math.max(1, desk?.stockCap ?? 1);
+  const ratio = stock / cap;
+  const stockLabel = !desk ? 'Floor only' : stock === 0 ? 'Sold out' : ratio < .2 ? 'Scarce' : ratio < .55 ? 'Moving' : 'Well stocked';
   return (
-    <Panel data-element={ITEM_ELEMENT[item]} className="market-tile flex min-h-0 flex-col p-3">
-      <div className="flex items-baseline gap-2">
-        <h3 className="min-w-0 flex-1 truncate text-[13px] font-semibold leading-tight">{ITEM_NAME[item]}</h3>
-        <span title="In your satchel"
-              className="shrink-0 rounded-[2px] border border-edge px-1.5 py-0.5 font-mono text-[10px] text-muted">
-          &times;{formatInteger(held)}
-        </span>
-      </div>
-
-      {/* The goods are the shelf. Whatever height the row has goes to the art. */}
-      <span className="market-tile-art mt-2 grid min-h-[5rem] flex-1 place-items-center p-2"
-            title={ITEM_BLURB[item]}>
-        <ItemGlyph item={item} className="h-full max-h-[8.5rem] w-auto max-w-[58%]" />
-      </span>
-
-      <div className="mt-2 flex items-center gap-1.5">
-        <StockPips value={stock} max={cap} />
-        <span className="font-mono text-[10px] text-faint">{formatInteger(stock)}/{formatInteger(cap)} in stock</span>
-      </div>
-
-      {!desk ? (
-        <p className="pt-2 text-[11px] text-faint">Not stocked. Floor only.</p>
-      ) : !connected ? (
-        <Button className="mt-2 w-full" size="sm" variant="primary" busy={connecting}
-                onClick={onConnect} icon={<Wallet className="h-3.5 w-3.5" />}>Connect</Button>
-      ) : (
-        <div className="mt-2 grid grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)] gap-1.5">
-          <Plaque tone="buy" label={buyPaused ? 'Closed' : 'Buy'} value={ask} busy={busyBuy}
-                  disabled={Boolean(buyPaused) || !ask || short} onClick={onBuy}
-                  title={buyPaused ?? (short ? `Need ${formatInteger(cost - gold)} more Gold` : `Buy ${count} for ${formatInteger(cost)} Gold`)} />
-          <Stepper value={count} max={perAction} onChange={onCount} label={ITEM_NAME[item]} />
-          <Plaque tone="sell" label={sellPaused ? 'Closed' : 'Sell'} value={bid} busy={busySell}
-                  disabled={Boolean(sellPaused) || !bid || held < count} onClick={onSell}
-                  title={sellPaused ?? (held < count ? `You only have ${formatInteger(held)}` : `Sell ${count} for ${formatInteger(bid * count)} Gold`)} />
+    <Panel data-element={ITEM_ELEMENT[item]} className="market-shop-showcase flex min-h-0 flex-col overflow-hidden p-0">
+      <div className="market-panel-heading flex items-start justify-between gap-3">
+        <div className="min-w-0">
+          <div className="eyebrow">Selected good</div>
+          <h2 className="mt-1 truncate font-display text-xl font-semibold">{ITEM_NAME[item]}</h2>
         </div>
-      )}
+        <div className="flex items-center gap-2">
+          <Badge tone={!desk || !stock ? 'bad' : ratio < .2 ? 'warn' : 'element'}>{stockLabel}</Badge>
+          <Button size="sm" variant="quiet" title="Refresh shop" onClick={onRefresh}
+                  icon={<Refresh className="h-3.5 w-3.5" />}>Refresh</Button>
+        </div>
+      </div>
+      <div className="market-shop-showcase-art relative grid min-h-[13rem] flex-1 place-items-center overflow-hidden">
+        <div className="market-diorama-fallback absolute inset-0" aria-hidden="true">
+          <div className="market-shop-room-backdrop" />
+        </div>
+        <MarketDiorama quantity={count} inventory={sceneInventory}
+                       gold={side === 'buy' ? (desk?.ask ?? 0) * count : 0}
+                       item={{ id: item, art: ITEM_ART[item], element: ITEM_ELEMENT[item] ?? 'arcane', berry: item.endsWith('_berry') }}
+                       selected={item} onSelect={(id) => onItem(id as GoldMarketItemId)}
+                       className="absolute inset-0 z-[3]" />
+      </div>
     </Panel>
   );
 }
 
-function Plaque({ tone, label, value, busy, disabled, title, onClick }: {
-  tone: 'buy' | 'sell'; label: string; value: number; busy: boolean;
-  disabled: boolean; title?: string; onClick: () => void;
+function ShopTradeTicket({
+  item, desk, market, held, gold, count, onCount, side, onSide,
+  connected, connecting, onConnect, busy, onTrade, onOpenFloor,
+}: {
+  item: GoldMarketItemId; desk: EconomyDesk | undefined; market: EconomyMarketStats | undefined;
+  held: number; gold: number;
+  count: number; onCount: (value: number) => void; side: GoldOrderSide; onSide: (side: GoldOrderSide) => void;
+  connected: boolean; connecting: boolean; onConnect: () => void; busy: boolean;
+  onTrade: () => void; onOpenFloor: () => void;
 }) {
-  return (
-    <button type="button" title={title} disabled={disabled || busy} onClick={onClick}
-            className={cx('market-plaque', tone === 'buy' ? 'is-buy' : 'is-sell')}>
-      <span className="market-plaque-label">{label}</span>
-      <span className="market-plaque-value">
-        {busy ? <Spinner className="h-4 w-4" /> : <>{value ? formatInteger(value) : '--'}<i className="market-plaque-unit">g</i></>}
-      </span>
-    </button>
-  );
-}
+  const paused = pausedFor(desk, side);
+  const unitPrice = side === 'buy' ? desk?.ask ?? 0 : desk?.bid ?? 0;
+  const playerPrice = side === 'buy' ? market?.bestAsk ?? 0 : market?.bestBid ?? 0;
+  const playerDepth = side === 'buy' ? market?.depth.asks ?? [] : market?.depth.bids ?? [];
+  const playerUnits = playerDepth
+    .filter((row) => row.price === playerPrice)
+    .reduce((sum, row) => sum + row.quantity, 0);
+  const playerBetter = Boolean(playerPrice && unitPrice && (side === 'buy' ? playerPrice < unitPrice : playerPrice > unitPrice));
+  const priceEdge = playerBetter ? Math.abs(playerPrice - unitPrice) * Math.min(count, playerUnits || count) : 0;
+  const total = unitPrice * count;
+  const perAction = Math.max(1, desk?.limits?.perAction ?? 1);
+  const shortBy = side === 'buy' ? Math.max(0, total - gold) : Math.max(0, count - held);
+  const canTrade = Boolean(desk && unitPrice && !paused && !shortBy);
+  const goldAfter = side === 'buy' ? gold - total : gold + total;
+  const heldAfter = side === 'buy' ? held + count : held - count;
 
-/** Eight pips, not a percentage bar: a shop counts things, it does not measure. */
-function StockPips({ value, max }: { value: number; max: number }) {
-  const ratio = Math.max(0, Math.min(1, value / Math.max(1, max)));
-  const lit = value > 0 ? Math.max(1, Math.round(ratio * 8)) : 0;
   return (
-    <span className="flex gap-[2px]" aria-hidden="true">
-      {[0, 1, 2, 3, 4, 5, 6, 7].map((index) => (
-        <span key={index} className={cx('h-1.5 w-1.5 rounded-[1px]', index < lit ? 'bg-element' : 'bg-edge/70')} />
-      ))}
-    </span>
-  );
-}
-
-function PurseRail({ gold, inventory, ok, onRefresh }: {
-  gold: number; inventory: Partial<Record<GoldMarketItemId, number>> | undefined;
-  ok: boolean; onRefresh: () => void;
-}) {
-  return (
-    <Panel data-tour="market-purse" className="market-purse flex min-h-0 flex-col p-3.5">
-      <div className="eyebrow">Your purse</div>
-      <div className="mt-1 flex items-baseline gap-1.5">
-        <span className="font-mono text-3xl leading-none text-rune">{formatInteger(gold)}</span>
-        <span className="eyebrow">gold</span>
+    <Panel data-tour="market-ticket" data-element={ITEM_ELEMENT[item]}
+           className="market-shop-ticket flex min-h-0 flex-col overflow-hidden p-0">
+      <div className="market-panel-heading">
+        <div className="eyebrow">Instant trade</div>
+        <h3 className="mt-1 text-sm font-semibold">Deal ticket</h3>
       </div>
-      <div className="eyebrow mt-4">Satchel</div>
-      <ul className="mt-1.5 min-h-0 flex-1 space-y-0.5 overflow-y-auto">
-        {GOLD_ITEMS.map((id) => {
-          const count = inventory?.[id] ?? 0;
-          return (
-            <li key={id} data-element={ITEM_ELEMENT[id]}
-                className="flex items-center gap-2 rounded-[2px] px-1 py-1">
-              <ItemGlyph item={id} className={cx('h-5 w-5', !count && 'opacity-40')} />
-              <span className="min-w-0 flex-1 truncate text-[11px] text-muted">{ITEM_NAME[id]}</span>
-              <span className={cx('font-mono text-[11px]', count ? 'text-ink' : 'text-faint')}>{formatInteger(count)}</span>
-            </li>
-          );
-        })}
-      </ul>
-      <div className="mt-3 flex items-center justify-between gap-2 border-t border-rune/15 pt-3">
-        <Badge tone={ok ? 'good' : 'bad'}>{ok ? 'Balanced' : 'Paused'}</Badge>
-        <Button size="sm" variant="quiet" onClick={onRefresh}
-                icon={<Refresh className="h-3.5 w-3.5" />}>Refresh</Button>
+      <div className="flex min-h-0 flex-1 flex-col p-3.5">
+        <div className="grid grid-cols-2 gap-1.5">
+          <Button size="sm" variant={side === 'buy' ? 'primary' : 'quiet'} onClick={() => onSide('buy')}>Buy</Button>
+          <Button size="sm" variant={side === 'sell' ? 'primary' : 'quiet'} onClick={() => onSide('sell')}>Sell</Button>
+        </div>
+
+        <div className="market-ticket-item mt-3 flex items-center gap-3 border-y border-edge/70 py-3">
+          <ItemGlyph item={item} className="h-10 w-10" />
+          <div className="min-w-0 flex-1">
+            <div className="truncate text-sm font-semibold">{ITEM_NAME[item]}</div>
+            <div className="mt-0.5 font-mono text-[10px] text-faint">{side === 'buy' ? 'Realm asks' : 'Realm bids'}</div>
+          </div>
+          <div className="font-mono text-xl text-element">{unitPrice ? formatInteger(unitPrice) : '--'}<span className="text-[10px] text-faint">g</span></div>
+        </div>
+
+        <div className="mt-3 flex items-center justify-between gap-3">
+          <div><div className="eyebrow">Quantity</div><div className="mt-1 text-[11px] text-faint">Max {formatInteger(perAction)}</div></div>
+          <Stepper value={count} max={perAction} onChange={onCount} label={ITEM_NAME[item]} />
+        </div>
+
+        <div className="market-venue-compare mt-3">
+          <div className={cx(!playerBetter && !paused && 'is-best')}>
+            <span><i>Realm desk</i><small>Immediate</small></span>
+            <b>{unitPrice ? `${formatInteger(unitPrice)}g` : 'Closed'}</b>
+          </div>
+          <button type="button" onClick={onOpenFloor} className={cx(playerBetter && 'is-best')}>
+            <span><i>Player exchange</i><small>{playerUnits ? `${formatInteger(playerUnits)} at best price` : 'Live order book'}</small></span>
+            <b>{playerPrice ? `${formatInteger(playerPrice)}g` : '--'}</b>
+          </button>
+        </div>
+
+        {playerBetter && (
+          <button type="button" onClick={onOpenFloor} className="market-better-route mt-2">
+            Better P2P price {priceEdge ? `· ${formatInteger(priceEdge)} Gold ${side === 'buy' ? 'less' : 'more'}` : ''}
+            <Arrow className="h-3.5 w-3.5" />
+          </button>
+        )}
+
+        <dl className="market-ticket-summary mt-3 space-y-2">
+          <div><dt>Unit price</dt><dd>{unitPrice ? `${formatInteger(unitPrice)} Gold` : '--'}</dd></div>
+          <div><dt>{side === 'buy' ? 'Total cost' : 'You receive'}</dt><dd className="text-element">{unitPrice ? `${formatInteger(total)} Gold` : '--'}</dd></div>
+          <div><dt>Gold after</dt><dd>{canTrade ? formatInteger(goldAfter) : formatInteger(gold)}</dd></div>
+          <div><dt>Held after</dt><dd>{canTrade ? formatInteger(heldAfter) : formatInteger(held)}</dd></div>
+        </dl>
+
+        <div className="mt-auto pt-4">
+          {!desk && <p className="mb-2 text-[11px] text-faint">This good is available on the player exchange only.</p>}
+          {paused && (
+            <div className="mb-2 rounded-[3px] border border-warn/35 bg-warn/[.07] p-2.5">
+              <p className="text-[11px] leading-relaxed text-warn">{shopPauseCopy(paused)}</p>
+              {playerPrice > 0 && <button type="button" onClick={onOpenFloor} className="mt-1.5 flex items-center gap-1 text-[11px] text-ink hover:text-arcane">Trade on the player exchange <Arrow className="h-3 w-3" /></button>}
+            </div>
+          )}
+          {!paused && Boolean(shortBy) && (
+            <p className="mb-2 text-[11px] text-warn">
+              {side === 'buy' ? `Need ${formatInteger(shortBy)} more Gold.` : `Need ${formatInteger(shortBy)} more in your satchel.`}
+            </p>
+          )}
+          {!connected ? (
+            <Button className="w-full" variant="primary" busy={connecting} onClick={onConnect}
+                    icon={<Wallet className="h-4 w-4" />}>Connect to trade</Button>
+          ) : (
+            <Button className="w-full" variant="primary" busy={busy} disabled={!canTrade} onClick={onTrade}>
+              {side === 'buy' ? 'Buy' : 'Sell'} {formatInteger(count)} &middot; {unitPrice ? formatInteger(total) : '--'} Gold
+            </Button>
+          )}
+        </div>
       </div>
     </Panel>
   );
@@ -444,43 +533,183 @@ function PurseRail({ gold, inventory, ok, onRefresh }: {
 
 // Trading floor -------------------------------------------------------------
 
+/**
+ * What a time in force MEANS, in the language of the screen.
+ *
+ * Four values on one tag, and the difference between them is entirely about
+ * what happens to the part that did not trade -- which is the one thing a
+ * trader has to understand before sending one, and the one thing the tag name
+ * does not say.
+ */
+const TIF_CHOICES: Array<{ value: GoldOrderTif; label: string; blurb: string }> = [
+  { value: 'GTC', label: 'Limit',
+    blurb: 'Rests on the book at your price until it fills or you withdraw it.' },
+  { value: 'IOC', label: 'Market',
+    blurb: 'Takes whatever the ladder offers right now and cancels the rest. Nothing rests.' },
+  { value: 'FOK', label: 'All or none',
+    blurb: 'Fills the whole quantity at once or does nothing at all, and costs nothing when it does nothing.' },
+  { value: 'PostOnly', label: 'Maker only',
+    blurb: 'Refused rather than allowed to cross, so this can only ever add liquidity.' },
+];
+
+const TIF_RECEIPT: Record<GoldOrderTif, (side: GoldOrderSide, count: number, item: GoldMarketItemId) => string> = {
+  GTC: (side, count, item) => `${side === 'buy' ? 'Bid' : 'Ask'} entered for ${formatInteger(count)} ${ITEM_NAME[item]}.`,
+  IOC: (_side, count, item) => `Took what the book offered, up to ${formatInteger(count)} ${ITEM_NAME[item]}.`,
+  FOK: (_side, count, item) => `Filled all ${formatInteger(count)} ${ITEM_NAME[item]} at once.`,
+  PostOnly: (side, count, item) => `${side === 'buy' ? 'Bid' : 'Ask'} added for ${formatInteger(count)} ${ITEM_NAME[item]} without crossing.`,
+};
+
+/**
+ * Walk a ladder and work out what an immediate order would actually get.
+ *
+ * This is how "spend 200 Gold" becomes a real order. The process never accepts
+ * an unpriced one -- a market order with no limit is a promise to pay whatever
+ * the worst resting order asks, against a price ceiling of a million -- so the
+ * limit is the client's job, and it is exactly the last price the sweep needs
+ * rather than a guess with a cushion on it. If the book moves in between, the
+ * order simply fills less.
+ */
+function sweepLadder(
+  rows: MarketDepthRow[], tone: 'good' | 'bad', want: { units?: number; gold?: number },
+) {
+  const levels = aggregateDepth(rows, tone);
+  let units = 0; let cost = 0; let limit = 0;
+  for (const level of levels) {
+    const room = want.gold !== undefined
+      ? Math.min(level.quantity, Math.floor((want.gold - cost) / Math.max(1, level.price)))
+      : Math.min(level.quantity, Math.max(0, (want.units ?? 0) - units));
+    if (room <= 0) break;
+    units += room; cost += room * level.price; limit = level.price;
+    if (want.units !== undefined && units >= want.units) break;
+  }
+  return { units, cost, limit, average: units ? Math.round(cost / units) : 0 };
+}
+
 function TradingFloor({
-  economy, address, item, onItem, range, onRange, side, onSide,
-  price, onPrice, quantity, onQuantity, ownOrders, connecting, onConnect,
-  isPending, onSubmit, onCancel,
+  economy, address, gold, inventory, item, onItem, range, onRange,
+  chartMode, onChartMode, candleInterval, onCandleInterval, side, onSide, tif, onTif,
+  price, onPrice, quantity, onQuantity, ownOrders, recentFills, connecting, onConnect,
+  isPending, onSubmit, onCancel, onCancelAll, onAmend,
 }: {
-  economy: EconomyView; address: string | null;
+  economy: EconomyView; address: string | null; gold: number;
+  inventory: Partial<Record<GoldMarketItemId, number>> | undefined;
   item: GoldMarketItemId; onItem: (item: GoldMarketItemId) => void;
   range: FloorRange; onRange: (range: FloorRange) => void;
+  chartMode: ChartMode; onChartMode: (mode: ChartMode) => void;
+  candleInterval: CandleInterval; onCandleInterval: (interval: CandleInterval) => void;
   side: GoldOrderSide; onSide: (side: GoldOrderSide) => void;
+  tif: GoldOrderTif; onTif: (tif: GoldOrderTif) => void;
   price: string; onPrice: (value: string) => void;
   quantity: string; onQuantity: (value: string) => void;
-  ownOrders: EconomyOrder[]; connecting: boolean; onConnect: () => void;
+  ownOrders: EconomyOrder[]; recentFills?: PlayerFill[];
+  connecting: boolean; onConnect: () => void;
   isPending: (key: string) => boolean; onSubmit: () => void; onCancel: (orderId: string) => void;
+  onCancelAll: (item?: GoldMarketItemId) => void;
+  onAmend: (orderId: string, changes: { price?: number; quantity?: number }) => Promise<unknown>;
 }) {
   const now = Date.now();
   const from = now - RANGE_MS[range];
   const series = useMemo(() => seriesByItem(economy.fills, from), [economy.fills, from]);
+  const watchSeries = useMemo(() => seriesByItem(economy.fills, now - RANGE_MS['24h']), [economy.fills, now]);
   const book = economy.market[item];
   const points = series[item] ?? [];
+  /* Daily bars come from the process. `economy.fills` is a 500-row ring shared
+     by every market, so a 30-day chart drawn from it is a chart of the last few
+     hundred trades wearing a month's axis. A published candle is permanent. */
+  const dailyBars = useMemo<CandleBar[]>(() => (economy.candles?.[item] ?? [])
+    .filter((bar) => bar.d * 86_400_000 >= from - 86_400_000)
+    .map((bar) => ({ t: bar.d * 86_400_000, open: bar.o, high: bar.h, low: bar.l, close: bar.c, volume: bar.v })),
+  [economy.candles, item, from]);
+  const publishedBars = chartMode === 'candles' && candleInterval === '1d' ? dailyBars : undefined;
+
+  const [amending, setAmending] = useState<{ id: string; price: string; quantity: string } | null>(null);
+  const [spend, setSpend] = useState('');
+
+  const immediate = tif === 'IOC' || tif === 'FOK';
+  const ladder = side === 'buy' ? (book?.depth.asks ?? []) : (book?.depth.bids ?? []);
+  const ladderTone: 'good' | 'bad' = side === 'buy' ? 'bad' : 'good';
+  const parsedSpend = Math.floor(Number(spend));
+  const spending = tif === 'IOC' && side === 'buy'
+    && Number.isSafeInteger(parsedSpend) && parsedSpend > 0;
+  /* In "spend" mode the ladder decides both numbers; otherwise the fields do,
+     and an immediate order still takes its limit from the ladder because the
+     player asked for a size, not a price. */
+  const swept = useMemo(() => (spending
+    ? sweepLadder(ladder, ladderTone, { gold: Math.max(0, parsedSpend - 1) })
+    : sweepLadder(ladder, ladderTone, { units: Math.max(0, Math.floor(Number(quantity))) })),
+  [ladder, ladderTone, spending, parsedSpend, quantity]);
+
+  const parsedPrice = immediate ? swept.limit : Math.floor(Number(price));
+  const parsedQuantity = spending ? swept.units : Math.floor(Number(quantity));
+  const validOrder = Number.isSafeInteger(parsedPrice) && parsedPrice > 0
+    && Number.isSafeInteger(parsedQuantity) && parsedQuantity > 0;
+  const notional = validOrder ? parsedPrice * parsedQuantity : 0;
+  /* Read the fee off the market, never a constant.
+     The process charges the TAKER, at a per-market rate that is 0 on every
+     in-game market -- the NPC desk spread is the Gold sink, not the book. A
+     hardcoded 2% here described a rule the process no longer has, which is
+     worse than showing nothing. See ORDERBOOK.md paragraph 7.3. */
+  const market = economy.markets?.[`${item}/gold`];
+  const minimumOrder = market?.minValue ?? 10;
+  const belowMinimum = validOrder && notional < minimumOrder;
+  const creationCost = 1;
+  const takerBps = market?.takerBps ?? 0;
+  const crossesBook = validOrder && (side === 'buy'
+    ? Boolean(book?.bestAsk && parsedPrice >= book.bestAsk)
+    : Boolean(book?.bestBid && parsedPrice <= book.bestBid));
+  /* Only a crossing order is a taker. Resting is free, always. */
+  const takerFee = crossesBook && takerBps ? Math.ceil(notional * takerBps / 10000) : 0;
+  const requiredGold = side === 'buy' ? notional + creationCost + takerFee : creationCost;
+  const held = inventory?.[item] ?? 0;
+  const shortGold = validOrder ? Math.max(0, requiredGold - gold) : 0;
+  const shortItems = side === 'sell' && validOrder ? Math.max(0, parsedQuantity - held) : 0;
+  /* The corridor, checked here so the player is told before spending a message
+     to find out. Without it the price ceiling is the only limit, and one
+     crossing order can print a million -- which then becomes the seven-day
+     median every other reader takes as the truth. */
+  const band = book?.band;
+  const outsideBand = validOrder && band !== undefined
+    && (parsedPrice < band.low || parsedPrice > band.high);
+  const postOnlyCrosses = tif === 'PostOnly' && crossesBook;
+  const nothingToTake = immediate && swept.units <= 0;
+  const killShort = tif === 'FOK' && swept.units < parsedQuantity;
+  const orderReady = validOrder && !belowMinimum && !shortGold && !shortItems
+    && !outsideBand && !postOnlyCrosses && !nothingToTake && !killShort;
+  const pickDepth = (nextSide: GoldOrderSide, nextPrice: number) => {
+    onSide(nextSide);
+    onPrice(String(nextPrice));
+  };
+  const mineHere = ownOrders.filter((order) => order.item === item);
 
   return (
     <div className="market-goods-body market-floor flex min-h-0 flex-col gap-2.5">
       <div className="market-floor-strip grid grid-cols-2 gap-2 sm:grid-cols-3 xl:grid-cols-6">
         {GOLD_ITEMS.map((id) => (
           <FloorTile key={id} item={id} active={item === id} onClick={() => onItem(id)}
-                     stats={economy.market[id]} points={series[id] ?? []} />
+                     stats={economy.market[id]} points={watchSeries[id] ?? []} />
         ))}
       </div>
 
-      <div className="market-floor-body grid min-h-0 flex-1 gap-2.5 xl:grid-cols-[minmax(0,1.6fr)_minmax(0,.85fr)_18rem]">
-        <Panel className="flex min-h-0 flex-col overflow-hidden p-3.5">
+      <div className="market-floor-body grid min-h-0 flex-1 gap-2.5 xl:grid-cols-[minmax(0,1.6fr)_minmax(0,.85fr)_19rem]">
+        <Panel className="market-order-book flex min-h-0 flex-col overflow-hidden p-3.5">
           <div className="flex flex-wrap items-center justify-between gap-2">
             <h3 className="font-mono text-sm tracking-tight">
               {ITEM_NAME[item]} <span className="text-faint">/ Gold</span>
             </h3>
-            <div className="flex gap-1">
-              {(['24h', '7d', '30d'] as FloorRange[]).map((value) => (
+            <div className="market-chart-toolbar flex flex-wrap justify-end gap-1">
+              {(['line', 'candles'] as ChartMode[]).map((value) => (
+                <ChartControl key={value} active={chartMode === value} onClick={() => onChartMode(value)}>
+                  {value === 'line' ? 'Line' : 'Candles'}
+                </ChartControl>
+              ))}
+              <span className="market-chart-divider" aria-hidden="true" />
+              {chartMode === 'candles' && (['5m', '30m', '1h', '4h', '1d'] as CandleInterval[]).map((value) => (
+                <ChartControl key={value} active={candleInterval === value} onClick={() => onCandleInterval(value)}>
+                  {value}
+                </ChartControl>
+              ))}
+              {chartMode === 'candles' && <span className="market-chart-divider" aria-hidden="true" />}
+              {(['12h', '24h', '7d', '30d'] as FloorRange[]).map((value) => (
                 <button key={value} type="button" aria-pressed={range === value} onClick={() => onRange(value)}
                         className={cx(
                           'rounded-[2px] border px-2 py-1 font-mono text-[10px] uppercase transition-colors',
@@ -492,50 +721,237 @@ function TradingFloor({
           </div>
           <MarketTicker book={book} points={points} />
           <PriceChart className="mt-2.5 min-h-[15rem] flex-1 lg:min-h-0" points={points} from={from} to={now}
-                      bid={book?.bestBid} ask={book?.bestAsk} />
+                      bid={book?.bestBid} ask={book?.bestAsk} mode={chartMode}
+                      candleMs={CANDLE_MS[candleInterval]} published={publishedBars} />
+          {publishedBars !== undefined && publishedBars.length > 0 && (
+            <p className="mt-1.5 text-[10px] text-faint">
+              Daily candles come from the process and are kept for 30 days. The raw fill
+              list is capped, so anything older than that lives only here.
+            </p>
+          )}
         </Panel>
 
-        <Panel className="flex min-h-0 flex-col overflow-hidden p-3.5">
+        <Panel className="market-depth-panel flex min-h-0 flex-col overflow-hidden p-3.5">
           <div className="grid grid-cols-2 gap-px overflow-hidden rounded-[3px] border border-arcane/15 bg-arcane/12 p-px">
             <BookPrice label="Best bid" value={book?.bestBid} tone="good" />
             <BookPrice label="Best ask" value={book?.bestAsk} tone="bad" />
           </div>
-          <div className="mt-3 grid min-h-0 flex-1 grid-cols-2 gap-4 overflow-y-auto">
-            <DepthList label="Bids" tone="good" rows={book?.depth.bids ?? []} />
-            <DepthList label="Asks" tone="bad" rows={book?.depth.asks ?? []} />
+          <DepthMountain bids={book?.depth.bids ?? []} asks={book?.depth.asks ?? []} className="mt-3 min-h-[9rem] flex-1" />
+          <div className="market-depth-ladders mt-3 grid max-h-44 grid-cols-2 gap-4 overflow-y-auto">
+            <DepthList label="Bids" tone="good" rows={book?.depth.bids ?? []}
+                       onPick={(value) => pickDepth('sell', value)} action="Sell into bid" />
+            <DepthList label="Asks" tone="bad" rows={book?.depth.asks ?? []}
+                       onPick={(value) => pickDepth('buy', value)} action="Buy from ask" />
           </div>
+          {/* The realm's desk is IN this ladder, and saying so once, here, is
+              what removes the two-tabs problem: nobody has to compare the
+              shop's price with the floor's, because a taker gets whichever of
+              the two is better without choosing a counter. */}
+          {Boolean(book?.houseBid || book?.houseAsk) && (
+            <p className="mt-2.5 border-t border-edge/60 pt-2 text-[10px] leading-relaxed text-faint">
+              <b className="market-depth-house" aria-hidden="true">&#9670;</b> The realm&rsquo;s desk quotes
+              {book?.houseBid ? ` ${formatInteger(book.houseBid)} bid` : ''}
+              {book?.houseBid && book?.houseAsk ? ' /' : ''}
+              {book?.houseAsk ? ` ${formatInteger(book.houseAsk)} ask` : ''} into this ladder.
+              A player quoting inside that is always taken first.
+            </p>
+          )}
         </Panel>
 
-        <Panel className="flex min-h-0 flex-col overflow-hidden p-3.5">
-          <div className="grid grid-cols-2 gap-1.5">
+        <Panel data-tour="market-ticket" className="market-order-ticket flex min-h-0 flex-col overflow-hidden p-3.5">
+          <div className="flex items-start justify-between gap-3">
+            <div><div className="eyebrow">Order ticket</div>
+              <h3 className="mt-1 text-sm font-semibold">{ITEM_NAME[item]}</h3></div>
+            <div className="flex flex-wrap justify-end gap-1">
+              {validOrder && !immediate && (
+                <Badge tone={crossesBook ? 'good' : 'plain'}>{crossesBook ? 'Crosses' : 'Rests'}</Badge>
+              )}
+              <Badge tone="plain">1g fee</Badge>
+            </div>
+          </div>
+
+          <div className="mt-3 grid grid-cols-2 gap-1.5">
             <Button size="sm" variant={side === 'buy' ? 'primary' : 'quiet'} onClick={() => onSide('buy')}>Bid</Button>
             <Button size="sm" variant={side === 'sell' ? 'primary' : 'quiet'} onClick={() => onSide('sell')}>Ask</Button>
           </div>
-          <label className="mt-2.5 block"><span className="eyebrow mb-1 block">Unit price / Gold</span>
-            <input className={inputClass} inputMode="numeric" value={price} placeholder="0"
-                   onChange={(event) => onPrice(event.target.value)} /></label>
-          <label className="mt-2 block"><span className="eyebrow mb-1 block">Quantity</span>
-            <input className={inputClass} inputMode="numeric" value={quantity}
-                   onChange={(event) => onQuantity(event.target.value)} /></label>
+
+          {/* Time in force. Everything else a book does is a special case of
+              these four, and the only difference between them is what happens
+              to the part that did not trade. */}
+          <div className="market-tif mt-2 grid grid-cols-4 gap-1" role="group" aria-label="Time in force">
+            {TIF_CHOICES.map((choice) => (
+              <button key={choice.value} type="button" title={choice.blurb}
+                      aria-pressed={tif === choice.value}
+                      onClick={() => onTif(choice.value)}
+                      className={cx('market-tif-choice', tif === choice.value && 'is-active')}>
+                {choice.label}
+              </button>
+            ))}
+          </div>
+          <p className="mt-1.5 text-[10px] leading-relaxed text-faint">
+            {TIF_CHOICES.find((choice) => choice.value === tif)?.blurb}
+          </p>
+
+          {tif === 'IOC' && side === 'buy' && (
+            <label className="mt-2.5 block"><span className="eyebrow mb-1 block">Spend / Gold (optional)</span>
+              <input className={inputClass} inputMode="numeric" value={spend} placeholder="Leave blank to use quantity"
+                     onChange={(event) => setSpend(event.target.value)} /></label>
+          )}
+
+          {immediate ? (
+            <div className="mt-2.5 rounded-[3px] border border-edge/70 bg-void/25 px-3 py-2">
+              <div className="eyebrow">Limit, taken from the ladder</div>
+              <div className={cx('mt-1 font-mono text-lg leading-none', swept.limit ? 'text-ink' : 'text-faint')}>
+                {swept.limit ? formatInteger(swept.limit) : '--'} <span className="eyebrow">gold</span>
+              </div>
+              <p className="mt-1.5 text-[10px] leading-relaxed text-faint">
+                The realm never takes an unpriced order, so this is the worst price the sweep
+                needs, not a cushion. Average {swept.average ? formatInteger(swept.average) : '--'}.
+              </p>
+            </div>
+          ) : (
+            <label className="mt-2.5 block"><span className="eyebrow mb-1 block">Unit price / Gold</span>
+              <input className={inputClass} inputMode="numeric" value={price} placeholder="0"
+                     onChange={(event) => onPrice(event.target.value)} /></label>
+          )}
+          {!spending && (
+            <label className="mt-2 block"><span className="eyebrow mb-1 block">Quantity</span>
+              <input className={inputClass} inputMode="numeric" value={quantity}
+                     onChange={(event) => onQuantity(event.target.value)} /></label>
+          )}
+
+          <dl className="market-ticket-summary mt-3 space-y-2">
+            {immediate && (
+              <div><dt>Available now</dt>
+                <dd className={swept.units ? 'text-good' : 'text-warn'}>
+                  {formatInteger(swept.units)} of {formatInteger(Math.max(parsedQuantity, swept.units))}
+                </dd></div>
+            )}
+            <div><dt>Order value</dt><dd>{notional ? `${formatInteger(notional)} Gold` : '--'}</dd></div>
+            <div><dt>Creation cost</dt><dd>{creationCost} Gold</dd></div>
+            <div>
+              <dt>Taker fee</dt>
+              <dd className={takerFee ? 'text-bad' : 'text-good'}>
+                {takerBps === 0 ? 'None' : takerFee ? `${formatInteger(takerFee)} Gold` : 'None, this rests'}
+              </dd>
+            </div>
+            {side === 'sell' ? (
+              <div><dt>Est. proceeds</dt><dd className="text-good">{notional ? `${formatInteger(Math.max(0, notional - takerFee))} Gold` : '--'}</dd></div>
+            ) : (
+              <div><dt>Gold committed</dt><dd className="text-good">{notional ? `${formatInteger(requiredGold)} Gold` : '--'}</dd></div>
+            )}
+            {band && (
+              <div><dt>Price band</dt>
+                <dd className={outsideBand ? 'text-warn' : 'text-faint'}>
+                  {formatInteger(band.low)}&ndash;{formatInteger(band.high)} Gold
+                </dd></div>
+            )}
+          </dl>
+
+          <p className="mt-3 border-t border-edge/60 pt-2 text-[10px] leading-relaxed text-faint">
+            Good for 30 days &middot; price-time priority &middot; partial fills allowed
+          </p>
+          {crossesBook && side === 'buy' && !immediate && (
+            <p className="mt-1 text-[10px] leading-relaxed text-good">The resting ask sets the fill price; unused bid escrow returns.</p>
+          )}
+          {outsideBand && band && (
+            <p className="mt-2 text-[11px] text-warn">
+              Outside the {formatInteger(band.low)}&ndash;{formatInteger(band.high)} Gold band. The realm refuses
+              prices this far from its own desk, so one mistake cannot set the market&rsquo;s median.
+            </p>
+          )}
+          {postOnlyCrosses && <p className="mt-2 text-[11px] text-warn">A maker-only order may not cross. Move the price, or switch to Limit.</p>}
+          {nothingToTake && <p className="mt-2 text-[11px] text-warn">Nothing is resting on that side to take.</p>}
+          {killShort && !nothingToTake && <p className="mt-2 text-[11px] text-warn">Only {formatInteger(swept.units)} available, and an all-or-none order would do nothing.</p>}
+          {belowMinimum && <p className="mt-2 text-[11px] text-warn">Minimum order value is {minimumOrder} Gold.</p>}
+          {Boolean(shortGold) && <p className="mt-2 text-[11px] text-warn">Need {formatInteger(shortGold)} more Gold.</p>}
+          {Boolean(shortItems) && <p className="mt-2 text-[11px] text-warn">Need {formatInteger(shortItems)} more {ITEM_NAME[item]}.</p>}
           {!address
             ? <Button className="mt-2.5 w-full" variant="primary" busy={connecting} onClick={onConnect}
                       icon={<Wallet className="h-4 w-4" />}>Connect to trade</Button>
-            : <Button className="mt-2.5 w-full" variant="primary" busy={isPending('gold-order')} onClick={onSubmit}>
-                Place {side === 'buy' ? 'bid' : 'ask'}
+            : <Button className="mt-2.5 w-full" variant="primary" busy={isPending('gold-order')}
+                      disabled={!orderReady} onClick={onSubmit}>
+                {immediate ? `Take ${formatInteger(parsedQuantity)}` : `Place ${side === 'buy' ? 'bid' : 'ask'}`}
               </Button>}
-          <div className="eyebrow mt-4">Your open orders</div>
-          <ul className="mt-1.5 min-h-0 flex-1 space-y-1 overflow-y-auto">
+
+          <div className="mt-4 flex items-center justify-between gap-2">
+            <div className="eyebrow">Your open orders</div>
+            {/* One message to step away from every quote in this market. The
+                alternative is one message per order, which is two seconds of
+                being unable to withdraw a price that has gone wrong. */}
+            {mineHere.length > 1 && (
+              <button type="button" className="market-ticket-link"
+                      disabled={isPending('gold-cancel-all')}
+                      onClick={() => onCancelAll(item)}>
+                Withdraw all {mineHere.length}
+              </button>
+            )}
+          </div>
+          <ul className="mt-1.5 space-y-1 overflow-y-auto">
             {ownOrders.length === 0
               ? <li className="py-2 text-[11px] text-faint">Nothing of yours on the book.</li>
               : ownOrders.map((order) => (
-                <li key={order.id} className="flex items-center gap-2 rounded-[2px] border border-edge/70 px-2 py-1.5">
-                  <ItemGlyph item={order.item} className="h-4 w-4" />
-                  <span className="min-w-0 flex-1 font-mono text-[10px]">
-                    <b className={order.side === 'buy' ? 'text-good' : 'text-bad'}>{order.side === 'buy' ? 'BID' : 'ASK'}</b>{' '}
-                    {order.remaining}/{order.quantity} @ {formatInteger(order.price)}
+                <li key={order.id} className="rounded-[2px] border border-edge/70 px-2 py-1.5">
+                  <div className="flex items-center gap-2">
+                    <ItemGlyph item={order.item} className="h-4 w-4" />
+                    <span className="min-w-0 flex-1 font-mono text-[10px]">
+                      <b className={order.side === 'buy' ? 'text-good' : 'text-bad'}>{order.side === 'buy' ? 'BID' : 'ASK'}</b>{' '}
+                      {order.remaining}/{order.quantity} @ {formatInteger(order.price)}
+                    </span>
+                    <button type="button" className="market-ticket-link"
+                            aria-expanded={amending?.id === order.id}
+                            onClick={() => setAmending(amending?.id === order.id ? null : {
+                              id: order.id, price: String(order.price), quantity: String(order.remaining),
+                            })}>Move</button>
+                    <Button size="sm" variant="quiet" busy={isPending(`gold-cancel-${order.id}`)}
+                            onClick={() => onCancel(order.id)}>&times;</Button>
+                  </div>
+                  {amending?.id === order.id && (
+                    <>
+                      <div className="mt-1.5 flex items-end gap-1.5">
+                        <label className="min-w-0 flex-1"><span className="eyebrow mb-1 block">Price</span>
+                          <input className="market-amend-input" inputMode="numeric" value={amending.price}
+                                 onChange={(event) => setAmending({ ...amending, price: event.target.value })} /></label>
+                        <label className="min-w-0 flex-1"><span className="eyebrow mb-1 block">Qty</span>
+                          <input className="market-amend-input" inputMode="numeric" value={amending.quantity}
+                                 onChange={(event) => setAmending({ ...amending, quantity: event.target.value })} /></label>
+                        <Button size="sm" variant="primary" busy={isPending(`gold-amend-${order.id}`)}
+                                onClick={() => {
+                                  const nextPrice = Math.floor(Number(amending.price));
+                                  const nextQuantity = Math.floor(Number(amending.quantity));
+                                  if (!(nextPrice > 0) || !(nextQuantity > 0)) return;
+                                  void onAmend(order.id, { price: nextPrice, quantity: nextQuantity })
+                                    .then(() => setAmending(null));
+                                }}>Save</Button>
+                      </div>
+                      <p className="mt-1 text-[10px] leading-relaxed text-faint">
+                        The same price at a smaller size keeps your place in the queue. A new
+                        price goes to the back of it. Either way it is one message and no extra fee.
+                      </p>
+                    </>
+                  )}
+                </li>
+              ))}
+          </ul>
+
+          {/* A trader's own fills. The global list is a 500-row ring shared by
+              every market, so hunting through it for your own trades is both
+              the wrong shape and, past five hundred trades, wrong. */}
+          <div className="eyebrow mt-4">Your recent fills</div>
+          <ul className="mt-1.5 min-h-0 flex-1 space-y-1 overflow-y-auto">
+            {!recentFills?.length
+              ? <li className="py-2 text-[11px] text-faint">Nothing filled yet.</li>
+              : recentFills.slice(0, 12).map((fill) => (
+                <li key={fill.id} className="flex items-center gap-2 px-1 py-1 font-mono text-[10px]">
+                  <ItemGlyph item={fill.item} className="h-3.5 w-3.5" />
+                  <b className={fill.side === 'buy' ? 'text-good' : 'text-bad'}>
+                    {fill.side === 'buy' ? 'BUY' : 'SELL'}
+                  </b>
+                  <span className="min-w-0 flex-1 truncate">
+                    {formatInteger(fill.quantity)} @ {formatInteger(fill.price)}
+                    <span className="text-faint"> &middot; {fill.role}</span>
                   </span>
-                  <Button size="sm" variant="quiet" busy={isPending(`gold-cancel-${order.id}`)}
-                          onClick={() => onCancel(order.id)}>&times;</Button>
+                  <span className="text-faint">{relativeTime(fill.filledAt)}</span>
                 </li>
               ))}
           </ul>
@@ -568,6 +984,10 @@ function FloorTile({ item, active, onClick, stats, points }: {
             {change >= 0 ? '+' : ''}{change.toFixed(1)}%
           </span>
         )}
+      </span>
+      <span className="market-floor-quotes mt-1.5 grid grid-cols-2 gap-px">
+        <span><i>Bid</i><b className="text-good">{stats?.bestBid ? formatInteger(stats.bestBid) : '--'}</b></span>
+        <span><i>Ask</i><b className="text-bad">{stats?.bestAsk ? formatInteger(stats.bestAsk) : '--'}</b></span>
       </span>
       <Spark points={points} tone={tone} className="mt-1.5 h-6 w-full" />
     </button>
@@ -602,17 +1022,59 @@ function Spark({ points, tone, className }: { points: PricePoint[]; tone: 'good'
  * best bid and ask are dashed across it, because where the last trade sits
  * relative to the live book is the only reading anybody takes from this.
  */
-function PriceChart({ points, from, to, bid, ask, className }: {
-  points: PricePoint[]; from: number; to: number;
+function ChartControl({ active, onClick, children }: {
+  active: boolean; onClick: () => void; children: React.ReactNode;
+}) {
+  return (
+    <button type="button" aria-pressed={active} onClick={onClick}
+            className={cx('market-chart-control', active && 'is-active')}>
+      {children}
+    </button>
+  );
+}
+
+interface PricePoint { t: number; v: number; q: number }
+interface CandleBar { t: number; open: number; high: number; low: number; close: number; volume: number }
+
+function candleBars(points: PricePoint[], interval: number): CandleBar[] {
+  const buckets = new Map<number, CandleBar>();
+  for (const point of points) {
+    const start = Math.floor(point.t / interval) * interval;
+    const row = buckets.get(start);
+    if (!row) {
+      buckets.set(start, { t: start, open: point.v, high: point.v, low: point.v, close: point.v, volume: point.q });
+    } else {
+      row.high = Math.max(row.high, point.v);
+      row.low = Math.min(row.low, point.v);
+      row.close = point.v;
+      row.volume += point.q;
+    }
+  }
+  return [...buckets.values()].sort((a, b) => a.t - b.t);
+}
+
+function PriceChart({ points, from, to, bid, ask, mode, candleMs, published, className }: {
+  points: PricePoint[]; from: number; to: number; mode: ChartMode; candleMs: number;
+  /* Daily bars straight from the process, when it has them for this window.
+     They are the whole reason candles were added: `economy.fills` is a 500-row
+     ring, so a chart derived from it silently loses everything older than the
+     last five hundred trades in the whole market. A published candle is
+     permanent. */
+  published?: CandleBar[];
   bid?: number; ask?: number; className?: string;
 }) {
   const canvas = useRef<HTMLCanvasElement>(null);
   const host = useRef<HTMLDivElement>(null);
+  const derived = useMemo(() => candleBars(points, candleMs), [points, candleMs]);
+  const bars = published?.length ? published : derived;
+  const latestBar = bars.at(-1);
 
   useEffect(() => {
     const element = canvas.current;
     const frame = host.current;
     if (!element || !frame) return undefined;
+    let pointer: { x: number; y: number } | null = null;
+
     const draw = () => {
       const rect = frame.getBoundingClientRect();
       if (rect.width < 8 || rect.height < 8) return;
@@ -623,33 +1085,41 @@ function PriceChart({ points, from, to, bid, ask, className }: {
       if (!ctx) return;
       ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
       const width = rect.width; const height = rect.height;
-      const pad = { left: 6, right: 44, top: 16, bottom: 18 };
+      const pad = { left: 7, right: 46, top: 18, bottom: 20 };
       const plotW = Math.max(1, width - pad.left - pad.right);
       const plotH = Math.max(1, height - pad.top - pad.bottom);
+      const priceH = mode === 'candles' ? plotH * .76 : plotH;
       ctx.clearRect(0, 0, width, height);
 
-      const values = [...points.map((point) => point.v), bid, ask]
+      const priceValues = mode === 'candles'
+        ? bars.flatMap((bar) => [bar.high, bar.low])
+        : points.map((point) => point.v);
+      const values = [...priceValues, bid, ask]
         .filter((value): value is number => typeof value === 'number' && value > 0);
       const low = values.length ? Math.min(...values) : 0;
       const high = values.length ? Math.max(...values) : 1;
-      const margin = (high - low) * 0.15 || Math.max(1, high * 0.15);
+      const margin = (high - low) * .15 || Math.max(1, high * .15);
       const top = high + margin; const bottom = Math.max(0, low - margin);
-      const y = (value: number) => pad.top + (1 - (value - bottom) / (top - bottom || 1)) * plotH;
+      const y = (value: number) => pad.top + (1 - (value - bottom) / (top - bottom || 1)) * priceH;
       const x = (time: number) => pad.left + ((time - from) / (to - from || 1)) * plotW;
 
-      // A rule per day, labelled, so the gaps between fills are readable.
-      const dayMs = 86_400_000;
+      const span = to - from;
+      const hour = 3600_000; const day = 24 * hour;
+      const gridMs = span <= 13 * hour ? 2 * hour : span <= 25 * hour ? 4 * hour : span <= 8 * day ? day : 5 * day;
       ctx.font = '9px "JetBrains Mono", ui-monospace, monospace';
       ctx.textBaseline = 'top';
-      for (let day = Math.ceil(from / dayMs) * dayMs; day <= to; day += dayMs) {
-        const px = x(day);
+      for (let tick = Math.ceil(from / gridMs) * gridMs; tick <= to; tick += gridMs) {
+        const px = x(tick);
         ctx.strokeStyle = 'rgba(150,122,255,.14)'; ctx.lineWidth = 1;
         ctx.beginPath(); ctx.moveTo(px, pad.top); ctx.lineTo(px, pad.top + plotH); ctx.stroke();
-        ctx.fillStyle = 'rgba(98,108,133,.9)'; ctx.textAlign = 'center';
-        ctx.fillText(new Date(day).toLocaleDateString(undefined, { day: 'numeric', month: 'short' }), px, pad.top + plotH + 4);
+        ctx.fillStyle = 'rgba(128,138,164,.88)'; ctx.textAlign = 'center';
+        const label = span <= 25 * hour
+          ? new Date(tick).toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' })
+          : new Date(tick).toLocaleDateString(undefined, { day: 'numeric', month: 'short' });
+        ctx.fillText(label, px, pad.top + plotH + 4);
       }
       for (let index = 0; index <= 3; index += 1) {
-        const py = pad.top + (plotH / 3) * index;
+        const py = pad.top + (priceH / 3) * index;
         ctx.strokeStyle = 'rgba(214,200,162,.07)';
         ctx.beginPath(); ctx.moveTo(pad.left, py); ctx.lineTo(pad.left + plotW, py); ctx.stroke();
       }
@@ -663,21 +1133,41 @@ function PriceChart({ points, from, to, bid, ask, className }: {
         ctx.restore();
         ctx.fillStyle = colour; ctx.textAlign = 'left'; ctx.textBaseline = 'middle';
         ctx.fillText(`${label} ${value}`, pad.left + plotW + 5, py);
-        ctx.textBaseline = 'top';
       };
       rule(bid, 'rgb(74,210,149)', 'B');
       rule(ask, 'rgb(255,94,105)', 'A');
 
-      if (points.length) {
+      if (mode === 'candles' && bars.length) {
+        const maxVolume = Math.max(1, ...bars.map((bar) => bar.volume));
+        const volumeBottom = pad.top + plotH;
+        const volumeHeight = plotH - priceH - 5;
+        const bodyWidth = Math.max(2, Math.min(16, plotW * (candleMs / Math.max(1, span)) * .72));
+        ctx.strokeStyle = 'rgba(214,200,162,.08)';
+        ctx.beginPath(); ctx.moveTo(pad.left, pad.top + priceH + 3); ctx.lineTo(pad.left + plotW, pad.top + priceH + 3); ctx.stroke();
+        for (const bar of bars) {
+          const px = x(bar.t + candleMs / 2);
+          const rising = bar.close >= bar.open;
+          const colour = rising ? 'rgb(74,210,149)' : 'rgb(255,94,105)';
+          ctx.strokeStyle = colour; ctx.lineWidth = 1;
+          ctx.beginPath(); ctx.moveTo(px, y(bar.high)); ctx.lineTo(px, y(bar.low)); ctx.stroke();
+          const bodyTop = Math.min(y(bar.open), y(bar.close));
+          const bodyHeight = Math.max(1.5, Math.abs(y(bar.open) - y(bar.close)));
+          ctx.fillStyle = rising ? 'rgba(74,210,149,.78)' : 'rgba(255,94,105,.78)';
+          ctx.fillRect(px - bodyWidth / 2, bodyTop, bodyWidth, bodyHeight);
+          const volume = (bar.volume / maxVolume) * Math.max(1, volumeHeight);
+          ctx.fillStyle = rising ? 'rgba(74,210,149,.18)' : 'rgba(255,94,105,.18)';
+          ctx.fillRect(px - bodyWidth / 2, volumeBottom - volume, bodyWidth, volume);
+        }
+      } else if (points.length) {
         const plotted = points.map((point) => ({ x: x(point.t), y: y(point.v) }));
         if (plotted.length > 1) {
-          const gradient = ctx.createLinearGradient(0, pad.top, 0, pad.top + plotH);
+          const gradient = ctx.createLinearGradient(0, pad.top, 0, pad.top + priceH);
           gradient.addColorStop(0, 'rgba(150,122,255,.3)');
           gradient.addColorStop(1, 'rgba(150,122,255,0)');
           ctx.beginPath();
           plotted.forEach((point, index) => index ? ctx.lineTo(point.x, point.y) : ctx.moveTo(point.x, point.y));
-          ctx.lineTo(plotted[plotted.length - 1].x, pad.top + plotH);
-          ctx.lineTo(plotted[0].x, pad.top + plotH);
+          ctx.lineTo(plotted[plotted.length - 1].x, pad.top + priceH);
+          ctx.lineTo(plotted[0].x, pad.top + priceH);
           ctx.closePath(); ctx.fillStyle = gradient; ctx.fill();
           ctx.beginPath();
           plotted.forEach((point, index) => index ? ctx.lineTo(point.x, point.y) : ctx.moveTo(point.x, point.y));
@@ -686,31 +1176,76 @@ function PriceChart({ points, from, to, bid, ask, className }: {
         ctx.fillStyle = 'rgb(150,122,255)';
         plotted.forEach((point) => ctx.fillRect(point.x - 2.5, point.y - 2.5, 5, 5));
       } else {
-        ctx.fillStyle = 'rgba(98,108,133,.95)'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-        ctx.fillText('No fills in this window', pad.left + plotW / 2, pad.top + plotH / 2);
+        ctx.fillStyle = 'rgba(128,138,164,.95)'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+        ctx.fillText('No fills in this window', pad.left + plotW / 2, pad.top + priceH / 2);
+      }
+
+      if (pointer && pointer.x >= pad.left && pointer.x <= pad.left + plotW
+          && pointer.y >= pad.top && pointer.y <= pad.top + plotH) {
+        const candidates = mode === 'candles'
+          ? bars.map((bar) => ({ t: bar.t + candleMs / 2, v: bar.close, bar }))
+          : points.map((point) => ({ t: point.t, v: point.v, bar: undefined }));
+        if (candidates.length) {
+          const hoverTime = from + ((pointer.x - pad.left) / plotW) * span;
+          const nearest = candidates.reduce((best, row) => Math.abs(row.t - hoverTime) < Math.abs(best.t - hoverTime) ? row : best);
+          const px = x(nearest.t); const py = y(nearest.v);
+          ctx.save(); ctx.setLineDash([2, 3]); ctx.strokeStyle = 'rgba(214,200,162,.42)';
+          ctx.beginPath(); ctx.moveTo(px, pad.top); ctx.lineTo(px, pad.top + plotH); ctx.stroke();
+          ctx.beginPath(); ctx.moveTo(pad.left, py); ctx.lineTo(pad.left + plotW, py); ctx.stroke(); ctx.restore();
+          const timeLabel = new Date(nearest.t).toLocaleString(undefined, { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' });
+          const valueLabel = nearest.bar
+            ? `O ${nearest.bar.open}  H ${nearest.bar.high}  L ${nearest.bar.low}  C ${nearest.bar.close}`
+            : `${formatInteger(nearest.v)} Gold`;
+          const boxW = nearest.bar ? 190 : 132; const boxH = 34;
+          const boxX = px + boxW + 12 > pad.left + plotW ? px - boxW - 8 : px + 8;
+          const boxY = Math.max(pad.top + 3, Math.min(py - boxH - 7, pad.top + priceH - boxH));
+          ctx.fillStyle = 'rgba(10,12,20,.94)'; ctx.fillRect(boxX, boxY, boxW, boxH);
+          ctx.strokeStyle = 'rgba(150,122,255,.45)'; ctx.strokeRect(boxX + .5, boxY + .5, boxW - 1, boxH - 1);
+          ctx.textAlign = 'left'; ctx.textBaseline = 'top'; ctx.font = '9px "JetBrains Mono", ui-monospace, monospace';
+          ctx.fillStyle = 'rgba(150,159,184,.95)'; ctx.fillText(timeLabel, boxX + 7, boxY + 5);
+          ctx.fillStyle = 'rgb(233,236,246)'; ctx.fillText(valueLabel, boxX + 7, boxY + 18);
+        }
       }
     };
+
+    const onMove = (event: MouseEvent) => {
+      const rect = element.getBoundingClientRect();
+      pointer = { x: event.clientX - rect.left, y: event.clientY - rect.top };
+      draw();
+    };
+    const onLeave = () => { pointer = null; draw(); };
+    element.addEventListener('mousemove', onMove);
+    element.addEventListener('mouseleave', onLeave);
     draw();
     const observer = new ResizeObserver(draw);
     observer.observe(frame);
-    return () => observer.disconnect();
-  }, [points, from, to, bid, ask]);
+    return () => {
+      observer.disconnect();
+      element.removeEventListener('mousemove', onMove);
+      element.removeEventListener('mouseleave', onLeave);
+    };
+  }, [points, bars, from, to, bid, ask, mode, candleMs]);
 
   return (
     <div ref={host} className={cx('market-price-chart relative overflow-hidden rounded-[3px]', className)}>
-      <canvas ref={canvas} className="absolute inset-0 h-full w-full" aria-hidden="true" />
+      {mode === 'candles' && latestBar && (
+        <div className="market-candle-readout" aria-hidden="true">
+          <span>O {formatInteger(latestBar.open)}</span><span>H {formatInteger(latestBar.high)}</span>
+          <span>L {formatInteger(latestBar.low)}</span><span>C {formatInteger(latestBar.close)}</span>
+        </div>
+      )}
+      <canvas ref={canvas} className="absolute inset-0 h-full w-full cursor-crosshair"
+              role="img" aria-label={`${mode === 'candles' ? 'Candlestick' : 'Line'} price chart with ${points.length} fills`} />
     </div>
   );
 }
-
-interface PricePoint { t: number; v: number }
 
 /** Fills inside the window, per item, oldest first. */
 function seriesByItem(fills: EconomyFill[], from: number): Partial<Record<GoldMarketItemId, PricePoint[]>> {
   const out: Partial<Record<GoldMarketItemId, PricePoint[]>> = {};
   for (const fill of fills ?? []) {
     if (fill.filledAt < from) continue;
-    (out[fill.item] ??= []).push({ t: fill.filledAt, v: fill.price });
+    (out[fill.item] ??= []).push({ t: fill.filledAt, v: fill.price, q: fill.quantity });
   }
   for (const rows of Object.values(out)) rows.sort((a, b) => a.t - b.t);
   return out;
@@ -720,11 +1255,22 @@ function seriesByItem(fills: EconomyFill[], from: number): Partial<Record<GoldMa
 function MarketTicker({ book, points }: { book?: EconomyMarketStats; points: PricePoint[] }) {
   const spread = book?.bestBid && book?.bestAsk ? book.bestAsk - book.bestBid : undefined;
   const last = points.at(-1)?.v;
+  /* Whether the best price on each side is the realm's desk or another player.
+     The desk quotes into this same ladder, so "who is on the touch" is the one
+     reading a trader cannot work out from the numbers themselves — and it is
+     the difference between a market with players in it and an empty one being
+     held open by the house. */
+  const houseBid = book?.houseBid !== undefined && book.bestBid === book.houseBid
+    && (book.p2pBid === undefined || book.p2pBid < book.houseBid);
+  const houseAsk = book?.houseAsk !== undefined && book.bestAsk === book.houseAsk
+    && (book.p2pAsk === undefined || book.p2pAsk > book.houseAsk);
   return (
     <dl className="market-ticker mt-2 flex flex-wrap gap-x-4 gap-y-1 border-y border-arcane/15 py-1.5">
       <Tick label="Last">{last ? formatInteger(last) : '--'}</Tick>
-      <Tick label="Bid" tone="good">{book?.bestBid ? formatInteger(book.bestBid) : '--'}</Tick>
-      <Tick label="Ask" tone="bad">{book?.bestAsk ? formatInteger(book.bestAsk) : '--'}</Tick>
+      <Tick label={houseBid ? 'Bid · realm' : 'Bid'} tone="good">
+        {book?.bestBid ? formatInteger(book.bestBid) : '--'}</Tick>
+      <Tick label={houseAsk ? 'Ask · realm' : 'Ask'} tone="bad">
+        {book?.bestAsk ? formatInteger(book.bestAsk) : '--'}</Tick>
       <Tick label="Spread">{spread === undefined ? '--' : formatInteger(spread)}</Tick>
       <Tick label="Med 7d">{book?.median7d ? formatInteger(book.median7d) : '--'}</Tick>
       <Tick label="Vol 24h">{formatInteger(book?.volume24h ?? 0)}</Tick>
@@ -784,14 +1330,78 @@ function BookPrice({ label, value, tone }: { label: string; value?: number; tone
   );
 }
 
-/**
- * Depth as a bar chart. Five stacked numbers said nothing about which price
- * actually had size behind it, and size is the whole point of a book.
- */
-function DepthList({ label, rows, tone }: {
-  label: string; tone: 'good' | 'bad'; rows: Array<{ price: number; quantity: number }>;
+type MarketDepthRow = { price: number; quantity: number; orders?: number; house?: number };
+
+function aggregateDepth(rows: MarketDepthRow[], tone: 'good' | 'bad') {
+  const levels = new Map<number, { price: number; quantity: number; orders: number; house: number }>();
+  for (const row of rows) {
+    const level = levels.get(row.price) ?? { price: row.price, quantity: 0, orders: 0, house: 0 };
+    level.quantity += row.quantity;
+    level.orders += row.orders ?? 1;
+    level.house += row.house ?? 0;
+    levels.set(row.price, level);
+  }
+  return [...levels.values()].sort((a, b) => tone === 'good' ? b.price - a.price : a.price - b.price);
+}
+
+/** Cumulative market depth: bid liquidity grows left, ask liquidity grows right. */
+function DepthMountain({ bids: rawBids, asks: rawAsks, className }: {
+  bids: MarketDepthRow[]; asks: MarketDepthRow[]; className?: string;
 }) {
-  const shown = rows.slice(0, 8);
+  const bids = aggregateDepth(rawBids, 'good').slice(0, 10);
+  const asks = aggregateDepth(rawAsks, 'bad').slice(0, 10);
+  const prices = [...bids, ...asks].map((row) => row.price);
+  if (!prices.length) return <div className={cx('market-depth-mountain grid place-items-center text-xs text-faint', className)}>No resting liquidity</div>;
+
+  const minPrice = Math.min(...prices);
+  const maxPrice = Math.max(...prices);
+  const priceSpan = Math.max(1, maxPrice - minPrice);
+  const x = (price: number) => 5 + ((price - minPrice) / priceSpan) * 90;
+  const bidTotal = bids.reduce((sum, row) => sum + row.quantity, 0);
+  const askTotal = asks.reduce((sum, row) => sum + row.quantity, 0);
+  const maxDepth = Math.max(1, bidTotal, askTotal);
+  const y = (quantity: number) => 88 - (quantity / maxDepth) * 72;
+
+  let cumulative = 0;
+  const bidPoints = bids.map((row) => ({ x: x(row.price), y: y(cumulative += row.quantity) })).sort((a, b) => a.x - b.x);
+  cumulative = 0;
+  const askPoints = asks.map((row) => ({ x: x(row.price), y: y(cumulative += row.quantity) })).sort((a, b) => a.x - b.x);
+  const steppedArea = (points: Array<{ x: number; y: number }>) => {
+    if (!points.length) return '';
+    let path = `M${points[0].x.toFixed(2)} 88 L${points[0].x.toFixed(2)} ${points[0].y.toFixed(2)}`;
+    for (let index = 1; index < points.length; index += 1) {
+      path += ` H${points[index].x.toFixed(2)} V${points[index].y.toFixed(2)}`;
+    }
+    return `${path} L${points.at(-1)!.x.toFixed(2)} 88 Z`;
+  };
+  const bestBidX = bids.length ? x(bids[0].price) : 50;
+  const bestAskX = asks.length ? x(asks[0].price) : 50;
+
+  return (
+    <div className={cx('market-depth-mountain relative overflow-hidden rounded-[3px]', className)}
+         role="img" aria-label={`${formatInteger(bidTotal)} bid units and ${formatInteger(askTotal)} ask units in visible depth`}>
+      <div className="market-depth-caption"><span className="text-good">{formatInteger(bidTotal)} bid units</span><span>Cumulative depth</span><span className="text-bad">{formatInteger(askTotal)} ask units</span></div>
+      <svg className="absolute inset-0 h-full w-full" viewBox="0 0 100 100" preserveAspectRatio="none" aria-hidden="true">
+        {[28, 48, 68, 88].map((line) => <path key={line} d={`M5 ${line}H95`} stroke="rgb(var(--rune) / .07)" vectorEffect="non-scaling-stroke" />)}
+        {bestAskX > bestBidX && <rect x={bestBidX} y="10" width={bestAskX - bestBidX} height="78" fill="rgb(var(--arcane) / .055)" />}
+        {bidPoints.length > 0 && <path d={steppedArea(bidPoints)} fill="rgb(var(--good) / .15)" stroke="rgb(var(--good) / .78)" strokeWidth="1.3" vectorEffect="non-scaling-stroke" />}
+        {askPoints.length > 0 && <path d={steppedArea(askPoints)} fill="rgb(var(--bad) / .14)" stroke="rgb(var(--bad) / .78)" strokeWidth="1.3" vectorEffect="non-scaling-stroke" />}
+        <path d={`M${bestBidX} 10V88 M${bestAskX} 10V88`} stroke="rgb(var(--arcane) / .28)" strokeDasharray="2 3" vectorEffect="non-scaling-stroke" />
+      </svg>
+      <div className="market-depth-axis"><span>{formatInteger(minPrice)}g</span><span>spread</span><span>{formatInteger(maxPrice)}g</span></div>
+    </div>
+  );
+}
+
+/** Price ladder beneath the cumulative depth view. */
+function DepthList({ label, rows, tone, onPick, action }: {
+  label: string; tone: 'good' | 'bad'; rows: MarketDepthRow[];
+  onPick: (price: number) => void; action: string;
+}) {
+  /* The deployed view may still publish one row per order. Collapse it here so
+     the ladder always reads as price levels while the process moves to the
+     smaller aggregated contract described in ORDERBOOK.md. */
+  const shown = aggregateDepth(rows, tone).slice(0, 8);
   const peak = Math.max(1, ...shown.map((row) => row.quantity));
   return (
     <div className="min-w-0">
@@ -799,13 +1409,25 @@ function DepthList({ label, rows, tone }: {
       {shown.length ? (
         <ul className="space-y-1">
           {shown.map((row, index) => (
-            <li key={`${row.price}-${index}`}
-                className="relative flex items-center justify-between gap-3 overflow-hidden rounded-[2px] px-2 py-1 font-mono text-xs">
-              <span aria-hidden="true"
-                    className={cx('absolute inset-y-0 left-0', tone === 'good' ? 'bg-good/10' : 'bg-bad/10')}
-                    style={{ width: `${(row.quantity / peak) * 100}%` }} />
-              <span className={cx('relative', tone === 'good' ? 'text-good' : 'text-bad')}>{formatInteger(row.price)}</span>
-              <span className="relative text-faint">&times; {formatInteger(row.quantity)}</span>
+            <li key={`${row.price}-${index}`}>
+              <button type="button" title={`${action} at ${formatInteger(row.price)} Gold`}
+                      onClick={() => onPick(row.price)} className="market-depth-row">
+                <span aria-hidden="true"
+                      className={cx('absolute inset-y-0 left-0', tone === 'good' ? 'bg-good/10' : 'bg-bad/10')}
+                      style={{ width: `${(row.quantity / peak) * 100}%` }} />
+                <span className={cx('relative', tone === 'good' ? 'text-good' : 'text-bad')}>{formatInteger(row.price)}</span>
+                <span className="relative text-faint"
+                      title={row.house >= row.quantity
+                        ? `${formatInteger(row.house)} units quoted by the realm's desk`
+                        : `${formatInteger(row.orders)} resting ${row.orders === 1 ? 'order' : 'orders'}`
+                          + (row.house ? `, plus ${formatInteger(row.house)} from the realm's desk` : '')}>
+                  &times; {formatInteger(row.quantity)}
+                  {/* The house is in the same ladder as everyone else, so the
+                      only honest way to show it is here, on the level it is
+                      quoting — not in a second tab the player has to compare. */}
+                  {row.house > 0 && <b className="market-depth-house" aria-label="realm desk">&#9670;</b>}
+                </span>
+              </button>
             </li>
           ))}
         </ul>

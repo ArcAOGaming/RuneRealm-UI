@@ -72,7 +72,7 @@ export default function LandingVault() {
 
       <div className="landing-vault-controls">
         <div>
-          <p className="font-mono text-[9px] uppercase tracking-[0.2em] text-rune/55">Choose the seal</p>
+          <p className="font-mono text-[11px] uppercase tracking-[0.14em] text-rune/75">Choose the seal</p>
           <div className="mt-3 flex flex-wrap gap-2">
             {TIERS.map((tier) => (
               <button
@@ -80,7 +80,7 @@ export default function LandingVault() {
                 type="button"
                 onClick={() => replay(tier.rarity)}
                 className={cx(
-                  'rounded-[3px] border px-3 py-2 font-mono text-[9px] uppercase tracking-[0.14em] transition-colors',
+                  'rounded-[3px] border px-3 py-2 font-mono text-[11px] uppercase tracking-[0.12em] transition-colors',
                   rarity === tier.rarity
                     ? 'border-rune/45 bg-rune/10 text-ink'
                     : 'border-edge/70 text-faint hover:border-rune/30 hover:text-muted',
@@ -97,7 +97,7 @@ export default function LandingVault() {
           onClick={() => replay()}
           className="landing-vault-replay"
         >
-          {phase === 'open' ? 'Open it again' : phase === 'flat' ? 'Try the ceremony' : 'Restart ceremony'}
+          {phase === 'open' ? 'Open again' : phase === 'flat' ? 'Preview again' : 'Restart'}
         </button>
       </div>
     </div>

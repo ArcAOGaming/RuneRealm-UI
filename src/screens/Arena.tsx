@@ -76,16 +76,16 @@ export default function Arena() {
  * could be one; they are kept apart because a five-step list where three are
  * always missing is not a thing anybody can read and check.
  *
- * **Both lists are part of the arena's rules.** The Rune price, the session
- * size, the energy and happiness gates and the berry-maxing bonus are all
- * stated here in words. Change any of them in `constants.lua` or in the entry
+ * **Both lists are part of the arena's rules.** That entry is free, the
+ * session size, the energy and happiness gates and the berry-maxing bonus are
+ * all stated here in words. Change any of them in `constants.lua` or in the entry
  * handler and these sentences are part of that change.
  */
 const ENTRANCE_TOUR: TourStep[] = [
   {
     target: '[data-tour="arena-cost"]',
     title: 'What it costs',
-    body: 'One Rune buys a session of four battles — the fights inside it are free. Your companion also needs 25 energy and 25 happiness to be let in.',
+    body: 'A session is four battles and entering is free. What it costs your companion is 25 energy and 25 happiness — and happiness only comes back from a 15-minute play.',
   },
   {
     target: '[data-tour="arena-berries"]',
@@ -95,7 +95,7 @@ const ENTRANCE_TOUR: TourStep[] = [
   {
     target: '[data-tour="arena-enter"]',
     title: 'Then you are in',
-    body: 'The Rune is taken here, once. A session lasts until its four battles are used or you leave the arena.',
+    body: 'The energy and happiness are taken here, once. A session lasts until its four battles are used or you leave the arena.',
   },
 ];
 
@@ -103,7 +103,7 @@ const LOBBY_TOUR: TourStep[] = [
   {
     target: '[data-tour="arena-session"]',
     title: 'Your session',
-    body: 'Battles left, and this session’s record. Leaving forfeits whatever is left of it — the Rune is not refunded.',
+    body: 'Battles left, and this session’s record. Leaving forfeits whatever is left of it — the energy and happiness are not refunded.',
   },
   {
     target: '[data-tour="arena-trainer"]',
@@ -122,19 +122,20 @@ function Entrance() {
   const { player, run, isPending } = useGame();
   const [berry, setBerry] = useState<BerryItemId | undefined>();
   const monster = player!.monster!;
-  const runes = player!.inventory.rune ?? 0;
   const busy = monster.status.type !== 'Home';
   const selectedBerry = BATTLE_BERRIES.find((entry) => entry.id === berry);
   const selectedCount = berry ? (player!.inventory[berry] ?? 0) : 0;
 
+  // No Rune check. Entering is free in v2 — what gates a session is energy and
+  // happiness, and happiness only comes back from a 15-minute Play. See
+  // ECONOMY_V2.md §6.
   const blocked =
     busy ? `Your companion is ${monster.status.type === 'Play' ? 'playing' : 'on a quest'}.`
-      : runes < 1 ? 'You need a Rune to enter.'
-        : monster.energy < 25 ? 'Not enough energy — feed your companion.'
-          : monster.happiness < 25 ? 'Not happy enough — send it out to play.'
-            : selectedBerry && selectedCount < selectedBerry.cost
-              ? `You need ${selectedBerry.cost} ${ITEM_NAME[selectedBerry.id]}.`
-              : null;
+      : monster.energy < 25 ? 'Not enough energy — feed your companion.'
+        : monster.happiness < 25 ? 'Not happy enough — send it out to play.'
+          : selectedBerry && selectedCount < selectedBerry.cost
+            ? `You need ${selectedBerry.cost} ${ITEM_NAME[selectedBerry.id]}.`
+            : null;
 
   return (
     /* `my-auto` centres it in the fitted viewport. The arena owns the whole
@@ -148,12 +149,11 @@ function Entrance() {
         <Sword className="mx-auto h-9 w-9 text-element" />
         <h1 className="mt-4 text-xl font-semibold">Enter the arena</h1>
         <p className="mx-auto mt-2 max-w-sm text-sm leading-relaxed text-muted">
-          One Rune buys a session of four battles. Fights inside a session are
-          free — fight a trainer, or challenge another player.
+          A session is four battles, and entering costs no Rune. Fight a
+          trainer, or challenge another player.
         </p>
 
-        <div data-tour="arena-cost" className="mx-auto mt-5 grid max-w-xs grid-cols-3 gap-3 text-left">
-          <Cost label="Rune" have={runes} need={1} />
+        <div data-tour="arena-cost" className="mx-auto mt-5 grid max-w-xs grid-cols-2 gap-3 text-left">
           <Cost label="Energy" have={monster.energy} need={25} />
           <Cost label="Happiness" have={monster.happiness} need={25} />
         </div>
@@ -213,7 +213,7 @@ function Entrance() {
           disabled={!!blocked} busy={isPending('enter')}
           onClick={() => run('enter', () => api.enterArena(berry), 'Four battles are yours.')}
         >
-          Spend 1 Rune{selectedBerry ? ` + ${selectedBerry.cost}× ${ITEM_NAME[selectedBerry.id]}` : ''}
+          Enter the arena{selectedBerry ? ` + ${selectedBerry.cost}× ${ITEM_NAME[selectedBerry.id]}` : ''}
         </Button>
       </Panel>
     </div>
