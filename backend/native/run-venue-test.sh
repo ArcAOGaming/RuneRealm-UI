@@ -1,0 +1,43 @@
+#!/usr/bin/env bash
+# Run the two-venue suite on a live HyperBEAM ~lua@5.3a node.
+# No wallet, no signing, no cost.  Usage: ./run-venue-test.sh [node-url]
+#
+# It bundles exactly what deploy-venue.mjs deploys, so any construct Luerl
+# rejects — goto, table.move, string.pack — fails here before it reaches a
+# deployed process. `npm run test:venue:local` runs the same assertions
+# offline against the checked-in WASM.
+set -euo pipefail
+
+NODE="${1:-https://alpha.neo.zephyrdev.xyz}"
+HERE="$(cd "$(dirname "$0")" && pwd)"
+AOS="${HYPER_AOS:-$HERE/json.lua}"
+
+if [ ! -f "$AOS" ]; then
+  echo "json.lua not found at $AOS" >&2
+  exit 1
+fi
+
+BUNDLE="$(mktemp)"
+trap 'rm -f "$BUNDLE"' EXIT
+{
+  cat "$AOS"
+  echo "local C = (function()";      cat "$HERE/constants.lua"; echo "end)()"
+  cat "$HERE/monster-index.generated.lua"
+  echo "local jsonx = (function()";  cat "$HERE/jsonenc.lua";   echo "end)()"
+  echo "local encode, jsonObject = jsonx.encode, jsonx.object"
+  echo "local OrderBook = (function()"; cat "$HERE/orderbook.lua"; echo "end)()"
+  cat "$HERE/venue.lua"
+  cat "$HERE/venue_test.lua"
+} > "$BUNDLE"
+
+echo "node:   $NODE"
+echo "bundle: $(wc -c < "$BUNDLE") bytes"
+echo
+RESULT="$(curl --fail-with-body -sS -m "${LUA_TEST_TIMEOUT:-600}" -X POST "$NODE/~lua@5.3a/venuetest" \
+  -H 'content-type: application/lua' --data-binary @"$BUNDLE")"
+printf '%s\n' "$RESULT"
+if ! grep -Eq '(^|[^0-9])0 failed([^0-9]|$)' <<<"$RESULT"; then
+  echo "venue suite did not report zero failures" >&2
+  exit 1
+fi
+echo

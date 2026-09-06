@@ -189,6 +189,15 @@ local function newMarket(base, quote, overrides)
     maxQuantity = cfg.maxQuantity,
     takerBps = 0, makerBps = 0, rebateBps = 0,
     feeCarry = 0,
+    --- What it costs to put an order on the book, in the QUOTE asset.
+    ---
+    --- A market field rather than a constant, because "1" is a sane friction
+    --- against Gold and nonsense against anything else: on a Rune/Relic market
+    --- it charges one millionth of a Relic, which is not friction, it is a
+    --- balance every trader has to be told to go and get before their first
+    --- sell will be accepted. A venue sets it to 0 and lets the taker fee do
+    --- the work; ORDERBOOK.md §7.3 argues the game should too.
+    creationCost = cfg.creationCost,
     --- How far from the reference price an order may be priced, either side.
     --- Zero switches the guard off for this market; see `priceBand`.
     bandBps = cfg.bandBps,
@@ -204,10 +213,29 @@ end
 
 --- item. Every existing message says `Item = "fire_berry"` and means
 --- `fire_berry/gold`; a client that names a full market id gets that instead.
+--- Three spellings, one market, and the third one is what a venue needs.
+---
+--- A caller that knows the full id gets that. A caller that names only the
+--- base gets `<base>/gold`, which is every market inside the game and the
+--- reason every existing message can say `Item = "fire_berry"` and mean it.
+---
+--- A venue quotes against something else, so `rune` has to find `rune/relic`
+--- with nothing in the message saying `relic`. That is the last fallback: the
+--- ONE market this asset is the base of. It is unambiguous because it has to
+--- be -- the index is keyed by base asset, so two markets sharing a base would
+--- share a ladder, and `Admin.CreateMarket` refuses to create the second one.
+--- The scan is over the registry, which is seven rows in the game and one in
+--- the external venue, and it only runs when both direct lookups miss -- which
+--- inside the game is never.
 function M.resolveMarket(state, name)
   if type(name) ~= "string" or name == "" then return nil end
   local markets = state.markets or {}
-  return markets[name] or markets[marketId(name, "gold")]
+  local direct = markets[name] or markets[marketId(name, "gold")]
+  if direct then return direct end
+  for _, market in pairs(markets) do
+    if market.base == name then return market end
+  end
+  return nil
 end
 
 --- Separators do not survive the trip. A browser signs `Tif = "post-only"`,
@@ -1270,6 +1298,7 @@ function M.placeOrder(host, state, account, side, item, price, quantity, timesta
   local lot = market and math.max(1, int(market.lot, 1)) or 1
   local baseUnits = quantity * lot
   local quote = market and market.quote or "gold"
+  local creationCost = math.max(0, int(market and market.creationCost, cfg.creationCost))
   -- The most a taking buy could owe in fees, checked up front.
   --
   -- A taking buyer pays the fee from free balance at fill time (see
@@ -1316,11 +1345,12 @@ function M.placeOrder(host, state, account, side, item, price, quantity, timesta
     problem = "Global open-order limit reached"
   elseif side == "sell" and held(item) < baseUnits then
     problem = "Not enough " .. tostring(item)
-  elseif side == "sell" and held(quote) < cfg.creationCost then
-    problem = "The order-creation cost is 1 Gold"
+  elseif side == "sell" and held(quote) < creationCost then
+    problem = "The order-creation cost is "
+      .. string.format("%d", creationCost) .. " " .. quote
   elseif side == "buy"
-     and held(quote) < price * quantity + cfg.creationCost + takerFeeCeiling then
-    problem = "Not enough Gold for order escrow and creation cost"
+     and held(quote) < price * quantity + creationCost + takerFeeCeiling then
+    problem = "Not enough " .. quote .. " for order escrow and creation cost"
   end
 
   -- The house quote, and every check that depends on knowing what is
@@ -1359,11 +1389,11 @@ function M.placeOrder(host, state, account, side, item, price, quantity, timesta
   -- The creation cost is charged in the market's QUOTE asset, and routed the
   -- same way a taker fee is. Naming Gold here was only ever right because
   -- every market is Gold-quoted.
-  if ledger.debit(account, quote, cfg.creationCost) then
+  if creationCost > 0 and ledger.debit(account, quote, creationCost) then
     local row = host.pool(state, quote)
-    row.player = math.max(0, int(row.player, 0) - cfg.creationCost)
+    row.player = math.max(0, int(row.player, 0) - creationCost)
+    routeFee(host, state, quote, creationCost, timestamp, "Order creation")
   end
-  routeFee(host, state, quote, cfg.creationCost, timestamp, "Order creation")
 
   state.orderSeq = int(state.orderSeq, 0) + 1
   local order = {
