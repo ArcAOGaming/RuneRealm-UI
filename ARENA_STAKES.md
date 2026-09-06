@@ -236,3 +236,42 @@ now a cosmetic choice rather than a security parameter.
 - The numbers move between reading the screen and the battle settling. Show the
   pot at settle in the result, so a player can see what actually happened rather
   than what was advertised.
+
+### The split: the contract publishes state, the UI does the rest
+
+All of §8 is client work. The contract publishes four integers per tier and
+nothing else:
+
+```
+  arenatiers = { ["3"] = { stake = 10, pot = 340, wins = 22, attempts = 100 }, ... }
+```
+
+The drain fraction `d` is a CONSTANT, so it belongs in `catalog` and is
+published once for every tier rather than repeated on each — the published-state
+rule in CLAUDE.md, and the same reason `monsterindex` now carries an overlay
+instead of the catalog.
+
+Everything a player reads is then derived in the browser:
+
+```
+  payout       P    = pot × d
+  break even   w_be = stake / P
+  win rate     w    = wins / attempts
+  value now         = sign(w − w_be)
+```
+
+Three reasons this is not just tidiness:
+
+- **A derived key inherits the size of what it embeds**, and it is rewritten
+  whenever any of its inputs move. A published `payout` would be re-encoded on
+  every settle in every tier, on a map every message pays for five times.
+- **A stale derived value is a number that was never true.** A published payout
+  read a slot late shows a figure nobody could have been paid. A published pot
+  read a slot late is simply the pot, one slot ago.
+- **Presentation changes should not need a redeploy.** Whether the screen shows
+  break-even, a ratio, a colour or a sparkline is a UI decision, and a process
+  is a permanent public thing to be changing for a label.
+
+The one thing the contract must publish that is NOT derivable: the pot **at
+settle**, on the battle result. A player needs to see what they were actually
+paid, not what the screen was advertising when they clicked.
