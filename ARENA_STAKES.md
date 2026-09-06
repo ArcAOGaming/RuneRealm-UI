@@ -175,3 +175,64 @@ paid once on settle, and a pot that never pays out more than went in.
   hour is the ceiling, for everyone." A Gold stake replaces a ceiling that binds
   everyone equally with one that binds the poor player harder. Keep both, or
   accept that trade deliberately.
+
+---
+
+## 8. Showing a player whether a tier is worth it
+
+The payout is whatever is in the pot, so a headline rate would be a promise the
+design does not make. What a player needs instead is enough to judge for
+themselves, and the number that does that is the **break-even win rate**:
+
+```
+  payout now      P = pot × d
+  break even      w_be = S / P
+```
+
+It is a fact about the tier, not a prediction about the player. And it has a
+useful property: at equilibrium `P = S/w`, so `w_be = w` — break-even converges
+on the tier's own observed win rate. **The gap between the two is the value
+signal.**
+
+- pot above equilibrium, after a run of losses fed it -> `w_be` drops BELOW the
+  observed rate -> the tier is good value right now
+- pot below equilibrium -> `w_be` rises above it -> poor value right now
+
+So four live numbers per tier, and the player decides:
+
+| Tier | Stake | A win pays | Break even above | Players win |
+|---|---|---|---|---|
+| Hard | 10 | 34 | 29% | 22% |
+
+Read as: the average player loses here, but above 29% you are ahead. When a
+losing streak fattens the pot, "a win pays" climbs and break-even falls, and the
+tier visibly becomes worth attacking. Timing becomes a decision a player can see
+rather than one they cannot.
+
+### The win rate is for DISPLAY only
+
+§2 shows the payout needs no win-rate tracking, and that stays true. This
+section adds the statistic back for the screen, and the separation is the point:
+
+- a **display** statistic that is skewed costs a misinformed player
+- a **payout** statistic that is skewed is farmable
+
+So a player can push the displayed rate by dumping games and gain nothing,
+because the payout still comes only from what is in the pot. Keep it that way:
+if the win rate ever feeds the payout, the exploit surface from §2 reopens.
+
+Two integers per tier (`wins`, `attempts`), O(tiers), a few hundred published
+bytes for the whole table. Windowed rather than lifetime, so it still moves after
+a few thousand battles — and unlike §2's rejected design, the window length is
+now a cosmetic choice rather than a security parameter.
+
+### Honesty constraints
+
+- Publish the pot and the counts; let the client derive `P`, `w_be` and `w`.
+  Publishing derived values means a stale read shows a number that was never
+  true, and CLAUDE.md already puts derived state last in line for bytes.
+- Never show a single "expected value". EV depends on the player's own win rate,
+  which is exactly what the design refuses to assume.
+- The numbers move between reading the screen and the battle settling. Show the
+  pot at settle in the result, so a player can see what actually happened rather
+  than what was advertised.
