@@ -44,12 +44,17 @@ function gamehunttest(base)
     blocked and blocked.error ~= nil, blocked and blocked.error)
   Players[ALICE].monster.status = { type = "Home", since = T, until_time = T }
 
+  -- Strip the wallet down to one BELOW the entry price, whatever that price
+  -- currently is. The old version subtracted a fixed 1 from a fixed 5 and
+  -- would have gone on passing against an entry of 2 while testing nothing.
+  local ENTRY = C.HUNT.entry.berries.fire_berry
   send(OWNER, {
-    Action = "Admin.AdjustInventory", PlayerId = ALICE, Item = "fire_berry", Delta = "-1",
+    Action = "Admin.AdjustInventory", PlayerId = ALICE, Item = "fire_berry",
+    Delta = string.format("%d", -(itemCount(Players[ALICE], "fire_berry") - (ENTRY - 1))),
   })
   local beforeRefusal = send(ALICE, { Action = "User.Login" })
   local shortEntry = send(ALICE, { Action = "Hunt.Begin", MonsterId = "m1" })
-  ok("Hunt requires five of every berry", shortEntry and shortEntry.error ~= nil,
+  ok("Hunt requires the full offering of every berry", shortEntry and shortEntry.error ~= nil,
     shortEntry and shortEntry.error)
   local afterRefusal = send(ALICE, { Action = "User.Login" })
   ok("a short offering spends no berries",
@@ -59,6 +64,9 @@ function gamehunttest(base)
       and afterRefusal.inventory.air_berry == beforeRefusal.inventory.air_berry
       and afterRefusal.inventory.rock_berry == beforeRefusal.inventory.rock_berry)
   send(OWNER, { Action = "Admin.Grant", PlayerId = ALICE, Item = "fire_berry", Amount = "1" })
+  -- The capture ticket. A Scroll is spent on every attempt, win or lose, and
+  -- it is the only thing in the game that consumes one.
+  send(OWNER, { Action = "Admin.Grant", PlayerId = ALICE, Item = "scroll", Amount = "3" })
 
   local beforeEntry = send(ALICE, { Action = "User.Login" })
 
@@ -66,12 +74,12 @@ function gamehunttest(base)
   ok("begin locks the chosen companion", r and r.monster.status.type == "Hunt", r and r.monster.status.type)
   ok("begin publishes a Hunt route", r and r.hunt and r.hunt.processId == HUNT)
   ok("begin emits Hunt.Open", base.results.outbox and base.results.outbox.hunt ~= nil)
-  ok("begin spends five of every berry",
+  ok("begin spends the configured offering of every berry",
     r and beforeEntry
-      and (r.inventory.fire_berry or 0) == beforeEntry.inventory.fire_berry - 5
-      and (r.inventory.water_berry or 0) == beforeEntry.inventory.water_berry - 5
-      and (r.inventory.air_berry or 0) == beforeEntry.inventory.air_berry - 5
-      and (r.inventory.rock_berry or 0) == beforeEntry.inventory.rock_berry - 5)
+      and (r.inventory.fire_berry or 0) == beforeEntry.inventory.fire_berry - ENTRY
+      and (r.inventory.water_berry or 0) == beforeEntry.inventory.water_berry - ENTRY
+      and (r.inventory.air_berry or 0) == beforeEntry.inventory.air_berry - ENTRY
+      and (r.inventory.rock_berry or 0) == beforeEntry.inventory.rock_berry - ENTRY)
   local runId = r.hunt.runId
 
   r = send(ALICE, { Action = "Hunt.Begin", MonsterId = "m1" })
@@ -79,10 +87,11 @@ function gamehunttest(base)
     r and r.hunt and r.hunt.runId == runId
       and base.results.outbox and base.results.outbox.hunt ~= nil)
   ok("retrying Hunt.Begin does not charge twice",
-    r and itemCount(Players[ALICE], "fire_berry") == 0
-      and itemCount(Players[ALICE], "water_berry") == 0
-      and itemCount(Players[ALICE], "air_berry") == 0
-      and itemCount(Players[ALICE], "rock_berry") == 0)
+    r and beforeEntry
+      and itemCount(Players[ALICE], "fire_berry") == beforeEntry.inventory.fire_berry - ENTRY
+      and itemCount(Players[ALICE], "water_berry") == beforeEntry.inventory.water_berry - ENTRY
+      and itemCount(Players[ALICE], "air_berry") == beforeEntry.inventory.air_berry - ENTRY
+      and itemCount(Players[ALICE], "rock_berry") == beforeEntry.inventory.rock_berry - ENTRY)
 
   r = send(nil, {
     Action = "Hunt.Opened", ["from-process"] = HUNT,
@@ -91,6 +100,9 @@ function gamehunttest(base)
   ok("opened notice advances the route", r and r.hunt and r.hunt.status == "roaming")
 
   local beforeRunes = r.inventory.rune
+  local beforeScrolls = r.inventory.scroll or 0
+  local TOP_BID = C.HUNT.capture.maxRuneBid
+  local TICKET = C.HUNT.capture.scrollCost
   local encounter = Battle.makeOpponent(2, { faction = "Aqua Guardians" })
   encounter.entryNo = 4
   encounter.faction = "Aqua Guardians"
@@ -98,28 +110,36 @@ function gamehunttest(base)
     protocol = "runerealm-hunt/1", settlementId = runId .. "-capture-1",
     runId = runId, playerId = ALICE, encounterId = runId .. "-e1",
     actionId = "capture_1", success = true, chance = 60, roll = 12,
-    runeBid = 5, monster = encounter,
+    runeBid = TOP_BID, monster = encounter,
   }
   local overbid = {
     protocol = payload.protocol, settlementId = runId .. "-capture-overbid",
     runId = runId, playerId = ALICE, encounterId = payload.encounterId,
     actionId = "capture_overbid", success = true, chance = 80, roll = 12,
-    runeBid = 6, monster = encounter,
+    runeBid = TOP_BID + 1, monster = encounter,
   }
   local invalidBid = send(nil, {
     Action = "Hunt.Settle", ["from-process"] = HUNT,
     ["player-id"] = ALICE, ["run-id"] = runId,
     ["settlement-id"] = overbid.settlementId,
   }, overbid)
-  ok("game rejects a capture bid above five Rune",
+  ok("game rejects a capture bid above the configured maximum",
     invalidBid and invalidBid.error ~= nil, invalidBid and invalidBid.error)
   r = send(nil, {
     Action = "Hunt.Settle", ["from-process"] = HUNT,
     ["player-id"] = ALICE, ["run-id"] = runId,
     ["settlement-id"] = payload.settlementId,
   }, payload)
-  ok("capture spends the Rune bid", r and r.inventory.rune == beforeRunes - 5,
+  ok("capture spends the Rune bid", r and r.inventory.rune == beforeRunes - TOP_BID,
     r and r.inventory.rune)
+  -- The Scroll is the ticket and it is spent alongside the Rune. Nothing else
+  -- in the game consumes one, so if this stops holding the item has no sink
+  -- again and the Scroll desk goes back to being a Gold faucet for a
+  -- collectible nobody can use.
+  ok("capture spends the Scroll ticket",
+    r and (r.inventory.scroll or 0) == beforeScrolls - TICKET,
+    r and (r.inventory.scroll or 0))
+
   local collectionCount = 0
   for _ in pairs(r.collection or {}) do collectionCount = collectionCount + 1 end
   ok("successful capture mints into collection", collectionCount == 1, collectionCount)
@@ -130,6 +150,39 @@ function gamehunttest(base)
   ok("a Hunt encounter remains seen in the player Monster Index", sawWater,
     r.seenEntries and json.encode(r.seenEntries))
   ok("settlement acknowledges Hunt", base.results.outbox and base.results.outbox.acknowledgement ~= nil)
+  -- A capture is ONE price and it has to be atomic. A player holding the Rune
+  -- but no Scroll must come out of a refused settlement holding all of the
+  -- Rune -- the worker retries settlements, so a half-charged one would be
+  -- charged again on the retry.
+  do
+    local held = itemCount(Players[ALICE], "scroll")
+    if held > 0 then
+      send(OWNER, { Action = "Admin.AdjustInventory", PlayerId = ALICE,
+                    Item = "scroll", Delta = string.format("%d", -held) })
+    end
+    local runesBefore = itemCount(Players[ALICE], "rune")
+    local ticketless = {
+      protocol = payload.protocol, settlementId = runId .. "-capture-noticket",
+      runId = runId, playerId = ALICE, encounterId = payload.encounterId,
+      actionId = "capture_noticket", success = true, chance = 60, roll = 12,
+      runeBid = 1, monster = encounter,
+    }
+    local refused = send(nil, {
+      Action = "Hunt.Settle", ["from-process"] = HUNT,
+      ["player-id"] = ALICE, ["run-id"] = runId,
+      ["settlement-id"] = ticketless.settlementId,
+    }, ticketless)
+    ok("a capture with no Scroll is refused", refused and refused.error ~= nil,
+      refused and refused.error)
+    ok("and a refused capture spends no Rune",
+      itemCount(Players[ALICE], "rune") == runesBefore,
+      itemCount(Players[ALICE], "rune"))
+    ok("and leaves no settlement behind to block the retry",
+      HuntSettlements[ticketless.settlementId] == nil)
+    send(OWNER, { Action = "Admin.Grant", PlayerId = ALICE, Item = "scroll",
+                  Amount = string.format("%d", math.max(1, held)) })
+  end
+
 
   -- What the replay ledger keeps, and what it deliberately does not ---------
   --

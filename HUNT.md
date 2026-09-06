@@ -40,7 +40,7 @@ Two rules came out of that, and both are enforced:
 fails unless the run comes back out of `settling` with a receipt. It uses a
 burner, never the owner wallet — swearing a faction is once per account forever.
 Both branches are worth running, because they are different code past the
-boundary: `--bid 1` usually breaks, `--bid 5` usually binds and additionally
+boundary: `--bid 1` usually breaks, `--bid 3` usually binds and additionally
 mints the creature into the collection.
 
 When a route is stranded anyway — a worker replaced, a run that can never reach
@@ -57,14 +57,22 @@ process's scheduler attests the configured sender.
 
 ## Capture economy
 
-- Opening a run costs **five Fire, five Water, five Air and five Rock Berries**.
-  The game checks the complete offering before spending any of it. Retrying the
-  same opening is delivery recovery and never charges a second time.
+- Opening a run costs **two of each berry**. Was five of each — twenty berries
+  is a whole day's crate, which put hunting and playing in direct competition
+  for the same daily allowance. The game checks the complete offering before
+  spending any of it. Retrying the same opening is delivery recovery and never
+  charges a second time.
 - One attempt after a win.
-- Costs a **1–5 Rune** bid on both success and failure.
+- Costs **one Scroll and a 1–3 Rune bid**, both spent on success and failure
+  alike. The Scroll is the ticket: nothing else in the game consumes one, and
+  before this nothing did at all. Both prices are checked before either is
+  spent, because the worker retries a refused settlement.
 - Wild level is `hunter level - 5` through `hunter level + 5`, floored at zero.
-- The chance curve is published in the game catalog. At equal level the five
-  choices are **35%, 49%, 60%, 68%, and 75%**. Five Rune is likely, not certain.
+- The chance curve is published in the game catalog. At equal level the three
+  choices are **35%, 56% and 74%**. The top bid is likely, never certain. It was
+  1–5 at 35/49/60/68/75; the fourth and fifth Rune bought 8 and 7 points on a
+  curve flattening towards its cap, so they were the two most expensive and
+  least interesting choices on the slider.
 - Level advantage changes the chance by three points per level.
 - Chance is clamped to 5–95%; it is never certain.
 
@@ -80,7 +88,9 @@ companions in-game.
 ## Presentation stack
 
 - The entry confirmation is `HuntOffering`: a pointer-reactive Three.js gate
-  with one orbiting stone for each five-berry element offering.
+  with one orbiting stone for each element in the offering. Every number on
+  that dialog is summed from the published costs — it read "Twenty berries" as
+  a literal until the offering stopped being five of each.
 - Roaming, companion following, encounter reveals and wild combat are Phaser
   scenes. The binding UI is not rendered until that battle reports `defeated`.
 - A successful binding finishes in `CompanionAcquisition`, whose assembled card

@@ -886,6 +886,9 @@ npm run test:lua                                  # process suite, free
 node backend/native/burners.mjs make 4            # throwaway wallets + access
 node backend/native/e2e.mjs burner-01             # one player, whole journey
 node backend/native/e2e.mjs --pvp burner-01 burner-02
+npm run swarm:config                              # validate the complete graph
+HB_WALLET=owner.json npm run fleet:prepare        # prepare the 50 test actors
+npm run swarm:lived-in                            # one-hour, all-surface soak
 npm run recover:verify                            # the 168 recovered players,
                                                   # loaded and read back, free
 npm run test:slots                                # state survives a SLOT

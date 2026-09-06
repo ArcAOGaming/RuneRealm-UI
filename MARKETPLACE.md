@@ -17,7 +17,7 @@
 
 The market has three user-facing surfaces. Gold goods orders and the finite NPC
 shop settle inside the game authority, companion sales use in-game Rune in that
-same authority, and wallet Rune/TEST-RELIC trade through the external AMM.
+same authority. Wallet Rune/TEST-RELIC will trade on the external order book.
 
 ## Architecture
 
@@ -41,27 +41,33 @@ normal contract configuration. Legacy registry data remains readable only.
 
 ### Rune exchange
 
-`amm.lua` is a constant-product Rune/quote pool with integer arithmetic and a
-configurable fee (30 basis points by default). Transfers between processes are
-asynchronous, so a trade is deliberately two signed steps:
+**There is no AMM.** `amm.lua` -- a constant-product Rune/quote pool -- has been
+deleted. It was spawned once, never configured, never held a reserve or an LP
+share, and this game does not trade on a curve. Two order books do the trading:
+the internal one on in-game goods priced in Gold, and an external one on the
+token pair. They are the same instrument and will be the same code; the only
+difference is what funds them.
 
-1. Transfer the input token to the AMM. Its token process emits a
-   `Credit-Notice`; only a notice attested as coming from one of the configured
-   token processes creates a deposit.
-2. Sign `Swap` against that credited deposit with a minimum output and deadline.
-   The pool updates atomically, then queues the output-token transfer through
-   `process-outbox@1.0`.
+The external book's process does not exist yet. When it does, its custody is
+deposit-first -- transfer the token in, the token process emits a
+`Credit-Notice`, and only a notice attested as coming from a configured token
+process creates a credited balance -- and its payouts leave through
+`process-outbox@1.0`. That shape is modelled on `game.lua`'s `Burn-Notice`
+(mandatory `Reference`, a `seen` short-circuit, quarantine rather than refusal),
+NOT on the deleted pool's version, which fell back to a tag for identity and
+failed closed before crediting. Fourteen atoms of TEST-RUNE are stranded at the
+old pool address as a result, and they are not recoverable.
 
-Unused deposits can be refunded. Liquidity follows the same deposit-first
-model. Off-ratio excess remains credited and refundable rather than becoming a
-donation. Credit-notice ids are replay protected, and the product calculation
-does not construct an overflowing `reserve * amount` intermediate.
+The always-fills-now counterparty is the in-game **Shop**, and it is not a market
+maker: it is a supply-policy desk inside `game.lua`, quoting an anchored, banded
+price that answers to the issuance ledger. A book with no resting order simply
+does not fill, which is correct.
 
 `quote.lua` supplies `TEST-RELIC`, a six-decimal faucet token for integration
 testing. It is intentionally not called AO. A real quote token is compatible
 only if it emits standard credit notices on transfer and accepts an attested
-process-origin transfer from the AMM's own balance. Verify that full path on the
-target node before configuring AO.
+process-origin transfer from an exchange process's own balance. Verify that full
+path on the target node before configuring AO.
 
 ## Files
 
@@ -69,9 +75,8 @@ target node before configuring AO.
   payment, cancellations, and sale history. The only companion market that runs.
 - `backend/native/marketplace.lua` — parked minted-asset index source, not
   deployed or included in normal preflight; see the TODO above.
-- `backend/native/amm.lua` — Rune/quote AMM, deposits and LP accounting.
 - `backend/native/quote.lua` — faucet-backed `TEST-RELIC` token.
-- `backend/native/deploy-marketplace.mjs` — spawns and configures quote and AMM
+- `backend/native/deploy-marketplace.mjs` — spawns and configures the quote token
   external processes and writes their frontend ids; it never creates an index
   or companion collection.
 - `src/screens/Marketplace.tsx` — `/market`, monster trading, Rune bridge,
@@ -96,7 +101,7 @@ npm run test:marketplace
 
 The recommended deployment is the serialized full-stack command. It reads the
 current game from `live-process.txt`, migrates it, creates and wires Rune, then
-creates the quote/AMM processes and performs the final build only after all ids are
+creates the quote process and performs the final build only after all ids are
 written:
 
 ```bash
@@ -104,7 +109,7 @@ npm run deploy:all -- --plan
 npm run deploy:all
 ```
 
-The full command first exercises the game/economy, Rune, AMM, quote, and
+The full command first exercises the game/economy, Rune, quote, and
 recovered-player migration on a live unsigned `~lua@5.3a` endpoint. It only
 reads the deployment wallet after that preflight succeeds.
 
@@ -124,7 +129,7 @@ HB_WALLET=/path/to/key.json npm run deploy:exchange
 The default deployment creates an empty Rune/`TEST-RELIC` pool and faucets test
 inventory to the owner. It no longer spawns a companion index. The deployment
 does not invent Rune supply: withdraw earned Rune, transfer both tokens into
-the AMM, then add the credited amounts as initial liquidity from `/market`.
+an exchange process. There is no pool to seed: liquidity is resting orders.
 
 To test an existing compatible quote token instead:
 
@@ -138,5 +143,5 @@ The deployer writes `marketplace-processes.txt`,
 four exchange `VITE_*` variables. Pass `-- --no-env` to leave frontend
 configuration untouched.
 
-The Rune desk requires configured Rune, quote, and AMM process ids. Monster
+The Rune desk requires configured Rune and quote process ids. Monster
 trading requires only the configured game process.

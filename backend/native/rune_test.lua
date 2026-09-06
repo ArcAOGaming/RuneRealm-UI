@@ -17,7 +17,7 @@ local function run(base, req)
   local T = 1700000000000
   local OWNER = "OWNERoooooooooooooooooooooooooooooooooooooo"
   local GAME  = "GAMEggggggggggggggggggggggggggggggggggggggg"
-  local AMM   = "AMMMmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmm"
+  local BOOK  = "BOOKkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkk"
   local ALICE = "ALICEaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
   local BOB   = "BOBbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
 
@@ -117,18 +117,19 @@ local function run(base, req)
   ok("a transfer needs a recipient", errOf(r) ~= nil, json.encode(r))
 
   -- A process has no private key. process-outbox attests it in `from-process`,
-  -- which lets an AMM spend only the balance held under its own process id.
-  send(ALICE, { Action = "Transfer", Recipient = AMM, Quantity = q(2) })
+  -- which lets an exchange process spend only the balance held under its own
+  -- process id.
+  send(ALICE, { Action = "Transfer", Recipient = BOOK, Quantity = q(2) })
   do
     T = T + 1000
     local res = compute({ process = PROCESS }, { body = {
       commitments = { hmac = { type = "hmac-sha256", keyid = "constant:ao" } },
-      ["from-process"] = AMM,
+      ["from-process"] = BOOK,
       Action = "Transfer", Recipient = BOB, Quantity = q(1),
     }, timestamp = T }, {})
     local decoded = json.decode(res.results.output.data)
     ok("an attested process can spend its own Rune balance",
-       decoded and decoded.From == AMM and decoded.Quantity == q(1), json.encode(decoded))
+       decoded and decoded.From == BOOK and decoded.Quantity == q(1), json.encode(decoded))
   end
 
   do
@@ -136,7 +137,7 @@ local function run(base, req)
     T = T + 1000
     local res = compute({ process = PROCESS }, { body = {
       commitments = { sig1 = { committer = ALICE, alg = "rsa-pss-sha512" } },
-      ["from-process"] = AMM,
+      ["from-process"] = BOOK,
       Action = "Transfer", Recipient = BOB, Quantity = q(1),
     }, timestamp = T }, {})
     local decoded = json.decode(res.results.output.data)
@@ -490,7 +491,7 @@ local function run(base, req)
     -- every push of a SUCCESSFUL withdrawal returned HTTP 500 after both hops
     -- had already landed. The client read the 500 as failure and retried, and a
     -- retry re-runs Mint: a measured 80 Rune deducted in-game became 224 minted.
-    -- Credit-Notice is only ever consumed by the AMM, and only from a Transfer
+    -- Credit-Notice is only ever consumed by an exchange process, and only from a Transfer
     -- whose target IS a process. Transfer still emits it; Mint must not.
     ok("mint emits no wallet-targeted credit-notice",
        outbox and outbox["credit-notice"] == nil, outbox and json.encode(outbox))

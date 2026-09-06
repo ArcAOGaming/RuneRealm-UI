@@ -209,7 +209,12 @@ local function run(base, req)
 
   local moveCount = 0
   for _ in pairs(r.monster.moves) do moveCount = moveCount + 1 end
-  ok("companion has 4 moves", moveCount == 4, moveCount)
+  -- `C.MOVE_SLOTS`, not a literal. A companion dropped from four moves to
+  -- three, and this assertion said four -- it was the number, not the rule, and
+  -- the number is exactly the part that moves. What replaced the fourth slot is
+  -- Rally and Mend, which every companion has and none carries.
+  ok("a companion carries a full roster of moves", moveCount == C.MOVE_SLOTS,
+     moveCount .. " of " .. C.MOVE_SLOTS)
 
   r = send(ALICE, { Action = "Monster.Adopt" })
   ok("cannot adopt after swearing", errOf(r) ~= nil, r)
@@ -266,11 +271,27 @@ local function run(base, req)
      r and r.inventory.rune)
 
   T = T + 3600 * 1000
-  local boxesBefore = #send(ALICE, { Action = "User.Info" }).lootboxes
+  local questBefore = send(ALICE, { Action = "User.Info" })
+  local boxesBefore = #questBefore.lootboxes
+  local goldBefore = int(questBefore.gold, 0)
   r = send(ALICE, { Action = "Monster.Claim" })
   ok("quest claims", r and r.monster.status.type == "Home", errOf(r))
   ok("quest grants exp", r and r.monster.exp >= 1, r and r.monster.exp)
-  ok("quest grants a loot box", r and #r.lootboxes == boxesBefore + 1, r and #r.lootboxes)
+  -- ITEMS COME FROM THE CALENDAR, GOLD COMES FROM THE VERBS.
+  --
+  -- A quest used to pay a tier-2 crate: ~21 berries against the ~2.75 a cycle
+  -- spends, on a one-hour timer, so a wallet that never slept made ~400
+  -- berries a day against a two-hour person's ~42. ECONOMY_V2.md §7 says that
+  -- faucet moved off playtime; only the arena half of it ever did. This
+  -- assertion is the other half, and it is the one that must not come back.
+  ok("a quest grants no loot box", r and #r.lootboxes == boxesBefore,
+     r and #r.lootboxes)
+  ok("a quest pays Gold instead",
+     r and int(r.gold, 0) == goldBefore + C.ACTIVITIES.quest.goldReward,
+     r and int(r.gold, 0) - goldBefore)
+  ok("and the reply says how much", r and r.rewards
+     and int(r.rewards.gold, 0) == C.ACTIVITIES.quest.goldReward,
+     r and r.rewards and json.encode(r.rewards))
 
   -- Admin.SetStats patches; omitting `type` must keep the current activity,
   -- so a timer can be rewound without cancelling the quest it belongs to.
@@ -300,20 +321,43 @@ local function run(base, req)
   r = send(ALICE, { Action = "User.Info" })
   local lvl = r.monster.level
   local atkBefore = r.monster.attack
+  -- A LEGAL spread, derived from the two constants rather than typed. The cap
+  -- moved from five points per stat to three and this spread still put four
+  -- into attack, so a change to the balance broke a test about levelling. Take
+  -- the cap where it fits and let the remainder fall to the other three.
+  local cap = C.LEVEL_UP_MAX_PER_STAT
+  local intoAttack = math.min(cap, C.LEVEL_UP_POINTS - 3)
+  local rest = C.LEVEL_UP_POINTS - intoAttack
+  local spread = { math.min(cap, rest), 0, 0 }
+  rest = rest - spread[1]
+  spread[2] = math.min(cap, rest)
+  spread[3] = rest - spread[2]
+  ok("the level-up spread under test is legal",
+     intoAttack + spread[1] + spread[2] + spread[3] == C.LEVEL_UP_POINTS
+     and spread[3] <= cap,
+     intoAttack .. "/" .. table.concat(spread, "/"))
   r = send(ALICE, { Action = "Monster.LevelUp",
-                    AttackPoints = "4", DefensePoints = "2",
-                    SpeedPoints = "2", HealthPoints = "2" })
+                    AttackPoints = string.format("%d", intoAttack),
+                    DefensePoints = string.format("%d", spread[1]),
+                    SpeedPoints = string.format("%d", spread[2]),
+                    HealthPoints = string.format("%d", spread[3]) })
   if errOf(r) == nil then
     ok("level up advances the level", r.monster.level == lvl + 1, r.monster.level)
-    ok("level up applies the points", r.monster.attack == atkBefore + 4, r.monster.attack)
+    ok("level up applies the points", r.monster.attack == atkBefore + intoAttack,
+       r.monster.attack)
   else
     ok("level up advances the level", false, errOf(r))
     ok("level up applies the points", false, errOf(r))
   end
 
+  -- One point over the cap, whatever the cap is. A build whose identity is a
+  -- stat left at zero is the thing this limit exists to prevent, so the rule is
+  -- the assertion and the number is not.
   r = send(ALICE, { Action = "Monster.LevelUp",
-                    AttackPoints = "9", DefensePoints = "1" })
-  ok("more than 5 points into one stat is rejected", errOf(r) ~= nil, r)
+                    AttackPoints = string.format("%d", cap + 1),
+                    DefensePoints = string.format("%d", C.LEVEL_UP_POINTS - cap - 1) })
+  ok("more points into one stat than the cap allows is rejected",
+     errOf(r) ~= nil, r)
 
   -- Levelling costs Rune ----------------------------------------------------
   --
@@ -1005,30 +1049,181 @@ local function run(base, req)
 
   -- Loot ----------------------------------------------------------------------
   do
-    -- A tier-5 box must still be able to miss. The original multiplied the
-    -- chance without a ceiling, so every drop was guaranteed at high tiers.
-    -- 120 samples, not 40: a capped drop lands 95% of the time, so a
-    -- forty-box run misses nothing about one time in eight and the assertion
-    -- would be flaky. At 120 that is one run in five hundred.
-    local SAMPLES = 120
+    -- The ladder has to SEPARATE, and every box has to be worth opening.
+    --
+    -- The old table was nine independent rows whose `chance` scaled with the
+    -- tier and clamped at 950, so tier 2 paid 20.93 berries, tier 3 paid
+    -- 21.53, tier 4 paid 22.14 and tier 5 paid 22.74 -- four names for one
+    -- reward. Worse, a tier-1 box paid 1.53 and missed entirely 31.6% of the
+    -- time, landing on a one-berry pity floor.
+    --
+    -- Sampled rather than reasoned about: the amounts are uniform draws, so an
+    -- assertion on a single box would be an assertion about one roll.
+    local SAMPLES = 60
+    local totals, scrolls, minLines = {}, {}, {}
+    for rarity = 1, C.MAX_LOOT_RARITY do
+      send(OWNER, { Action = "Admin.Grant", PlayerId = ALICE,
+                    Lootboxes = string.format("%d", SAMPLES),
+                    Rarity = string.format("%d", rarity) })
+      local berries, scrollCount, fewest, duplicated, empty, runes = 0, 0, 99, 0, 0, 0
+      for _ = 1, SAMPLES do
+        local r = send(ALICE, { Action = "Lootbox.Open",
+                                Rarity = string.format("%d", rarity) })
+        local result = r and r.lootResult
+        if result then
+          local seen, lines = {}, 0
+          for _, reward in ipairs(result.rewards) do
+            if seen[reward.item] then duplicated = duplicated + 1 end
+            seen[reward.item] = true
+            lines = lines + 1
+            if reward.item == "scroll" then scrollCount = scrollCount + reward.amount
+            elseif reward.item == "rune" then runes = runes + 1
+            else berries = berries + reward.amount end
+          end
+          if lines == 0 then empty = empty + 1 end
+          if lines < fewest then fewest = lines end
+        end
+      end
+      totals[rarity] = berries / SAMPLES
+      scrolls[rarity] = scrollCount / SAMPLES
+      minLines[rarity] = fewest
+      ok("a tier-" .. rarity .. " box lists each item once", duplicated == 0, duplicated)
+      ok("a tier-" .. rarity .. " box is never empty", empty == 0, empty)
+      ok("a tier-" .. rarity .. " box never pays Rune", runes == 0, runes)
+    end
+
+    -- Each tier is a real step up, not a rename. The margins are wide because
+    -- these are sampled means: the tightest gap in the table is 22 against 48.
+    for rarity = 2, C.MAX_LOOT_RARITY do
+      ok("a tier-" .. rarity .. " box beats a tier-" .. (rarity - 1),
+         totals[rarity] > totals[rarity - 1] * 1.2,
+         string.format("%.1f vs %.1f", totals[rarity], totals[rarity - 1]))
+    end
+
+    -- The daily crate is the whole item budget, and ~22 berries is what buys
+    -- the ~2 hours a day the design promises. If this moves, that promise
+    -- moved with it -- see ECONOMY_V2.md §7 and C.LOOT_TIERS.
+    ok("the daily crate funds about two hours of play",
+       totals[2] > 18 and totals[2] < 26, string.format("%.1f berries", totals[2]))
+    -- A common box was 1.53 berries and a third of the time exactly one. It is
+    -- now a handful, which is the whole point of the rework.
+    ok("a common box is a handful, not an apology",
+       totals[1] >= 5 and totals[1] <= 8, string.format("%.1f berries", totals[1]))
+
+    -- Scroll is the hunt's capture ticket, so its supply is a balance number.
+    -- The daily crate trickles one; the ten-day crate guarantees one.
+    ok("the daily crate trickles Scrolls", scrolls[2] > 0 and scrolls[2] < 0.4,
+       string.format("%.2f per box", scrolls[2]))
+    ok("the ten-day crate guarantees a Scroll", scrolls[3] >= 1,
+       string.format("%.2f per box", scrolls[3]))
+    ok("a common box never pays a Scroll", scrolls[1] == 0, scrolls[1])
+
+    -- `picks` is a guarantee, not an average.
+    ok("every tier pays at least its pick count",
+       minLines[1] >= 1 and minLines[2] >= 2 and minLines[3] >= 3
+       and minLines[4] >= 4 and minLines[5] >= 4,
+       table.concat({ minLines[1], minLines[2], minLines[3], minLines[4], minLines[5] }, ","))
+  end
+
+  -- The opener's own berry is always in the box -------------------------------
+  --
+  -- Own element feeds for 20 energy against 10, so a crate without it is a day
+  -- unable to act. ALICE is Inferno Blades, so every box she opens carries
+  -- fire -- and a tier-1 box carries ONLY fire, because the remaining picks are
+  -- deliberately other elements.
+  do
     send(OWNER, { Action = "Admin.Grant", PlayerId = ALICE,
-                  Lootboxes = string.format("%d", SAMPLES), Rarity = "5" })
-    local misses, runesFound = 0, 0
-    for _ = 1, SAMPLES do
-      local r = send(ALICE, { Action = "Lootbox.Open", Rarity = "5" })
-      if r.lootResult then
-        local names = {}
-        for _, reward in ipairs(r.lootResult.rewards) do names[reward.item] = true end
-        if not names.fire_berry then misses = misses + 1 end
-        if names.rune then runesFound = runesFound + 1 end
+                  Lootboxes = "20", Rarity = "1" })
+    local missing, foreign = 0, 0
+    for _ = 1, 20 do
+      local r = send(ALICE, { Action = "Lootbox.Open", Rarity = "1" })
+      local result = r and r.lootResult
+      if result then
+        local sawOwn = false
+        for _, reward in ipairs(result.rewards) do
+          if reward.item == "fire_berry" then sawOwn = true
+          else foreign = foreign + 1 end
+        end
+        if not sawOwn then missing = missing + 1 end
       end
     end
-    ok("a top-tier box can still miss a drop", misses > 0, misses .. "/" .. SAMPLES)
-    ok("the drop cap is below certainty", C.LOOT_CHANCE_CAP < 1000, C.LOOT_CHANCE_CAP)
-    -- Runes are the only thing that buys anything, so a box must not print them
-    -- faster than a session costs.
-    ok("even a tier-5 box does not always pay Runes", runesFound < SAMPLES,
-       runesFound .. "/" .. SAMPLES)
+    ok("a box always carries the opener's own berry", missing == 0, missing)
+    ok("and a common box carries nothing else", foreign == 0, foreign)
+  end
+
+  -- The Gold allowance is what makes the faucet bot-proof ---------------------
+  --
+  -- Every verb that pays Gold draws on ONE 20-hour allowance per account, so a
+  -- wallet questing around the clock and a person playing for two hours
+  -- collect the same amount. Without this the quest is simply the old berry
+  -- faucet in a new currency: ~19 payouts a day against a person's ~2.
+  do
+    local CAPPER = "GOLDCAP" .. string.rep("g", 36)
+    send(OWNER, { Action = "Admin.Unlock", Addresses = CAPPER })
+    send(CAPPER, { Action = "Faction.Join", Faction = "Sky Nomads" })
+    local cap = C.ECONOMY.gold.rewardWindowCap
+    local per = C.ACTIVITIES.quest.goldReward
+    local before = int(send(CAPPER, { Action = "User.Info" }).gold, 0)
+
+    -- Enough quests to run past the ceiling twice over.
+    local attempts = (cap // per) + 3
+    for _ = 1, attempts do
+      send(OWNER, { Action = "Admin.SetStats", PlayerId = CAPPER },
+           json.encode({ energy = 100, happiness = 100 }))
+      send(CAPPER, { Action = "Monster.Quest" })
+      T = T + 3600 * 1000
+      send(CAPPER, { Action = "Monster.Claim" })
+    end
+    local capped = send(CAPPER, { Action = "User.Info" })
+    ok("the day's Gold is capped however many times you play",
+       int(capped.gold, 0) - before == cap, int(capped.gold, 0) - before)
+
+    -- And it is a WINDOW, not a lifetime limit.
+    T = T + C.ECONOMY.shop.accountWindow
+    send(OWNER, { Action = "Admin.SetStats", PlayerId = CAPPER },
+         json.encode({ energy = 100, happiness = 100 }))
+    send(CAPPER, { Action = "Monster.Quest" })
+    T = T + 3600 * 1000
+    local tomorrow = send(CAPPER, { Action = "Monster.Claim" })
+    ok("and the allowance comes back with the next window",
+       int(tomorrow.gold, 0) - before == cap + per,
+       int(tomorrow.gold, 0) - before)
+
+    -- Gold is MOVED, never minted: the reward comes out of the locked launch
+    -- allocation, so `issued - burned = player + escrow + shop + locked` has to
+    -- still hold afterwards. This is the assertion that catches a handler
+    -- crediting a player against a ledger that never issued it.
+    local audit = send(OWNER, { Action = "Economy.View" })
+    local inv = audit and audit.invariants
+    ok("paying gameplay Gold keeps the Gold ledger balanced",
+       inv and inv.gold and inv.gold.ok == true,
+       inv and json.encode(inv.gold))
+  end
+
+  -- The shop opens with its shelves stocked -----------------------------------
+  --
+  -- A desk born empty pauses its BUY side on "Desk is out of stock", so
+  -- selling was the only thing possible on a fresh contract -- a shop with
+  -- nothing on the shelves. The opening inventory sits just under the first
+  -- band edge so the launch quote is still the 5/12 the plan specifies.
+  do
+    local view = send(ALICE, { Action = "Economy.View" })
+    local desks = view and view.desks
+    local berry = desks and desks.fire_berry
+    ok("a berry desk opens with stock on the shelf",
+       berry and int(berry.stock, 0) > 0, berry and berry.stock)
+    ok("and both sides of it are open",
+       berry and not (berry.pause or {}).buy and not (berry.pause or {}).sell,
+       berry and json.encode(berry.pause))
+    ok("and it opens on the planned quote, not a cheaper band",
+       berry and int(berry.bid, 0) == 5 and int(berry.ask, 0) == 12,
+       berry and (tostring(berry.bid) .. "/" .. tostring(berry.ask)))
+    -- The floor is what makes a desk usable before the world has any supply.
+    -- Without it the cap is a share of outstanding stock, which on a young
+    -- process is a dozen units -- so the ladder spans its whole band range
+    -- inside one small trade and the desk caps out almost at once.
+    ok("the cap does not collapse on a young process",
+       berry and int(berry.stockCap, 0) >= 100, berry and berry.stockCap)
   end
 
   -- A redeploy must be able to carry players across ---------------------------
@@ -1520,8 +1715,22 @@ local function run(base, req)
   ok("a boost move is element-neutral", Battle.effectiveness("boost", "fire") == 1.0)
   ok("a heal move is element-neutral", Battle.effectiveness("heal", "water") == 1.0)
 
-  ok("a much faster attacker caps at 95%", Battle.hitChance(50, 0) == 0.95)
-  ok("a much slower attacker floors at 30%", Battle.hitChance(0, 50) == 0.30)
+  -- Stated over the TUNING, not over two numbers that were true under a
+  -- different curve. `speedSwing` is 0.3 now rather than 0, which replaced a
+  -- saturating gap with a share of the two speeds -- so an attacker with none
+  -- of the speed in the fight lands at `baseHitChance - speedSwing`, and only
+  -- reaches the floor if the tuning puts it there. The old assertion read the
+  -- old curve's clamp as if it were the rule.
+  ok("an attacker with all of the speed is capped, never certain",
+     Battle.hitChance(50, 0) == Battle.TUNING.maxHitChance
+       and Battle.TUNING.maxHitChance < 1,
+     Battle.hitChance(50, 0))
+  ok("an attacker with none of it is punished by the full swing",
+     Battle.hitChance(0, 50) == math.max(Battle.TUNING.minHitChance,
+       Battle.TUNING.baseHitChance - Battle.TUNING.speedSwing),
+     Battle.hitChance(0, 50))
+  ok("and the floor is a floor, never a certainty of missing",
+     Battle.hitChance(0, 50) > 0, Battle.hitChance(0, 50))
   ok("equal speed is the 70% base", Battle.hitChance(5, 5) == 0.70)
 
   -- Attacks must be able to miss. The original's `damage>0 and hit or true`
@@ -1599,12 +1808,222 @@ local function run(base, req)
     end
     ok("two immovable objects still produce a result", stalemate.status == "ended",
        n .. " rounds")
-    ok("and it is decided on the clock", stalemate.timedOut == true)
+    -- It used to be decided on the CLOCK, and that assertion is gone rather
+    -- than relaxed: two walls now finish each other, because Rally is free.
+    -- A companion carrying nothing but a zero-damage move is no longer a
+    -- companion that cannot deal damage -- it can spend its one free action on
+    -- attack and speed and then swing. The failure this whole block exists to
+    -- catch is "the fight never ends", which is what the next three assertions
+    -- check; how it ends is not the invariant.
+    ok("and it ends by knockout or by the clock, never by running forever",
+       stalemate.winner ~= nil, tostring(stalemate.timedOut))
     ok("with a winner named", stalemate.winner ~= nil, tostring(stalemate.winner))
     ok("the round cap is respected", n <= Battle.TUNING.roundCap,
        n .. " <= " .. Battle.TUNING.roundCap)
     ok("the turn log does not grow without bound",
        #stalemate.turns <= Battle.TUNING.roundCap * 2, #stalemate.turns)
+  end
+
+  -- The move system ----------------------------------------------------------
+  --
+  -- Three slots, the first of which is the species' own move; two drawn from
+  -- the element pool or the merged neutral pool, weighted by rarity; and Rally
+  -- and Mend free to everybody. See `Battle.rollMoves` and `C.FREE_ACTIONS`.
+  do
+    -- Every element move hits. Four of them used to deal no damage at all, and
+    -- a zero-damage move in a three-slot roster is a third of a companion spent
+    -- on something that cannot win a fight.
+    local unarmed = {}
+    for _, element in ipairs(C.ELEMENTS) do
+      for name, def in pairs(C.MOVE_POOLS[element] or {}) do
+        if (def.damage or 0) <= 0 then unarmed[#unarmed + 1] = name end
+      end
+    end
+    table.sort(unarmed)
+    ok("every move in an element pool deals damage", #unarmed == 0,
+       table.concat(unarmed, ","))
+
+    -- The pools the roll actually draws from. `normal`, `boost` and `heal` are
+    -- gone as pools; their moves live in `neutral` and keep their own `type`.
+    ok("the pools are the four elements and one neutral",
+       C.MOVE_POOLS.neutral ~= nil and C.MOVE_POOLS.normal == nil
+       and C.MOVE_POOLS.boost == nil and C.MOVE_POOLS.heal == nil,
+       tostring(C.MOVE_POOLS.neutral ~= nil))
+
+    -- The signature. `Monster.Adopt` above already asserted the slot count; this
+    -- is the one that says WHICH move is in the first slot, and it is the whole
+    -- reason the monster index's `basicMove` exists.
+    local missingSignature, sampled = {}, 0
+    for _, entry in ipairs(C.MONSTER_INDEX) do
+      if entry.state == "live" and entry.basicMove and Battle.moveDef(entry.basicMove) then
+        sampled = sampled + 1
+        for seed = 1, 12 do
+          math.randomseed(seed * 31 + entry.entryNo)
+          local rolled = Battle.rollMoves(entry.affinity, { entryNo = entry.entryNo })
+          if rolled[entry.basicMove] == nil then
+            missingSignature[#missingSignature + 1] = entry.name .. "/" .. entry.basicMove
+          end
+        end
+      end
+    end
+    ok("a rolled companion always knows its species' basic move",
+       #missingSignature == 0 and sampled > 0,
+       sampled .. " species, " .. #missingSignature .. " misses")
+
+    -- Rarity is a draw weight, not decoration. The pick inside a pool used to be
+    -- uniform, so a rarity-1 move was exactly as likely as a rarity-3 one and
+    -- the tier printed on the card meant nothing. Sampled rather than asserted
+    -- exactly: this is a distribution, and a seed that produced a suspicious run
+    -- should not fail a deploy.
+    local seen = { [1] = 0, [2] = 0, [3] = 0 }
+    for seed = 1, 400 do
+      math.randomseed(seed * 7919)
+      local name = Battle.drawMove("neutral", nil, nil)
+      local def = Battle.moveDef(name)
+      if def then seen[def.rarity or 3] = (seen[def.rarity or 3] or 0) + 1 end
+    end
+    ok("the common tier is drawn more often than the rare one",
+       seen[3] > seen[2] and seen[2] > seen[1],
+       string.format("r1=%d r2=%d r3=%d", seen[1], seen[2], seen[3]))
+
+    -- Riders are measured against a quarter of the fighter's BUDGET, not against
+    -- the stat they move, so the move that answers a hole in a build is not
+    -- worth least to the build with the hole. A tank with attack 1 must get real
+    -- attack out of Power Up.
+    do
+      local tank = Battle.combatant({
+        name = "Tank", elementType = "rock", level = 10,
+        attack = 1, defense = 60, speed = 20, health = 40,
+        moves = { ["Power Up"] = { count = 4 } },
+      }, "challenger", "T")
+      local before = tank.attack
+      local dummy = Battle.combatant({
+        name = "Dummy", elementType = "fire", level = 10,
+        attack = 20, defense = 20, speed = 20, health = 40,
+        moves = { ["Body Slam"] = { count = 3 } },
+      }, "accepter", "D")
+      local battle = Battle.new("rider", tank, "T", dummy, "D", { kind = "bot", timestamp = 0 })
+      Battle.resolveRound(battle, Battle.selectMove(battle.challenger, "Power Up"),
+                          Battle.selectMove(battle.accepter, "Body Slam"))
+      ok("a buff is worth its printed value to a build that dumped the stat",
+         battle.challenger.attack > before + 1,
+         before .. " -> " .. battle.challenger.attack)
+
+      -- And it lands even when the swing does not. Every boost in the pool
+      -- deals two damage now, which made all of them missable -- and a miss
+      -- used to return before the riders were applied, so a buff could whiff
+      -- and grant nothing. See the note on the miss roll in `act`.
+      do
+        local user = Battle.combatant({
+          name = "Slow", elementType = "fire", level = 5,
+          attack = 4, defense = 4, speed = 1, health = 8,
+          moves = { ["Power Up"] = { count = 4 } },
+        }, "challenger", "U")
+        local fast = Battle.combatant({
+          name = "Fast", elementType = "water", level = 5,
+          attack = 4, defense = 4, speed = 60, health = 8,
+          moves = { ["Whirlpool"] = { count = 4 } },
+        }, "accepter", "V")
+        local f = Battle.new("miss", user, "U", fast, "V", { kind = "bot", timestamp = 0 })
+        local missedAndBuffed, sawMiss = true, false
+        for _ = 1, 4 do
+          if f.status == "ended" then break end
+          local move = Battle.selectMove(f.challenger, "Power Up")
+          if not move then break end
+          local was = f.challenger.attack
+          local entries = Battle.resolveRound(f, move,
+            Battle.selectMove(f.accepter, "Whirlpool"))
+          for _, e in ipairs(entries) do
+            if e.attacker == "challenger" and e.missed then
+              sawMiss = true
+              if f.challenger.attack <= was then missedAndBuffed = false end
+            end
+          end
+        end
+        ok("a buff that whiffs still buffs", missedAndBuffed, tostring(sawMiss))
+      end
+
+      -- And it stops. Riders are permanent for the rest of the fight, so without
+      -- a ceiling a companion could spend every turn buffing into a number no
+      -- build owns.
+      local capped = battle.challenger.attack
+      for _ = 1, 6 do
+        local move = Battle.selectMove(battle.challenger, "Power Up")
+        if move then
+          Battle.resolveRound(battle, move, Battle.hesitate())
+          capped = battle.challenger.attack
+        end
+      end
+      local yardstick = math.floor((1 + 60 + 20 + 40) / 4)
+      ok("and it is capped at one yardstick above where it started",
+         capped <= 1 + math.floor(yardstick * Battle.TUNING.riderCapShare) + 1,
+         capped .. " vs " .. (1 + yardstick))
+    end
+
+    -- Rally and Mend. Free, once each, and never in a stored roster.
+    do
+      ok("the free actions are not draftable moves",
+         Battle.moveDef("Rally") == nil and Battle.moveDef("Mend") == nil,
+         tostring(Battle.moveDef("Rally")))
+
+      local fighter = Battle.combatant({
+        name = "Free", elementType = "fire", level = 5,
+        attack = 10, defense = 10, speed = 10, health = 10,
+        moves = { ["Scorching Ash"] = { count = 4 } },
+      }, "challenger", "F")
+      local rally, why = Battle.selectMove(fighter, "Rally")
+      ok("Rally is usable without carrying it", rally ~= nil and rally.free == true,
+         tostring(why))
+
+      local other = Battle.combatant({
+        name = "Foe", elementType = "water", level = 5,
+        attack = 10, defense = 10, speed = 10, health = 10,
+        moves = { ["Whirlpool"] = { count = 5 } },
+      }, "accepter", "O")
+      local fight = Battle.new("free", fighter, "F", other, "O", { kind = "bot", timestamp = 0 })
+      Battle.resolveRound(fight, Battle.selectMove(fight.challenger, "Rally"),
+                          Battle.selectMove(fight.accepter, "Whirlpool"))
+      local again, spent = Battle.selectMove(fight.challenger, "Rally")
+      ok("and only once a battle", again == nil and spent ~= nil, tostring(spent))
+      local mend = Battle.selectMove(fight.challenger, "Mend")
+      ok("but Mend is a separate charge", mend ~= nil, tostring(mend and mend.name))
+
+      -- A spent roster may still Mend. `hasMovesLeft` deliberately does not
+      -- count the free actions, or a companion holding an unused Mend would be
+      -- told "cannot struggle while other moves remain" and deadlock.
+      local empty = Battle.combatant({
+        name = "Spent", elementType = "fire", level = 5,
+        attack = 10, defense = 10, speed = 10, health = 10,
+        moves = { ["Scorching Ash"] = { count = 1 } },
+      }, "challenger", "S")
+      for _, move in pairs(empty.moves) do move.count = 0 end
+      ok("a spent roster can still struggle", Battle.selectMove(empty, "Struggle") ~= nil)
+      ok("and can still Mend", Battle.selectMove(empty, "Mend") ~= nil)
+    end
+
+    -- Relearning. A level-up may add and may replace; it may never hand back a
+    -- rarer move than it took, and it may never drop the species signature.
+    do
+      local entry = C.MONSTER_INDEX[1]
+      local downgrades, lostSignature = 0, 0
+      for seed = 1, 60 do
+        math.randomseed(seed * 104729)
+        local start = Battle.rollMoves(entry.affinity, { entryNo = entry.entryNo })
+        local after = Battle.relearn(start, entry.affinity, { entryNo = entry.entryNo })
+        if after[entry.basicMove] == nil then lostSignature = lostSignature + 1 end
+        local function rarest(set)
+          local best = 9
+          for name in pairs(set) do
+            local def = Battle.moveDef(name)
+            if def and (def.rarity or 3) < best then best = def.rarity or 3 end
+          end
+          return best
+        end
+        if rarest(after) > rarest(start) then downgrades = downgrades + 1 end
+      end
+      ok("a relearn never loses the species signature", lostSignature == 0, lostSignature)
+      ok("and never hands back a rarer move than it took", downgrades == 0, downgrades)
+    end
   end
 
   -- A restore must never take history away -----------------------------------
@@ -2424,7 +2843,8 @@ local function run(base, req)
       local def = Battle.moveDef(name)
       if ((def and def.damage) or 0) > 0 and mv.count ~= nil then damaging = true end
     end
-    ok("a reroll gives a legal roster", n == 4 and damaging, n .. " moves")
+    ok("a reroll gives a legal roster", n == C.MOVE_SLOTS and damaging,
+       n .. " of " .. C.MOVE_SLOTS .. " moves")
   end
 
   -- The character creator's outfit --------------------------------------------

@@ -140,7 +140,7 @@ fine in-process but does nothing for the token. Once Rune is a real token, route
 sinks so that activity *reduces* circulating supply:
 
 - Fees paid in **token** Rune get burned rather than recycled.
-- Or better, fees buy Rune from the AMM and burn it, so activity becomes buy
+- Or better, fees buy Rune off the external book and burn it, so activity becomes buy
   pressure on the pool rather than a bookkeeping entry.
 
 That converts "people playing" into "supply shrinking", which is the mechanism

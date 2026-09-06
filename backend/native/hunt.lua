@@ -398,7 +398,7 @@ local function makeWild(entry, level)
   wild.faction = entry.starterFaction or "Wild"
   wild.image = entry.entryKey
   wild.sprite = entry.entryKey
-  wild.moves = Battle.rollMoves(entry.affinity)
+  wild.moves = Battle.rollMoves(entry.affinity, { entryNo = entry.entryNo })
   return wild
 end
 
@@ -558,7 +558,7 @@ Handlers["hunt.capture"] = function(base, msg, timestamp)
   local actionId = field(msg, "actionid")
   local runes = int(field(msg, "runes"), nil)
   local capture = (C.HUNT and C.HUNT.capture) or {}
-  local minBid, maxBid = capture.minRuneBid or 1, capture.maxRuneBid or 5
+  local minBid, maxBid = capture.minRuneBid or 1, capture.maxRuneBid or 3
   if not validId(actionId, 192) or not runes or runes < minBid or runes > maxBid then
     return fail(base, "Capture needs an ActionId and a valid Rune bid")
   end

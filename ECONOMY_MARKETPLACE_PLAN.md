@@ -120,7 +120,6 @@ send a game-owned trade out to a second process and wait for it to come back.
 
 - `rune.lua` — the Rune token;
 - `quote.lua` — the quote token used for the test/real pairing as configured;
-- `amm.lua` — the Rune/quote automated market maker.
 
 They remain separate because their balances and settlement exist outside the
 game. All unreleased deployments retain the required `TEST-` naming.
@@ -621,7 +620,7 @@ The shop should guide different assets differently:
 The shop can guide and dampen P2P prices, but it cannot manufacture real value.
 Rune's durable value comes from bounded issuance, companion and gameplay
 utility, more players competing for the same supply, and recurring on-chain
-proceeds purchasing existing Rune from the external AMM.
+proceeds purchasing existing Rune off the external order book.
 
 ---
 
@@ -646,7 +645,7 @@ addition to speculation.
 ### 8.2 Paid proceeds and Rune acquisition
 
 **Locked mechanism:** part of on-chain paid proceeds goes to the team and part
-is used to acquire Rune through the Rune/quote AMM. Purchased Rune goes into a
+is used to acquire Rune on the Rune/quote order book. Purchased Rune goes into a
 separately accounted, publicly visible **Rune Reward Reserve** inside the game.
 It funds rewards by recycling existing Rune rather than minting replacement
 Rune.
@@ -662,7 +661,13 @@ The percentages are admin-policy dials with public history, not hidden wallet
 behavior. The quote faucet used in testing cannot create real pressure; the
 live mechanism needs an on-chain asset with actual value and a funded Rune pair.
 
-### 8.3 AMM execution controls
+### 8.3 External-book execution controls
+
+> **Superseded mechanism.** This section was written against a constant-product
+> pool. The pool is deleted; Rune is acquired by taking resting asks off the
+> external order book, or by resting a bid. The CONTROLS below still apply --
+> a budget, a slippage rail, a per-window cap -- but "slippage" now means how
+> far up the ladder an order sweeps, not how far along a curve it walks.
 
 **Initial defaults:**
 
@@ -682,7 +687,7 @@ the pool has moved outside policy. Publish the allocation rule and completed
 receipts without advertising the exact size and time of the next market order.
 
 The program is a transparent purchase rule, not a guaranteed Rune price, return,
-or permanent floor. The game shop and the external AMM must never pretend to
+or permanent floor. The game shop and the external book must never pretend to
 guarantee each other's quotes.
 
 ### 8.4 Paid-pack economic safety
@@ -931,7 +936,7 @@ $25 pass / $2 per month = 12.5 month modeled recoup
 ```
 
 `System-origin` includes newly issued game rewards and Rune distributed from the
-game-controlled Rune Reward Reserve. Rune bought from another player or the AMM
+game-controlled Rune Reward Reserve. Rune bought from another player or off the book
 is not a reward. The cap is subordinate to the fixed global budget, so 20 Rune
 is an account maximum and never a promised payment.
 
@@ -962,11 +967,11 @@ of the account's maximum net reward extraction purchased from existing supply
 up front. More active players then consume Rune through game actions, while the
 pass revenue adds recurring external demand.
 
-The $0.10 figure is an initial AMM valuation target, not a guaranteed floor.
-The opening Rune/quote reserve ratio establishes the initial AMM price. The Gold
+The $0.10 figure is an initial valuation target, not a guaranteed floor.
+The opening resting quotes establish the initial price. The Gold
 shop can guide Rune's in-game Gold price but cannot guarantee its external
 on-chain value. With only about 4,200 currently accounted Rune, the starting
-market value is approximately $420, so the AMM will be thin and even modest
+market value is approximately $420, so the book will be thin and even modest
 pass-funded purchases can move Rune above $0.10. Execution limits from section
 8.3 remain necessary.
 
@@ -1066,7 +1071,7 @@ Admins may propose changes to:
 - Gold per qualified active-player equivalent;
 - maximum weekly adjustment below the contract ceiling;
 - buy side, sell side, or complete desk enablement;
-- Rune-acquisition allocation and AMM execution limits.
+- Rune-acquisition allocation and external-book execution limits.
 
 The page previews the effect on current stock, reserves, and supply before a
 change is scheduled.
@@ -1125,7 +1130,7 @@ This is implementation order, not rollout order:
 6. Update the UI to show separate P2P and game-shop desks and make the NPC
    counterparty unmistakable.
 7. Remove `marketplace.lua` from deployment; retain separate Rune, quote, and
-   AMM deployment.
+   external order book deployment.
 8. Disable companion mint/export/import, collection deployment and the mint
    worker from normal routes and deploys; keep their source with
    parked-feature notes. The character creator is excluded from this — see
@@ -1170,7 +1175,7 @@ This is implementation order, not rollout order:
 - No normal deployment creates a marketplace process or companion collection,
   or runs a companion mint worker. The character creator IS exposed on every
   deployment; `Sprite.Update` uploads nothing.
-- Only Rune, quote, and AMM remain as separate economy Lua contracts.
+- Only Rune and quote remain as separate economy Lua contracts.
 
 ---
 
@@ -1186,7 +1191,7 @@ These are intentionally not filled in by assumption:
 5. Finalize the promised-pass address manifest, any finite unassigned claim
    slots and deadline, and whether sponsors fund their missing Rune-acquisition
    allocation.
-6. Live on-chain payment/quote asset and initial AMM liquidity.
+6. Live on-chain payment/quote asset and the first resting quotes on the book.
 7. Whether the proposed 50/30/20 proceeds split is accepted unchanged.
 8. Whether the 20,000,000 Gold protocol ceiling is the desired first hard cap.
 9. Scroll and Legendary Scroll current totals and finalized utility, needed

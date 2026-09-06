@@ -17,7 +17,7 @@ local function run(base, req)
   local GAME = "G" .. string.rep("g", 42)
   local RUNE = "T" .. string.rep("t", 42)
   local QUOTE = "Q" .. string.rep("q", 42)
-  local AMM = "M" .. string.rep("m", 42)
+  local BOOK = "M" .. string.rep("m", 42)
   local ASSET = "X" .. string.rep("x", 42)
   local ORDER = "R" .. string.rep("r", 42)
   local PROCESS = { commitments = { sig = { committer = OWNER, type = "rsa-pss-sha512" } } }
@@ -38,11 +38,11 @@ local function run(base, req)
   r = send(ALICE, { Action = "Admin.Configure", GameProcess = GAME })
   ok("a stranger cannot configure the registry", r and r.error == "Not authorised", json.encode(r))
   r = send(OWNER, { Action = "Admin.Configure", GameProcess = GAME,
-                    RuneToken = RUNE, QuoteToken = QUOTE, AmmProcess = AMM,
+                    RuneToken = RUNE, QuoteToken = QUOTE, BookProcess = BOOK,
                     QuoteTicker = "AR" })
   ok("the owner configures the complete process graph",
      r and r.gameProcess == GAME and r.runeToken == RUNE
-       and r.quoteToken == QUOTE and r.ammProcess == AMM, json.encode(r))
+       and r.quoteToken == QUOTE and r.bookProcess == BOOK, json.encode(r))
 
   local rows = { assets = {{
     assetId = ASSET, minter = ALICE, holder = ALICE, state = "minted",

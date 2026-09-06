@@ -182,40 +182,84 @@ Quest `expGain` rises 1 → 7 in the same change. At 1 exp per hour against the
 arena's measured 6.84 exp in two minutes, the tutorial verb was strictly
 dominated on every axis — the trap option, and the one a new player reaches for.
 
-## 7. Items are metered per day, not per battle
+## 7. Items are metered per day, not per action
 
-This is the change that kills 24/7 botting.
+This is the change that kills 24/7 botting, and **it was only half made**.
+
+The rule is one sentence: **items come from the calendar, Gold comes from the
+verbs.** A per-action ITEM reward funds more actions, so it compounds for
+whoever acts most, which is the one shape a machine beats a person at. Gold
+does not compound — turning it back into playtime means finding a player
+willing to sell you berries, which is the market this economy is for.
 
 | | before | after |
 |---|---|---|
-| item source | every battle win | the daily worship box |
-| bot playing 24/7 | ~4,300 berries/day | **19 berries/day** |
-| human playing 2h | ~360 berries/day | **19 berries/day** |
+| item source | every battle win **and every quest** | the daily crate only |
+| quest reward | 1 x tier-2 crate (~21 berries) | **15 Gold** |
+| arena win | 1 x tier-1 crate | **5 Gold** |
+| bot playing 24/7 | ~400 berries/day | **22 berries/day** |
+| human playing 2h | ~42 berries/day | **22 berries/day** |
 
-One tier-2 box yields `4 × 0.95 × 5` = 19 berries. An action costs 2.75 (one
-berry for the Play, plus 35 energy at 20 per own-element berry). So one box
-funds **~7 actions ≈ 1.75 hours** — the target, reached from the other side.
+**The quest was the faucet this section claimed to have closed.** Only the
+arena half was ever changed. A quest is free, runs on a one-hour timer, costs
+~2.75 berries of upkeep and paid a crate worth ~21 — a **7.6x surplus,
+repeatable ~19 times a day**. That is loot proportional to playtime, in the
+verb the tutorial teaches.
 
-Battle loot becomes a trickle sized to what an action consumes, so playing is
-roughly break-even in items rather than a 20:1 surplus engine. To play *more*
-than the daily box allows, buy items from another player — which is how Rune
-converts into playtime through the market without ever being required to play.
+### The Gold allowance
 
-**Battle loot cannot become item-positive until the timers are long (v3).** At
-15-minute timers a per-battle surplus is a bot subsidy: 96 actions/day against a
-human's 16.
+Both verbs draw on ONE allowance per account per 20-hour window
+(`C.ECONOMY.gold.rewardWindowCap`, 60 Gold). A wallet playing around the clock
+and a person playing for two hours collect the same Gold, the same way they
+collect the same crate. Seventeen days of collecting it in full lands on
+`gold.perQualifiedPlayer` — the 1,000 Gold this policy already assumes a real
+player holds — so the flow and the stock agree without a new number.
 
-### The streak pays the crate
+Rewards are **moved, never minted**: they come out of the locked launch
+allocation, so `issued - burned = player + escrow + shop + locked` still holds
+after every payment. That pool is finite on purpose, and when it cannot cover a
+reward the verb pays nothing and says so. What refills it is
+`policy.gold.expansionEnabled` and the weekly target recomputation
+(ECONOMY_MARKETPLACE_PLAN.md §6.3). **That machinery exists and is off. Turning
+it on is the launch decision this faucet depends on.**
 
-`dailyStreak` was fully tracked — counted, broken after `breakAfter`, preserved
-across `Admin.Load` by `max()`, bucketed for the `Checkins` census, published in
-the receipt — and paid **nothing**. `streakTiers` was `{}`.
+### The crate is the whole item budget
 
-| streak | crate |
-|---|---|
-| 1–2 | 1 × tier 2 |
-| 3–9 | 1 × tier 2 + 1 × tier 1 |
-| 10+ | 1 × **tier 3** |
+A box draws `picks` DISTINCT elements and pays `min`..`max` of each. The first
+pick is always the opener's own faction berry — its own element feeds for 20
+energy against 10, so a crate without it is a day unable to act — and the rest
+are deliberately other elements, because that surplus is what somebody else
+needs and it is where the player market comes from.
+
+| tier | picks | berries | scrolls | source |
+|---|---|---|---|---|
+| 1 Common | 1 | ~6.5 | — | streak-3 crate |
+| 2 Uncommon | 2 | **~22** | 12% | **the daily crate** |
+| 3 Rare | 3 | ~48 | 1 | ten-day streak |
+| 4 Epic | 4 | ~88 | 1.5 | none; events/admin |
+| 5 Legendary | 4 | ~132 | 2.5 | the starter crate, once |
+
+The old table was nine independent rows whose `chance` scaled with the tier and
+clamped at 950, which produced two visible defects: **a common box paid 1.53
+berries** and 31.6% of the time hit a one-berry pity floor, and **the tiers were
+indistinguishable above 2** — 20.93, 21.53, 22.14, 22.74 berries for four
+different names. A legendary was 1.8 berries better than an uncommon.
+
+Tier 2 is the load-bearing number because it is the daily crate: ~22 berries is
+~7.3 actions, which is **the ~2 hours a day this design promises a player who
+wants it**. Moving it moves that promise.
+
+### The streak now climbs
+
+| streak | crate | berries |
+|---|---|---|
+| 1-2 | 1 x tier 2 | ~22 (~1.8h) |
+| 3-9 | 1 x tier 2 + 1 x tier 1 | ~28.5 (~2.4h) |
+| 10+ | 1 x tier 3 | ~48 + a Scroll (~3.6h) |
+
+It used to be a **downgrade**: a lone tier-3 crate paid 21.53 berries against
+the streak-3 pair's 22.46, so ten days of perfect attendance bought fewer
+berries than three did.
 
 Crates rather than Rune, and the split is deliberate: Rune is the faucet, so it
 is flat and daily and nothing about returning more often may raise total
@@ -223,22 +267,65 @@ emission. Crates are berries, which are consumed rather than banked, so scaling
 them rewards the habit without touching supply — and a streak is wall-clock
 bound and resets on a miss, which is the one thing a bot cannot compress.
 
-**The tier-3 crate is doing a second job.** No handler had ever issued a box
-above tier 2, so `scroll` — gated at `minBox 3` — had no organic supply at all
-and tiers 3–5 were dead config. This is that emitter, metered by the calendar
-rather than by playtime.
+### The Scroll finally does something
+
+Scroll was in the item catalogue, in the asset ledger, on a market and behind a
+20,000-Gold NPC desk, and **no handler anywhere consumed one**. It is the hunt
+capture ticket now: one per attempt, spent whether the binding holds or breaks.
+
+That closes the loop the economy was missing:
+
+```text
+play -> Gold -> buy a Scroll -> attempt a capture -> burn Rune
+```
+
+which is what makes Gold worth earning, gives the Scroll desk a reason to
+exist, and puts a second consumable in front of the Rune sink. The capture bid
+dropped from 1-5 Rune to **1-3** at 35% / 56% / 74% — the fourth and fifth Rune
+bought 8 and 7 points on a curve flattening towards its cap, so they were the
+two most expensive and least interesting choices on the slider. Hunt entry
+dropped from five of each berry to **two**, because twenty berries was a whole
+day's crate and it put hunting and playing in direct competition for the same
+allowance.
+
+### The shop opens stocked
+
+Every desk was born with zero stock, which paused its BUY side on "Desk is out
+of stock" — so selling was the only thing possible on a fresh contract. Desks
+now open with inventory, seeded to just under the first band edge so the launch
+quote is still the 5/12 §5.2 specifies rather than a quiet repricing.
+
+`deskCap` also gained a floor. A share of outstanding supply inverts at small
+scale: with a few players the cap was a dozen units, so the ladder spanned its
+whole band range inside one five-berry trade and the desk hit its stock cap
+almost at once.
+
+And the reserves were rebalanced off the Rune desk, which held 200,000 Gold
+against an 11,700 maximum payout. Measured before: of 300,000 Gold issued,
+**only ~35,070 could ever reach a player**, because every desk's stock cap binds
+long before its Gold reserve. After: ~227,500, most of it through the gameplay
+allowance.
+
+**Battle loot cannot become item-positive until the timers are long (v3).** At
+15-minute timers a per-battle surplus is a bot subsidy: 96 actions/day against a
+human's 16.
 
 ## 8. Ordering — several of these are only safe in sequence
 
-1. **Berry yield negative first.** Free core loop + 20:1 berry yield + open desks
-   = a mint. One arena entry currently yields ~45 berries ≈ 225 gold against a
-   Rune worth 60 gold at the desk bid — already 3.75× profitable *while* costing
-   a Rune. Remove the Rune before fixing the yield and a 24/7 bot clears ~180
-   Rune/day.
-2. **Then** free the core loop.
-3. **Then** loosen the desk flow caps. The 2%-per-epoch cap looks like a lockout
-   bug and currently is not — it is the only thing bounding the drain in (1).
+1. ~~**Berry yield negative first.**~~ **Done.** The quest and the arena no
+   longer pay items at all (§7), so the per-action berry surplus that made this
+   ordering constraint load-bearing is gone. It was 7.6× on the quest and it
+   survived the v2 change untouched.
+2. ~~**Then** free the core loop.~~ **Done.**
+3. **Then** loosen the desk flow caps. Now safe, and partly done: the berry
+   desk's limits were ten times ECONOMY_MARKETPLACE_PLAN.md §5.3 and are back
+   at the plan's 100 / 250 / 500, the stock cap gained a floor, and every desk
+   opens with inventory.
 4. **Then** run `reconcile-rune-supply.mjs` and load the recovery set.
+5. **Before launch, turn on `policy.gold.expansionEnabled`.** The gameplay Gold
+   allowance draws on a finite locked pool; at 168 accounts collecting it in
+   full that is ~21 days before recycling. The weekly target recomputation is
+   what makes it sustainable, and it ships off.
 
 ## 9. Launch blockers carried from the audit
 
@@ -251,8 +338,20 @@ rather than by playtime.
 - **`consumed30` counts transfers as burns**, so the per-account cap is
   self-raisable at zero cost via Market.Buy, Withdraw, Bond and every refund
   path. 24% of one epoch's issuance was cap credit.
-- **Signup grants 6 tier-1 boxes, not 3** — `Faction.Join` grants
-  `C.STARTER_LOOTBOXES` and the inline adopt branch grants three more.
+- ~~**Signup grants 6 tier-1 boxes, not 3**~~ — fixed; both grant sites are
+  behind `p.seeded`, and the starter is now one Legendary crate.
+- **The pass is priced in USD in the code, not Rune.**
+  `passes.launchPriceReference` is 2500 cents with a sqrt ratchet, and §5 calls
+  Rune denomination non-negotiable because the maturity ramp was removed and
+  the pass carries the whole sybil defence. `purchaseEnabled` is `false`, so
+  there is no pass faucet at all yet. Corrected payback at the shipped flat 48
+  Rune/account with no ramp: **5.2 months at $0.10 a Rune, not the 12.5 §8.9
+  models** — and a dollar price gets WORSE as Rune appreciates, which is the
+  fixed-strike problem §5 exists to name. `economy-sim.mjs` still models the
+  pre-v2 design (a 2,000 pot divided among claimants, the 0/50/100% ramp, a
+  20/month cap) and `assertScheduleMatchesContract` only checks
+  `emissionPerEpoch`, which is now a non-binding circuit breaker — so the guard
+  passes while the model is wrong. **Deliberately left as planning.**
 
 ## 10. Deferred to v3
 

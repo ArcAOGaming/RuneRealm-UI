@@ -166,13 +166,15 @@ normal deployment/preflight; there is a TODO in MARKETPLACE.md to revisit it
 only if monster minting is re-enabled. Nothing here is waiting on that: a
 companion sale is already one atomic action in the authority.
 
-Kept: `rune.lua`, `quote.lua` and `amm.lua`. Those are the exchange, not the
-market, and their tokens have holders outside the game.
+Kept: `rune.lua` and `quote.lua`. Those are the exchange assets, not the market,
+and their tokens have holders outside the game. `amm.lua` was deleted: this game
+trades on an order book, and a constant-product pool is not one.
 
 **Staying separate, correctly:** `rune.lua` and `quote.lua` are their own
-tokens, and `amm.lua` is a market between them. Tokens have holders outside this
-game and must be independently addressable, so they are not ours to condense --
-this is a case where the hop cost is simply the price of the domain being real.
+tokens. What trades between them is an order book, and its process does not
+exist yet. Tokens have holders outside this game and must be independently
+addressable, so they are not ours to condense -- this is a case where the hop
+cost is simply the price of the domain being real.
 
 A companion sale is now zero hops: one action inside the authority. The hops
 that remain are the Rune deposit/withdraw saga against the token processes,

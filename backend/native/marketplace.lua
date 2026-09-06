@@ -22,7 +22,7 @@ GameProcess = GameProcess or ""
 CollectionId = CollectionId or ""
 RuneToken = RuneToken or ""
 QuoteToken = QuoteToken or ""
-AmmProcess = AmmProcess or ""
+BookProcess = BookProcess or ""
 QuoteTicker = QuoteTicker or "AR"
 
 Assets = Assets or {}
@@ -122,7 +122,7 @@ local function infoView()
     collectionId = CollectionId,
     runeToken = RuneToken,
     quoteToken = QuoteToken,
-    ammProcess = AmmProcess,
+    bookProcess = BookProcess,
     quoteTicker = QuoteTicker,
     settlement = "arweave-swap@1.0",
     settlementAsset = "AR",
@@ -172,9 +172,9 @@ H["Admin.Configure"] = function(base, msg)
     if not validId(msg.QuoteToken) then return fail(base, "QuoteToken must be a 43-character id") end
     QuoteToken = msg.QuoteToken
   end
-  if msg.AmmProcess ~= nil then
-    if not validId(msg.AmmProcess) then return fail(base, "AmmProcess must be a 43-character id") end
-    AmmProcess = msg.AmmProcess
+  if msg.BookProcess ~= nil then
+    if not validId(msg.BookProcess) then return fail(base, "BookProcess must be a 43-character id") end
+    BookProcess = msg.BookProcess
   end
   if msg.QuoteTicker ~= nil and msg.QuoteTicker ~= "" then
     QuoteTicker = tostring(msg.QuoteTicker):sub(1, 24)

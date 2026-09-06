@@ -12,7 +12,7 @@ launch), or **the release gate** (irreversible, needs a human decision).
   177 GB → 64 MB, spawn 23 s → 1.8 s. See `backend/native/hbfast/` and
   memory `module-size-is-the-12s`.
 - **Deploy pipeline verified end to end.** A clean `redeploy --blank` stood up
-  game + Rune + bridge + AMM + hunt fleet and re-pointed the app in one run.
+  game + Rune + bridge + quote token + hunt fleet and re-pointed the app in one run.
 - **Recovery/seed tooling.** 168 paid wallets restore from
   `legacy-players.json`; nine legacynet processes revive from Arweave
   checkpoints (HANDOFF §3).

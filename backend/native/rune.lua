@@ -615,7 +615,7 @@ H["Mint"] = function(base, msg)
       -- read that 500 as failure and retried, and a retry re-runs this
       -- handler: 80 Rune deducted in-game became 224 Rune minted.
       --
-      -- `Credit-Notice` is only ever consumed by the AMM (amm.lua), and only
+      -- `Credit-Notice` is only ever consumed by an exchange process, and only
       -- from a `Transfer` whose target IS a process. Transfer still emits it.
       -- Tell the minter it happened.
       --

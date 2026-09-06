@@ -777,6 +777,29 @@ local function spend(player, item, amount)
   return true
 end
 
+--- Pay a player the gameplay Gold a verb earned, and answer with the truth.
+---
+--- Both halves have to happen and they have to agree. `EconomyEngine` owns the
+--- allowance and the reserve, and it is the only thing allowed to move Gold
+--- out of the locked launch pool -- `recordPlayerDeltas` deliberately ignores
+--- a positive Gold delta from any non-admin verb, so a handler that simply
+--- bumped `p.gold` would credit a player against a ledger that never issued
+--- it, and the Gold conservation identity would fail on the next invariant
+--- check.
+---
+--- So: ask the economy, take what it gives, and credit exactly that. It says
+--- no when the account has spent its 20-hour allowance and when the reserve is
+--- dry, and both are ordinary answers rather than failures -- the verb still
+--- succeeds, it just paid nothing, the same way a desk pauses instead of going
+--- negative.
+local function grantGold(player, address, amount, timestamp)
+  local paid, reason = EconomyEngine.grantGoldReward(
+    EconomyState, address, amount, timestamp, "Gameplay reward")
+  paid = int(paid, 0)
+  if paid > 0 then player.gold = math.max(0, int(player.gold, 0)) + paid end
+  return paid, paid > 0 and nil or reason
+end
+
 local function addLootboxes(player, count, rarity)
   rarity = math.max(1, math.min(C.MAX_LOOT_RARITY, int(rarity, 1)))
   for _ = 1, math.max(0, int(count, 0)) do
@@ -1101,7 +1124,7 @@ local function createMonsterFromEntry(entryNo, timestamp, suppliedStats)
     totalTimesFed = 0,
     totalTimesPlay = 0,
     totalTimesQuest = 0,
-    moves = Battle.rollMoves(entry.affinity),
+    moves = Battle.rollMoves(entry.affinity, { entryNo = entry.entryNo }),
     status = { type = "Home", since = timestamp or 0, until_time = timestamp or 0 },
     bornAt = timestamp or 0,
   }
@@ -2732,9 +2755,17 @@ H["Monster.Claim"] = function(base, msg, timestamp)
     m.exp = (m.exp or 0) + cfg.expGain
     m.totalTimesQuest = (m.totalTimesQuest or 0) + 1
     p.questsCompleted = (p.questsCompleted or 0) + 1
-    addLootboxes(p, 1, cfg.lootRarity)
     rewards.exp = cfg.expGain
-    rewards.lootbox = cfg.lootRarity
+    -- GOLD, not a loot box. A quest paid a tier-2 crate -- ~21 berries against
+    -- the ~2.75 a cycle spends -- on a one-hour timer, so a wallet that never
+    -- slept made ~400 berries a day against a two-hour person's ~42. Items
+    -- come from the calendar now and Gold comes from the verbs; see the note
+    -- on `goldReward` in constants.lua.
+    --
+    -- Credit EXACTLY what the economy paid, never what was asked for: the
+    -- allowance is shared with the arena and the reserve is finite, so the
+    -- answer is regularly less than `cfg.goldReward` and sometimes zero.
+    rewards.gold, rewards.goldReason = grantGold(p, address, cfg.goldReward, timestamp)
   end
 
   m.status = { type = "Home", since = timestamp, until_time = timestamp }
@@ -2795,12 +2826,24 @@ H["Monster.LevelUp"] = function(base, msg, timestamp)
   m.speed = m.speed + s
   m.health = m.health + h
   resolveEvolution(m)
-  -- A level-up refreshes the move roster, so a build is not locked to whatever
-  -- four moves it happened to roll at adoption.
+  -- Every third level the companion RELEARNS: the signature slot is re-derived
+  -- from the monster index -- which is how an evolution hands over its new
+  -- signature move -- and each other slot draws a candidate it keeps only if it
+  -- is at least as rare as what is already there. See `Battle.relearn`.
+  --
+  -- It used to be `m.moves = Battle.rollMoves(...)`: a silent, total, random
+  -- replacement. With rarity now meaning something in the draw, that is a
+  -- mechanic which confiscates the rare move a player was given, on a schedule,
+  -- without asking. `resolveEvolution` runs first so a companion that evolved
+  -- this level relearns as its NEW stage.
+  local learned = nil
   if (m.level % 3) == 0 then
-    m.moves = Battle.rollMoves(m.elementType)
+    m.moves, learned = Battle.relearn(m.moves, m.elementType, { entryNo = m.entryNo })
   end
-  return reply(base, playerView(p))
+  local v = playerView(p)
+  -- Nothing told the player the old reroll had happened. This does.
+  if learned and #learned > 0 then v.learned = learned end
+  return reply(base, v)
 end
 
 --- The daily worship.
@@ -3403,16 +3446,11 @@ H["Lootbox.Open"] = function(base, msg, timestamp)
   end
 
   local rarity = table.remove(p.lootboxes, index)
-  local multiplier = 1.0 + 0.5 * (rarity - 1)
+  local tier = C.LOOT_TIERS[rarity] or C.LOOT_TIERS[1]
   local rewards = {}
-  -- One line per ITEM, not per loot-table row. Every tier above 1 rolls the
-  -- lower tiers' rows as well, so a tier-2 box hits `rock_berry` twice -- once
-  -- for 1 and once for 5 -- and the receipt used to read "Rock Berry +1" above
-  -- "Rock Berry +8" as if they were two different things. The grant was always
-  -- correct; only the telling of it was split. Merging here rather than in the
-  -- client also fixes the duplicate React key in LootVault's receipt.
   local seen = {}
   local function award(item, amount)
+    if amount <= 0 then return end
     grant(p, item, amount)
     local at = seen[item]
     if at then
@@ -3422,28 +3460,54 @@ H["Lootbox.Open"] = function(base, msg, timestamp)
       seen[item] = #rewards
     end
   end
-  for _, entry in ipairs(C.LOOT_TABLE) do
-    if rarity >= entry.minBox then
-      local chance = math.min(C.LOOT_CHANCE_CAP, math.floor(entry.chance * multiplier))
-      if Battle.rand(1, 1000) <= chance then
-        local amount = entry.amount
-        local swing = Battle.rand(1, 100)
-        if swing <= 20 then
-          amount = math.max(1, math.floor(amount * 0.5))
-        elseif swing >= 80 then
-          amount = math.ceil(amount * 1.5)
-        end
-        award(entry.item, amount)
-      end
-    end
+
+  -- The opener's OWN berry first, then other elements, never a repeat.
+  --
+  -- Own element is worth double when fed -- 20 energy against 10 -- so a run
+  -- of boxes without it is a run of days unable to act, and the daily crate's
+  -- entire job is that a player can always play. Everything after the first
+  -- pick is deliberately a DIFFERENT element: that surplus is what somebody
+  -- else needs, and it is where the player-to-player market comes from. See
+  -- the note on `C.LOOT_TIERS` before evening this out.
+  --
+  -- Distinct picks are also why the receipt can no longer say "Rock Berry +1"
+  -- above "Rock Berry +8". The old table was independent per-row rolls and
+  -- every tier re-rolled the lower tiers' rows, so one berry arrived twice as
+  -- if it were two different finds.
+  local faction = C.FACTION_BY_NAME[p.faction or ""]
+  local own = faction and faction.berry or "air_berry"
+  local pool = {}
+  for _, element in ipairs(C.ELEMENTS) do
+    local berry = element .. "_berry"
+    if berry ~= own and C.ITEMS[berry] then pool[#pool + 1] = berry end
   end
-  -- A box that rolls nothing feels broken, but Rune issuance is globally
-  -- bounded and may never hide in per-box RNG. The floor is one faction berry.
-  if #rewards == 0 then
-    local faction = C.FACTION_BY_NAME[p.faction or ""]
-    local floorItem = faction and faction.berry or "air_berry"
-    award(floorItem, 1)
+  -- Shuffle the other three, so "two elements" means two random ones rather
+  -- than whichever `C.ELEMENTS` happens to list first.
+  for i = #pool, 2, -1 do
+    local j = Battle.rand(1, i)
+    pool[i], pool[j] = pool[j], pool[i]
   end
+  table.insert(pool, 1, own)
+
+  local picks = math.max(1, math.min(#pool, int(tier.picks, 1)))
+  local low, high = math.max(1, int(tier.min, 1)), math.max(1, int(tier.max, 1))
+  if high < low then high = low end
+  for index = 1, picks do
+    award(pool[index], Battle.rand(low, high))
+  end
+
+  -- Scrolls: the guaranteed count plus one more on the roll. Outside the NPC
+  -- desk this is the only source of the hunt's capture ticket, which is why
+  -- the daily crate carries a small chance of one at all.
+  local scrolls = math.max(0, int(tier.scrolls, 0))
+  local extra = math.max(0, int(tier.scrollChance, 0))
+  if extra > 0 and Battle.rand(1, 1000) <= extra then scrolls = scrolls + 1 end
+  award("scroll", scrolls)
+
+  -- No pity floor any more, and none is needed: every tier pays `picks`
+  -- guaranteed draws of at least `min`, so a box cannot come up empty. The old
+  -- floor existed because four independent 25% rolls missed entirely 31.6% of
+  -- the time, which is the "one single berry" a common box used to hand over.
 
   local v = playerView(p)
   v.lootResult = { rarity = rarity, rewards = rewards }
@@ -3459,7 +3523,7 @@ local function huntEntryCosts()
   local configured = C.HUNT and C.HUNT.entry and C.HUNT.entry.berries or {}
   local costs = {}
   for _, item in ipairs(HUNT_BERRIES) do
-    costs[item] = math.max(0, int(configured[item], 5))
+    costs[item] = math.max(0, int(configured[item], 2))
   end
   return costs
 end
@@ -3474,7 +3538,12 @@ local function huntEntryProblem(player, costs)
     end
   end
   if #missing == 0 then return nil end
-  return "Hunting costs 5 of each berry; missing " .. table.concat(missing, ", ")
+  -- Quote the CONFIGURED price, never a number typed into a sentence. The
+  -- entry dropped from five of each to two and this string still said five,
+  -- which is the class of bug the walkthrough rule in CLAUDE.md exists for.
+  local each = costs[HUNT_BERRIES[1]] or 0
+  return "Hunting costs " .. string.format("%d", each)
+    .. " of each berry; missing " .. table.concat(missing, ", ")
 end
 
 local function huntReply(base, value, outbox)
@@ -3780,7 +3849,7 @@ H["Hunt.Settle"] = function(base, msg, timestamp)
   local roll = int(payload.roll, 0)
   local success = payload.success == true
   local capture = (C.HUNT and C.HUNT.capture) or {}
-  if runeBid < (capture.minRuneBid or 1) or runeBid > (capture.maxRuneBid or 5)
+  if runeBid < (capture.minRuneBid or 1) or runeBid > (capture.maxRuneBid or 3)
      or chance < (capture.minChance or 5) or chance > (capture.maxChance or 95)
      or roll < 1 or roll > 100 or success ~= (roll <= chance) then
     return fail(base, "Capture roll is invalid")
@@ -3789,8 +3858,24 @@ H["Hunt.Settle"] = function(base, msg, timestamp)
     markMonsterIndexSeen(p, entryNo)
   end
   if type(payload.monster) == "table" then markMonsterIndexSeen(p, payload.monster.entryNo) end
+  -- The Scroll is the capture TICKET, and it is spent whether the binding
+  -- holds or breaks, exactly like the Rune bid. This is the only thing in the
+  -- game that consumes one: a Scroll was in the item catalogue, in the asset
+  -- ledger, on a market and behind an NPC desk, and no handler anywhere ever
+  -- spent one.
+  --
+  -- Check BOTH prices before spending either. A capture is one price and it
+  -- has to be atomic -- a player holding the Rune but no Scroll must come out
+  -- of this holding all of the Rune, and the settlement must be refused rather
+  -- than half-charged, because the worker will retry it.
+  local scrollCost = math.max(0, int(capture.scrollCost, 0))
   if itemCount(p, "rune") < runeBid then
     return fail(base, "You do not hold enough Runes for that capture bid")
+  end
+  if scrollCost > 0 and itemCount(p, "scroll") < scrollCost then
+    return fail(base, "Binding needs " .. string.format("%d", scrollCost)
+      .. " " .. C.ITEMS.scroll.name .. " and you hold "
+      .. string.format("%d", itemCount(p, "scroll")))
   end
 
   local captured
@@ -3799,11 +3884,13 @@ H["Hunt.Settle"] = function(base, msg, timestamp)
     if not captured then return fail(base, why) end
   end
   spend(p, "rune", runeBid)
+  if scrollCost > 0 then spend(p, "scroll", scrollCost) end
   if captured then addToCollection(p, captured) end
 
   local receipt = {
     settlementId = settlementId, runId = runId, playerId = address,
     success = success, chance = chance, roll = roll, runesSpent = runeBid,
+    scrollsSpent = scrollCost,
     monster = captured and forClient(Battle.clone(captured)) or nil,
     settledAt = timestamp,
   }
@@ -3944,10 +4031,16 @@ function settleBattle(b, timestamp)
       other.wins = (other.wins or 0) + 1
       other.sessionWins = (other.sessionWins or 0) + 1
       if other.monster then other.monster.exp = (other.monster.exp or 0) + 2 end
-      -- Both kinds award a tier-1 box. A PvP win used to pay tier 3, which two
-      -- players trading wins could farm into unlimited Runes — see the loot
-      -- table in constants.lua.
-      addLootboxes(other, 1, 1)
+      -- Gold, from the same 20-hour allowance the quest draws on.
+      --
+      -- A win paid a tier-1 box, which under the old loot table was 1.53
+      -- berries and deliberately break-even against a session's ~2.75. Under
+      -- the new ladder a tier-1 box is ~6.5 berries, which would have made the
+      -- arena item-positive by 4.7x the moment the ladder landed -- and two
+      -- players trading wins is exactly the loop that must never be
+      -- item-positive. Gold instead, capped per day, so trading wins pays the
+      -- same ceiling as playing properly.
+      grantGold(other, addr, C.ACTIVITIES.battle.winGold, timestamp)
     else
       other.losses = (other.losses or 0) + 1
       other.sessionLosses = (other.sessionLosses or 0) + 1
@@ -5764,7 +5857,7 @@ H["Admin.UpdatePlayer"] = function(base, msg, timestamp)
         p.monster.nameMode = "species"
         p.monster.image = faction.monster.image
         p.monster.sprite = faction.monster.sprite
-        p.monster.moves = Battle.rollMoves(faction.element)
+        p.monster.moves = Battle.rollMoves(faction.element, { entryNo = faction.monster.entryNo })
       end
     end
   end
@@ -5822,7 +5915,7 @@ H["Admin.UpdatePlayer"] = function(base, msg, timestamp)
         until_time = int(mp.status.until_time, m.status.until_time or timestamp),
       }
     end
-    if mp.rerollMoves then m.moves = Battle.rollMoves(m.elementType) end
+    if mp.rerollMoves then m.moves = Battle.rollMoves(m.elementType, { entryNo = m.entryNo }) end
   end
 
   return reply(base, playerView(p))
@@ -5896,7 +5989,7 @@ H["Admin.AdjustAll"] = function(base, msg, timestamp)
           m[stat] = math.max(1, int(m[stat], 1) + deltas[stat])
         end
       end
-      if reroll then m.moves = Battle.rollMoves(m.elementType) end
+      if reroll then m.moves = Battle.rollMoves(m.elementType, { entryNo = m.entryNo }) end
       -- Name every account this changed, so `compute` republishes exactly these
       -- and not the whole table. A player with no companion is skipped above and
       -- is deliberately not named: nothing about their record moved.
@@ -6204,7 +6297,7 @@ H["Admin.SetStats"] = function(base, msg)
       until_time = int(patch.status.until_time, m.status.until_time),
     }
   end
-  if patch.rerollMoves then m.moves = Battle.rollMoves(m.elementType) end
+  if patch.rerollMoves then m.moves = Battle.rollMoves(m.elementType, { entryNo = m.entryNo }) end
   return reply(base, playerView(p))
 end
 
@@ -6432,9 +6525,11 @@ local function restoreMonster(m, timestamp)
     end
   end
   -- The migration. A row written by an older build -- a legacynet export, a
-  -- snapshot, the previous deployment -- carries whole moves; they are reduced
-  -- here, once, on the way in.
-  m.moves = Battle.compactMoves(m.moves)
+  -- snapshot, the previous deployment -- carries whole moves AND four of them;
+  -- they are reduced to the compact form and to `C.MOVE_SLOTS` here, once, on
+  -- the way in. See `Battle.normaliseRoster` for why trimming is not the
+  -- restore taking something away.
+  m.moves = Battle.normaliseRoster(m.moves, m.elementType, { entryNo = m.entryNo })
   -- A restored companion is never mid-fight: the battle it was in did not come
   -- across, so leaving it "in the arena" would strand it.
   if type(m.status) ~= "table" or m.status.type == "Battle" or m.status.type == "Hunt" then
@@ -8617,6 +8712,20 @@ function compute(base, req, opts)
       -- bytes of which 499 were this constant, repeated once per companion in
       -- the process, in a map the node marshals five times on every message.
       movePools = C.MOVE_POOLS,
+      -- How many of those a companion carries, so the client sizes the move
+      -- grid and the card from the process rather than from a literal. It went
+      -- from four to three and the card was already drawn for three; a screen
+      -- that hardcodes the old number renders an empty cell forever.
+      moveSlots = C.MOVE_SLOTS,
+      -- The draw weights, published because the card and the move grid print a
+      -- rarity and a player is entitled to know what it is worth. Rarity 1 is
+      -- the rare tier, so the weights run the other way from the number.
+      moveRarityWeight = C.MOVE_RARITY_WEIGHT,
+      -- Rally and Mend: every companion has them, no companion carries them,
+      -- once each per battle. They are not in `movePools` -- deliberately, so
+      -- one cannot be smuggled into a stored roster -- so the client would have
+      -- no way to draw them without this.
+      freeActions = C.FREE_ACTIONS,
       -- Published so the client can price a level-up from the process rather
       -- than hardcoding the rule. HANDOFF §5.23 is the reason: the client drew
       -- HP as `health * 10` against an engine using 12, and a move's damage as

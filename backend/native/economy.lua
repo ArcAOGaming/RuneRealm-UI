@@ -96,10 +96,33 @@ local function boxRows()
   return rows
 end
 
-local function newDesk(item, goldReserve, prices, limits, stockBps, stockMax)
+--- `stockFloor` and `seedStock` are the two fields that make a desk work on a
+--- young process.
+---
+--- `deskCap` is a share of OUTSTANDING SUPPLY, which is the right shape for an
+--- inventory and a disaster at launch: with a handful of players the cap is a
+--- dozen units, so the ladder walks its whole band range inside one trade
+--- (five berries sold for 23 Gold, not 25, because the third unit crossed a
+--- band edge) and the desk pauses at its stock cap almost immediately. The
+--- floor says: below this size the desk still behaves like a desk.
+---
+--- `seedStock` is the opening inventory. Without it `stock` is zero, the BUY
+--- side is paused on "Desk is out of stock", and selling is the only thing a
+--- player can do on a fresh contract -- a shop with empty shelves, which is
+--- both bad economics and bad furniture. Seeded at ~a third of the floor the
+--- desk opens two-sided in its second band, bid 4 / ask 9 on a berry, with
+--- room to move either way.
+local function newDesk(item, goldReserve, prices, limits, stockBps, stockMax, stockFloor, seedStock)
   return {
     item = item,
     goldReserve = goldReserve,
+    stockFloor = stockFloor or 0,
+    --- The opening inventory this desk WANTS, not inventory it has. `stock`
+    --- stays zero here deliberately: putting items on a shelf is an issuance,
+    --- and a desk that quietly started with stock the asset ledger never
+    --- issued would break `issued - consumed = player + escrow + shop` before
+    --- the first message. `seedDeskStock` moves both halves, once.
+    seedStock = seedStock or 0,
     stock = 0,
     reliableSupply = item ~= "scroll",
     launchAnchorBps = BPS,
@@ -188,11 +211,24 @@ local function newDesks()
     { uptoBps = 7500, bid = 3, ask = 7 },
     { uptoBps = 10000, bid = 1, ask = 5 },
   }
+  --- Repriced because the Scroll now DOES something.
+  ---
+  --- 250/600 was set for an item with no use whatsoever -- nothing in the game
+  --- consumed a Scroll -- so the number was pure guesswork and it made the
+  --- Scroll desk the single largest reachable Gold source in the economy
+  --- (18,250 of its 20,000 reserve) for an item nobody could spend.
+  ---
+  --- A Scroll is the hunt capture ticket now (`C.HUNT.capture.scrollCost`), so
+  --- it has an anchor: it replaces the sixteen berries the entry offering shed,
+  --- which are worth ~50 Gold at the desk bid. 40/90 puts a capture attempt at
+  --- roughly what a hunt used to cost in berries, keeps the ~2x spread every
+  --- other desk uses, and makes one Scroll about a day and a half of the
+  --- gameplay Gold allowance.
   local scrollPrices = {
-    { uptoBps = 1000, bid = 250, ask = 600 },
-    { uptoBps = 4000, bid = 225, ask = 500 },
-    { uptoBps = 8000, bid = 175, ask = 400 },
-    { uptoBps = 10000, bid = 100, ask = 300 },
+    { uptoBps = 2000, bid = 40, ask = 90 },
+    { uptoBps = 5000, bid = 32, ask = 70 },
+    { uptoBps = 7500, bid = 24, ask = 55 },
+    { uptoBps = 10000, bid = 12, ask = 40 },
   }
   --- Rune priced in Gold. Repriced 2026-08-31 from 1000/2000; see below.
   ---
@@ -212,10 +248,16 @@ local function newDesks()
   ---   their monthly Rune was worth twenty times all the Gold they should have
   ---   had -- so Gold stopped mattering and everything would have been priced in
   ---   Rune.
-  --- * SCARCITY. `C.LOOT_TABLE` drops 16 berry-units per box (four berries at
-  ---   800/1000 for 5 each). Rune is capped at 20 per account per 30 days and
-  ---   2,000 globally per epoch. That abundance ratio prices a Rune near 24
-  ---   berries, about 96 Gold.
+  --- * SCARCITY. The daily crate is ~22 berries (`C.LOOT_TIERS` tier 2, two
+  ---   elements at 9-13 each) and it is the whole item faucet. Rune is capped
+  ---   at 48 per account per 30 days. That abundance ratio prices a Rune near
+  ---   14 berries, about 45 Gold -- the same order the other two derivations
+  ---   land on, which is the point of doing three of them.
+  ---
+  ---   Re-derived when the loot ladder was rebuilt: the old figure read "16
+  ---   berry-units per box (four berries at 800/1000 for 5 each)" off a table
+  ---   that no longer exists, and it was measuring a per-BATTLE box in an
+  ---   economy where boxes now come only from the calendar.
   ---
   --- 60/120 sits between the two derivations and keeps the ~2x spread the other
   --- desks use. It also makes the 200,000 reserve cover ~3,300 Rune, which is
@@ -229,26 +271,101 @@ local function newDesks()
     { uptoBps = 6000, bid = 48, ask = 90 },
     { uptoBps = 10000, bid = 39, ask = 75 },
   }
-  local berryLimits = { perAction = 1000, perAccount = 2500, global = 5000 }
-  local scrollLimits = { perAction = 5, perAccount = 10, global = 25 }
+  --- Back to the plan's numbers. ECONOMY_MARKETPLACE_PLAN.md §5.3 says 100 per
+  --- action, 250 per account per 20 hours, 500 global per side -- these had
+  --- drifted to exactly ten times that, and `epochFlowLimit` below still does
+  --- its arithmetic against 500 ("25 on a berry desk"), so the constant and
+  --- the comment explaining it disagreed by an order of magnitude.
+  local berryLimits = { perAction = 100, perAccount = 250, global = 500 }
+  --- Above the plan's 5/10/25, because the plan wrote those for a Scroll that
+  --- was a collectible. It is a consumable now -- one per capture attempt --
+  --- and a desk that will not sell a player ten of them in a day is a desk
+  --- that stops them hunting.
+  local scrollLimits = { perAction = 10, perAccount = 25, global = 100 }
   local runeLimits = { perAction = 5, perAccount = 10, global = 25 }
+  --- Gold reserves rebalanced, and the Rune desk is where it came from.
+  ---
+  --- The Rune desk held 200,000 Gold and could pay out 11,700 of it: its stock
+  --- cap is 250 Rune and the bid ladder tops out at 60, so 188,300 Gold sat
+  --- behind a shelf it could never reach past. The Scroll desk was the same
+  --- shape at 20,000 for an item nobody could spend. Meanwhile the berry
+  --- desks -- where every actual trade happens -- had 5,000 each.
+  ---
+  --- Reserves are sized against what the desk can ACTUALLY pay now: a berry
+  --- desk clears 1,280 Gold filling its whole cap, a Scroll desk ~8,000 at the
+  --- new prices, the Rune desk 11,700. Everything freed goes to `gold.locked`,
+  --- which is what funds the gameplay Gold allowance (`M.grantGoldReward`).
+  --- Total issued Gold does not move: 300,000 before, 300,000 after.
   return {
-    air_berry = newDesk("air_berry", 5000, copy(berryPrices), copy(berryLimits), 500, 400),
-    water_berry = newDesk("water_berry", 5000, copy(berryPrices), copy(berryLimits), 500, 400),
-    fire_berry = newDesk("fire_berry", 5000, copy(berryPrices), copy(berryLimits), 500, 400),
-    rock_berry = newDesk("rock_berry", 5000, copy(berryPrices), copy(berryLimits), 500, 400),
-    scroll = newDesk("scroll", 20000, scrollPrices, scrollLimits, 1000, 100),
-    rune = newDesk("rune", 200000, runePrices, runeLimits, 600, 250),
+    --- Seeded to just UNDER the first band edge, which is not an arbitrary
+    --- number: a berry desk's top band runs to 20% of its cap, so 50 against a
+    --- 300 floor is 16.7% and the desk opens on the exact quote
+    --- ECONOMY_MARKETPLACE_PLAN.md §5.2 specifies -- buys at 5, sells at 12.
+    --- Seeding deeper (100, tried first) opens it in the second band at 4/9
+    --- instead, which is a launch REPRICING wearing the costume of a shelf
+    --- restock. Stock and price are separate decisions and this only makes the
+    --- stock one.
+    air_berry = newDesk("air_berry", 8000, copy(berryPrices), copy(berryLimits), 500, 400, 300, 50),
+    water_berry = newDesk("water_berry", 8000, copy(berryPrices), copy(berryLimits), 500, 400, 300, 50),
+    fire_berry = newDesk("fire_berry", 8000, copy(berryPrices), copy(berryLimits), 500, 400, 300, 50),
+    rock_berry = newDesk("rock_berry", 8000, copy(berryPrices), copy(berryLimits), 500, 400, 300, 50),
+    scroll = newDesk("scroll", 8000, scrollPrices, scrollLimits, 1000, 300, 150, 25),
+    --- No seed and no floor on Rune. Seeding a desk ISSUES the item, and Rune
+    --- is the one asset whose supply is a promise: every Rune in existence was
+    --- emitted by the schedule or crossed the bridge, and a shelf full of Rune
+    --- nobody earned would break that in the one place it matters. The desk
+    --- stays empty until a player sells into it, exactly as
+    --- ECONOMY_MARKETPLACE_PLAN.md §7.5 requires.
+    rune = newDesk("rune", 50000, runePrices, runeLimits, 600, 250),
   }
+end
+
+--- Put the opening inventory on the shelves, and account for it.
+---
+--- Seeding is an ISSUANCE -- the items did not exist a moment ago -- so
+--- `issued` and `shop` move together or `issued - consumed = player + escrow +
+--- shop` stops holding on the very first message. `M.invariants` and the test
+--- suite both check that identity, so getting this wrong fails loudly.
+---
+--- The arithmetic is inline rather than through `recordAsset`, for two
+--- reasons: `recordAsset` credits `player` (every other issuance in this file
+--- goes to somebody), and it is defined several hundred lines below the state
+--- constructor that has to call this.
+---
+--- Skipped for any desk that has already traded or already holds stock. On a
+--- fresh ledger this is the launch allocation; on a live one it is a migration,
+--- and a migration may not inject inventory into a market that is running --
+--- an opening balance is only ever an opening balance once.
+local function seedDeskStock(state)
+  for _, desk in pairs(state.desks or {}) do
+    local seed = math.max(0, int(desk.seedStock, 0))
+    local traded = desk.traded or {}
+    local untouched = int(desk.stock, 0) == 0
+      and int(traded.bought, 0) == 0 and int(traded.sold, 0) == 0
+    local row = state.assets[desk.item]
+    if seed > 0 and untouched and type(row) == "table" then
+      desk.stock = seed
+      row.issued = int(row.issued, 0) + seed
+      row.shop = int(row.shop, 0) + seed
+      row.sources = type(row.sources) == "table" and row.sources or {}
+      row.sources["Launch shop inventory"] =
+        int(row.sources["Launch shop inventory"], 0) + seed
+    end
+  end
+  return state
 end
 
 function M.newState()
   local assets = {}
   for _, item in ipairs(ITEM_IDS) do assets[item] = assetRow() end
   local cfg = C.ECONOMY
-  return {
+  -- Built, then stocked. A brand new ledger opens with its shelves full: the
+  -- shop was previously born empty, which paused the BUY side of every desk on
+  -- "Desk is out of stock" and left selling as the only thing a player could
+  -- do on a fresh contract.
+  return seedDeskStock({
     version = 1,
-    normalisedVersion = 5,
+    normalisedVersion = 6,
     mode = "testing",
     assets = assets,
     lootboxes = boxRows(),
@@ -259,8 +376,13 @@ function M.newState()
       ceiling = cfg.gold.protocolCeiling,
       player = 0,
       escrow = 0,
-      shop = 240000,
-      locked = 60000,
+      --- The desks hold what they can actually pay out; everything else is
+      --- locked, and locked is what funds the gameplay Gold allowance. Was
+      --- 240,000 / 60,000, when the Rune desk alone carried 200,000 it could
+      --- never spend. These two must equal the sum of `newDesks()` reserves
+      --- and the remainder of `launchSupply`; `goldInvariant` proves it.
+      shop = 90000,
+      locked = 210000,
       feesRouted = 0,
       daily = {},
     },
@@ -353,7 +475,6 @@ function M.newState()
         foregoneRuneAcquisitionReference = 0,
       },
       proceeds = copy(cfg.proceeds),
-      amm = copy(cfg.amm),
       runeAcquisition = { budgetQuote = 0, quoteSpent = 0, runeReceived = 0, executions = {} },
       externalRuneSupply = nil,
       externalRuneObservedAt = 0,
@@ -363,7 +484,7 @@ function M.newState()
     },
     marketDaily = {},
     activity = {},
-  }
+  })
 end
 
 local function normaliseAsset(row)
@@ -436,6 +557,40 @@ function M.ensureState(state)
       end
     end
     state.normalisedVersion = 5
+  end
+  if int(state.normalisedVersion, 0) < 6 then
+    -- The desk rework: a stock floor so a young desk is usable, an opening
+    -- inventory so the buy side is not dead, and reserves rebalanced off the
+    -- Rune desk (which held 200,000 Gold against an 11,700 maximum payout).
+    --
+    -- Prices, limits and reserves are OVERWRITTEN here rather than filled in
+    -- when absent, because every one of them exists already and is wrong --
+    -- that is the migration. A desk an operator has deliberately retuned is
+    -- not a case this build has: `Admin.Economy.Apply` cannot reach any of
+    -- these fields (see POLICY_PATHS), so the stored value is always the old
+    -- default.
+    local defaults = newDesks()
+    for item, desk in pairs(defaults) do
+      local current = state.desks[item]
+      if type(current) == "table" then
+        current.stockFloor = desk.stockFloor
+        current.seedStock = desk.seedStock
+        current.stockMax = desk.stockMax
+        current.limits = copy(desk.limits)
+        if item == "scroll" then current.prices = copy(desk.prices) end
+        -- Gold moves between buckets and is never minted: whatever the desk
+        -- gives up or gains comes out of, or goes back into, `locked`.
+        local target = int(desk.goldReserve, 0)
+        local delta = target - int(current.goldReserve, 0)
+        if delta <= int(state.gold.locked, 0) then
+          current.goldReserve = target
+          state.gold.locked = int(state.gold.locked, 0) - delta
+          state.gold.shop = int(state.gold.shop, 0) + delta
+        end
+      end
+    end
+    seedDeskStock(state)
+    state.normalisedVersion = 6
   end
   -- The book index is DERIVED, so it is not a migration and does not get a
   -- `normalisedVersion`: it is absent from every export and every published
@@ -1044,6 +1199,66 @@ local function emissionPopulation(state) -- luacheck: ignore
   local adopted = int(gold.qualifiedActive, 0)
   if adopted > 0 then return adopted end
   return math.max(1, int(gold.candidateQualifiedActive, 0))
+end
+
+--- The gameplay Gold faucet: what a quest or an arena win pays.
+---
+--- Two properties, and they are the whole design:
+---
+--- **It is capped per ACCOUNT per WINDOW, not per action.** Every verb that
+--- pays Gold draws on one 20-hour allowance, so a wallet questing around the
+--- clock and a person playing for two hours collect exactly the same amount.
+--- That is the same shape as the daily crate and for the same reason: a reward
+--- proportional to playtime is the one thing a machine beats a person at.
+---
+--- **It is paid out of the locked launch allocation, never minted.** Gold's
+--- conservation identity is `issued - burned = player + escrow + shop +
+--- locked`, and this moves a balance from the fourth bucket to the first.
+--- `recordPlayerDeltas` deliberately ignores a positive Gold delta from any
+--- non-admin verb, so the ledger side has to happen HERE, before the handler
+--- credits the player -- and the handler must credit exactly what this returns
+--- rather than what it asked for.
+---
+--- When the pool cannot cover the reward the answer is zero and a reason, the
+--- way a desk pauses rather than going negative. That is not a bug to route
+--- around later: a fixed Gold supply with a gameplay faucet drains, and what
+--- refills it is `policy.gold.expansionEnabled` and the weekly target
+--- recomputation. This function is where that becomes visible.
+function M.grantGoldReward(state, address, amount, timestamp, reason)
+  state = M.ensureState(state)
+  amount = math.max(0, int(amount, 0))
+  if amount == 0 then return 0, nil end
+  if type(address) ~= "string" or address == "" then return 0, "No signer address" end
+  if state.policy.emergency and state.policy.emergency.paused == true then
+    return 0, state.policy.emergency.reason or "The economy is paused"
+  end
+  local cap = math.max(0, int((C.ECONOMY.gold or {}).rewardWindowCap, 0))
+  if cap <= 0 then return 0, "Gameplay Gold rewards are disabled" end
+  local window = int(timestamp, 0) // math.max(1, int(C.ECONOMY.shop.accountWindow, DAY))
+  local activity = state.activity[address]
+  if not activity then
+    activity = { days = {}, sinkActions = 0, runeFlow = {} }
+    state.activity[address] = activity
+  end
+  local row = activity.goldReward
+  if type(row) ~= "table" or int(row.window, -1) ~= window then
+    row = { window = window, paid = 0 }
+    activity.goldReward = row
+  end
+  local headroom = cap - int(row.paid, 0)
+  if headroom <= 0 then return 0, "Today's Gold reward allowance is spent" end
+  local floor = math.max(0, int((C.ECONOMY.gold or {}).rewardReserveFloor, 0))
+  local available = int(state.gold.locked, 0) - floor
+  if available <= 0 then return 0, "The gameplay reward reserve is empty" end
+  local paid = math.min(amount, headroom, available)
+  if paid <= 0 then return 0, "The gameplay reward reserve is empty" end
+  state.gold.locked = int(state.gold.locked, 0) - paid
+  state.gold.player = int(state.gold.player, 0) + paid
+  row.paid = int(row.paid, 0) + paid
+  local today = dailyRow(state.gold.daily, timestamp)
+  today.issued = int(today.issued, 0) + paid
+  state.policy.gold.rewardsPaid = int(state.policy.gold.rewardsPaid, 0) + paid
+  return paid, reason
 end
 
 function M.claimRuneReward(state, player, address, timestamp)
@@ -2967,10 +3182,23 @@ end
 --- carries a working balance of them, so the desk's position grows with the
 --- game and is still bounded at a share of it. `stockMax` is the hard ceiling
 --- for the day the ratio stops being the binding one.
+--- ... with a FLOOR under it, which is the difference between a desk and a
+--- decoration on a young process.
+---
+--- A share of supply inverts at small scale. With a few players holding a few
+--- hundred berries the cap was a dozen units: the band ladder spans the whole
+--- cap, so the quote fell from 5 to 1 inside a single five-berry trade, and
+--- the desk hit "Shop stock cap reached" and stopped buying almost at once.
+--- The relative rule is right for a grown economy and wrong for a new one, so
+--- the floor holds the desk at a workable size until 5% of real supply
+--- overtakes it -- 6,000 berries of a kind, which is about where the recovered
+--- set already sits.
 local function deskCap(state, desk)
   local supply = assetSupply(state, desk.item)
-  if supply <= 0 then return 0 end
+  local floor = math.max(0, int(desk.stockFloor, 0))
+  if supply <= 0 and floor <= 0 then return 0 end
   local relative = (supply * int(desk.stockBps, 0)) // BPS
+  if relative < floor then relative = floor end
   if relative < 1 then relative = 1 end
   return math.min(int(desk.stockMax, 0), relative)
 end
@@ -3929,8 +4157,6 @@ local ALLOWED_CHANGES = {
   ["runeRewards.unbondDelay"] = { delay = true, min = DAY, max = 365 * DAY },
   ["passes.launchPriceReference"] = { delay = true, min = 1, max = 1000000000 },
   ["passes.monthlySubsidyReference"] = { delay = true, min = 0, max = 1000000000 },
-  ["amm.maxSlippageBps"] = { delay = true, min = 1, max = 1000 },
-  ["amm.maxWeeklyPoolBps"] = { delay = true, min = 1, max = 2000 },
 }
 
 local function policyParent(state, path)

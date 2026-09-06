@@ -479,7 +479,19 @@ local function run()
       return problem
     end
 
-    local under, at = tradeWith(4999), tradeWith(5000)
+    -- DERIVED, never typed. `epochFlowLimit` is
+    -- `(limits.global // flowFloorAccounts) * max(flowFloorAccounts, passes)`,
+    -- and writing the answer out as a literal is what let the berry desk's
+    -- limits drift to ten times the plan's while this test went on passing
+    -- against the old number.
+    local floorAccounts = C.ECONOMY.shop.flowFloorAccounts
+    local perAccount = desk.limits.global // floorAccounts
+    local flowLimit = function(passes)
+      return perAccount * math.max(floorAccounts, passes)
+    end
+
+    local base = flowLimit(0)
+    local under, at = tradeWith(base - 1), tradeWith(base)
     ok("a desk that has sold no passes still allows one 20-hour window's flow",
        under == nil and at == FLOW, tostring(under) .. " / " .. tostring(at))
 
@@ -488,16 +500,20 @@ local function run()
     -- two -- a desk that shuts because the item it trades is being used.
     state.assets.fire_berry.consumed = 400
     state.assets.fire_berry.player = 100
-    local stillUnder, stillAt = tradeWith(4999), tradeWith(5000)
+    local stillUnder, stillAt = tradeWith(base - 1), tradeWith(base)
     ok("and consuming four fifths of the supply does not tighten it",
        stillUnder == nil and stillAt == FLOW,
        tostring(stillUnder) .. " / " .. tostring(stillAt))
 
     -- Two hundred passholders are two hundred berry flows, so the desk widens
-    -- by exactly that: 250 a kind an account, the derivation in `epochFlowLimit`
-    -- against a berry desk whose `global` is 5000 over the 20-account floor.
+    -- by exactly that: `global // flowFloorAccounts` a kind per account, which
+    -- is the derivation `epochFlowLimit` carries and the reason neither number
+    -- appears here as a literal.
     state.policy.passes.lifetimePassCount = 200
-    local wideUnder, wideAt = tradeWith(49999), tradeWith(50000)
+    local wide = flowLimit(200)
+    ok("two hundred passes widen the desk by exactly two hundred flows",
+       wide == perAccount * 200, wide)
+    local wideUnder, wideAt = tradeWith(wide - 1), tradeWith(wide)
     ok("while passes widen it, because the players are what the flow is made of",
        wideUnder == nil and wideAt == FLOW,
        tostring(wideUnder) .. " / " .. tostring(wideAt))

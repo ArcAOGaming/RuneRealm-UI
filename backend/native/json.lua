@@ -8,7 +8,7 @@
 ---
 --- `hyper-aos.lua` is about 2,500 lines and exposes exactly ONE global the
 --- ~lua@5.3a device ever calls -- `compute`. Every process in this repo
---- (game, rune, marketplace, amm, quote) defines its own `compute`, is loaded
+--- (game, rune, marketplace, quote) defines its own `compute`, is loaded
 --- after aos, and therefore overrides it. None of them touch `Handlers`, `ao`,
 --- `Send`, `Utils`, `Inbox`, `state` or `Colors`. The single thing any of them
 --- needed was this module.

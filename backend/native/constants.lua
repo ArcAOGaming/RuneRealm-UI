@@ -139,66 +139,210 @@ C.FACTION_BY_NAME = {}
 for _, f in ipairs(C.FACTIONS) do C.FACTION_BY_NAME[f.name] = f end
 
 -- Moves ---------------------------------------------------------------------
--- `damage` is in units of 5 HP before stats and effectiveness. The stat fields
--- are one-off modifiers applied to the user when the move resolves.
+--
+-- `damage` is in units of 5 HP before stats and effectiveness. `count` is uses,
+-- and it is now the WHOLE number of them -- `Battle.TUNING.moveUses` was a x3
+-- multiplier on top and is 1. The stat fields are riders applied to whoever
+-- used the move, as a SHARE of that fighter's own stat rather than as flat
+-- points; see `TUNING.riderPerPoint`.
+--
+-- FIVE POOLS, NOT SEVEN. The four elements, and one merged `neutral` pool
+-- holding what used to be `normal`, `boost` and `heal` as three separate ones.
+--
+-- The split was the problem it looked like a solution to. The old roll drew one
+-- move from each support pool by name, so the pool WAS the slot: every
+-- companion in the game had exactly one boost and exactly one heal, and the
+-- only thing a roll could say about a creature was which of six it got in each
+-- fixed category. Merging them means the two drawn slots are drawn from one
+-- eighteen-move pool with no quota, so a roster can come out three attacks, or
+-- an attack and two heals, and those are genuinely different companions.
+--
+-- Each move keeps its own `type`, which is what the effectiveness chart and the
+-- move-grid icons read. Only the GROUPING changed.
+--
+-- WHAT THE TIERS MEAN. `rarity` 1 is the rare tier, 2 uncommon, 3 common, and
+-- `C.MOVE_RARITY_WEIGHT` is what makes that true of the draw. It was decoration
+-- before: the pick inside a pool was uniform, so a rarity-1 move was exactly as
+-- likely as a rarity-3 one and the tier printed on the card meant nothing.
+--
+-- Worse, it did not track POWER either. Measured with `./run-balance.sh
+-- rank<pool>5` -- which plays a roster carrying one move against an identical
+-- roster carrying a plain 4-damage attack instead -- the old catalog ranked:
+--
+--   water   Ice Spear r2 75%  |  Deep Current r3 66%  |  Tidal Wave r1 61%
+--   heal    Healing Winds r3 63%  |  Recovery r3 49%  |  ... |  Heal r1 24%
+--   normal  Quick Jab r2 72%  |  Momentum Shift r3 60%  |  Body Slam r1 60%
+--
+-- so in three of the seven pools the rarest move was not even in the top two,
+-- and the whole catalog spanned 12% to 75% -- a drawn move decided more of a
+-- fight than the build did.
+--
+-- EVERY ELEMENT POOL IS THE SAME SIX MOVES. One skeleton, four flavours:
+--
+--   rarity 1  damage 7, 3 uses   the species signature: big and repeatable
+--   rarity 2  damage 8, 2 uses   burst: the hardest single hit, and it runs out
+--   rarity 2  damage 4, 5 uses   sustain: the move that is always available
+--   rarity 3  damage 5, 3 uses   a solid common
+--   rarity 3  damage 3, 4 uses   a cheap common with a rider
+--   rarity 3  damage 2, 5 uses   the rider IS the move
+--
+-- Elements differ only in where the riders point -- fire buys attack, air buys
+-- speed, rock buys defense and pays speed, water spreads. That is deliberate:
+-- an element should be an identity, not an advantage, and four pools that are
+-- equal by construction cannot drift apart the way four hand-tuned ones did.
+--
+-- EVERY ELEMENT MOVE DEALS DAMAGE. Four of them used to deal none at all
+-- (Campfire, Ocean Mist, Breeze, Stone Wall) and they measured 0-18%, because a
+-- zero-damage move in a three-slot roster is a third of a companion spent on
+-- something that cannot win. Support belongs in the neutral pool, where it
+-- competes against other support; the element pool is the offensive identity.
+--
+-- SUPPORT IS PRICED AGAINST FREE. Every companion can Rally and Mend once a
+-- battle without spending a slot (see `C.FREE_ACTIONS`), so a drawn boost or
+-- heal no longer has to be the thing that stops you dying -- it has to be
+-- BETTER than the free one, which is a far easier thing to price and a far more
+-- interesting thing to draw.
 
 C.MOVE_POOLS = {
   fire = {
-    ["Firenado"]      = { type = "fire", rarity = 1, count = 2, damage = 5, attack =  0, speed =  2, defense = -1, health =  0 },
-    ["Campfire"]      = { type = "fire", rarity = 2, count = 3, damage = 0, attack =  2, speed = -1, defense =  3, health =  3 },
-    ["Inferno"]       = { type = "fire", rarity = 2, count = 1, damage = 6, attack =  3, speed = -1, defense = -2, health =  0 },
-    ["Flame Shield"]  = { type = "fire", rarity = 3, count = 2, damage = 2, attack = -1, speed =  0, defense =  4, health =  2 },
-    ["Scorching Ash"] = { type = "fire", rarity = 3, count = 2, damage = 3, attack =  1, speed =  1, defense = -2, health =  1 },
-    ["Phoenix Burst"] = { type = "fire", rarity = 3, count = 1, damage = 4, attack =  0, speed =  2, defense =  0, health = -2 },
+    ["Firenado"]           = { type = "fire", rarity = 1, count = 3, damage = 7, attack = 2, speed = 2, defense = -1, health = 0 },
+    ["Inferno"]            = { type = "fire", rarity = 2, count = 2, damage = 8, attack = 2, speed = -1, defense = -2, health = 0 },
+    ["Scorching Ash"]      = { type = "fire", rarity = 2, count = 4, damage = 4, attack = 2, speed = 1, defense = -1, health = 0 },
+    ["Phoenix Burst"]      = { type = "fire", rarity = 3, count = 2, damage = 5, attack = 2, speed = 1, defense = 0, health = -2 },
+    ["Flame Shield"]       = { type = "fire", rarity = 3, count = 3, damage = 4, attack = -1, speed = 0, defense = 3, health = 0 },
+    ["Campfire"]           = { type = "fire", rarity = 3, count = 3, damage = 3, attack = 2, speed = -1, defense = 1, health = 1 },
   },
   water = {
-    ["Tidal Wave"]    = { type = "water", rarity = 1, count = 2, damage = 4, attack =  2, speed =  1, defense = -1, health =  0 },
-    ["Whirlpool"]     = { type = "water", rarity = 2, count = 3, damage = 2, attack =  0, speed =  3, defense =  2, health = -2 },
-    ["Ice Spear"]     = { type = "water", rarity = 2, count = 1, damage = 6, attack =  2, speed =  2, defense = -1, health =  0 },
-    ["Ocean Mist"]    = { type = "water", rarity = 3, count = 2, damage = 0, attack =  0, speed =  2, defense =  4, health =  2 },
-    ["Frostbite"]     = { type = "water", rarity = 3, count = 2, damage = 3, attack = -1, speed =  1, defense =  2, health =  0 },
-    ["Deep Current"]  = { type = "water", rarity = 3, count = 1, damage = 3, attack =  1, speed =  3, defense = -1, health = -1 },
+    ["Tidal Wave"]         = { type = "water", rarity = 1, count = 3, damage = 7, attack = 2, speed = 1, defense = 0, health = 0 },
+    ["Ice Spear"]          = { type = "water", rarity = 2, count = 2, damage = 8, attack = 2, speed = -1, defense = -2, health = 0 },
+    ["Whirlpool"]          = { type = "water", rarity = 2, count = 4, damage = 4, attack = 0, speed = 2, defense = 0, health = 0 },
+    ["Frostbite"]          = { type = "water", rarity = 3, count = 2, damage = 5, attack = 0, speed = 1, defense = 0, health = 0 },
+    ["Deep Current"]       = { type = "water", rarity = 3, count = 3, damage = 4, attack = 1, speed = 2, defense = -1, health = 0 },
+    ["Ocean Mist"]         = { type = "water", rarity = 3, count = 3, damage = 3, attack = 0, speed = 1, defense = 2, health = 0 },
   },
   air = {
-    ["Tornado"]        = { type = "air", rarity = 1, count = 2, damage = 4, attack =  1, speed =  4, defense = -1, health =  0 },
-    ["Wind Slash"]     = { type = "air", rarity = 2, count = 3, damage = 2, attack =  2, speed =  3, defense = -1, health =  0 },
-    ["Storm Cloud"]    = { type = "air", rarity = 2, count = 1, damage = 5, attack =  2, speed =  2, defense = -1, health =  0 },
-    ["Breeze"]         = { type = "air", rarity = 3, count = 2, damage = 0, attack = -1, speed =  4, defense =  2, health =  2 },
-    ["Lightning Bolt"] = { type = "air", rarity = 3, count = 2, damage = 4, attack =  2, speed = -1, defense =  0, health = -2 },
-    ["Gale Force"]     = { type = "air", rarity = 3, count = 1, damage = 3, attack =  0, speed =  5, defense = -2, health =  0 },
+    ["Tornado"]            = { type = "air", rarity = 1, count = 3, damage = 7, attack = 1, speed = 2, defense = 0, health = 0 },
+    ["Storm Cloud"]        = { type = "air", rarity = 2, count = 2, damage = 8, attack = 2, speed = 0, defense = -3, health = 0 },
+    ["Wind Slash"]         = { type = "air", rarity = 2, count = 4, damage = 4, attack = 1, speed = 2, defense = -1, health = 0 },
+    ["Lightning Bolt"]     = { type = "air", rarity = 3, count = 2, damage = 5, attack = 2, speed = 1, defense = -2, health = 0 },
+    ["Gale Force"]         = { type = "air", rarity = 3, count = 3, damage = 4, attack = 0, speed = 3, defense = -1, health = 0 },
+    ["Breeze"]             = { type = "air", rarity = 3, count = 3, damage = 3, attack = 0, speed = 3, defense = 0, health = 0 },
   },
   rock = {
-    ["Boulder Crush"]   = { type = "rock", rarity = 1, count = 2, damage = 5, attack =  3, speed = -2, defense =  2, health =  0 },
-    ["Stone Wall"]      = { type = "rock", rarity = 2, count = 3, damage = 0, attack = -1, speed = -2, defense =  6, health =  2 },
-    ["Rock Slide"]      = { type = "rock", rarity = 2, count = 1, damage = 7, attack =  2, speed = -1, defense = -2, health =  0 },
-    ["Earth Shield"]    = { type = "rock", rarity = 3, count = 2, damage = 2, attack =  0, speed = -1, defense =  5, health =  2 },
-    ["Seismic Slam"]    = { type = "rock", rarity = 3, count = 2, damage = 4, attack =  3, speed =  0, defense = -1, health = -1 },
-    ["Granite Barrier"] = { type = "rock", rarity = 3, count = 1, damage = 1, attack =  0, speed = -2, defense =  6, health =  3 },
+    ["Boulder Crush"]      = { type = "rock", rarity = 1, count = 3, damage = 7, attack = 3, speed = 0, defense = 0, health = 0 },
+    ["Rock Slide"]         = { type = "rock", rarity = 2, count = 2, damage = 8, attack = 2, speed = -1, defense = -2, health = 0 },
+    ["Seismic Slam"]       = { type = "rock", rarity = 2, count = 4, damage = 4, attack = 3, speed = 0, defense = 0, health = 0 },
+    ["Granite Barrier"]    = { type = "rock", rarity = 3, count = 2, damage = 5, attack = 1, speed = -1, defense = 0, health = 0 },
+    ["Earth Shield"]       = { type = "rock", rarity = 3, count = 3, damage = 4, attack = 0, speed = -1, defense = 3, health = 0 },
+    ["Stone Wall"]         = { type = "rock", rarity = 3, count = 3, damage = 3, attack = 0, speed = 0, defense = 4, health = 1 },
   },
-  boost = {
-    ["Power Up"]           = { type = "boost", rarity = 1, count = 2, damage = 0, attack =  5, speed =  2, defense = -2, health =  0 },
-    ["Iron Skin"]          = { type = "boost", rarity = 2, count = 2, damage = 0, attack = -1, speed =  0, defense =  5, health =  2 },
-    ["Swift Wind"]         = { type = "boost", rarity = 2, count = 2, damage = 0, attack =  2, speed =  5, defense = -1, health = -1 },
-    ["Battle Cry"]         = { type = "boost", rarity = 3, count = 2, damage = 0, attack =  4, speed =  3, defense = -2, health = -1 },
-    ["Warrior's Resolve"]  = { type = "boost", rarity = 3, count = 2, damage = 0, attack =  3, speed =  2, defense =  0, health = -2 },
-    ["Adrenaline Surge"]   = { type = "boost", rarity = 3, count = 1, damage = 0, attack =  6, speed = -1, defense =  0, health = -3 },
+  neutral = {
+    ["Body Slam"]          = { type = "normal", rarity = 1, count = 3, damage = 7, attack = 3, speed = 0, defense = 0, health = 0 },
+    ["Heavy Strike"]       = { type = "normal", rarity = 2, count = 2, damage = 8, attack = 2, speed = -1, defense = -2, health = 0 },
+    ["Quick Jab"]          = { type = "normal", rarity = 2, count = 4, damage = 4, attack = 1, speed = 1, defense = 0, health = 0 },
+    ["Guard Break"]        = { type = "normal", rarity = 3, count = 2, damage = 5, attack = 2, speed = 0, defense = -1, health = 0 },
+    ["Frenzy Blows"]       = { type = "normal", rarity = 3, count = 3, damage = 4, attack = 2, speed = 0, defense = 0, health = 0 },
+    ["Momentum Shift"]     = { type = "normal", rarity = 3, count = 3, damage = 3, attack = 0, speed = 2, defense = 0, health = 1 },
+    ["Power Up"]           = { type = "boost", rarity = 1, count = 3, damage = 2, attack = 4, speed = 2, defense = 2, health = 0 },
+    ["Battle Cry"]         = { type = "boost", rarity = 2, count = 3, damage = 2, attack = 3, speed = 3, defense = 0, health = 0 },
+    ["Iron Skin"]          = { type = "boost", rarity = 2, count = 3, damage = 2, attack = 0, speed = 1, defense = 6, health = 2 },
+    ["Swift Wind"]         = { type = "boost", rarity = 3, count = 3, damage = 2, attack = 1, speed = 4, defense = 0, health = 0 },
+    ["Warrior's Resolve"]  = { type = "boost", rarity = 3, count = 3, damage = 2, attack = 2, speed = 2, defense = 1, health = 0 },
+    ["Adrenaline Surge"]   = { type = "boost", rarity = 3, count = 3, damage = 2, attack = 3, speed = 1, defense = 0, health = 0 },
+    ["Life Surge"]         = { type = "heal", rarity = 1, count = 3, damage = 0, attack = 1, speed = 1, defense = 0, health = 7 },
+    ["Regenerate"]         = { type = "heal", rarity = 2, count = 3, damage = 0, attack = 0, speed = 1, defense = 1, health = 6 },
+    ["Recovery"]           = { type = "heal", rarity = 2, count = 3, damage = 0, attack = 0, speed = 1, defense = 0, health = 6 },
+    ["Heal"]               = { type = "heal", rarity = 3, count = 3, damage = 0, attack = 0, speed = 0, defense = 0, health = 6 },
+    ["Vital Essence"]      = { type = "heal", rarity = 3, count = 3, damage = 0, attack = 0, speed = -1, defense = 1, health = 6 },
+    ["Healing Winds"]      = { type = "heal", rarity = 3, count = 3, damage = 0, attack = 1, speed = 2, defense = 0, health = 5 },
   },
-  heal = {
-    ["Heal"]          = { type = "heal", rarity = 1, count = 2, damage = 0, attack = -1, speed =  0, defense =  0, health = 6 },
-    ["Regenerate"]    = { type = "heal", rarity = 2, count = 3, damage = 0, attack = -2, speed =  0, defense =  2, health = 5 },
-    ["Life Surge"]    = { type = "heal", rarity = 2, count = 1, damage = 0, attack =  1, speed =  0, defense =  0, health = 8 },
-    ["Recovery"]      = { type = "heal", rarity = 3, count = 2, damage = 0, attack =  0, speed =  2, defense =  0, health = 5 },
-    ["Vital Essence"] = { type = "heal", rarity = 3, count = 2, damage = 0, attack =  0, speed = -2, defense =  4, health = 7 },
-    ["Healing Winds"] = { type = "heal", rarity = 3, count = 1, damage = 0, attack =  1, speed =  3, defense =  0, health = 4 },
-  },
-  normal = {
-    ["Body Slam"]      = { type = "normal", rarity = 1, count = 2, damage = 5, attack = 3, speed =  0, defense =  1, health =  0 },
-    ["Quick Jab"]      = { type = "normal", rarity = 2, count = 3, damage = 3, attack = 2, speed =  4, defense = -1, health =  0 },
-    ["Heavy Strike"]   = { type = "normal", rarity = 2, count = 1, damage = 6, attack = 4, speed = -2, defense =  2, health =  0 },
-    ["Guard Break"]    = { type = "normal", rarity = 3, count = 2, damage = 4, attack = 2, speed = -1, defense = -2, health =  1 },
-    ["Frenzy Blows"]   = { type = "normal", rarity = 3, count = 2, damage = 2, attack = 3, speed =  2, defense = -1, health = -1 },
-    ["Momentum Shift"] = { type = "normal", rarity = 3, count = 1, damage = 0, attack = 0, speed =  5, defense = -3, health =  3 },
-  },
+}
+
+--- How many moves a companion carries.
+---
+--- Three, and the third of them is the card's bottom row. It was four, drawn as
+--- one element move plus one from each of three support pools.
+---
+--- Three is the number the printed card can actually hold: the moves panel is
+--- 549 pixels wide inside its frame, and the longest names in these pools
+--- ("ADRENALINE", "REGENERATE") do not fit a two-column grid at a size worth
+--- drawing. Three full-width rows fit every name in the game on one line at
+--- more than twice the height. See `SLOTS` in `src/lib/card/layout.mjs`.
+---
+--- It is also what makes a roster a DECISION. At four slots with one drawn from
+--- each support pool there was nothing to decide -- everybody had an attack, a
+--- boost, a heal and a neutral. At three, drawn freely, what you got is a
+--- character.
+C.MOVE_SLOTS = 3
+
+--- The draw weight of each rarity tier. Bigger is more common.
+---
+--- Rarity 1 is the RARE tier, so the weights run the other way from the number.
+--- A pool of six is one rarity 1, two rarity 2 and three rarity 3, which at
+--- these weights is a 1-in-39 chance of the rare move per drawn slot -- about
+--- one companion in twenty shows one, and a companion that shows two is worth
+--- stopping to look at.
+---
+--- The neutral pool is eighteen moves in the same 1:2:3 shape, so its rare
+--- share works out identical: the tier means the same thing in both pools,
+--- which is the property that lets `MOVE_ELEMENT_BIAS` be a flavour dial rather
+--- than a power dial.
+C.MOVE_RARITY_WEIGHT = { [1] = 1, [2] = 4, [3] = 10 }
+
+--- How often a drawn slot comes from the companion's own element pool, as a
+--- percentage, with the neutral pool taking the rest.
+---
+--- Not 50: the signature slot is ALREADY elemental and guaranteed, so a
+--- companion reads as its element before this is consulted at all. At 40 the
+--- expected roster is the signature plus about 0.8 more element moves and about
+--- 1.2 neutral, which lands roughly a third of companions on three attacks, a
+--- half on two attacks and a support, and a sixth on one attack and two
+--- support. Those are the three archetypes; move this and you move how common
+--- each one is.
+C.MOVE_ELEMENT_BIAS = 40
+
+--- How much likelier a species is to draw its own `advancedMove`.
+---
+--- The index gives every entry a `basicMove` and an `advancedMove`.
+--- `basicMove` is guaranteed -- it is the signature slot. Guaranteeing the
+--- second one too would spend two of three slots on the index and leave a
+--- single roll, so `advancedMove` is weighted up instead: common for the
+--- species, rare in the world, and a companion holding both of its signature
+--- moves is a roll worth keeping.
+C.MOVE_SIGNATURE_BOOST = 6
+
+--- The two actions every companion has and no companion carries.
+---
+--- Rally and Mend cost no slot, are identical for everybody, and are usable
+--- once each per battle. They exist because three slots is not enough room to
+--- carry a whole game: a rolled roster used to have to contain its own answer
+--- to being low on health, and on the old four-slot roll about one companion in
+--- twelve did not have one. At three slots that hole would have been much
+--- bigger, and "guarantee a heal in the roll" would have spent a third of every
+--- roster in the game on the same move.
+---
+--- They are opposed on purpose and neither is strictly good:
+---
+---   Rally   attack and speed up, health down    -- pay life for tempo
+---   Mend    health and defense up, speed down   -- pay tempo for life
+---
+--- The real price of both is the ROUND. A turn spent on Rally is a turn not
+--- spent on damage, and that is the whole cost; it needs no other.
+---
+--- Both are deliberately beaten by a good drawn move: Mend restores what a
+--- rarity-3 `Heal` does, and `Heal` can be used four times. The free pair is a
+--- floor, not a replacement, which is what keeps the support half of the
+--- neutral pool worth drawing.
+---
+--- Written with identifier keys rather than `["Rally"]` so the two tools that
+--- parse this file for move names -- `tools/sync-monster-index.mjs` and
+--- `tools/studio-plugin.ts` -- do not read them as pool moves. They are not in
+--- `C.MOVE_POOLS`, and that is also what stops one being smuggled into a stored
+--- roster: `Battle.moveDef` does not know them, so the battle-fleet worker's
+--- roster validation rejects the name.
+C.FREE_ACTIONS = {
+  Rally = { type = "boost", rarity = 0, count = 1, damage = 0, attack = 5, speed = 4, defense = 0, health = -2 },
+  Mend  = { type = "heal",  rarity = 0, count = 1, damage = 0, attack = 0, speed = -3, defense = 4, health = 6 },
 }
 
 -- Activities ----------------------------------------------------------------
@@ -234,11 +378,44 @@ C.ACTIVITIES = {
     --- quest was strictly dominated, and it is the verb the tutorial teaches.
     --- Seven makes the slow, fire-and-forget option worth choosing.
     expGain = 7,
-    lootRarity = 2,
+    --- GOLD, not a box. This line is the single biggest correction in the
+    --- economy and the reason is arithmetic, not taste.
+    ---
+    --- A quest paid `lootRarity = 2` -- a crate worth ~21 berries -- against
+    --- the ~2.75 berries a quest cycle spends. A 7.6x surplus, on a one-hour
+    --- timer, is ~19 crates a day for a wallet that never sleeps and ~2 for a
+    --- person who plays for two hours. That is loot proportional to playtime,
+    --- which is precisely the shape ECONOMY_V2.md §7 says was removed; only
+    --- the arena half of it ever was.
+    ---
+    --- The rule now is one sentence: **items come from the calendar, Gold
+    --- comes from the verbs.** An item reward per action funds more actions,
+    --- so it compounds for whoever acts most. Gold does not -- to turn Gold
+    --- back into playtime you have to find a player willing to sell you
+    --- berries, which is the market this economy is for.
+    ---
+    --- 15 Gold against a cycle costing ~2.75 berries (~9 Gold at the desk bid)
+    --- is a real reward without beating the desk. What actually bounds it is
+    --- `C.ECONOMY.gold.rewardWindowCap`, not this number: both verbs draw on
+    --- one 20-hour allowance, so a bot and a person collect the same Gold.
+    goldReward = 15,
   },
   battle = {
     energyCost = 25,
     happinessCost = 25,
+    --- Per WIN, and Gold for the same reason the quest pays Gold.
+    ---
+    --- A win used to pay a tier-1 box. Under the old table that was 1.53
+    --- berries and deliberately break-even; under the new one a tier-1 box is
+    --- ~6.5 berries against a session costing ~2.75, which would have made the
+    --- arena item-positive by 4.7x overnight. Rather than shrink tier 1 back
+    --- into an apology, the arena moved to the same Gold allowance as the
+    --- quest.
+    ---
+    --- Four battles a session, so a clean sweep is 20 Gold. A two-hour player
+    --- fighting steadily reaches `rewardWindowCap` and stops, which is the
+    --- intent: the ceiling is the day's, not the session's.
+    winGold = 5,
   },
 }
 
@@ -259,128 +436,149 @@ C.HUNT = {
   protocol = "runerealm-hunt/1",
   levelRange = 5,
   searchCooldown = 3000,
+  --- What ROAMING costs. Two of each, not five.
+  ---
+  --- Twenty berries was a whole day's crate for one run, which put hunting and
+  --- playing in direct competition for the same daily allowance -- a player
+  --- could hunt OR play two hours, never both. The capture now carries a
+  --- Scroll (below), so the entry no longer has to be the price of the mode;
+  --- it is the toll that keeps a run from being free to open and abandon.
   entry = {
     berries = {
-      fire_berry = 5,
-      water_berry = 5,
-      air_berry = 5,
-      rock_berry = 5,
+      fire_berry = 2,
+      water_berry = 2,
+      air_berry = 2,
+      rock_berry = 2,
     },
   },
   capture = {
+    --- ONE SCROLL PER ATTEMPT, spent whether or not the binding holds.
+    ---
+    --- Scroll was in `C.ITEMS`, in the asset ledger, on a market and behind a
+    --- 20,000-Gold NPC desk, and NOTHING in the game consumed it -- there was
+    --- no handler anywhere that spent one. This is its job, and giving it one
+    --- closes the loop the economy was missing:
+    ---
+    ---   play -> Gold -> buy a Scroll -> attempt a capture -> burn Rune.
+    ---
+    --- That is what makes Gold worth earning, gives the Scroll desk a reason
+    --- to exist, and puts a second consumable in front of the Rune sink so
+    --- capturing is a decision with a price rather than a Rune tap.
+    scrollCost = 1,
+    --- ONE TO THREE, not one to five.
+    ---
+    --- The fourth and fifth Rune bought 8 and 7 points of chance on a curve
+    --- flattening towards its cap -- the two most expensive and least
+    --- interesting choices on the slider. Three bids that mean something beat
+    --- five where two are filler.
     minRuneBid = 1,
-    maxRuneBid = 5,
+    maxRuneBid = 3,
     minChance = 5,
     maxChance = 95,
-    baseChance = 15,
-    -- Equal-level odds for bids 1..5: 35%, 49%, 60%, 68%, 75%.
-    -- Five is likely, never certain; level advantage still moves the result.
-    runeScale = 120,
-    runeHalf = 5,
+    --- Retuned for the 1-3 range. Equal-level odds are 35%, 56%, 74% -- the
+    --- same floor as before and very nearly the same ceiling, across three
+    --- choices instead of five. `hunt.lua` computes
+    --- `baseChance + floor(runeScale * runes / (runes + runeHalf))
+    ---  + (hunterLevel - wildLevel) * levelStep`, so these three move together
+    --- and re-deriving one alone will not hold the curve.
+    baseChance = 8,
+    runeScale = 220,
+    runeHalf = 7,
     levelStep = 3,
   },
 }
 
 -- Loot ----------------------------------------------------------------------
--- `chance` is out of 1000 at rarity 1 and scales with the box tier. The
--- original multiplied by 1.5^(rarity-1) with no ceiling, so a tier-5 box rolled
--- 800 * 5.06 = 4050/1000 on four separate berries — every drop guaranteed, every
--- time. Chances are clamped to 950 now so even the best box can miss.
 
---- Runes are the only thing here that buys anything, so they are the only line
---- that has to be counted rather than eyeballed.
+--- A box is a HAUL, and the tier decides how big.
 ---
---- The first version paid `chance 550, minBox 1, amount 2`, which made a
---- tier-1 box worth about 1.09 Runes — and a tier-1 box is what every arena win
---- awards. A session costs one Rune and grants four battles, so winning half of
---- them roughly doubled your Runes, and two players trading PvP wins could farm
---- indefinitely. That is not an economy, it is a faucet.
+--- The old table was nine independent rows, each with its own `chance` out of
+--- 1000 scaled by the tier and clamped at 950. Three things were wrong with it
+--- and all three were visible on screen:
 ---
---- Now: no Runes below tier 2, and a modest chance above it. Every activity is
---- a net Rune sink, and the faucet is the daily claim in game.lua — once per
---- wallet per day, which cannot be farmed by playing more.
---- v2: the item faucet moved from PER BATTLE to PER DAY, and that is the
---- change that stops a bot out-earning a person.
+---   * **A common box paid 1.53 berries**, and 31.6% of the time it paid the
+---     pity floor of exactly one. "Rock Berry +1" is not a reward, it is an
+---     apology.
+---   * **The tiers were indistinguishable above 2.** Because `chance` was
+---     capped and `amount` never scaled, tier 2 paid 20.93 berries, tier 3
+---     paid 21.53, tier 4 paid 22.14 and tier 5 paid 22.74. A legendary box
+---     was 1.8 berries better than an uncommon, and the words on it were the
+---     only difference.
+---   * **The same berry arrived twice**, once from the tier-1 row and once
+---     from the tier-2 row, because independent rows do not know about each
+---     other.
 ---
---- Loot used to be proportional to playtime, which is exactly the shape a
---- machine beats: one arena entry paid ~45 berries against the ~2.75 an action
---- consumes, a 20:1 surplus, so 96 actions a day beat 8 by 96 to 8. Now a
---- battle win pays roughly what one action costs, and the DAILY WORSHIP BOX is
---- where the day's supply actually comes from. A wallet sitting on the game for
---- twenty-four hours and a person checking in twice collect the same box.
+--- So a box now draws `picks` DISTINCT elements and pays `min`..`max` of each,
+--- and the tiers separate properly: ~6, ~22, ~48, ~88, ~132 berries.
 ---
---- Tier 1 is what a battle win pays: ~2.84 berries a session against the 2.75
---- an action spends (one berry for the Play, plus 35 energy at 20 per
---- own-element berry). Break-even, deliberately -- NOT a surplus. Battle loot
---- may only go item-positive once the timers are long; at a fifteen-minute
---- Play a per-battle surplus is a bot subsidy, and that is a v3 change that
---- lands with the timers or not at all (ECONOMY_V2.md §7).
+--- **The first pick is always the opener's own faction berry.** Its own element
+--- is worth double when fed (20 energy against 10), so a run of boxes that
+--- never contained it would be a run of days unable to act -- and the whole
+--- point of the daily crate is that a player can always play. The REMAINING
+--- picks are deliberately other elements: those are the surplus, and a surplus
+--- somebody else needs is what makes a market. Do not "fix" that by paying all
+--- four evenly; the asymmetry is the trade.
 ---
---- Tier 2+ is the worship box: 4 x 0.95 x 5 from the rows below plus the tier-1
---- rows firing too, so ~20 berries, which funds ~7 actions.
----
---- Runes remain absent from this table at every tier, which is the fix from
---- HANDOFF §5.18 and must stay: a tier-1 box that paid Rune made winning half
---- your fights roughly double your money, and two players trading PvP wins
---- could farm it indefinitely.
-C.LOOT_TABLE = {
-  { item = "fire_berry",       chance = 250, minBox = 1, amount = 1 },
-  { item = "water_berry",      chance = 250, minBox = 1, amount = 1 },
-  { item = "rock_berry",       chance = 250, minBox = 1, amount = 1 },
-  { item = "air_berry",        chance = 250, minBox = 1, amount = 1 },
-  { item = "fire_berry",       chance = 800, minBox = 2, amount = 5 },
-  { item = "water_berry",      chance = 800, minBox = 2, amount = 5 },
-  { item = "rock_berry",       chance = 800, minBox = 2, amount = 5 },
-  { item = "air_berry",        chance = 800, minBox = 2, amount = 5 },
-  { item = "scroll",           chance = 200, minBox = 3, amount = 1 },
+--- Tier 2 is the load-bearing number, because it is the daily crate. ~22
+--- berries -- about 11 own-element and 11 other -- funds ~7.3 actions, which
+--- is the ~2 hours a day the design promises a player who wants it. Moving it
+--- moves that promise; see ECONOMY_V2.md §7.
+C.LOOT_TIERS = {
+  --- Common. One element, a real handful. Streak-3 crates and nothing else.
+  { picks = 1, min = 5,  max = 8,  scrolls = 0, scrollChance = 0   },
+  --- Uncommon. THE DAILY CRATE. ~22 berries = ~7.3 actions = ~2 hours.
+  --- Also the only routine Scroll trickle, at 12%.
+  { picks = 2, min = 9,  max = 13, scrolls = 0, scrollChance = 120 },
+  --- Rare. The ten-day streak. Used to be a DOWNGRADE -- a lone tier-3 box
+  --- paid 21.53 berries against the streak-3 pair's 22.46, so ten days of
+  --- perfect attendance bought fewer berries than three did.
+  { picks = 3, min = 13, max = 19, scrolls = 1, scrollChance = 0   },
+  --- Epic. No routine source; kept live for events and admin grants.
+  { picks = 4, min = 18, max = 26, scrolls = 1, scrollChance = 500 },
+  --- Legendary. What a new player is handed once, and the only box that is
+  --- worth being excited about on sight.
+  { picks = 4, min = 26, max = 40, scrolls = 2, scrollChance = 500 },
 }
 
-C.LOOT_CHANCE_CAP = 950
 C.MAX_LOOT_RARITY = 5
 
+--- Names, so the client and the process agree on what a tier is called.
+C.LOOT_TIER_NAMES = { "Common", "Uncommon", "Rare", "Epic", "Legendary" }
+
 --- What a brand new player is handed so they can actually do something.
+---
+--- The berries are the immediate grant -- enough to act before opening
+--- anything -- and the box is the kick-start.
 C.STARTER_INVENTORY = {
   air_berry = 5, water_berry = 5, fire_berry = 5, rock_berry = 5,
 }
 
---- Three tier-1 boxes was a satchel that felt like nothing, and the arithmetic
---- says it WAS nothing: a tier-1 box rolls four rows at 25% each, so it pays
---- ~1.5 berries and lands on the pity floor of exactly one berry about a third
---- of the time. Three of them is ~4.6 berries against the ~2.75 a single
---- action consumes -- under two actions, opened one disappointing box at a
---- time, as the player's first impression of a reward.
+--- ONE LEGENDARY BOX, once, ever.
 ---
---- The kick-start is two UNCOMMON boxes and one common. A tier-2 box rolls the
---- tier-1 rows at 37.5% AND its own four rows at the 95% cap for 5 apiece, so
---- it pays ~21 berries; the grant is ~43 berries, which funds ~15 actions on
---- top of the 20 in `STARTER_INVENTORY`.
+--- It was three tier-1 boxes, which under the old table was 4.6 berries: under
+--- two actions, delivered as three separate disappointments. A legendary is
+--- ~132 berries and 2-3 Scrolls -- about five days of play and two or three
+--- hunt captures -- handed over at the moment somebody is deciding whether
+--- this game is worth their time.
 ---
---- This is not a faucet and cannot be farmed into one: it is granted ONCE per
---- account behind `p.seeded`, entry is a paid pass, and a promised pass is
---- explicitly excluded (see `Faction.Join`). What it buys is the first session
---- feeling like the game is handing you something, which three one-berry boxes
---- did not.
-C.STARTER_LOOTBOXES = { [2] = 2, [1] = 1 }
+--- It is not a faucet and cannot be farmed into one: `p.seeded` grants it once
+--- per account, entry is a paid pass, and a promised pass is explicitly
+--- excluded (see `Faction.Join`).
+C.STARTER_LOOTBOXES = { [5] = 1 }
 
---- The daily claim: the one Rune faucet that is not a reward for playing.
+--- The daily claim, and the ONLY routine source of boxes.
 ---
---- Everything else in the economy is a sink, so without this a player who runs
---- out simply stops. It is per wallet per day rather than per action, so
---- playing more cannot farm it.
---- The daily worship, at the Alter.
+--- Every per-action loot reward is gone -- the quest and the arena pay Gold
+--- now (see `C.ACTIVITIES`), because an ITEM reward per action is the one
+--- shape a machine beats. A quest paid a tier-2 box, cost ~2.75 berries of
+--- upkeep and returned ~21: a 7.6x surplus, repeatable ~19 times a day, so a
+--- wallet running all night made ~400 berries against a two-hour person's ~42.
+--- ECONOMY_V2.md §7 says that faucet moved off playtime; only the ARENA half
+--- of it ever did.
 ---
---- The original was `StreakAlter.lua` and the STREAK was the whole point: one
---- Rune for showing up, two at a three-day streak, three at ten. The rewrite
---- kept the reward and dropped the streak, which handed everyone the top tier
---- on day one and removed every reason to come back tomorrow rather than
---- whenever. These are the original numbers.
----
---- The original counted calendar days (`GetDay(timestamp)`) and broke a streak
---- if you missed one. This keeps the 20-hour interval — a calendar day drifts
---- against whatever time you happen to play — and breaks the streak only when
---- a whole extra interval has elapsed, which is the same promise ("don't skip
---- a day") without punishing someone for playing at breakfast instead of
---- midnight.
+--- So: items come from the calendar, Gold comes from the verbs. A bot and a
+--- person collect the same crate, and the crate is what decides how much
+--- anyone can play.
 C.DAILY = {
   interval = 20 * 3600 * 1000,   -- 20 hours, so a daily habit does not drift
   -- Miss this much and the streak is gone. Two intervals: one to claim in, one
@@ -389,14 +587,11 @@ C.DAILY = {
   -- Rune is allocated by EconomyState.policy.runeRewards. The old 1/2/3 per
   -- wallet stipend multiplied global emission by wallet count and is disabled.
   runes = 0,
-  --- What the streak is FOR. It was tracked and paid nothing.
+  --- What the streak is FOR, and it now actually climbs:
   ---
-  --- `dailyStreak` and `bestStreak` are counted, break after `breakAfter`,
-  --- survive an Admin.Load by taking the max, get bucketed into high/medium/low
-  --- for the `Checkins` census and are published in the claim receipt -- and
-  --- until now the reward was `lootboxes = 1` at `lootboxRarity = 2` no matter
-  --- what the streak said. Fully wired retention machinery with the reward torn
-  --- out.
+  ---   1-2 days   ~22 berries        (tier 2)
+  ---   3-9 days   ~28 berries        (tier 2 + tier 1)
+  ---   10+ days   ~48 berries + Scroll (tier 3)
   ---
   --- Boxes rather than Rune, deliberately, and the two are on different clocks
   --- for different reasons:
@@ -408,12 +603,6 @@ C.DAILY = {
   ---     them with a streak rewards the habit without touching supply. A streak
   ---     is also wall-clock-bound and resets on a miss, which is the one thing
   ---     a bot cannot compress.
-  ---
-  --- The tier-3 box at ten days is doing a second job. NOTHING in the game has
-  --- ever issued a box above tier 2 -- every `addLootboxes` site pays 1 or 2 --
-  --- so `scroll`, whose loot-table row is gated at `minBox 3`, has had no
-  --- organic supply at all and tiers 3-5 were dead config. This is the emitter,
-  --- and it is metered by the calendar rather than by playtime.
   ---
   --- Ordered by `minStreak` DESCENDING; the first match wins. Emptying this
   --- table falls back to `lootboxes`/`lootboxRarity` below.
@@ -468,16 +657,33 @@ C.LEVEL_UP_POINTS = 10
 --- its own hands the game to whoever bought speed (86% at level 20), and the
 --- speed fix on its own leaves the extremes where they were.
 ---
---- LEFT AT FIVE. The measurement is recorded, not applied -- balancing is a
---- decision for playtesting, and this is the change testers would feel most.
---- Compare the two with `./run-balance.sh matrix20` against
---- `./run-balance.sh capmatrix20`.
+--- APPLIED, at three. It was left at five with the measurement recorded but
+--- not acted on, on the grounds that balancing is a playtest decision. The move
+--- rebuild forced the issue, because it re-derived the same conclusion from
+--- scratch and could not get past it.
 ---
---- If the extremes are worth keeping, the thing to move is where build
---- identity comes from: evolutions, move pools and factions are content and
---- can be balanced one at a time with the same matrix. A build whose identity
---- is a stat left at zero cannot be.
-C.LEVEL_UP_MAX_PER_STAT = 5
+--- The rebuilt catalog, the budget-scaled riders and the free actions are all
+--- downstream of the stat spread, so the pools and the attack floor were swept
+--- against real player growth with all of them in place
+--- (`./run-balance.sh growsweepb|growsweepc|growsweepd`). At a cap of five
+--- there is NO pair of `hpPerHealth` and `attackPerStatPoint` that makes both
+--- mirrors work at once:
+---
+---   attack floor low   tank v tank runs to the 50-round cap, 70-100% of fights
+---   attack floor high  even v even is over in two rounds
+---
+--- Eighteen combinations, every one of them failing one mirror or the other.
+--- Run the same grid with builds a cap of three can reach
+--- (`./run-balance.sh capgrowa`) and every cell is four to ten rounds with no
+--- grinds anywhere. That is not a tuning result, it is the shape of the
+--- problem: the tank's identity is a stat left at 1, and nothing downstream of
+--- a dump stat can bridge it.
+---
+--- What it costs is real and worth stating: an all-in build is no longer free.
+--- Ten points cannot be spent on fewer than four stats, so the stat you skip is
+--- no longer a hole ten levels deep. A tank is still the build with the most
+--- defense; it is no longer the build with no attack.
+C.LEVEL_UP_MAX_PER_STAT = 3
 
 --- What a level-up costs, in Rune, for the level being ENTERED.
 ---
@@ -577,6 +783,41 @@ C.ECONOMY = {
     contractWeeklyReleaseBps = 1000,
     shopBurnBps = 2500,
     burnAboveTargetBps = 11000,
+    --- THE GOLD FAUCET, and the only one that is not a desk.
+    ---
+    --- Before this there was no way to earn Gold by playing at all. The only
+    --- source was selling an item into an NPC desk -- and a desk's stock cap
+    --- is a share of outstanding supply, so on a young process the cap is a
+    --- dozen units and the desk saturates almost immediately. A new player had
+    --- no Gold, no way to get Gold, and therefore no way to buy anything from
+    --- anyone. Measured: of the 300,000 Gold issued at launch, only ~35,070
+    --- could ever reach a player, because every desk's STOCK cap binds long
+    --- before its Gold reserve does.
+    ---
+    --- So the verbs pay Gold now (`C.ACTIVITIES`), and this is the ceiling on
+    --- it. One allowance per account per 20-hour window, shared by every verb
+    --- that pays -- which is what makes it bot-proof: a wallet playing around
+    --- the clock and a person playing for two hours collect exactly the same
+    --- 60 Gold, the same way they collect exactly the same daily crate.
+    ---
+    --- 60 a window is ~4 quests or ~12 arena wins, and it is reached by a
+    --- two-hour session, which is the intended shape. Seventeen days of
+    --- collecting it in full lands on `perQualifiedPlayer` -- the 1,000 Gold
+    --- this policy already assumes a real player holds -- so the flow and the
+    --- stock agree without a second number being invented.
+    rewardWindowCap = 60,
+    --- Rewards are paid OUT OF the locked launch allocation, never minted, so
+    --- `issued - burned = player + escrow + shop + locked` still holds after
+    --- every payment. When the pool cannot cover a reward the verb pays
+    --- nothing and says so, exactly the way a desk pauses rather than going
+    --- negative.
+    ---
+    --- This is finite ON PURPOSE and it is the honest statement of the trade:
+    --- a fixed Gold supply plus a gameplay faucet drains, and what refills it
+    --- is `policy.gold.expansionEnabled` and the weekly target recomputation
+    --- in ECONOMY_MARKETPLACE_PLAN.md §6.3. That machinery exists and is off.
+    --- Turning it on is the launch decision this faucet depends on.
+    rewardReserveFloor = 0,
   },
   --- Atoms in one whole Rune on the TOKEN process (10^Denomination).
   ---
@@ -654,7 +895,6 @@ C.ECONOMY = {
     anchorWeeklyBps = 500,
   },
   proceeds = { teamBps = 5000, runeBps = 3000, treasuryBps = 2000 },
-  amm = { maxSlippageBps = 100, maxWeeklyPoolBps = 500 },
   --- Rune emission: a SCHEDULE, not a number somebody types.
   ---
   --- ECONOMY.md §2 names the one structural flaw in the old design: a per-wallet

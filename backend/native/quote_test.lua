@@ -12,7 +12,7 @@ local function run(base, req)
   local OWNER = "O" .. string.rep("o", 42)
   local ALICE = "A" .. string.rep("a", 42)
   local BOB = "B" .. string.rep("b", 42)
-  local AMM = "M" .. string.rep("m", 42)
+  local BOOK = "M" .. string.rep("m", 42)
   local PROCESS = { commitments = { sig = { committer = OWNER, type = "rsa-pss-sha512" } } }
 
   local function signed(from, tags)
@@ -36,14 +36,14 @@ local function run(base, req)
   ok("a wallet can mint five test tokens", r and r.Quantity == "5000000" and r.Balance == "5000000", json.encode(r))
   r = signed(ALICE, { Action = "Faucet", Quantity = "999999999999" })
   ok("the faucet can be used repeatedly but never changes its batch", r and r.Quantity == "5000000" and r.Balance == "10000000", json.encode(r))
-  r = signed(ALICE, { Action = "Transfer", Recipient = AMM, Quantity = "1000000",
-                      ["X-Action"] = "AMM-Deposit" })
-  ok("a holder can fund the AMM", r and r.Balance == "9000000", json.encode(r))
+  r = signed(ALICE, { Action = "Transfer", Recipient = BOOK, Quantity = "1000000",
+                      ["X-Action"] = "Book-Deposit" })
+  ok("a holder can fund an exchange process", r and r.Balance == "9000000", json.encode(r))
 
-  r = fromProcess(AMM, { Action = "Transfer", Recipient = BOB, Quantity = "100" })
-  ok("an attested process spends its own balance", r and r.From == AMM and r.Quantity == "100", json.encode(r))
+  r = fromProcess(BOOK, { Action = "Transfer", Recipient = BOB, Quantity = "100" })
+  ok("an attested process spends its own balance", r and r.From == BOOK and r.Quantity == "100", json.encode(r))
 
-  r = signed(BOB, { Action = "Transfer", Recipient = ALICE, Quantity = "101", ["from-process"] = AMM })
+  r = signed(BOB, { Action = "Transfer", Recipient = ALICE, Quantity = "101", ["from-process"] = BOOK })
   ok("a wallet cannot spend a process balance with a tag", r and r.error ~= nil, json.encode(r))
 
   r = signed(ALICE, { Action = "Admin.Mint", Recipient = BOB, Quantity = "5" })

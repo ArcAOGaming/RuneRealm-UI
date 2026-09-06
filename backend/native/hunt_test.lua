@@ -100,9 +100,10 @@ function hunttest(base)
 
   local overbid = send({
     Action = "Hunt.Capture", Address = ALICE, RunId = "h1", Ticket = "ticket_h1",
-    ActionId = "capture_overbid", Runes = "6",
+    ActionId = "capture_overbid",
+    Runes = string.format("%d", (C.HUNT.capture.maxRuneBid or 3) + 1),
   })
-  ok("capture bid is capped at five Rune", overbid and overbid.error ~= nil,
+  ok("capture bid is capped at the configured maximum", overbid and overbid.error ~= nil,
     overbid and overbid.error)
 
   -- Pin the levels together so the published five-Rune example is exact and
@@ -111,7 +112,8 @@ function hunttest(base)
 
   r = send({
     Action = "Hunt.Capture", Address = ALICE, RunId = "h1", Ticket = "ticket_h1",
-    ActionId = "capture_1", Runes = "5",
+    ActionId = "capture_1",
+    Runes = string.format("%d", C.HUNT.capture.maxRuneBid or 3),
   })
   ok("capture enters settlement", r and r.status == "settling" and r.settlementStatus == "pending",
     r and r.status)
@@ -119,15 +121,25 @@ function hunttest(base)
     base.results.outbox and base.results.outbox.settlement ~= nil)
   local settlementPayload = base.results.outbox and base.results.outbox.settlement
     and json.decode(base.results.outbox.settlement.data)
-  ok("five Rune is a likely seventy-five percent capture at equal level",
-    settlementPayload and settlementPayload.chance == 75,
-    settlementPayload and settlementPayload.chance)
+  -- The top bid is LIKELY, never certain, and the exact number is published
+  -- so the slider on screen is the curve the worker rolls. Recomputed from the
+  -- constants rather than typed: `baseChance`, `runeScale` and `runeHalf` move
+  -- together, and a literal here is how a walkthrough starts lying.
+  local capture = C.HUNT.capture
+  local topBid = capture.maxRuneBid or 3
+  local expected = math.max(capture.minChance or 5, math.min(capture.maxChance or 95,
+    (capture.baseChance or 8)
+      + math.floor(((capture.runeScale or 220) * topBid) / (topBid + (capture.runeHalf or 7)))))
+  ok("the top bid is a likely capture at equal level, and never a certain one",
+    settlementPayload and settlementPayload.chance == expected
+      and expected >= 70 and expected < (capture.maxChance or 95),
+    settlementPayload and (tostring(settlementPayload.chance) .. " vs " .. tostring(expected)))
   local settlementId = base.results.outbox and base.results.outbox.settlement
     and base.results.outbox.settlement["settlement-id"]
 
   local secondTry = send({
     Action = "Hunt.Capture", Address = ALICE, RunId = "h1", Ticket = "ticket_h1",
-    ActionId = "capture_2", Runes = "10",
+    ActionId = "capture_2", Runes = "3",
   })
   ok("a second capture action is rejected", secondTry and secondTry.error ~= nil,
     secondTry and secondTry.error)

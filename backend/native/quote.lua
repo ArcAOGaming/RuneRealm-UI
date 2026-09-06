@@ -1,8 +1,8 @@
---- quote.lua - faucet-backed quote token for the TEST-RUNE AMM.
+--- quote.lua - faucet-backed quote token for the TEST-RUNE order book.
 ---
 --- This is intentionally not named TEST-AO. AO has its own process, scheduler,
 --- denomination and operational requirements; a local test asset must not look
---- like it is the real token in a wallet or explorer. Deploy the AMM against
+--- like it is the real token in a wallet or explorer. Deploy the book against
 --- AO later by configuring AO's process id and denomination after the full
 --- Credit-Notice/outbox path has been verified on the target node.
 
@@ -76,7 +76,7 @@ end
 --- This used to prefer any real signature, on the assumption that a delivery
 --- from another process is unsigned. On a live node it is not: the SCHEDULER
 --- signs it. That assumption cost the Rune bridge a player's runes, and here it
---- would break the AMM's payout leg -- the pool sends TEST-RELIC out of its own
+--- would break an exchange's payout leg -- the book sends TEST-RELIC out of its own
 --- balance, the delivery arrives signed by the scheduler, and this would read
 --- the scheduler as the payer and refuse. A swap would take the input and never
 --- deliver the output.

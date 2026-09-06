@@ -128,7 +128,7 @@ These are the ones where doing nothing *is* a decision:
    desk's bid/ask are injected as synthetic resting orders owned by the house,
    then: the book is never empty, every market has a permanent two-sided quote,
    the desk's price becomes the reference price §2.6 needs, and the player sees
-   *one* market instead of choosing a venue. It is the AMM-as-resting-order
+   *one* market instead of choosing a venue. It is the desk-as-resting-order
    pattern and it costs no hops — the desk is in the same process.
 2. **Market orders by quantity or by spend?** — Support both: `IOC` at a limit
    price is the honest primitive, and the UI offers "spend N Gold" by computing
@@ -287,10 +287,15 @@ in-game and is the entire difference between "the Gold market" and "a venue".
 
 ### What the standalone process looks like
 
-- **Custody is deposit-first, and `amm.lua` already solved it.** Its
-  `Credit-Notice` attestation, `from-process` handling and credit-receipt
-  replay protection (`amm.lua:235`-`:305`) are audited code for exactly this
-  problem. Lift them; do not re-derive them.
+- **Custody is deposit-first, and the source to copy is `game.lua`, NOT the
+  deleted `amm.lua`.** That instruction used to point at the pool and it was
+  wrong twice over: `provenSigner` fell back to a tag (`return msg.Address or
+  msg.From`), which CLAUDE.md forbids by name, and `Credit-Notice` failed CLOSED
+  before crediting -- which is why 14 atoms of TEST-RUNE are stranded at the pool
+  address with no way to recover them. Lift `Burn-Notice` from
+  `game.lua:3311`-`:3357` instead: a mandatory `Reference`, a `seen`
+  short-circuit that returns the existing row unchanged, and QUARANTINE rather
+  than refusal for anything uncreditable.
 - **Rune is the quote asset, not a base.** `rune.lua` is already a standard
   token with `Credit-Notice` and `X-` forwarding tags (`:400`-`:460`), which is
   the whole interface a book needs. A RUNE-quoted book is the standalone
@@ -303,9 +308,14 @@ in-game and is the entire difference between "the Gold market" and "a venue".
   withdraw out (outbox). Matching is zero hops because it is one process. That
   satisfies "reserve in, settle out" without argument — which the battle fleet
   does not.
-- **The AMM does not go away.** It becomes the designated market maker quoting
-  into the book, the same relationship as §3.1's NPC desk. That is how a new
-  venue has liquidity on day one instead of an empty ladder.
+- **The AMM is gone, and nothing replaces it.** This section used to say the
+  pool would become the designated market maker quoting into the book. It
+  cannot: a process cannot send anything by itself, so a "process that quotes"
+  is a process somebody has to push on every tick. It has been deleted. The
+  external book opens with an empty ladder and fills when a user rests an order,
+  which is what a book is. Always-fills-now is the in-game Shop's job, and the
+  Shop is a supply-policy desk inside `game.lua` -- anchored and banded against
+  the issuance ledger -- not a market maker and not a curve.
 
 ---
 
@@ -417,7 +427,7 @@ unit and it survives intact — the game never sees a fraction, because the
 bridge will not pass one. Those comments have to be rewritten in the same
 commit or they become confidently wrong about a file that no longer says 0.
 
-**Why 6 and not 12.** AO's convention is 12 and `amm.lua`'s `mulDiv` exists to
+**Why 6 and not 12.** AO's convention is 12 and the deleted pool's `mulDiv` existed to
 survive it, but 12 decimals against a supply in the millions is `10^19` atoms —
 past int64, in a Luerl process where every amount is an integer. At 6, ten
 million Rune is `10^13` atoms with room left for a `price * quantity` product.
@@ -463,8 +473,9 @@ replaced by several real tokens, that is a registry edit and a deploy.
 4. **Publish the ladder and candles instead of orders and fills** (§4) — what
    makes adding book features stop costing every player a slot.
 5. **TIF, amend, batch cancel, ticks** (§2.1-2.4) — the book becomes usable.
-6. **Desk and AMM quote into the book** (§3.1) — the book becomes liquid.
-7. **The standalone contract** — token custody lifted from `amm.lua`, Rune
+6. **The desk quotes into the internal book** (§3.1) — that ladder is liquid.
+7. **The standalone contract** — token custody modelled on `game.lua`'s
+   `Burn-Notice`, Rune
    listed as the first asset, because steps 2-6 already did the work.
 
 ---
@@ -732,7 +743,7 @@ keep the price history permanently; the individual receipts do not.
 Two sessions are building this in parallel. Roughly: one owns the missing
 **mechanics** (§2), the other owns **performance and custody** (§4, §6, §7).
 
-**Landed and verified** (economy 143, game 667, rune/AMM 116, hunt 53, tsc clean):
+**Landed and verified** (economy 143, game 667, rune 116, hunt 53, tsc clean):
 
 - §1.1-1.4 defects. §1.5 (self-trade cancel-resting) still open.
 - §2.4 tick and lot, §2.5 the market registry, §2.9 maker/taker split.
