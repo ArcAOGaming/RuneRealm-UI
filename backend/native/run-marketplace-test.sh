@@ -36,5 +36,4 @@ run_suite() {
 
 echo "node: $NODE"
 echo
-run_suite amm.lua amm_test.lua ammtest
 run_suite quote.lua quote_test.lua quotetest

@@ -54,6 +54,7 @@ const bootstrapSource = [
   'local jsonx = (function()', readSrc('jsonenc.lua'), 'end)()',
   'local encode, jsonObject = jsonx.encode, jsonx.object',
   'Battle = (function()', readSrc('battle.lua'), 'end)()',
+  'local OrderBook = (function()', readSrc('orderbook.lua'), 'end)()',
   'local EconomyEngine = (function()', readSrc('economy.lua'), 'end)()',
   readSrc('game.lua'),
   // `--bytes` asks the probe for its published-size report instead of the host

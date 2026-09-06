@@ -71,6 +71,7 @@ PY
     echo "local jsonx = (function()";  cat "$HERE/jsonenc.lua";   echo "end)()"
     echo "local encode, jsonObject = jsonx.encode, jsonx.object"
     echo "Battle = (function()";       cat "$HERE/battle.lua";    echo "end)()"
+    echo "local OrderBook = (function()"; cat "$HERE/orderbook.lua"; echo "end)()"
     echo "local EconomyEngine = (function()"; cat "$HERE/economy.lua"; echo "end)()"
     cat "$game"
     cat "$probe"

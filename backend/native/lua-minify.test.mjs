@@ -372,6 +372,7 @@ async function runSuite(transform) {
     'local jsonx = (function()', read('jsonenc.lua'), 'end)()',
     'local encode, jsonObject = jsonx.encode, jsonx.object',
     'Battle = (function()', read('battle.lua'), 'end)()',
+    'local OrderBook = (function()', read('orderbook.lua'), 'end)()',
     'local EconomyEngine = (function()', read('economy.lua'), 'end)()',
     'BattleFleetConfig = nil',
     'BattleFleetAuthority = (function()', read('battle-fleet/authority.lua'), 'end)()',

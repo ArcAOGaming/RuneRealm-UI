@@ -19,6 +19,7 @@ const source = [
   'package.loaded[".json"] = require("json")',
   'C = (function()', read('constants.lua'), 'end)()',
   read('monster-index.generated.lua'),
+  'local OrderBook = (function()', read('orderbook.lua'), 'end)()',
   'EconomyEngine = (function()', read('economy.lua'), 'end)()',
   'local economytest = (function()', read('economy_test.lua'), 'end)()',
   'return economytest()',

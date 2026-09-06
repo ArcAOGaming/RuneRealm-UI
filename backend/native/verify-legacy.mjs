@@ -136,7 +136,17 @@ local function run(base, req)
           local def = Battle.moveDef(name)
           if ((move.damage or (def and def.damage)) or 0) > 0 then damaging = true end
         end
-        if n ~= 4 or not damaging then
+        -- C.MOVE_SLOTS, not four. The export in legacy-players.json was built
+        -- when a companion carried four moves; Battle.normaliseRoster trims it
+        -- on the way in, signature first and a damaging move ahead of a support
+        -- move at equal rarity, so what comes back is the current shape rather
+        -- than the shape it was written in. That trim is exactly what this
+        -- assertion is here to prove happened.
+        --
+        -- No backticks in this comment, and none anywhere in the Lua embedded
+        -- in this file: it is inside a JS template literal, and one backtick
+        -- ends the string.
+        if n > C.MOVE_SLOTS or n < 1 or not damaging then
           badMoves[#badMoves + 1] = row.address .. " moves=" .. n .. " damaging=" .. tostring(damaging)
         end
       end
@@ -163,7 +173,7 @@ local function run(base, req)
      #mismatched > 0 and table.concat(mismatched, " | ", 1, math.min(4, #mismatched)) or nil)
   ok("every restored number comes back an integer", #floats == 0,
      #floats > 0 and table.concat(floats, " | ", 1, math.min(4, #floats)) or nil)
-  ok("every restored roster is four moves with a damaging one", #badMoves == 0,
+  ok("every restored roster fits the slot count and keeps a damaging move", #badMoves == 0,
      #badMoves > 0 and table.concat(badMoves, " | ", 1, math.min(4, #badMoves)) or nil)
 
   -- A restored player must be able to PLAY, not merely exist.
@@ -225,6 +235,7 @@ const bundle = [
   'local jsonx = (function()', read('jsonenc.lua'),   'end)()',
   'local encode, jsonObject = jsonx.encode, jsonx.object',
   'Battle = (function()',      read('battle.lua'),    'end)()',
+  'local OrderBook = (function()', read('orderbook.lua'), 'end)()',
   'local EconomyEngine = (function()', read('economy.lua'), 'end)()',
   read('game.lua'),
   CHECK.replace('__PAYLOAD__', payload),
