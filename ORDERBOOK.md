@@ -723,10 +723,11 @@ keep the price history permanently; the individual receipts do not.
   *rest* an order, so a player's bid can sit above the desk's ask indefinitely
   with nothing to close it. That is what the fleet hunts.
 
-### Still not built
+### Still not built (as of 2026-09-05; §12 supersedes the first line)
 
 - The ledger adapter exists (`M.playerLedger`) but nothing is deployed against
-  it; the standalone book (§6) is unstarted.
+  it; the standalone book (§6) is unstarted. **Both shipped on 2026-09-06 —
+  see §12.**
 - `publicView` still publishes `orders` and `fills` in full (§4). The ladder,
   the band and the candles are all published now, so the client no longer needs
   either — removing them is a byte win nobody has taken yet.
@@ -780,3 +781,131 @@ Two sessions are building this in parallel. Roughly: one owns the missing
   index. Rare admin path, but it is the one place the index costs something.
 - **`Admin.RemoveAccount` still scans `EconomyState.orders`** rather than
   asking `accountOpenCount`. Rare path, correct as written.
+
+---
+
+## 12. Built: the split, and both venues (2026-09-06)
+
+§6 said "both halves ship" and predicted the shape almost exactly. This is what
+actually landed, and the three places it differs.
+
+### The book is its own file
+
+`orderbook.lua` — the registry, the index, matching, escrow, fees, TIF, STP,
+the price band, candles and the public verbs. `economy.lua` keeps what only the
+GAME has: issuance, the NPC desk, monetary policy, and the published view that
+mixes the two.
+
+The seam is a **HOST**, not the three-function ledger §6 predicted. Six
+functions, because the book turned out to reach for three more things than the
+ledger: `ensure`, `ledger`, `pool`, `fee`, `tradable`, `pauseReason` — plus
+three optional hooks (`quote`, `settleHouse`, `anchors`) for a house that
+quotes into the ladder. A venue leaves all three nil and simply has no house
+liquidity.
+
+Every public signature is unchanged, so `game.lua` and both suites were
+untouched by the extraction.
+
+**One behaviour change, and it is a fix.** A buy-side refund, an amend release
+and a re-queue all named `state.gold` outright, so a market quoted in anything
+but Gold would have returned its escrow into the Gold supply and broken
+conservation on both sides. Every market in the game is Gold-quoted, so nothing
+observable moved — but Rune/Relic is the first pair that would not have been.
+
+### Two venues, one file
+
+`venue.lua`, deployed twice. §6's table was right about what differs and wrong
+about it being one process:
+
+| | **internal** | **external** |
+|---|---|---|
+| talks to | the game process, and nothing else | listed token processes, and nothing else |
+| assets | in-game names — no token, ever | TEST-RUNE, TEST-RELIC |
+| value in | `Venue.Credit`, a trusted message | `Credit-Notice` |
+| value out | `Venue.Return` | `Transfer` |
+| pair | everything against Gold | `rune/relic`, and for now only that |
+
+The isolation is the point and it is enforced twice: `Admin.Seal` freezes the
+mode, and every custody handler is registered against one mode only, so the
+internal venue has no verb a token could reach and the external one has none
+the game could. `venue_test.lua` spawns both in one VM and checks each refuses
+the other's.
+
+**Custody is deposit-first (§10), and modelled on the Rune bridge with the burn
+taken out** — the venue *stores* what it is paid. Both directions are keyed on
+a mandatory reference namespaced by the sending process, neither table is ever
+trimmed, and anything uncreditable is quarantined rather than refused. Both
+tokens now emit a `Reference` from their own `TransferSeq`, so the guard keys
+on the token's word rather than on a message id.
+
+### Markets are created closed
+
+§2.5's registry became an admin surface. `Admin.CreateMarket` makes a market
+`closed`; `Admin.LaunchMarket` opens one; **`Admin.LaunchAll` is the going-live
+switch** and exists so that launching is one message rather than one per
+market. `Admin.SuspendMarket` stops new crossing without touching resting
+orders — their owners can still cancel out.
+
+A base asset may head only ONE market, because the book's index is keyed by
+base. `resolveMarket` now falls back to "the one market this asset is the base
+of", which is what lets `Item = "rune"` find `rune/relic` with nothing in the
+message naming relic. Both direct lookups still win, so inside the game the
+fallback never runs.
+
+**The order-creation cost became a market field.** It had to: 1 is friction
+against Gold and nonsense against Relic, where it charges a millionth of a
+token and refuses the first sell from anybody who has none. It defaults to the
+constant, so §7.3's argument about the in-game 1 Gold is unchanged and still
+open; the venues set 0.
+
+### The emergency stop, and no withdrawal window
+
+§10 argued against a delay and the answer stands: AO has no fraud-proof window
+to wait out, so a delay taxes every honest user to buy nothing. What ships
+instead is an explicit, logged stop with a scope:
+
+- `Scope = "trading"` (the default) stops every order verb and leaves deposits
+  and withdrawals open. That is the shape of almost every real emergency — stop
+  the book, let everyone take their money home — and **cancelling out keeps
+  working while paused**, because cancelling is what frees a balance.
+- `Scope = "all"` additionally freezes withdrawals. It has to be asked for by
+  name, because a stop that traps people's money is a different and much
+  heavier decision.
+- **Deposits are never stopped by either.** The value is already inside the
+  contract by the time a deposit is seen; refusing only loses it.
+
+### In-flight, and the invariant closes across the boundary
+
+The one thing §6 did not think about. Units at the internal venue are not
+consumed and not held by a player, so before this they fell straight out of
+`issued - consumed == player + escrow + shop` and conservation went red the
+first time anybody used the bridge.
+
+Every supply row gained a `venue` bucket, both invariants count it, and
+`/now/supply` publishes three numbers per asset — `total`, `inGame`, `atVenue`
+— which is the invariant restated as something a client can check. The venue
+publishes its own `supply` for the other half of the same reconciliation.
+
+That surfaced a real defect: `recordPlayerDeltas` infers issuance and
+consumption from how player records changed, which is right for every gameplay
+verb and wrong for one that already moved the buckets itself. It subtracted the
+same ten berries twice and recorded a sink that never happened. `Economy.` was
+already exempt; `MANAGED_ACTIONS` names the venue verbs the same way, including
+in the Gold branch where `Admin.SettleVenueReturn` would otherwise have been
+funded out of the locked reserve on top of its own bucket move.
+
+### Still not built
+
+- `publicView` still publishes `orders` and `fills` in full (§4). Neither venue
+  does, so the pattern to copy now exists in the repo.
+- `Economy.Order.Maintain` still pays its keeper nothing (§1.3).
+- The in-game order-creation cost is still 1 Gold (§7.3).
+- **No client.** `ExternalBook()` in `screens/Marketplace.tsx` still renders
+  "not deployed yet", and nothing in `src/` speaks to either venue.
+- The game has no UI for `Venue.Send`, so the internal venue can only be
+  reached by a signed message today.
+
+**Verified:** venue 101 on a live `~lua@5.3a` and offline, game 897, economy
+164, hunt 25+38, rune 85, marketplace 11, minify 17/17 including the deploy
+ceiling.
+

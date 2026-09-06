@@ -171,14 +171,80 @@ and their tokens have holders outside the game. `amm.lua` was deleted: this game
 trades on an order book, and a constant-product pool is not one.
 
 **Staying separate, correctly:** `rune.lua` and `quote.lua` are their own
-tokens. What trades between them is an order book, and its process does not
-exist yet. Tokens have holders outside this game and must be independently
+tokens. What trades between them is an order book, and its process EXISTS now:
+the external venue, `venue.lua` deployed in `external` mode. See §6. Tokens have holders outside this game and must be independently
 addressable, so they are not ours to condense -- this is a case where the hop
 cost is simply the price of the domain being real.
 
 A companion sale is now zero hops: one action inside the authority. The hops
 that remain are the Rune deposit/withdraw saga against the token processes,
 which is still unmeasured and is the next thing to count.
+
+## 6. The two venues: two hops in, two out, and they earn it (2026-09-06)
+
+**Rule:** fan out only for session-shaped domains, and all three of
+independent-state / client-talks-direct / two-boundaries-on-the-critical-path
+must hold.
+
+`venue.lua` is deployed twice — `internal` (in-game assets, trusted messages to
+and from `game.lua`) and `external` (real tokens, `Credit-Notice` in and
+`Transfer` out). Both run the same `orderbook.lua` the game runs.
+
+**All three hold, unlike the battle fleet:**
+
+1. **Independent while it runs.** A deposited balance is the venue's; nothing
+   about a resting order needs to consult a player record. The game's supply
+   ledger is not consulted between the deposit and the withdrawal.
+2. **The client talks direct.** `Order.Place`/`Amend`/`Cancel`/`CancelAll` are
+   signed by the trader against the venue. Nothing proxies through `game.lua`,
+   and there is no verb that could.
+3. **Two boundaries, and only on the internal venue.** `Venue.Send` in,
+   `Venue.Return` out. Each carries an acknowledgement — `Venue.Credited` and
+   `Venue.Returned` — and those are the exactly-once handshake, off the
+   critical path, counted here anyway:
+
+| # | message | direction | source |
+|---|---|---|---|
+| 1 | `Venue.Credit` | game -> venue | `game.lua` `H["Venue.Send"]` |
+| 2 | `Venue.Credited` | venue -> game | acknowledgement, off-path |
+| 3 | `Venue.Return` | venue -> game | `venue.lua` `H["Withdraw"]` |
+| 4 | `Venue.Returned` | game -> venue | acknowledgement, off-path |
+
+Two on the critical path (~320 ms), amortised over a whole trading session
+rather than a single action. A session that places, amends and cancels ten
+times is ~32 ms per action; one that deposits to place a single order is not
+worth the trip, and nothing forces a trader to make it.
+
+**The external venue has ZERO game hops.** Its two are against the token
+processes, which are not ours to condense: TEST-RUNE and TEST-RELIC have
+holders outside this game and must be independently addressable. This is the
+case §5 predicted and left open — "what trades between them is an order book,
+and its process does not exist yet". It exists now.
+
+**Published state.** Neither venue publishes `orders` or `fills` in full, which
+`game.lua` still does (see §4 of ORDERBOOK.md). What it does publish that grows
+with the playerbase is `balance-<address>`, one addressed key per trader, and
+that is the `player-<address>` problem from CLAUDE.md arriving in a process
+whose entire job is holding balances. Two things bound it and neither is
+optional:
+
+- an account with nothing is DELETED from `Ledger` rather than stored as zero,
+  so the map is the list of people who actually hold something;
+- an emptied account's published key becomes `{}` rather than its position, so
+  a departed trader costs a few dozen bytes instead of their whole book.
+
+A published key that has been written stays in the map. That is the residual,
+it is known, and the mitigation above is what caps it. If a venue ever carries
+enough departed traders for that to matter, the answer is the same tombstone
+this document recommends for the game — keep the key, drop the record.
+
+**The game gained one key.** `/now/supply` — three integers per asset, ~700
+bytes, and every message pays for it five times over whether it moved or not.
+It is deliberately not folded into `economy` because it is the key an operator
+polls to reconcile against the venue's own `supply`, and making a monitor parse
+the whole flow view to read twelve rows would defeat the point. Keep it three
+numbers wide.
+
 
 ## Published-state size — the other axis, and the one that was degrading
 
