@@ -76,6 +76,7 @@
     "parked:collection": "node backend/native/collection.mjs",
     "cards": "node backend/native/card/cli.mjs --all --out .cards",
     "deploy:rune": "node backend/native/deploy-rune.mjs",
+    "deploy:venue": "node backend/native/deploy-venue.mjs",
     "deploy:exchange": "node backend/native/deploy-marketplace.mjs",
     "deploy:contracts:plan": "npm run monster-index:check && node backend/native/redeploy.mjs --plan --free --with-bots",
     "deploy:contracts:check": "npm run monster-index:check && node backend/native/redeploy.mjs --preflight-only --free --with-bots",
