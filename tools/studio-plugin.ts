@@ -3,6 +3,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import type { Plugin } from 'vite';
+import { PORTRAIT_CANVAS } from '../src/lib/card/layout.mjs';
 import { decodePng, encodePng } from '../backend/native/card/png.mjs';
 
 type StudioEnv = {
@@ -446,7 +447,19 @@ function removeFlatEdgeMatte(png: Buffer) {
   };
 }
 
-function fitPortrait(png: Buffer, width = 320, height = 448) {
+/**
+ * Normalise an authored portrait onto the card's portrait canvas.
+ *
+ * The size is the card's, not this file's: `PORTRAIT_CANVAS` in
+ * `src/lib/card/layout.mjs` is what the renderer places into the window, and a
+ * portrait fitted to any other canvas lands in the wrong part of the frame.
+ * The card is 693x968 — 63x88mm, the size Magic and Pokemon print at — and its
+ * window is 547x450, so the subject takes the middle 320 and the scenery plate
+ * carries the rest.
+ */
+function fitPortrait(
+  png: Buffer, width = PORTRAIT_CANVAS.w, height = PORTRAIT_CANVAS.h,
+) {
   const source = decodePng(png);
   const stats = alphaStats(png);
   if (!stats.contentBbox) throw new Error('The portrait has no visible pixels after background cleanup.');
@@ -630,7 +643,7 @@ function prepareStill(kind: StudioKind, png: Buffer, transparent = false) {
   }
   if (kind === 'creature-portrait') {
     const cleaned = transparent ? removeFlatEdgeMatte(png) : { png, removed: false, matteColor: undefined };
-    const fitted = fitPortrait(cleaned.png, 320, 448);
+    const fitted = fitPortrait(cleaned.png);
     const sourceStats = alphaStats(cleaned.png);
     return {
       png: fitted.png,
@@ -1286,7 +1299,7 @@ export function studioPlugin(root: string, env: StudioEnv): Plugin {
             const cardPreview = path.join(dir, 'card-preview.png');
             fs.writeFileSync(asset, cleaned.png);
             fs.writeFileSync(source, cleaned.png);
-            fs.writeFileSync(cardPreview, fitPortrait(cleaned.png, 320, 448).png);
+            fs.writeFileSync(cardPreview, fitPortrait(cleaned.png).png);
             const stats = alphaStats(cleaned.png);
             const record: StudioRecord = {
               id, status: 'pending', provider: 'retro-diffusion', kind: 'creature-portrait',
@@ -1420,7 +1433,7 @@ export function studioPlugin(root: string, env: StudioEnv): Plugin {
               return sendJson(res, 400, { error: `Native anchor must remain 64x64; received ${image.width}x${image.height}.` });
             }
             const cardPreview = path.join(path.dirname(staged), 'card-preview.png');
-            fs.writeFileSync(cardPreview, fitPortrait(sourcePng, 320, 448).png);
+            fs.writeFileSync(cardPreview, fitPortrait(sourcePng).png);
             record.providerMeta = {
               ...(record.providerMeta ?? {}),
               cardPreviewPath: posix(path.relative(workspace, cardPreview)),

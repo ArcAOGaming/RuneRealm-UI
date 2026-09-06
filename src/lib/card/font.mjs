@@ -1,5 +1,5 @@
 /**
- * font.mjs — a 5x7 bitmap font, drawn as rectangles.
+ * font.mjs — the card's bitmap faces, drawn as rectangles.
  *
  * The card art bakes its own typefaces (Bitsumis for the monster name, Bkant
  * for the move names) into the PNG plates, and those plates carry the WRONG
@@ -18,6 +18,10 @@
  *
  * Uppercase only. Lowercase input is folded up, and anything unmapped becomes a
  * space rather than an exception — a move name is not worth a failed mint.
+ *
+ * There are two faces, both 7 rows tall: `wide` at 5 columns, which is the
+ * card's typeface, and `slim` at 3, which exists so the move panel can trade
+ * grid width for point size. See `SLIM` below.
  */
 
 /** Each glyph is 7 rows of 5 bits, MSB (bit 4) leftmost. */
@@ -68,35 +72,140 @@ const G = {
   '!': [0x04, 0x04, 0x04, 0x04, 0x04, 0x00, 0x04],
 };
 
+/**
+ * The second face: 3 columns wide, same 7 rows. Each glyph is 7 rows of 3 bits.
+ *
+ * This exists for one reason, and it is not variety. A move name is capped by
+ * the width of its column, so the size the panel can draw is set by the widest
+ * word in the pools: at 5 columns plus tracking, "ADRENALINE" is 177 of the
+ * 180 it has at scale 3, and scale 4 would need 236. At 3 columns it is 156 at
+ * SCALE 4 — so the same word fits with letters a third TALLER (28 rather than
+ * 21 pixels) and strokes a third thicker. Narrower grid, bigger type.
+ *
+ * What that costs is the letters a 3-wide grid cannot draw honestly. M and W
+ * are the usual casualties and they are drawn here as H with a filled middle,
+ * which is legible in a word and poor in isolation; N leans on a single top-
+ * left serif to separate itself from D. Judge it at size, on the card, against
+ * the 5-wide face — that is what `MOVE_FACE` in layout.mjs is for.
+ */
+const SLIM = {
+  A: [0x2, 0x5, 0x5, 0x7, 0x5, 0x5, 0x5],
+  B: [0x6, 0x5, 0x5, 0x6, 0x5, 0x5, 0x6],
+  C: [0x3, 0x4, 0x4, 0x4, 0x4, 0x4, 0x3],
+  D: [0x6, 0x5, 0x5, 0x5, 0x5, 0x5, 0x6],
+  E: [0x7, 0x4, 0x4, 0x6, 0x4, 0x4, 0x7],
+  F: [0x7, 0x4, 0x4, 0x6, 0x4, 0x4, 0x4],
+  G: [0x3, 0x4, 0x4, 0x5, 0x5, 0x5, 0x3],
+  H: [0x5, 0x5, 0x5, 0x7, 0x5, 0x5, 0x5],
+  I: [0x7, 0x2, 0x2, 0x2, 0x2, 0x2, 0x7],
+  J: [0x1, 0x1, 0x1, 0x1, 0x1, 0x5, 0x2],
+  K: [0x5, 0x5, 0x5, 0x6, 0x5, 0x5, 0x5],
+  L: [0x4, 0x4, 0x4, 0x4, 0x4, 0x4, 0x7],
+  M: [0x5, 0x7, 0x7, 0x5, 0x5, 0x5, 0x5],
+  N: [0x6, 0x5, 0x5, 0x5, 0x5, 0x5, 0x5],
+  O: [0x2, 0x5, 0x5, 0x5, 0x5, 0x5, 0x2],
+  P: [0x6, 0x5, 0x5, 0x6, 0x4, 0x4, 0x4],
+  Q: [0x2, 0x5, 0x5, 0x5, 0x5, 0x2, 0x1],
+  R: [0x6, 0x5, 0x5, 0x6, 0x5, 0x5, 0x5],
+  S: [0x3, 0x4, 0x4, 0x2, 0x1, 0x1, 0x6],
+  T: [0x7, 0x2, 0x2, 0x2, 0x2, 0x2, 0x2],
+  U: [0x5, 0x5, 0x5, 0x5, 0x5, 0x5, 0x7],
+  V: [0x5, 0x5, 0x5, 0x5, 0x5, 0x2, 0x2],
+  W: [0x5, 0x5, 0x5, 0x5, 0x7, 0x7, 0x5],
+  X: [0x5, 0x5, 0x2, 0x2, 0x2, 0x5, 0x5],
+  Y: [0x5, 0x5, 0x5, 0x2, 0x2, 0x2, 0x2],
+  Z: [0x7, 0x1, 0x1, 0x2, 0x4, 0x4, 0x7],
+  0: [0x7, 0x5, 0x5, 0x5, 0x5, 0x5, 0x7],
+  1: [0x2, 0x6, 0x2, 0x2, 0x2, 0x2, 0x7],
+  2: [0x6, 0x1, 0x1, 0x2, 0x4, 0x4, 0x7],
+  3: [0x6, 0x1, 0x1, 0x2, 0x1, 0x1, 0x6],
+  4: [0x5, 0x5, 0x5, 0x7, 0x1, 0x1, 0x1],
+  5: [0x7, 0x4, 0x4, 0x6, 0x1, 0x1, 0x6],
+  6: [0x3, 0x4, 0x4, 0x6, 0x5, 0x5, 0x2],
+  7: [0x7, 0x1, 0x1, 0x1, 0x2, 0x2, 0x2],
+  8: [0x2, 0x5, 0x5, 0x2, 0x5, 0x5, 0x2],
+  9: [0x2, 0x5, 0x5, 0x3, 0x1, 0x1, 0x6],
+  ' ': [0, 0, 0, 0, 0, 0, 0],
+  '-': [0x0, 0x0, 0x0, 0x7, 0x0, 0x0, 0x0],
+  "'": [0x2, 0x2, 0x0, 0x0, 0x0, 0x0, 0x0],
+  '.': [0x0, 0x0, 0x0, 0x0, 0x0, 0x2, 0x2],
+  '+': [0x0, 0x0, 0x2, 0x7, 0x2, 0x0, 0x0],
+  '/': [0x1, 0x1, 0x2, 0x2, 0x2, 0x4, 0x4],
+  ':': [0x0, 0x2, 0x2, 0x0, 0x2, 0x2, 0x0],
+  '!': [0x2, 0x2, 0x2, 0x2, 0x2, 0x0, 0x2],
+};
+
 export const GLYPH_W = 5;
 export const GLYPH_H = 7;
 /** Blank columns between glyphs, in font pixels. */
 export const TRACKING = 1;
 
-const glyph = (ch) => G[ch] ?? G[' '];
+/**
+ * The faces, by name. `wide` is the card's typeface everywhere except where a
+ * caller asks otherwise; every function below takes one and defaults to it, so
+ * nothing that does not care about faces has to know they exist.
+ */
+export const FACES = {
+  wide: { glyphs: G, width: GLYPH_W, tracking: TRACKING },
+  slim: { glyphs: SLIM, width: 3, tracking: TRACKING },
+};
+
+const glyph = (face, ch) => face.glyphs[ch] ?? face.glyphs[' '];
+const pitch = (face) => face.width + face.tracking;
+
+/**
+ * A scale is a number, or the three ways type can be made heavier without
+ * being made wider.
+ *
+ * `x` and `y` are separate because the move panel's width is fixed by its
+ * longest word and its height is not: the same letterforms at x 3, y 4 are a
+ * third taller in exactly the room they already had. `bold` then widens every
+ * stroke by that many device pixels, which comes out of the blank column
+ * between glyphs rather than out of the line — a string grows by `bold` in
+ * total, not by `bold` per character.
+ *
+ * `track` is the gap between glyphs in DEVICE pixels, overriding the face's
+ * one blank column. It is the only way to make a letter wider without making
+ * the line wider: at x 5 the card's face is 25 across and seventeen of them
+ * with a full column between is 507, against the 434 a move row has. Spending
+ * the gap instead — 25 wide with 1 pixel of air — is 441. Small numbers here
+ * are a real cost; below 1 the letters merge.
+ *
+ * All of it stays integer, so this is whole-pixel scaling and STYLE.md's rule
+ * against resampling holds.
+ */
+const size = (scale) => (typeof scale === 'number'
+  ? { x: scale, y: scale, bold: 0, track: null }
+  : { x: scale.x, y: scale.y ?? scale.x, bold: scale.bold ?? 0, track: scale.track ?? null });
 
 /** Width of `text` in device pixels at `scale`. Trailing tracking is trimmed. */
-export function measure(text, scale) {
+const advance = (face, s) => (s.track === null
+  ? pitch(face) * s.x
+  : face.width * s.x + s.track);
+
+export function measure(text, scale, face = FACES.wide) {
   const n = String(text).length;
   if (!n) return 0;
-  return (n * (GLYPH_W + TRACKING) - TRACKING) * scale;
+  const s = size(scale);
+  const gap = s.track === null ? face.tracking * s.x : s.track;
+  return n * advance(face, s) - gap + s.bold;
 }
 
-export const lineHeight = (scale) => GLYPH_H * scale;
+export const lineHeight = (scale) => GLYPH_H * size(scale).y;
 
 /**
  * Break `text` into at most `maxLines` lines that each fit `width` device
  * pixels. Returns null when it cannot be done, which is the caller's signal to
  * try a smaller scale rather than to overflow the slot.
  */
-export function wrap(text, width, scale, maxLines) {
+export function wrap(text, width, scale, maxLines, face = FACES.wide) {
   const words = String(text).toUpperCase().split(/\s+/).filter(Boolean);
   const lines = [];
   let line = '';
   for (const word of words) {
-    if (measure(word, scale) > width) return null;   // one word cannot fit
+    if (measure(word, scale, face) > width) return null;   // one word cannot fit
     const candidate = line ? `${line} ${word}` : word;
-    if (measure(candidate, scale) <= width) {
+    if (measure(candidate, scale, face) <= width) {
       line = candidate;
     } else {
       lines.push(line);
@@ -115,20 +224,22 @@ export function wrap(text, width, scale, maxLines) {
  * cuts that by roughly four times. The painter only ever sees axis-aligned
  * integer rects, which is what makes the browser and worker agree.
  */
-export function glyphRects(text, x, y, scale) {
+export function glyphRects(text, x, y, scale, face = FACES.wide) {
   const rects = [];
   const chars = String(text).toUpperCase();
+  const w = face.width;
+  const s = size(scale);
   for (let i = 0; i < chars.length; i++) {
-    const rows = glyph(chars[i]);
-    const gx = x + i * (GLYPH_W + TRACKING) * scale;
+    const rows = glyph(face, chars[i]);
+    const gx = x + i * advance(face, s);
     for (let r = 0; r < GLYPH_H; r++) {
       const bits = rows[r];
       let c = 0;
-      while (c < GLYPH_W) {
-        if (!(bits & (1 << (GLYPH_W - 1 - c)))) { c++; continue; }
+      while (c < w) {
+        if (!(bits & (1 << (w - 1 - c)))) { c++; continue; }
         let run = 1;
-        while (c + run < GLYPH_W && bits & (1 << (GLYPH_W - 1 - c - run))) run++;
-        rects.push([gx + c * scale, y + r * scale, run * scale, scale]);
+        while (c + run < w && bits & (1 << (w - 1 - c - run))) run++;
+        rects.push([gx + c * s.x, y + r * s.y, run * s.x + s.bold, s.y]);
         c += run;
       }
     }

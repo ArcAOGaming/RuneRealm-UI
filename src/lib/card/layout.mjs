@@ -12,10 +12,16 @@
  *
  *   window        the frame's transparent interior, x 48-593, y 126-575
  *   level coin    the empty gold disc at 12,12-99,99 (the number is not baked)
- *   stat columns  the four icon discs centre on x 130, 254, 383, 511; their
- *                 labels end at y 737 and the moves panel starts at 777, so the
- *                 values go in the clean red band between
- *   move slots    badges are 78x75 at x 204 / 505, y 789 / 891
+ *   stat columns  the four icon discs are 96x96 sprites in the frame art,
+ *                 re-cut to centre on x 108, 252, 396, 540 and to STRADDLE the
+ *                 seam at y 576: they run y 528-623, half over the portrait
+ *                 and half in the band. The frame paints after the portrait,
+ *                 so they simply cover it. Their ATTACK/SPEED/DEFENSE/HEALTH
+ *                 labels were painted out — the disc says which stat it is,
+ *                 and the room the words took now belongs to the number, which
+ *                 sits in the band between the discs and the moves box at 696
+ *   move slots    the box's flat interior is x 67-612, y 680-914. THREE rows
+ *                 of 78, each a full-size 78x75 badge then a name
  *
  * The art is 4x-scaled pixel art, so everything here is integers and every
  * glyph scales by whole pixels. See STYLE.md: no resampling, ever.
@@ -27,12 +33,12 @@
  * riders, the status meters, and the satchel. Same card on the left, so a
  * player is looking at the same picture either way.
  */
-import { glyphRects, lineHeight, measure, wrap } from './font.mjs';
-import { moveIcon } from './moves.mjs';
+import { FACES, glyphRects, lineHeight, measure, wrap } from './font.mjs';
+import { ICON_H, ICON_W, moveIcon } from './moves.mjs';
 import { label } from './naming.mjs';
 
-export const CARD_W = 648;
-export const CARD_H = 1065;
+export const CARD_W = 693;
+export const CARD_H = 968;
 
 /**
  * The extended panel, measured off `Side Background.png`.
@@ -53,8 +59,8 @@ export const CARD_H = 1065;
  */
 export const PANEL_W = 396;
 const PANEL = {
-  dx: 522,
-  x: 657,
+  dx: 567,
+  x: 702,
   y: 36,
   w: 372,
   h: 996,
@@ -91,25 +97,107 @@ const monsterIndexPortrait = (entryNo) => {
   return number > 0 ? `monster-index/${String(number).padStart(3, '0')}/portrait.png` : null;
 };
 
-const LEVEL_COIN = { cx: 56, cy: 56 };
-const NAME_BAND = { cx: 324, cy: 75, maxWidth: 430 };
-const STAT_X = [130, 254, 383, 511];
-const STAT_CY = 757;
+/**
+ * The portrait window, measured off the frame — the card's one authoring
+ * contract. Everything that draws INTO the card (the studio, the monster
+ * index, anything that crops art for a card) sizes against this rather than
+ * against numbers of its own, so moving the window is one edit here.
+ */
+export const WINDOW = { x: 73, y: 121, w: 547, h: 450 };
 
 /**
- * Slot order: signature row first, left to right, then the support row.
+ * The canvas a studio portrait is authored on, and how it sits in the window:
+ * centred across it, standing `FLOOR` above its bottom edge.
  *
- * `textW` runs from the text origin to the badge that follows it. The left
- * column gets 141 rather than a rounder 135 because "FIRENADO" at scale 3 is
- * 141 wide to the pixel, and six pixels of padding would have demoted the
- * longest one-word move on the card to half-size text.
+ * It is deliberately NARROWER than the window. The window is 547 across and
+ * only 450 tall — wider than it is high — and a creature drawn to fill that is
+ * a creature seen from too far away. The subject takes the middle 320 and the
+ * background carries the rest, which is what the scenery plates are for.
+ *
+ * The four portraits in `assets/monster-index/` are authored at this size by
+ * `tools/studio-plugin.ts`. Change it in both places or neither.
  */
-const SLOTS = [
-  { iconX: 204, iconY: 789, textX: 63, textW: 141, cy: 826 },
-  { iconX: 505, iconY: 789, textX: 327, textW: 178, cy: 826 },
-  { iconX: 204, iconY: 891, textX: 63, textW: 141, cy: 928 },
-  { iconX: 505, iconY: 891, textX: 327, textW: 178, cy: 928 },
-];
+export const PORTRAIT_CANVAS = { w: 320, h: 448, floor: 8 };
+
+const LEVEL_COIN = { cx: 81, cy: 56, maxWidth: 60 };
+const NAME_BAND = { cx: 346, cy: 73, maxWidth: 430 };
+/**
+ * The stat columns, and the one place they are stated.
+ *
+ * `Frame *.png` bakes the four icon discs, so these numbers are not a choice
+ * this module makes freely — they are where the art puts them, and moving them
+ * means re-cutting all four frames. They were re-cut: the discs used to sit at
+ * x 130/254/383/511 with labels beneath, an even pitch of ~128 crowded into the
+ * middle of a 600-wide band. They now run on a true 144 pitch centred on the
+ * card, 36 pixels clear of the band at either end, lifted 20 pixels, with the
+ * labels gone.
+ *
+ * The value is what fills the space that bought. Its scale is picked from the
+ * widest of the four numbers and then used for all four, because two sizes in
+ * one row reads as a mistake rather than as fitting. Unlike the move names it
+ * can be fitted per card: a number is its own label, so a 137 drawn smaller
+ * than an 8 beside it is still the only thing it could be.
+ */
+const STAT_X = [130, 274, 418, 562];
+const STAT_CY = 651;
+/** Column pitch (144) less padding, so neighbouring numbers cannot touch. */
+const STAT_MAX_W = 132;
+const STAT_SCALES = [7, 6, 5, 4];
+
+/**
+ * Three rows, each a badge then a name, reading left to right.
+ *
+ * Three, not four, because a companion is dropping to three moves — the fourth
+ * is becoming a random one drawn per battle, which by definition cannot be
+ * printed on a permanent card. `orderedMoves` slices to `SLOTS.length`, so a
+ * record that still carries four shows the first three rather than overflowing
+ * the box.
+ *
+ * This replaced a 2x2 grid, and the reason was width. Two columns split the
+ * 549-wide interior in half, so a name had ~180 and the longest words in the
+ * pools ("ADRENALINE", "REGENERATE") were 177 of it at the smallest size worth
+ * drawing — the panel could not be made bigger, only bolder. One move per row
+ * gives the name 434 instead, which fits every name in the pools on ONE line
+ * at more than twice the height the 2x2 grid could manage.
+ *
+ * The card is 693x968: 63 by 88 EXACTLY, eleven pixels to the millimetre, the
+ * size Magic and Pokemon print at. Those two numbers are coprime, so whole
+ * multiples of 63x88 are the only pixel-exact sizes that exist — 693x968 is
+ * the smallest one this card's content fits in. It is NOT 2.5x3.5 inches;
+ * that is a different standard by 0.23%.
+ *
+ * It is also symmetric to the pixel across its centre line, which needed the
+ * box interior and the window hole to be the same width AND the same parity as
+ * the card. Check both if you change any width here.
+ *
+ * Interior y 680-914, three rows of 78 from the top — 312 of the 313 there is,
+ * because the box was cut down to the rows rather than the rows spaced out to
+ * fill the box. The badge is centred in its row and the name on the same line.
+ *
+ * The badges are drawn at their full 78x75. There is no size between that and
+ * 52x50: they are 26x25 art pixels at 3x, so 2x is the only other whole-block
+ * reduction, and they have no transparent margin to crop either.
+ */
+const BADGE_W = ICON_W;
+const BADGE_H = ICON_H;
+/**
+ * 78, not the 84 the interior would divide into: the badges read as one column
+ * when they nearly touch, and as four loose stickers when they are evenly
+ * spaced down the box. Three pixels between them, and the slack it leaves
+ * gathers at the bottom of the box rather than between the rows.
+ */
+const ROW_H = 78;
+const SLOTS = [0, 1, 2].map((row) => {
+  const top = 693 + row * ROW_H;
+  return {
+    iconX: 77,
+    iconY: top + Math.round((ROW_H - BADGE_H) / 2),
+    textX: 168,
+    textW: 447,
+    align: 'left',
+    cy: top + Math.round(ROW_H / 2),
+  };
+});
 
 const INK = {
   /** On the gold level coin. */
@@ -159,7 +247,33 @@ const ITEM_ORDER = [
 const ELEMENTS = new Set(['fire', 'water', 'air', 'rock']);
 
 /** Blit a whole plate at the origin. */
-const plate = (asset) => ({ op: 'image', asset, dx: 0, dy: 0 });
+/**
+ * Blit a whole plate.
+ *
+ * `INSET` is why this takes an offset at all. The card gained two pixels of
+ * border on each side, and only the FRAME was rewidened to 652 — every other
+ * full-card plate is still the 648 it was authored at, so they are drawn
+ * across and the frame is drawn at the origin. Two more went on when the
+ * frame's lean was corrected: its inner band was 18 left against 21 right, so
+ * two columns moved from one side to the other and the whole interior with
+ * them. Every interior coordinate in this file is therefore four further
+ * right than the art it was measured off — four from the widening, and five
+ * more from equalising the inner band at 22 a side and adding two of outer
+ * border, which put the card on bridge-card proportions at 662x1030.
+ */
+const INSET = 25;
+/** How far the window's contents hang above where they were authored. */
+const WINDOW_LIFT = -5;
+/**
+ * The monster rides higher than its scenery.
+ *
+ * Only the PORTRAIT moves: the background is the horizon and moving it with
+ * the creature just re-frames the same picture. Lifting the creature alone
+ * puts more sky over its head and settles it lower in the window, which is
+ * where a card wants its subject.
+ */
+const PORTRAIT_LIFT = WINDOW_LIFT - 8;
+const plate = (asset, dx = INSET) => ({ op: 'image', asset, dx, dy: 0 });
 
 /**
  * Text as filled rectangles.
@@ -168,14 +282,18 @@ const plate = (asset) => ({ op: 'image', asset, dx: 0, dy: 0 });
  * so the ink lands on top, and it is offset by exactly one font pixel (`scale`)
  * so it stays on the pixel grid.
  */
-function text(ops, string, { x, y, scale, color, align = 'center', shadow = true }) {
-  const width = measure(string, scale);
+function text(ops, string, { x, y, scale, color, align = 'center', shadow = true, face = FACES.wide }) {
+  const width = measure(string, scale, face);
   const left = align === 'center' ? Math.round(x - width / 2) : x;
   const top = Math.round(y - lineHeight(scale) / 2);
+  // One font pixel down-right, on whichever axis the scale gives — a stretched
+  // face would otherwise cast a shadow that does not match its own grid.
+  const dx = typeof scale === 'number' ? scale : scale.x;
+  const dy = typeof scale === 'number' ? scale : (scale.y ?? scale.x);
   if (shadow) {
-    ops.push({ op: 'rects', rects: glyphRects(string, left + scale, top + scale, scale), color: INK.shadow });
+    ops.push({ op: 'rects', rects: glyphRects(string, left + dx, top + dy, scale, face), color: INK.shadow });
   }
-  ops.push({ op: 'rects', rects: glyphRects(string, left, top, scale), color });
+  ops.push({ op: 'rects', rects: glyphRects(string, left, top, scale, face), color });
 }
 
 /**
@@ -197,20 +315,101 @@ export function orderedMoves(monster) {
 }
 
 /**
- * Fit a move name into its slot: two lines at scale 3, else two at scale 2.
+ * Break a move name into the lines its slot will draw, at `MOVE_SCALE`.
  *
- * Every name in the pools fits one of those. The final fallback truncates
- * rather than overflowing into the neighbouring slot, because a card that
- * bleeds is worse than a card that abbreviates.
+ * The scale is FIXED and not fitted. A per-card fit is what a naive pass does,
+ * and it means the same move is drawn at two different sizes on two cards,
+ * depending on what else was rolled beside it — the size stops meaning
+ * anything and the panel looks unfinished. Scale 3 is the largest that fits
+ * every name in the pools in two lines at the current column width
+ * ("ADRENALINE" and "REGENERATE", the longest words, are 177 of the 180).
+ *
+ * The fallback truncates rather than overflowing into the neighbouring slot,
+ * because a card that bleeds is worse than a card that abbreviates. Nothing in
+ * the pools reaches it; an admin-written move can.
  */
+/**
+ * The candidates for the panel, each with the largest size its own grid can
+ * draw the pools at. Flip `MOVE_FACE` to compare them on a real card.
+ *
+ * The ceiling is always the same word: "ADRENALINE" and "REGENERATE" are ten
+ * letters and a name has 180 pixels, so whatever is chosen has to draw ten
+ * letters in 180. That is what each of these does differently.
+ *
+ *   wide     5 columns at 3 — 15x21 letters, ten of them 177 wide. The plain
+ *            card face, and as large as a square scale can go.
+ *   heavy    the same face and the same 3 columns, stretched to 4 rows and
+ *            with every stroke a pixel wider: 16x28, ten of them 179 wide. A
+ *            third taller and visibly bolder in the room 15x21 already had.
+ *   huge     the end of that road: 5 rows and two pixels of weight, 17x35,
+ *            ten of them 179 of the 180. Nothing larger FITS.
+ *   row      what the move box takes: 21x42 with SIX pixels between the
+ *            letters, which is where the row's width went. Five-column
+ *            letters were tried and reverted: at 25 across they only fit with
+ *            2 pixels of air and read as one continuous word. Four columns
+ *            with a wide gap is the more legible half of that trade — the
+ *            letters are what they were, the space around them is not.
+ *            "WARRIOR'S RESOLVE" is 437 of the row's 446, and 6 is the widest
+ *            gap that fits — 7 would be 453. The HEIGHT is the free axis, so
+ *            it carries the proportion: 20 wide by 49 tall read as stretched,
+ *            and 42 is the same width at a shape that looks like type.
+ *   narrow   the same row at 4 columns and a proper gap: 22x49, 406 wide.
+ *            Fits comfortably and reads condensed, which is what it is.
+ *   wider    a fourth column, 21x35, which does not fit and is drawn anyway:
+ *            ten letters is 236 against 180, so the longest names run over
+ *            the badges in the middle of the panel. This is a look-at-it
+ *            setting, not a finished one — the two real fixes are smaller
+ *            badges (hand art; they are 78x75 and off the 4x grid, so they
+ *            cannot be shrunk in code without mangling) or move names with no
+ *            word over seven letters, which fits 164 in the 180 with room to
+ *            spare. Eleven of the forty-two names break that rule today.
+ *   slim     3 columns at 4 — 12x28, ten of them 156 wide. Also a third
+ *            taller, but it buys that with a narrower grid, and a 3-wide grid
+ *            cannot draw an honest M or W.
+ */
+const MOVE_FACES = {
+  wide: { face: FACES.wide, scale: 3 },
+  heavy: { face: FACES.wide, scale: { x: 3, y: 4, bold: 1 } },
+  huge: { face: FACES.wide, scale: { x: 3, y: 5, bold: 2 } },
+  wider: { face: FACES.wide, scale: { x: 4, y: 5, bold: 1 } },
+  row: { face: FACES.wide, scale: { x: 4, y: 6, bold: 1, track: 6 } },
+  narrow: { face: FACES.wide, scale: { x: 4, y: 7, bold: 2 } },
+  light: { face: FACES.wide, scale: { x: 5, y: 7, bold: 0, track: 1 } },
+  slim: { face: FACES.slim, scale: 4 },
+};
+const MOVE_FACE = MOVE_FACES.row;
+const MOVE_SCALE = MOVE_FACE.scale;
+
 function moveNameLines(name, width) {
-  for (const scale of [3, 2]) {
-    const lines = wrap(name, width, scale, 2);
-    if (lines) return { lines, scale };
+  const lines = wrap(name, width, MOVE_SCALE, 2, MOVE_FACE.face);
+  if (lines) return lines;
+
+  /*
+   * A name too wide for its column overflows rather than being cut, and it
+   * overflows one WORD at a time.
+   *
+   * The distinction is the whole behaviour. Re-wrapping the name against the
+   * full panel puts "ADRENALINE SURGE" on one long line, which runs clean
+   * through the badges and into the name in the other column — two names on
+   * top of each other, which is worse than either problem it solves. Breaking
+   * at the column and letting only the oversized word hang over keeps every
+   * line starting where it should: "ADRENALINE" laps onto the badges,
+   * "SURGE" sits in its column, and the other column is untouched.
+   */
+  const words = String(name).toUpperCase().split(/\s+/).filter(Boolean);
+  const out = [];
+  let line = '';
+  for (const word of words) {
+    const candidate = line ? `${line} ${word}` : word;
+    if (!line || measure(candidate, MOVE_SCALE, MOVE_FACE.face) <= width) {
+      line = candidate;
+    } else {
+      out.push(line);
+      line = word;
+    }
   }
-  const scale = 2;
-  const fits = Math.max(1, Math.floor((width / scale + 1) / 6));
-  return { lines: [String(name).toUpperCase().slice(0, fits)], scale };
+  if (line) out.push(line);
+  return out.slice(0, 2);
 }
 
 /** A section heading with its rule, as the original drew them. */
@@ -400,21 +599,36 @@ export function cardPlan(monster, opts = {}) {
   const level = Math.max(0, Math.round(Number(monster && monster.level) || 0));
   const ops = [];
 
-  ops.push(plate(opts.backgroundAsset || `Monsters/cards/1-backgrounds/Background ${art}.png`));
+  // The window lost 10 rows off its TOP, and the plates behind it are still
+  // the full-height originals — so they are hung 15 higher, which crops the
+  // sky rather than the ground the monster is standing on.
+  ops.push({
+    ...plate(opts.backgroundAsset || `Monsters/cards/1-backgrounds/Background ${art}.png`),
+    dy: WINDOW_LIFT,
+  });
   const numberedPortrait = monsterIndexPortrait(monster && monster.entryNo);
   if (opts.portraitAsset || numberedPortrait) {
     // Studio portraits are normalized to the authoring spec's 320x448 canvas.
     // Its bottom aligns with the card window and leaves symmetric side room.
-    ops.push({ op: 'image', asset: opts.portraitAsset || numberedPortrait, dx: 164, dy: 128 });
+    // Placed FROM the window rather than at numbers of its own, so the two
+    // cannot drift: centred across it, standing `floor` above its bottom.
+    ops.push({
+      op: 'image', asset: opts.portraitAsset || numberedPortrait,
+      dx: WINDOW.x + Math.round((WINDOW.w - PORTRAIT_CANVAS.w) / 2),
+      dy: WINDOW.y + WINDOW.h - PORTRAIT_CANVAS.h - PORTRAIT_CANVAS.floor,
+    });
   } else {
-    ops.push(plate(portraitPlate(art)));
+    ops.push({ ...plate(portraitPlate(art)), dy: PORTRAIT_LIFT });
   }
-  ops.push(plate(`Monsters/cards/2-cards-frame/Frame ${art}.png`));
+  ops.push(plate(`Monsters/cards/2-cards-frame/Frame ${art}.png`, 0));
   ops.push(plate(`Monsters/cards/3-elements-type/${art} Type.png`));
   ops.push(plate(`Monsters/cards/4-levels/Lvl ${art}.png`));
 
-  text(ops, String(level), {
-    x: LEVEL_COIN.cx, y: LEVEL_COIN.cy, scale: 4, color: INK.level, shadow: false,
+  // As large as the coin's clear middle takes: two digits at 5, three at 4.
+  const levelText = String(level);
+  const levelScale = measure(levelText, 5) <= LEVEL_COIN.maxWidth ? 5 : 4;
+  text(ops, levelText, {
+    x: LEVEL_COIN.cx, y: LEVEL_COIN.cy, scale: levelScale, color: INK.level, shadow: false,
   });
 
   // The nameplate PNGs are skipped on purpose: they bake ZEPHOUND / AQUANINE /
@@ -423,45 +637,55 @@ export function cardPlan(monster, opts = {}) {
   const nameScale = measure(name, 5) <= NAME_BAND.maxWidth ? 5 : 4;
   text(ops, name, { x: NAME_BAND.cx, y: NAME_BAND.cy, scale: nameScale, color: INK.light });
 
-  const stats = monster
+  const stats = (monster
     ? [monster.attack, monster.speed, monster.defense, monster.health]
-    : [0, 0, 0, 0];
+    : [0, 0, 0, 0]).map((value) => String(Math.round(Number(value) || 0)));
+  const widest = stats.reduce((a, b) => (b.length > a.length ? b : a), '');
+  const statScale = STAT_SCALES.find((s) => measure(widest, s) <= STAT_MAX_W)
+    ?? STAT_SCALES[STAT_SCALES.length - 1];
   stats.forEach((value, i) => {
-    text(ops, String(Math.round(Number(value) || 0)), {
-      x: STAT_X[i], y: STAT_CY, scale: 4, color: INK.light,
+    text(ops, value, {
+      x: STAT_X[i], y: STAT_CY, scale: statScale, color: INK.light, shadow: false,
     });
   });
 
-  // One scale for all four names. Fitting each slot independently is what a
-  // naive pass does, and it puts a half-size "FIRENADO" next to a full-size
-  // "FLAME SHIELD" on the same card — the eye reads that as a mistake rather
-  // than as fitting. The smallest scale any slot needs is the scale they all use.
   const moves = orderedMoves(monster);
-  const fitted = moves.map((move, i) => moveNameLines(move.name, SLOTS[i].textW));
-  const moveScale = Math.min(...fitted.map((f) => f.scale), 3);
 
+  // Every badge first, then every name — so a name that overflows its column
+  // lands ON the badges rather than under whichever one happens to be drawn
+  // after it. Interleaved, slot 0's name went under slot 1's badge and slot
+  // 1's did not, which reads as a rendering fault rather than as a tight fit.
   moves.forEach((move, i) => {
     const slot = SLOTS[i];
     const icon = moveIcon(move.name);
-    if (icon) {
-      ops.push({
-        op: 'image',
-        asset: icon.asset,
-        sx: icon.sx,
-        sy: icon.sy,
-        sw: icon.sw,
-        sh: icon.sh,
-        dx: slot.iconX,
-        dy: slot.iconY,
-      });
-    }
-    const scale = moveScale;
-    const lines = wrap(move.name, slot.textW, scale, 2) || fitted[i].lines;
-    const gap = scale;
+    if (!icon) return;
+    ops.push({
+      op: 'image',
+      asset: icon.asset,
+      sx: icon.sx,
+      sy: icon.sy,
+      sw: icon.sw,
+      sh: icon.sh,
+      dx: slot.iconX,
+      dy: slot.iconY,
+    });
+  });
+
+  moves.forEach((move, i) => {
+    const slot = SLOTS[i];
+    const scale = MOVE_SCALE;
+    const lines = moveNameLines(move.name, slot.textW);
+    const gap = typeof scale === 'number' ? scale : scale.x;
     const block = lines.length * lineHeight(scale) + (lines.length - 1) * gap;
     let y = slot.cy - block / 2 + lineHeight(scale) / 2;
     for (const line of lines) {
-      text(ops, line, { x: slot.textX, y, scale, color: INK.light, align: 'left' });
+      // `textX` is the edge the name is anchored to: the left one in a column
+      // that reads outward from the frame, the right one in a mirrored column
+      // that reads back toward the badges in the middle.
+      const x = slot.align === 'right'
+        ? slot.textX - measure(line, scale, MOVE_FACE.face)
+        : slot.textX;
+      text(ops, line, { x, y, scale, color: INK.light, align: 'left', face: MOVE_FACE.face });
       y += lineHeight(scale) + gap;
     }
   });

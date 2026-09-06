@@ -63,21 +63,40 @@ function blend(dst, di, sr, sg, sb, sa) {
   dst[di + 3] = outA;
 }
 
+/**
+ * Blit `op`'s source rectangle, optionally reduced to `dw` x `dh`.
+ *
+ * The reduction samples pixel CENTRES — `floor((x + 0.5) * sw / dw)` — which is
+ * what a canvas does with `imageSmoothingEnabled = false`, and matching it is
+ * the point: this painter mints the card and the browser paints the preview
+ * the player approved, so the two have to land on the same pixels.
+ *
+ * That only holds for a ratio whose every destination pixel falls inside the
+ * right source block. The card uses exactly one: the move badges are 26x25 art
+ * pixels drawn at 3x, so 78x75 to 52x50 is 3:2 and each output pixel lands in
+ * its own 3-wide block under either rounding convention. Do not reach for an
+ * arbitrary scale here — nearest-neighbour at a ragged ratio is the resampling
+ * STYLE.md forbids, and the two painters would stop agreeing.
+ */
 function drawImage(canvas, w, h, image, op) {
   const sx = op.sx ?? 0;
   const sy = op.sy ?? 0;
   const sw = op.sw ?? image.width;
   const sh = op.sh ?? image.height;
-  for (let y = 0; y < sh; y++) {
+  const dw = op.dw ?? sw;
+  const dh = op.dh ?? sh;
+  for (let y = 0; y < dh; y++) {
     const ty = (op.dy ?? 0) + y;
     if (ty < 0 || ty >= h) continue;
-    if (sy + y < 0 || sy + y >= image.height) continue;
-    const srcRow = (sy + y) * image.width;
-    for (let x = 0; x < sw; x++) {
+    const syy = sy + (dh === sh ? y : Math.floor(((y + 0.5) * sh) / dh));
+    if (syy < 0 || syy >= image.height) continue;
+    const srcRow = syy * image.width;
+    for (let x = 0; x < dw; x++) {
       const tx = (op.dx ?? 0) + x;
       if (tx < 0 || tx >= w) continue;
-      if (sx + x < 0 || sx + x >= image.width) continue;
-      const si = (srcRow + sx + x) * 4;
+      const sxx = sx + (dw === sw ? x : Math.floor(((x + 0.5) * sw) / dw));
+      if (sxx < 0 || sxx >= image.width) continue;
+      const si = (srcRow + sxx) * 4;
       blend(canvas, (ty * w + tx) * 4,
         image.data[si], image.data[si + 1], image.data[si + 2], image.data[si + 3]);
     }

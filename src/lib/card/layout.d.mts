@@ -1,7 +1,7 @@
 import type { ItemId, Monster } from '../types';
 
 export type CardOp =
-  | { op: 'image'; asset: string; dx?: number; dy?: number; sx?: number; sy?: number; sw?: number; sh?: number }
+  | { op: 'image'; asset: string; dx?: number; dy?: number; dw?: number; dh?: number; sx?: number; sy?: number; sw?: number; sh?: number }
   | { op: 'rects'; rects: [number, number, number, number][]; color: [number, number, number, number] };
 
 export interface CardOptions {
@@ -29,6 +29,8 @@ export interface CardPlanResult {
   ops: CardOp[];
 }
 
+export declare const WINDOW: { x: number; y: number; w: number; h: number };
+export declare const PORTRAIT_CANVAS: { w: number; h: number; floor: number };
 export declare const CARD_W: number;
 export declare const CARD_H: number;
 export declare const PANEL_W: number;

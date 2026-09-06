@@ -3,11 +3,13 @@
  * complete one quick orbit, then resolve into their exact DOM cards.
  */
 import {
-  AmbientLight, BoxGeometry, CanvasTexture, Color, DirectionalLight,
+  AmbientLight, CanvasTexture, Color, DirectionalLight,
   LinearFilter, Mesh, MeshBasicMaterial, MeshStandardMaterial, NearestFilter,
   NoToneMapping, PerspectiveCamera, Scene, SRGBColorSpace, WebGLRenderer,
 } from 'three';
 import type { Affinity } from '../lib/types';
+import { CARD_H, CARD_W } from '../lib/card/layout.mjs';
+import { cardGeometry } from './cardGeometry';
 
 export type CollectionCardFace = {
   face: HTMLCanvasElement;
@@ -35,7 +37,10 @@ export type CollectionCardSwap = { dispose(): void };
 
 const LIVE = new WeakMap<HTMLCanvasElement, () => void>();
 const LIVE_SWAPS = new WeakMap<HTMLCanvasElement, () => void>();
-const RATIO = 648 / 1065;
+/** The layout's own card size — see cardObject.ts. */
+const RATIO = CARD_W / CARD_H;
+/** The 32-pixel corner the frame art is cut to, as a fraction of card height. */
+const CORNER = 32 / CARD_H;
 const GOLD = 0xd6c8a2;
 const HUE: Record<Affinity, number> = {
   fire: 0xff7a43, water: 0x4ab0ff, air: 0x7ee8d6, rock: 0xc7a26b, normal: 0x969fb8,
@@ -89,7 +94,7 @@ export function createCollectionCardEntrance(
       roughness: 0.28, metalness: 0.92, transparent: true,
     });
     const mesh = new Mesh(
-      new BoxGeometry(RATIO * 1.46, 1.46, 0.035),
+      cardGeometry(RATIO * 1.46, 1.46, 0.035, CORNER * 1.46),
       [edge, edge, edge, edge, front, back],
     );
     scene.add(mesh);
@@ -341,7 +346,7 @@ export function createCollectionCardSwap(
       roughness: 0.24, metalness: 0.94, transparent: true,
     });
     const mesh = new Mesh(
-      new BoxGeometry(RATIO * 1.46, 1.46, 0.045),
+      cardGeometry(RATIO * 1.46, 1.46, 0.045, CORNER * 1.46),
       [edge, edge, edge, edge, front, back],
     );
     scene.add(mesh);
