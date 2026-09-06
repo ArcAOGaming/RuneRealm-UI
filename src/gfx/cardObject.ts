@@ -18,13 +18,15 @@
  * ran it through a mip chain would undo that at the first tilt.
  */
 import {
-  AdditiveBlending, BoxGeometry, CanvasTexture, Color, LinearFilter, Mesh,
+  AdditiveBlending, CanvasTexture, Color, LinearFilter, Mesh,
   MeshBasicMaterial, MeshStandardMaterial, NearestFilter, NoToneMapping, PerspectiveCamera,
-  PlaneGeometry, PMREMGenerator, PointLight, Scene, ShaderMaterial, SRGBColorSpace,
+  PMREMGenerator, PointLight, Scene, ShaderMaterial, SRGBColorSpace,
   WebGLRenderer,
 } from 'three';
 import { RoomEnvironment } from 'three/examples/jsm/environments/RoomEnvironment.js';
 import { drawMark } from './mark';
+import { CARD_H, CARD_W } from '../lib/card/layout.mjs';
+import { cardGeometry } from './cardGeometry';
 
 export type CardElement = 'fire' | 'water' | 'air' | 'rock' | 'normal' | 'arcane';
 
@@ -39,9 +41,11 @@ const HUE: Record<CardElement, number> = {
 
 const GOLD = 0xd6c8a2;
 
-/** Card stock: 648x1065 in the layout, so 0.6085 wide for a height of one. */
-const RATIO = 648 / 1065;
+/** Card stock: the layout's own size, so a resize there is not a squashed mesh here. */
+const RATIO = CARD_W / CARD_H;
 const THICK = 0.016;
+/** The 32-pixel corner the frame art is cut to, as a fraction of card height. */
+const CORNER = 32 / CARD_H;
 
 export type CardObject = {
   /** Repaint the face from a freshly drawn card canvas. */
@@ -338,12 +342,13 @@ export function createCardObject(
     color: GOLD, metalness: 1, roughness: 0.28, envMapIntensity: 1.6,
   });
 
-  // BoxGeometry lays its faces out right, left, top, bottom, front, back — so
-  // the card is one mesh with the painted face on +Z and gold on the rim,
-  // rather than three meshes that can drift out of alignment.
+  // One mesh, three groups — face, back, rim — rather than three meshes that
+  // can drift out of alignment. The corners are radiused because the card's
+  // art is: a square gold rim around a rounded picture reads as a sticker on a
+  // block. `CORNER` is the art's own 32-pixel corner in world units.
   const card = new Mesh(
-    new BoxGeometry(RATIO, 1, THICK),
-    [edgeMat, edgeMat, edgeMat, edgeMat, faceMat, backMat],
+    cardGeometry(RATIO, 1, THICK, CORNER),
+    [faceMat, backMat, edgeMat],
   );
   scene.add(card);
 
@@ -395,7 +400,8 @@ export function createCardObject(
         gl_FragColor = vec4(c, a);
       }`,
   });
-  const foil = new Mesh(new PlaneGeometry(RATIO, 1), foilMat);
+  // Rounded like the face, or the foil overhangs the corners it sits on.
+  const foil = new Mesh(cardGeometry(RATIO, 1, 0.0001, CORNER), foilMat);
   foil.position.z = THICK / 2 + 0.0012;
   card.add(foil);
 

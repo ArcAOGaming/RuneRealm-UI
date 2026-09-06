@@ -131,7 +131,12 @@ function paint(
       const img = images.get(op.asset)!;
       const sw = op.sw ?? img.naturalWidth;
       const sh = op.sh ?? img.naturalHeight;
-      ctx.drawImage(img, op.sx ?? 0, op.sy ?? 0, sw, sh, op.dx ?? 0, op.dy ?? 0, sw, sh);
+      // `dw`/`dh` reduce a badge to a whole-block fraction of itself; smoothing
+      // is already off, so this is the same nearest-neighbour the worker does.
+      ctx.drawImage(
+        img, op.sx ?? 0, op.sy ?? 0, sw, sh,
+        op.dx ?? 0, op.dy ?? 0, op.dw ?? sw, op.dh ?? sh,
+      );
     } else {
       ctx.fillStyle = rgba(op.color);
       for (const [x, y, w, h] of op.rects) ctx.fillRect(x, y, w, h);
