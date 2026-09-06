@@ -1064,8 +1064,27 @@ export interface MonsterIndexView {
   catalogHash?: string;
   revision: number;
   nextEntryNo: number;
-  entries: MonsterIndexEntry[];
+  /**
+   * Absent on the published `monsterindex` key, which carries only
+   * {@link MonsterIndexView.overrides}. `Monster.Index` still replies with the
+   * full effective catalog; the published key does not, because it was 32 KB
+   * of a constant this bundle already ships and every message pays for the
+   * whole published map five times over.
+   */
+  entries?: MonsterIndexEntry[];
+  /**
+   * Sparse admin patches, keyed by entry number, to join onto the authored
+   * catalog. Only the six mutable fields ever appear here.
+   */
+  overrides?: Record<string, Partial<MonsterIndexEntry>>;
 }
+
+/**
+ * A {@link MonsterIndexView} after {@link mergeMonsterIndex} has joined the wire
+ * shape onto the authored catalog. The wire may omit `entries`; the resolved
+ * catalog never does, so screens index it without a null check.
+ */
+export type MonsterIndexCatalog = MonsterIndexView & { entries: MonsterIndexEntry[] };
 
 export interface Catalog {
   items: Record<string, { id: ItemId; name: string; section: string; element?: Element }>;

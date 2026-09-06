@@ -311,6 +311,14 @@ local function monsterIndexBase(entryNo)
   return C.MONSTER_INDEX_BY_NO and C.MONSTER_INDEX_BY_NO[int(entryNo, 0)] or nil
 end
 
+--- The only fields an override may move. Named ONCE, because the effective row
+--- and the published override are two readings of the same list and a second
+--- copy is how they drift apart -- exactly the defect the node's slot-unwrap
+--- patch was written to remove.
+local MONSTER_INDEX_OVERRIDE_KEYS = {
+  "name", "state", "starter", "huntCatchable", "huntWeight", "artRevision",
+}
+
 --- One effective catalog row. Only the deliberately mutable fields are read
 --- from the sparse override; structural identity always comes from generated
 --- source so an admin typo cannot move #001 into another evolution line.
@@ -321,8 +329,7 @@ local function monsterIndexEntry(entryNo)
   for key, value in pairs(base) do out[key] = value end
   local override = MonsterIndexOverrides[tostring(base.entryNo)]
   if type(override) == "table" then
-    for _, key in ipairs({ "name", "state", "starter", "huntCatchable",
-                           "huntWeight", "artRevision" }) do
+    for _, key in ipairs(MONSTER_INDEX_OVERRIDE_KEYS) do
       if override[key] ~= nil then out[key] = override[key] end
     end
   end
@@ -340,6 +347,47 @@ local function monsterIndexView()
     revision = int(MonsterIndexRevision, 1),
     nextEntryNo = int(C.MONSTER_INDEX_NEXT_NO, #entries + 1),
     entries = entries,
+  }
+end
+
+--- What the PUBLISHED `monsterindex` key carries, which is NOT what a caller
+--- asking for the index gets back.
+---
+--- `entries` is a verbatim copy of `C.MONSTER_INDEX` -- a constant compiled
+--- into this module -- and the browser already ships the identical catalog
+--- (`authoredMonsterIndex` in `src/lib/monster-index.ts`). Measured on the live
+--- process it was 32,289 bytes of a 405 KB published map, and per CLAUDE.md a
+--- `~lua@5.3a` slot pays for the whole map FIVE times whatever the message did.
+--- So a constant on the wire is not a one-off download; it is a tax every
+--- player pays on every action, forever.
+---
+--- The only STATE here is `MonsterIndexOverrides` -- the sparse patches
+--- `Admin.MonsterIndex.Update` writes. Publish those and let the client join
+--- them onto the catalog it already has. `catalogHash` is how the client knows
+--- its copy is the right one; `revision` is how it knows the overrides moved.
+--- A client whose hash disagrees still has `Monster.Index` for the full view.
+local function monsterIndexPublishView()
+  local overrides = {}
+  for _, base in ipairs(C.MONSTER_INDEX or {}) do
+    local override = MonsterIndexOverrides[tostring(base.entryNo)]
+    if type(override) == "table" then
+      local patch = {}
+      for _, key in ipairs(MONSTER_INDEX_OVERRIDE_KEYS) do
+        if override[key] ~= nil then patch[key] = override[key] end
+      end
+      if next(patch) ~= nil then
+        overrides[tostring(base.entryNo)] = patch
+      end
+    end
+  end
+  return {
+    schemaVersion = int(C.MONSTER_INDEX_SCHEMA_VERSION, 1),
+    catalogHash = C.MONSTER_INDEX_CATALOG_HASH,
+    revision = int(MonsterIndexRevision, 1),
+    nextEntryNo = int(C.MONSTER_INDEX_NEXT_NO, #(C.MONSTER_INDEX or {}) + 1),
+    -- `jsonObject` so an empty override set encodes as `{}` and not `[]`; the
+    -- client indexes it by entry number.
+    overrides = jsonObject(overrides),
   }
 end
 
@@ -8494,7 +8542,7 @@ function compute(base, req, opts)
   -- Artist briefs and filesystem paths stay in RuneRealm-Assets; this public
   -- view is only what gameplay and a deployed client need to agree on.
   if action == "Admin.MonsterIndex.Update" or result.monsterindex == nil then
-    result.monsterindex = encode(monsterIndexView())
+    result.monsterindex = encode(monsterIndexPublishView())
   end
 
   -- Constants, written once and then never again.

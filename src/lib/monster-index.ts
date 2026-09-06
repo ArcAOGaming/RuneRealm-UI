@@ -1,5 +1,5 @@
 import { GENERATED_MONSTER_INDEX } from '../generated/monster-index';
-import { Affinity, MonsterIndexEntry, MonsterIndexView, Element, Listing, Monster, Player } from './types';
+import { Affinity, MonsterIndexCatalog, MonsterIndexEntry, MonsterIndexView, Element, Listing, Monster, Player } from './types';
 
 const urls = (value: Record<string, unknown>) => value as Record<string, string>;
 const PORTRAITS = urls(import.meta.glob('../assets/monster-index/*/portrait.png', {
@@ -70,7 +70,7 @@ const assetKey = (entryNo: number, file: string) => {
     .find((key) => key.endsWith(`/monster-index/${folder}/${file}`));
 };
 
-export function authoredMonsterIndex(): MonsterIndexView {
+export function authoredMonsterIndex(): MonsterIndexCatalog {
   return {
     schemaVersion: GENERATED_MONSTER_INDEX.schemaVersion,
     catalogHash: GENERATED_MONSTER_INDEX.catalogHash,
@@ -80,13 +80,34 @@ export function authoredMonsterIndex(): MonsterIndexView {
   };
 }
 
-/** Join local plans/assets with the contract's mutable names and channel flags. */
-export function mergeMonsterIndex(live?: MonsterIndexView | null): MonsterIndexView {
-  if (!live?.entries?.length) return authoredMonsterIndex();
-  const liveByNo = new Map(live.entries.map((entry) => [entry.entryNo, entry]));
+/**
+ * Join local plans/assets with the contract's mutable names and channel flags.
+ *
+ * Two shapes arrive here. The published `monsterindex` key carries only
+ * `overrides` — a sparse map of the six fields an admin may patch — because the
+ * full `entries` array is a verbatim copy of the catalog this bundle already
+ * ships, and publishing it cost 32 KB on a map every message pays for five
+ * times. `Monster.Index` and any process deployed before that change still
+ * reply with `entries`, so both are honoured and the authored catalog is the
+ * base either way.
+ */
+export function mergeMonsterIndex(live?: MonsterIndexView | null): MonsterIndexCatalog {
+  if (!live) return authoredMonsterIndex();
+  const liveByNo = new Map((live.entries ?? []).map((entry) => [entry.entryNo, entry]));
+  const overrides = live.overrides ?? {};
+  if (!liveByNo.size && !Object.keys(overrides).length) {
+    // Nothing mutable on the wire: the authored catalog IS the answer, but keep
+    // the live revision/hash so a caller can still tell one publish from another.
+    return { ...authoredMonsterIndex(), ...live, entries: authoredEntries };
+  }
   const entries = authoredEntries.map((authored) => {
     const current = liveByNo.get(authored.entryNo);
-    return current ? { ...authored, ...current, assets: authored.assets, plan: authored.plan } : authored;
+    const patch = overrides[String(authored.entryNo)];
+    if (!current && !patch) return authored;
+    return {
+      ...authored, ...current, ...patch,
+      assets: authored.assets, plan: authored.plan,
+    };
   });
   return { ...live, entries };
 }

@@ -560,10 +560,20 @@ local function run(base, req)
   ok("compute publishes the combat tuning", res.catalog ~= nil
      and string.find(res.catalog, "hpPerHealth") ~= nil,
      res.catalog and string.sub(res.catalog, 1, 60))
-  ok("compute publishes the numbered Monster Index", res.monsterindex ~= nil
-     and string.find(res.monsterindex, '"entryNo":1') ~= nil
-     and string.find(res.monsterindex, '"nextEntryNo":94') ~= nil,
-     res.monsterindex and string.sub(res.monsterindex, 1, 80))
+  -- The published key carries the mutable OVERLAY, never the catalog. The
+  -- `entries` array is a verbatim copy of `C.MONSTER_INDEX`, a constant the
+  -- client already ships, and it measured 32,289 bytes of a 405 KB published
+  -- map -- which every message pays for five times over whatever it did. The
+  -- full effective catalog is still one `Monster.Index` call away.
+  ok("compute publishes the Monster Index identity", res.monsterindex ~= nil
+     and string.find(res.monsterindex, '"nextEntryNo":94', 1, true) ~= nil
+     and string.find(res.monsterindex, '"catalogHash"', 1, true) ~= nil
+     and string.find(res.monsterindex, '"overrides"', 1, true) ~= nil,
+     res.monsterindex and string.sub(res.monsterindex, 1, 120))
+  ok("and NOT the catalog constant", res.monsterindex ~= nil
+     and string.find(res.monsterindex, '"entries"', 1, true) == nil
+     and string.find(res.monsterindex, '"entryNo":1', 1, true) == nil,
+     res.monsterindex and string.sub(res.monsterindex, 1, 120))
   ok("legacy starter records are mapped to Monster #001",
      Players[ALICE] and Players[ALICE].monster and Players[ALICE].monster.entryNo == 1,
      Players[ALICE] and Players[ALICE].monster and Players[ALICE].monster.entryNo)
@@ -572,12 +582,21 @@ local function run(base, req)
     json.encode({ name = "Forged Ashmouse" }))
   ok("a player cannot edit the Monster Index", errOf(deniedMonsterIndex) == "Not authorised",
      errOf(deniedMonsterIndex))
-  local renamedMonsterIndex = send(OWNER, { Action = "Admin.MonsterIndex.Update", EntryNo = "13" },
+  local renamedMonsterIndex, renamedRes = send(OWNER, { Action = "Admin.MonsterIndex.Update", EntryNo = "13" },
     json.encode({ name = "Ashmouse Draft" }))
   ok("the owner can rename a numbered planned entry",
      renamedMonsterIndex and renamedMonsterIndex.entries
        and renamedMonsterIndex.entries[13].name == "Ashmouse Draft",
      renamedMonsterIndex and renamedMonsterIndex.entries and renamedMonsterIndex.entries[13].name)
+  -- The overlay is the whole point of publishing this key at all: an edit here
+  -- must reach the wire, or a client joining against its own catalog would show
+  -- a stale name forever. Asserted on the RAW published text, per CLAUDE.md.
+  ok("an admin edit reaches the published overlay",
+     renamedRes and renamedRes.monsterindex
+       and string.find(renamedRes.monsterindex, '"Ashmouse Draft"', 1, true) ~= nil
+       and string.find(renamedRes.monsterindex, '"13"', 1, true) ~= nil,
+     renamedRes and renamedRes.monsterindex
+       and string.sub(renamedRes.monsterindex, 1, 200))
   local earlyRelease = send(OWNER, { Action = "Admin.MonsterIndex.Update", EntryNo = "13" },
     json.encode({ state = "live", huntCatchable = true, huntWeight = 100 }))
   ok("an entry with incomplete assets cannot be released", errOf(earlyRelease) ~= nil,
