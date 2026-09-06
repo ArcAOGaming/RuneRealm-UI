@@ -815,8 +815,6 @@ const ECONOMY_DIALS: Array<{
   { path: 'qualification.enabled', label: 'Qualified-player policy enabled', kind: 'boolean', note: 'Uses the visible candidate definition' },
   { path: 'runeRewards.epochBudget', label: 'Global Rune / epoch', note: 'Zero keeps issuance paused' },
   { path: 'runeRewards.enabled', label: 'Global Rune rewards enabled', kind: 'boolean', note: 'Never restores a per-wallet stipend' },
-  { path: 'amm.maxSlippageBps', label: 'Rune acquisition slippage / bps', note: 'Execution hard rail' },
-  { path: 'amm.maxWeeklyPoolBps', label: 'Weekly AMM reserve spend / bps', note: 'Execution hard rail' },
   { path: 'proceeds.split', label: 'Paid proceeds split', kind: 'split', note: 'Team + Rune acquisition + treasury must total 10000 bps' },
   { path: 'emergency.paused', label: 'Economy emergency state', kind: 'boolean', note: 'Disabling a pause is delayed; enabling it here is also delayed' },
   ...(['air_berry', 'water_berry', 'fire_berry', 'rock_berry', 'scroll', 'rune'] as GoldMarketItemId[])

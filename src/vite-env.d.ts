@@ -7,7 +7,6 @@ interface ImportMetaEnv {
   readonly VITE_GAME_PROCESS?: string;
   /** Public wallet address that owns the game process. */
   readonly VITE_GAME_OWNER?: string;
-  readonly VITE_AMM_PROCESS?: string;
   readonly VITE_RUNE_PROCESS?: string;
   readonly VITE_QUOTE_PROCESS?: string;
   readonly VITE_MARKET_NODE?: string;
