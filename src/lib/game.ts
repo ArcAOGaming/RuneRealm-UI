@@ -19,6 +19,7 @@ import {
   AcceptedWriteError, activeAddress, deliverSlot, HB_NODE, OutboxDeliveryError,
   readJSON, readState, send, GAME_PROCESS, type SendOptions,
 } from './hyperbeam';
+import { mergeMonsterIndex } from './monster-index';
 import {
   AdminAuditEntry, AdminFactionStats, AdminMetrics, AdminPlayerPatch,
   AdminPlayerSummary, AdminSnapshot, Battle, BattleFleetConfig, BattleFleetRoute, BerryItemId,
@@ -145,7 +146,7 @@ const monsterIndexCache: ConstantCache<MonsterIndexView> = new Map();
 let flatMovesFrom: Catalog | null = null;
 let flatMoves: Record<string, Move> | null = null;
 let flatEntriesFrom: MonsterIndexView | null = null;
-let flatEntries: Record<number, MonsterIndexEntry> | null = null;
+let flatEntries: Record<number, MonsterIndexEntry> = {};
 
 function flattenPools(catalog: Catalog | null): Record<string, Move> | null {
   const pools = catalog?.movePools;
@@ -172,20 +173,34 @@ function moveIndex(): Promise<Record<string, Move> | null> {
   }).catch(() => null);
 }
 
-function flattenMonsterIndex(view: MonsterIndexView | null): Record<number, MonsterIndexEntry> | null {
-  if (!view?.entries?.length) return null;
-  return Object.fromEntries(view.entries.map((entry) => [entry.entryNo, entry]));
+/**
+ * The effective catalog, indexed by entry number.
+ *
+ * Goes through `mergeMonsterIndex` rather than reading `view.entries` directly,
+ * because the process no longer publishes `entries` — the published key is the
+ * admin OVERLAY, and the catalog itself is compiled into this bundle. Reading
+ * `entries` returned null on every load after that change, which silently
+ * dropped every override while cards kept rendering from the fields the process
+ * still stamps on.
+ *
+ * A missing or failed read therefore means "no overrides", NOT "no catalog":
+ * the base must never depend on a network read, or one HTML-at-200 leaves the
+ * whole tab with nameless, elementless companions.
+ */
+function flattenMonsterIndex(view: MonsterIndexView | null): Record<number, MonsterIndexEntry> {
+  return Object.fromEntries(
+    mergeMonsterIndex(view).entries.map((entry) => [entry.entryNo, entry]),
+  );
 }
 
-function monsterIndexLookup(): Promise<Record<number, MonsterIndexEntry> | null> {
+function monsterIndexLookup(): Promise<Record<number, MonsterIndexEntry>> {
   return readMonsterIndex().then((view) => {
-    if (!view) return null;
     if (view !== flatEntriesFrom) {
       flatEntriesFrom = view;
       flatEntries = flattenMonsterIndex(view);
     }
     return flatEntries;
-  }).catch(() => null);
+  }).catch(() => flattenMonsterIndex(null));
 }
 
 /**

@@ -2837,7 +2837,7 @@ H["Monster.LevelUp"] = function(base, msg, timestamp)
   -- without asking. `resolveEvolution` runs first so a companion that evolved
   -- this level relearns as its NEW stage.
   local learned = nil
-  if (m.level % 3) == 0 then
+  if (m.level % math.max(1, int(C.MOVE_RELEARN_LEVELS, 5))) == 0 then
     m.moves, learned = Battle.relearn(m.moves, m.elementType, { entryNo = m.entryNo })
   end
   local v = playerView(p)
@@ -8419,8 +8419,15 @@ function compute(base, req, opts)
   --- a record may never publish less than it can be rebuilt from.
   local function publishedPlayerView(p)
     local v = playerView(p)
+    -- The id has to match, not merely resolve. Checking only that `activeId`
+    -- names SOMETHING would silently substitute the roster entry for whatever
+    -- the store considers active if the two ever drifted -- and this repo does
+    -- not treat that drift as impossible: `fuzz.mjs` reports mirror-drift at
+    -- major and mirror-detached at critical for exactly this condition. If they
+    -- disagree, the mirror is not recoverable from `activeId` and it stays.
     if v.monster ~= nil and v.activeId ~= nil
-       and type(v.monsters) == "table" and v.monsters[v.activeId] ~= nil then
+       and type(v.monsters) == "table" and v.monsters[v.activeId] ~= nil
+       and v.monster.id == v.activeId then
       v.monster = nil
     end
     return v
@@ -8717,6 +8724,10 @@ function compute(base, req, opts)
       -- from four to three and the card was already drawn for three; a screen
       -- that hardcodes the old number renders an empty cell forever.
       moveSlots = C.MOVE_SLOTS,
+      -- Every Nth level the companion relearns. Published because the
+      -- companion screen tells the player when it will happen, and a client
+      -- that hardcodes it says something the process disagrees with.
+      moveRelearnLevels = C.MOVE_RELEARN_LEVELS,
       -- The draw weights, published because the card and the move grid print a
       -- rarity and a player is entitled to know what it is worth. Rarity 1 is
       -- the rare tier, so the weights run the other way from the number.

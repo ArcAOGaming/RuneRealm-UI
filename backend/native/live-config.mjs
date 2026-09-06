@@ -45,6 +45,25 @@ function huntReceipt(file) {
   };
 }
 
+/**
+ * The marketplace receipt, read by SHAPE rather than by position.
+ *
+ * It used to lead with the AMM pool id, so the file on disk is five lines and a
+ * freshly written one is four. Reading it as fixed fields shifted every value
+ * by one and made the resolver report that matching receipts disagreed on the
+ * Rune process -- which made every backend tool refuse to start. So find the
+ * node URL the way `huntReceipt` does and read the ids in front of it: two is
+ * (rune, quote), three is a legacy file whose first line is the dead pool.
+ */
+function marketReceipt(file) {
+  const value = lines(file);
+  const nodeAt = value.findIndex((entry) => /^https?:\/\//i.test(entry));
+  if (nodeAt < 2) return null;
+  const ids = value.slice(0, nodeAt);
+  const [rune, quote] = ids.length >= 3 ? ids.slice(-2) : ids;
+  return { rune, quote, node: cleanNode(value[nodeAt]), owner: value[nodeAt + 1] ?? '' };
+}
+
 function textReceipt(file, fields) {
   const value = lines(file);
   if (!value.length) return null;
@@ -101,8 +120,7 @@ export function resolveLiveGraph({
   const live = textReceipt(path.join(root, 'live-process.txt'), ['game', 'node', 'owner']);
   const deployment = json(path.join(native, 'deployment-state.json'), issues);
   const market = json(path.join(native, 'marketplace-state.json'), issues);
-  const marketText = textReceipt(path.join(root, 'marketplace-processes.txt'),
-    ['rune', 'quote', 'node', 'owner']);
+  const marketText = marketReceipt(path.join(root, 'marketplace-processes.txt'));
   const runeText = textReceipt(path.join(root, 'rune-process.txt'), ['rune', 'node', 'owner']);
   const hunt = huntReceipt(path.join(root, 'hunt-process.txt'));
   const battle = json(path.join(native, 'battle-fleet', 'manifest.local.json'), issues);
@@ -245,6 +263,10 @@ export function resolveLiveGraph({
     battleWorkers,
     // Where each id came from, so a surprising graph can be explained rather
     // than guessed at. This is the whole point of resolving in one place.
+    // `provenance` is the name the swarm's graph table reads; `sources` is the
+    // name the rest of the tooling uses. One object, both spellings, because a
+    // renamed field that only shows up when a tool is RUN is exactly the kind
+    // of break a passing test suite hides.
     sources: {
       game: gameChoice.source, node: nodeChoice.source, owner: ownerChoice.source,
       rune: runeChoice.source, quote: quoteChoice.source,
@@ -254,6 +276,7 @@ export function resolveLiveGraph({
     errors: issues.errors,
     warnings: issues.warnings,
   };
+  graph.provenance = graph.sources;
 
   // The exchange is a PAIR. Half of one is not a usable configuration, and
   // silently carrying the half that resolved is how a test ends up pointing at
@@ -403,4 +426,21 @@ export async function verifyLiveGraph(graph, {
     if (outcome.status === 'rejected') errors.push(outcome.reason?.message ?? String(outcome.reason));
   }
   return { ok: errors.length === 0, checks, errors };
+}
+
+/**
+ * The graph as it goes into a run record: ids and nodes, no local bookkeeping.
+ *
+ * `sources`, `errors` and `warnings` describe where THIS machine read its
+ * receipts, which is noise in a soak log and would differ between two machines
+ * driving the same deployment.
+ */
+export function publicLiveGraph(graph) {
+  return {
+    game: graph.game, node: graph.node, owner: graph.owner,
+    rune: graph.rune, quote: graph.quote, marketNode: graph.marketNode,
+    hunt: graph.hunt, huntNode: graph.huntNode,
+    huntWorkers: [...(graph.huntWorkers ?? [])],
+    battleWorkers: [...(graph.battleWorkers ?? [])],
+  };
 }

@@ -24,8 +24,12 @@ function fixture() {
   fs.writeFileSync(path.join(root, 'rune-process.txt'), `${id('R')}\n${node}\n${id('O')}\n`);
   fs.writeFileSync(path.join(root, 'hunt-process.txt'),
     `${id('H')}\n${id('I')}\n${node}\n${id('G')}\n`);
+  // FIVE lines, leading with the dead AMM pool id, because that is what is
+  // actually on disk in this repo. The previous fixture wrote four and so
+  // agreed with the parser rather than with reality: every backend tool refused
+  // to start while this suite stayed green.
   fs.writeFileSync(path.join(root, 'marketplace-processes.txt'),
-    `${id('R')}\n${id('Q')}\n${node}\n${id('O')}\n`);
+    `${id('P')}\n${id('R')}\n${id('Q')}\n${node}\n${id('O')}\n`);
   fs.writeFileSync(path.join(native, 'deployment-state.json'), JSON.stringify({
     version: 2, node, owner: id('O'),
     processes: { game: id('G'), rune: id('R'), quote: id('Q'),
@@ -153,4 +157,30 @@ test('online verification checks both directions and every worker roster', async
   const broken = await verifyLiveGraph(graph, { fetchImpl, requireExchange: true });
   assert.equal(broken.ok, false);
   assert.match(broken.errors.join('\n'), /Rune -> game/);
+});
+
+test('a legacy marketplace receipt that still leads with a pool id resolves correctly', () => {
+  const root = fixture();
+  const graph = assertLiveGraph(resolveLiveGraph({ root, env: {} }), { requireExchange: true });
+  assert.equal(graph.rune, id('R'), 'the Rune id must not shift when the pool line is present');
+  assert.equal(graph.quote, id('Q'));
+  assert.equal(graph.errors.length, 0, graph.errors.join('\n'));
+});
+
+test('a four-line receipt without the pool line resolves the same way', () => {
+  const root = fixture();
+  fs.writeFileSync(path.join(root, 'marketplace-processes.txt'),
+    `${id('R')}\n${id('Q')}\nhttps://node.test\n${id('O')}\n`);
+  const graph = assertLiveGraph(resolveLiveGraph({ root, env: {} }), { requireExchange: true });
+  assert.equal(graph.rune, id('R'));
+  assert.equal(graph.quote, id('Q'));
+});
+
+test('the graph exposes both spellings of where each id came from', () => {
+  // `swarm.mjs` reads `provenance`; everything else reads `sources`. A renamed
+  // field that only shows up when a tool is RUN is what this pins.
+  const root = fixture();
+  const graph = resolveLiveGraph({ root, env: {} });
+  assert.equal(graph.provenance, graph.sources);
+  assert.ok(graph.provenance.game);
 });
