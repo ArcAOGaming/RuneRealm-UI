@@ -806,14 +806,27 @@ export async function sendMessage({ node, jwk, process: pid, action, tags = {}, 
     if (res.status === 200) {
       if (!path) SCHEDULE_ROUTE.set(node, candidate);
       const slot = res.headers['slot'];
-      // Fire and forget. The push is best-effort by definition — the caller's
-      // message is already accepted, and the delivery it triggers happens on
-      // the receiving process's own timeline. AWAITING it doubled the round
-      // trips of every backend write for no benefit: most messages emit no
-      // outbox at all, so the wait was usually spent confirming there was
-      // nothing to deliver. A 99-message seeding run paid that 99 times.
+      // Queued, not awaited, and not raced. The push is still best-effort from
+      // the caller's point of view — the message is already accepted, and
+      // AWAITING the delivery doubled the round trips of every backend write
+      // for no benefit, since most messages emit no outbox at all.
+      //
+      // But firing them CONCURRENTLY was not free, it was just billed to
+      // somebody else. `push&slot=N` for a slot above the computed head makes
+      // the node replay every intermediate slot to reach it, and
+      // `dev_process.erl` compute_to_slot recurses over those with no per-slot
+      // cache read — so N racing pushes each replay from wherever the head was
+      // when they started. Measured on the live node: every one of 75 racing
+      // pushes targeted a slot above the head, each replayed 20.1 slots, and
+      // that is what made the first 400 slots of a fresh process cost 6.38
+      // executions each against 1.00 in steady state.
+      //
+      // One in flight per process, in slot order, so each push asks for head+1
+      // and replays one slot. See `pendingPushes` for the other half: a queued
+      // push that never runs is a destroyed Rune, so a script must drain before
+      // it exits.
       if (slot !== undefined && slot !== null) {
-        pushSlot({ node, process: pid, slot }).catch(() => {});
+        queuePush({ node, process: pid, slot });
       }
       return { slot, headers: res.headers };
     }
@@ -849,6 +862,57 @@ export async function pushSlot({ node, process: pid, slot }) {
     return false;
   }
 }
+
+/**
+ * One push in flight per process, in the order the slots were accepted.
+ *
+ * Keyed by `node|process` because the serialisation that matters is per
+ * process: two different processes have separate heads and separate workers,
+ * and holding one behind the other would just be a slower deploy. Two writes to
+ * the SAME process are the ones that must not race, because the second push
+ * asking for a slot the first has not reached yet is what makes the node replay
+ * the gap.
+ *
+ * A rejection cannot escape here — `pushSlot` already swallows everything and
+ * returns a boolean — but the `catch` stays so a future throw cannot turn one
+ * failed delivery into an unhandled rejection that kills a seeding run.
+ */
+const PUSH_QUEUES = new Map();
+
+export function queuePush({ node, process: pid, slot }) {
+  const key = `${node}|${pid}`;
+  const tail = (PUSH_QUEUES.get(key) ?? Promise.resolve())
+    .then(() => pushSlot({ node, process: pid, slot }))
+    .catch(() => false);
+  PUSH_QUEUES.set(key, tail);
+  return tail;
+}
+
+/**
+ * Wait for queued pushes to drain. Await this before a script exits.
+ *
+ * This is not tidiness. A process cannot send anything by itself: a queued push
+ * that never runs is an outbox that is never delivered, and the first time that
+ * happened here the game had already deducted a player's Rune while the token's
+ * mint sat undelivered — the runes were destroyed. Serialising the pushes makes
+ * that window longer, so draining stops being optional.
+ *
+ * With no arguments, drains every process this client has pushed for.
+ */
+export async function pendingPushes({ node, process: pid } = {}) {
+  const queues = node && pid
+    ? [PUSH_QUEUES.get(`${node}|${pid}`)]
+    : [...PUSH_QUEUES.values()];
+  await Promise.all(queues.filter(Boolean));
+}
+
+// The safety net under the explicit drains. `beforeExit` fires when the loop
+// runs dry with the process still alive, and awaiting here keeps it alive long
+// enough for the tail to land — so a script that writes and returns without
+// settling still delivers its outboxes. It does NOT fire on an explicit
+// `process.exit()` or an uncaught throw, which is why `awaitComputedSlot`
+// drains too rather than relying on this.
+process.on('beforeExit', () => { void pendingPushes(); });
 
 
 /** Plain unsigned GET of process state. `path` defaults to `now`. */
@@ -908,6 +972,13 @@ export async function awaitComputedSlot({
   if (!Number.isSafeInteger(target) || target < 0) {
     throw new Error(`awaitComputedSlot needs a slot number, got ${slot}`);
   }
+  // Let this process's queued pushes land first. The node runs
+  // `process-now-from-cache`, so `now/at-slot` READS the head rather than
+  // driving it — during a cold burst the push is the only thing advancing it,
+  // and settling before the pushes have run is waiting for something that only
+  // the thing you are not waiting for can do. Draining here also means the six
+  // callers of this function need no drain of their own.
+  await pendingPushes({ node, process: pid });
   // The POLICY is `settleHead`, shared with the browser and swarm client in
   // `src/lib/hyperbeam.ts`. All this supplies is how a Node tool reads a head.
   return settleHead({
