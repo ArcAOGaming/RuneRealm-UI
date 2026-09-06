@@ -2698,6 +2698,14 @@ H["Monster.Play"] = function(base, msg, timestamp)
   return reply(base, playerView(p))
 end
 
+--- @spec summary   Send the companion away for an hour. The slow, safe verb.
+--- @spec requires  status Home, no other activity, energy >= 25, happiness >= 25
+--- @spec spends    25 energy, 25 happiness
+--- @spec pays      exp, and Gold from the shared 20-hour allowance -- no items
+--- @spec then      Monster.Claim, once the duration has elapsed
+--- @spec note      Items come from the daily crate, never from a verb. A quest
+--- @spec note      paid a crate until 2026-09-06 and that was the largest
+--- @spec note      unintended faucet in the economy.
 H["Monster.Quest"] = function(base, msg, timestamp)
   local address = signer(msg)
   local p = getPlayer(address, timestamp)
@@ -2826,23 +2834,120 @@ H["Monster.LevelUp"] = function(base, msg, timestamp)
   m.speed = m.speed + s
   m.health = m.health + h
   resolveEvolution(m)
-  -- Every third level the companion RELEARNS: the signature slot is re-derived
-  -- from the monster index -- which is how an evolution hands over its new
-  -- signature move -- and each other slot draws a candidate it keeps only if it
-  -- is at least as rare as what is already there. See `Battle.relearn`.
+  -- Every `C.MOVE_RELEARN_LEVELS` levels the companion is OFFERED one move.
   --
-  -- It used to be `m.moves = Battle.rollMoves(...)`: a silent, total, random
-  -- replacement. With rarity now meaning something in the draw, that is a
-  -- mechanic which confiscates the rare move a player was given, on a schedule,
-  -- without asking. `resolveEvolution` runs first so a companion that evolved
-  -- this level relearns as its NEW stage.
-  local learned = nil
+  -- The offer is not applied here and the level-up does not wait for it. That
+  -- separation is the whole design: the level, the points, the Rune and the
+  -- evolution all commit in this one message, so there is no such thing as a
+  -- half-levelled companion and a player who never answers is not stuck. They
+  -- are holding an unopened envelope, not an unfinished level -- they can
+  -- quest, battle, and level again with it outstanding.
+  --
+  -- The alternative, a two-step level-up that is not finished until the move is
+  -- chosen, puts a partial companion on chain and lets an unanswered prompt
+  -- block progression. It is the same UX and a much worse state machine.
+  --
+  -- `resolveEvolution` runs first, so a companion that evolved this level is
+  -- offered a move as its NEW stage.
   if (m.level % math.max(1, int(C.MOVE_RELEARN_LEVELS, 5))) == 0 then
-    m.moves, learned = Battle.relearn(m.moves, m.elementType, { entryNo = m.entryNo })
+    -- A new offer REPLACES an unanswered one rather than queueing behind it.
+    -- Nothing was ever promised, so nothing is taken; and a queue would mean a
+    -- player who ignored one prompt is met with four.
+    m.pendingMove = Battle.offerMove(m.moves, m.elementType, { entryNo = m.entryNo })
   end
+  return reply(base, playerView(p))
+end
+
+--- Take the offered move, or turn it down.
+---
+--- `Move` names the offer being answered and is checked against the record,
+--- because a client can be looking at a stale one: level past another milestone
+--- with a prompt still open and the offer underneath it has already changed. An
+--- answer that names the wrong move is refused rather than applied to whatever
+--- happens to be pending now, which is the difference between a stale UI and a
+--- move the player did not choose.
+---
+--- `Replace` names the move to give up. Absent, the offer is declined, and a
+--- decline is FINAL -- the move is gone. Anything else makes this a slot
+--- machine: decline, decline, decline until the rare one comes up.
+H["Monster.LearnMove"] = function(base, msg, timestamp)
+  local address = signer(msg)
+  local p = getPlayer(address, timestamp)
+  local denied = requireAccess(base, p)
+  if denied then return denied end
+  local m = p.monster
+  if not m then return fail(base, "No companion") end
+  -- Same reason as Monster.Feed: the snapshot is already queued.
+  if m.status.type == "Minting" then return fail(base, "Your companion is being minted") end
+
+  local offered = m.pendingMove
+  if type(offered) ~= "string" or offered == "" then
+    return fail(base, "Nothing is waiting to be learned")
+  end
+
+  local named = msg.Move
+  if type(named) == "string" and named ~= "" and named ~= offered then
+    return fail(base, "The offer is " .. offered .. ", not " .. named)
+  end
+
+  -- Declining. Checked before anything else can fail, so turning a move down
+  -- always works: a player who does not want it must never be told why they
+  -- cannot refuse it.
+  local replace = msg.Replace
+  if type(replace) ~= "string" or replace == "" then
+    m.pendingMove = nil
+    local v = playerView(p)
+    v.declined = offered
+    return reply(base, v)
+  end
+
+  if m.moves[replace] == nil then
+    return fail(base, "Your companion does not know " .. replace)
+  end
+
+  local swappable, signature = Battle.swappableMoves(m.moves, m.elementType,
+    { entryNo = m.entryNo })
+  if replace == signature then
+    return fail(base, signature .. " is your companion's own move and cannot be replaced")
+  end
+  if #swappable == 0 then
+    return fail(base, "Your companion has no move it can give up")
+  end
+
+  local def = Battle.moveDef(offered)
+  if not def then
+    -- The pool was renamed under a pending offer. Clear it rather than leaving
+    -- a companion holding an envelope that can never be opened.
+    m.pendingMove = nil
+    return fail(base, offered .. " is no longer a move in this realm")
+  end
+
+  -- The damage invariant, guarded here rather than assumed. The signature is
+  -- damaging and is protected, so this cannot fire for a companion the monster
+  -- index knows -- it is here for the ones it does not, which is a legacynet
+  -- import or an admin write whose roster never contained its species move.
+  local armedAfter = (def.damage or 0) > 0
+  if not armedAfter then
+    for name, stored in pairs(m.moves) do
+      if name ~= replace then
+        local other = Battle.moveDef(name)
+        local damage = (other and other.damage) or (type(stored) == "table" and stored.damage) or 0
+        if damage > 0 then armedAfter = true break end
+      end
+    end
+  end
+  if not armedAfter then
+    return fail(base, "That would leave your companion with nothing that deals damage")
+  end
+
+  m.moves[replace] = nil
+  m.moves[offered] = { count = int(def.count, 1) }
+  m.moves = Battle.compactMoves(m.moves)
+  m.pendingMove = nil
+
   local v = playerView(p)
-  -- Nothing told the player the old reroll had happened. This does.
-  if learned and #learned > 0 then v.learned = learned end
+  v.learned = offered
+  v.forgot = replace
   return reply(base, v)
 end
 
@@ -3421,6 +3526,11 @@ H["Rune.Withdrawals"] = function(base, msg)
   return reply(base, { withdrawals = mine, token = RuneToken })
 end
 
+--- @spec summary   Open one crate and take what is in it.
+--- @spec requires  at least one crate held
+--- @spec spends    the crate
+--- @spec pays      `picks` distinct berries, your own element first, plus Scrolls by tier
+--- @spec note      Omit Rarity and the BEST crate on hand is opened, not the first.
 H["Lootbox.Open"] = function(base, msg, timestamp)
   local address = signer(msg)
   local p = getPlayer(address, timestamp)
@@ -3810,6 +3920,13 @@ end
 --- Charge the player's Rune bid, then materialise the already-rolled wild
 --- creature in collection on success. The bid is paid on failure too: those
 --- Runes were committed to the one binding attempt.
+--- @spec summary   Settle one capture attempt. Emitted by the Hunt worker, never signed by a player.
+--- @spec requires  an open run this process assigned, rune >= bid, scroll >= scrollCost
+--- @spec spends    the Rune bid AND one Scroll, whether the binding holds or breaks
+--- @spec pays      on success, the exact defeated creature into the collection
+--- @spec note      Idempotent on settlement-id: a retry is acknowledged, never paid twice.
+--- @spec note      Both prices are checked before either is spent, because the
+--- @spec note      worker retries a refusal and a half-charge would be charged again.
 H["Hunt.Settle"] = function(base, msg, timestamp)
   local payload, why = huntNotice(base, msg)
   if not payload then return fail(base, why) end
@@ -4536,9 +4653,26 @@ local function fleetSettle(player, effect, timestamp)
   if player.monster then
     player.monster.exp = (player.monster.exp or 0) + int(award.experience, 0)
   end
-  local loot = award.lootbox
-  if type(loot) == "table" and int(loot.count, 0) > 0 then
-    addLootboxes(player, int(loot.count, 0), int(loot.rarity, 1))
+  -- GOLD, NOT A BOX, AND THIS IS THE PATH WHERE IT MATTERS MOST.
+  --
+  -- A bot battle has no counterparty. One player spends a session's ~2.75
+  -- berries of energy and happiness, and the reward is minted from nothing --
+  -- so a tier-1 box at ~6.5 berries (`C.LOOT_TIERS[1]`: picks 1, min 5, max 8)
+  -- made the arena item-positive by roughly 4.7x with nobody on the other side
+  -- paying for it. `constants.lua` diagnosed exactly that and moved the arena
+  -- to a Gold allowance; only the in-process settle was changed, and since
+  -- `Battle.Start` routes to the fleet whenever it is enabled, this is the path
+  -- that actually runs.
+  --
+  -- Gold instead, through the same 20-hour `rewardWindowCap` the quest draws
+  -- on, so grinding bots reaches a ceiling for the day rather than compounding:
+  -- more berries buying more sessions buying more berries.
+  --
+  -- `grantGold` may legitimately pay nothing once the allowance is spent. That
+  -- is the point of a capped faucet, so a refusal is not an error here.
+  local gold = int(award.gold, 0)
+  if gold > 0 and player.address then
+    grantGold(player, player.address, gold, timestamp)
   end
   if player.activeBattleId == effect.battleId then player.activeBattleId = nil end
   if player.battleFleet and player.battleFleet.reservationId == effect.reservationId then
@@ -4617,8 +4751,11 @@ local function startFleetBattle(base, msg, timestamp, address, p)
     expiresAt = timestamp + int(FLEET_CFG.ticketTtl, 10 * 60 * 1000),
     reservedCost = { battles = 1 },
     rewardPlan = {
+      -- Gold, from `C.ACTIVITIES.battle.winGold`, never a loot box. A bot win
+      -- has no counterparty paying for it, so an item reward here is minted
+      -- from nothing -- see the note in `fleetSettle`.
       win = { wins = 1, sessionWins = 1, experience = 2,
-        lootbox = { count = 1, rarity = 1 } },
+        gold = int(C.ACTIVITIES.battle.winGold, 0) },
       loss = { losses = 1, sessionLosses = 1, experience = 1 },
     },
   }
@@ -7385,6 +7522,7 @@ local TRACKED_MUTATIONS = {
   ["Monster.Quest"] = "questsStarted",
   ["Monster.Claim"] = "claims",
   ["Monster.LevelUp"] = "levelUps",
+  ["Monster.LearnMove"] = "movesLearned",
   ["Monster.Mint"] = "mintsRequested",
   ["Monster.Deposit"] = "depositsRequested",
   ["Monster.Store"] = "monstersStored",
