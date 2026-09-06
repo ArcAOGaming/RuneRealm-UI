@@ -13,3 +13,6 @@
 [submodule "RuneRealm-Infra"]
 	path = RuneRealm-Infra
 	url = git@github.com:ArcAOGaming/RuneRealm-Infra.git
+[submodule "RuneRealm-Docs"]
+	path = RuneRealm-Docs
+	url = git@github.com:ArcAOGaming/RuneRealm-Docs.git

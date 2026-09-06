@@ -97,7 +97,6 @@ export function economyPreview(): EconomyView {
       qualification: { enabled: false, reason: 'Open launch decision', requiredDistinctDays: 3, requiredSinkActions: 1 },
       runeRewards: { enabled: false, epochBudget: 0, reserveBalance: 75, reason: 'Open launch decision' },
       proceeds: { teamBps: 5000, runeBps: 3000, treasuryBps: 2000 },
-      amm: { maxSlippageBps: 100, maxWeeklyPoolBps: 500 },
       runeAcquisition: { budgetQuote: 7500, quoteSpent: 2200, runeReceived: 19, executions: [] },
       passes: { genesisSealed: false, genesisPassCount: 168, lifetimePassCount: 168,
         legacyCount: 168, promisedCount: 0, unassignedPromiseSlots: 0,

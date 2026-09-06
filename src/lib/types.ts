@@ -294,7 +294,6 @@ export interface EconomyView {
     qualification: { enabled: boolean; reason?: string; requiredDistinctDays: number; requiredSinkActions: number };
     runeRewards: Record<string, unknown> & { enabled: boolean; epochBudget: number; reserveBalance: number; reason?: string };
     proceeds: { teamBps: number; runeBps: number; treasuryBps: number };
-    amm: { maxSlippageBps: number; maxWeeklyPoolBps: number };
     runeAcquisition: { budgetQuote: number; quoteSpent: number; runeReceived: number; executions: unknown[] };
     passes: Record<string, unknown> & {
       genesisSealed: boolean; genesisPassCount: number; lifetimePassCount: number;
@@ -545,6 +544,13 @@ export interface HuntTuning {
     berries: Record<BerryItemId, number>;
   };
   capture: {
+    /**
+     * Scrolls burned per capture attempt, win or lose. The only thing in the
+     * game that consumes one — optional because a process deployed before the
+     * Scroll had a job publishes no such field, and a client that treated its
+     * absence as 1 would show a price the process does not charge.
+     */
+    scrollCost?: number;
     minRuneBid: number;
     maxRuneBid: number;
     minChance: number;
@@ -653,7 +659,24 @@ export interface Player {
   dailyReadyAt: number;
   lastDaily?: number;
   /** Present only on the reply to the action that produced them. */
-  rewards?: { happiness?: number; exp?: number; lootbox?: number };
+  /**
+   * What a claimed activity paid.
+   *
+   * `gold` is what a quest pays now instead of `lootbox`. Items come from the
+   * calendar and Gold comes from the verbs -- a per-action ITEM reward funds
+   * more actions, so it compounds for whoever acts most, which is the one
+   * shape a machine beats a person at. `lootbox` stays declared because an
+   * older deployment still sends it and a claim from one must still render.
+   *
+   * `gold` can legitimately be 0 with a `goldReason`: the 20-hour allowance is
+   * shared across every verb that pays, and the reserve behind it is finite,
+   * so "you already collected today" is an ordinary answer rather than an
+   * error. Show the reason instead of a silent nothing.
+   */
+  rewards?: {
+    happiness?: number; exp?: number; lootbox?: number;
+    gold?: number; goldReason?: string;
+  };
   /**
    * What the daily worship actually paid out.
    *
@@ -778,6 +801,18 @@ export interface Combatant {
   baseAttack: number;
   baseDefense: number;
   baseSpeed: number;
+  /**
+   * Which free actions this fighter has already spent, by name.
+   *
+   * Rally and Mend are not moves and are not in `moves`: every companion has
+   * them, none carries them, and they are usable once each per battle. The
+   * engine tracks them here on the COMBATANT rather than on the companion
+   * record, so they cost nothing in published state — see `C.FREE_ACTIONS`.
+   *
+   * Absent on a process deployed before they existed, and absent on a fighter
+   * that has used neither.
+   */
+  freeUsed?: Record<string, boolean>;
   /**
    * The four stats summed and frozen when the fight started, which is what the
    * engine sizes `attackPerStatPoint` against. Absent on a battle produced by a
@@ -996,6 +1031,23 @@ export interface Tuning {
   shieldRegenShare: number;
   moveUses: number;
   struggleDamage: number;
+  /**
+   * What one point of a move's attack/speed/defense rider is worth, as a share
+   * of a QUARTER OF THE FIGHTER'S STAT BUDGET — not of the stat it moves.
+   *
+   * Riders used to be flat, which made `+5 attack` worth +250% to a level-0
+   * companion and +10% to a level-20 one, and measuring them against their own
+   * stat instead would have made the move that answers a hole in a build worth
+   * least to the build with the hole. See `riderPerPoint` in battle.lua.
+   *
+   * Optional: a process deployed before riders were scaled publishes no such
+   * field, and the client falls back to printing the raw number.
+   */
+  riderPerPoint?: number;
+  /** How far riders may move one stat, as a share of that same yardstick. */
+  riderCapShare?: number;
+  /** How many turns an NPC will spend on a move that neither hits nor heals. */
+  npcSetupTurns?: number;
   baseHitChance: number;
   minHitChance: number;
   maxHitChance: number;
@@ -1124,6 +1176,30 @@ export interface Catalog {
    * already and the join is a no-op against them.
    */
   movePools?: Record<string, Record<string, Omit<Move, 'name'> & { name?: string }>>;
+  /**
+   * How many moves a companion carries. Three.
+   *
+   * Read from the process rather than hardcoded, because it moved once already:
+   * a screen holding the old four renders a permanently empty cell, and the
+   * card was redrawn for three before the engine was.
+   */
+  moveSlots?: number;
+  /**
+   * Draw weight per rarity tier. Rarity 1 is the RARE tier, so the weights run
+   * the other way from the number — bigger weight is more common.
+   *
+   * Published because the card and the move grid print a rarity, and a player
+   * is entitled to know what it is worth.
+   */
+  moveRarityWeight?: Record<string, number>;
+  /**
+   * Rally and Mend: free, once each per battle, carried by nobody.
+   *
+   * Deliberately NOT in `movePools` — that is what stops one being smuggled
+   * into a stored roster, since the engine validates roster names against the
+   * pools — so this is the only way a client learns they exist.
+   */
+  freeActions?: Record<string, Omit<Move, 'name'> & { name?: string }>;
 }
 
 /**
