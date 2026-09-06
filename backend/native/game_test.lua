@@ -2001,28 +2001,209 @@ local function run(base, req)
       ok("and can still Mend", Battle.selectMove(empty, "Mend") ~= nil)
     end
 
-    -- Relearning. A level-up may add and may replace; it may never hand back a
-    -- rarer move than it took, and it may never drop the species signature.
+    -- The cadence. A relearn happens on a level divisible by
+    -- `C.MOVE_RELEARN_LEVELS` and on no other, and the constant is the
+    -- assertion rather than the number -- it moved from three to five once and
+    -- the walkthrough on the companion screen states it out loud.
+    do
+      local every = C.MOVE_RELEARN_LEVELS
+      ok("the relearn cadence is a published constant",
+         type(every) == "number" and every >= 1 and math.type(every) == "integer",
+         tostring(every))
+      local fires, quiet = {}, {}
+      for level = 1, 20 do
+        if (level % every) == 0 then fires[#fires + 1] = level
+        else quiet[#quiet + 1] = level end
+      end
+      ok("it fires on the milestone levels and no others",
+         #fires > 0 and #fires + #quiet == 20 and fires[1] == every,
+         table.concat(fires, ","))
+    end
+
+    -- The offer. A relearn level hands the companion ONE move to consider; it
+    -- is never a move already known, and the species' own move is never one of
+    -- the slots it can displace.
     do
       local entry = C.MONSTER_INDEX[1]
-      local downgrades, lostSignature = 0, 0
+      local duplicates, empty = 0, 0
       for seed = 1, 60 do
         math.randomseed(seed * 104729)
-        local start = Battle.rollMoves(entry.affinity, { entryNo = entry.entryNo })
-        local after = Battle.relearn(start, entry.affinity, { entryNo = entry.entryNo })
-        if after[entry.basicMove] == nil then lostSignature = lostSignature + 1 end
-        local function rarest(set)
-          local best = 9
-          for name in pairs(set) do
-            local def = Battle.moveDef(name)
-            if def and (def.rarity or 3) < best then best = def.rarity or 3 end
-          end
-          return best
-        end
-        if rarest(after) > rarest(start) then downgrades = downgrades + 1 end
+        local roster = Battle.rollMoves(entry.affinity, { entryNo = entry.entryNo })
+        local offered = Battle.offerMove(roster, entry.affinity, { entryNo = entry.entryNo })
+        if offered == nil then empty = empty + 1
+        elseif roster[offered] ~= nil then duplicates = duplicates + 1 end
       end
-      ok("a relearn never loses the species signature", lostSignature == 0, lostSignature)
-      ok("and never hands back a rarer move than it took", downgrades == 0, downgrades)
+      ok("an offer is never a move the companion already knows", duplicates == 0, duplicates)
+      ok("and there is always something to offer", empty == 0, empty)
+
+      math.randomseed(7)
+      local roster = Battle.rollMoves(entry.affinity, { entryNo = entry.entryNo })
+      local swappable, signature = Battle.swappableMoves(roster, entry.affinity,
+        { entryNo = entry.entryNo })
+      ok("the species' own move is the one that cannot be given up",
+         signature == entry.basicMove, tostring(signature))
+      local offersSignature = false
+      for _, name in ipairs(swappable) do
+        if name == signature then offersSignature = true end
+      end
+      ok("so it is not among the swappable slots", not offersSignature,
+         table.concat(swappable, ","))
+      ok("which leaves two of three", #swappable == C.MOVE_SLOTS - 1, #swappable)
+    end
+  end
+
+  -- Learning a move ----------------------------------------------------------
+  --
+  -- A level-up commits by itself and the offer hangs off the record afterwards.
+  -- That separation is the design: there is no half-levelled companion, and a
+  -- player who never answers is holding an unopened envelope rather than an
+  -- unfinished level -- they can quest, battle and level again with it
+  -- outstanding. Everything below is about the envelope.
+  do
+    --- Level a test player to the next relearn level and return what it was
+    --- offered. Driven through the real handler rather than written into the
+    --- record, because "the offer is set by `Monster.LevelUp` and by nothing
+    --- else" is the thing worth asserting.
+    local function raiseToOffer(who, faction)
+      send(OWNER, { Action = "Admin.Unlock", Addresses = who })
+      send(who, { Action = "Faction.Join", Faction = faction })
+      send(OWNER, { Action = "Admin.AdjustInventory", PlayerId = who,
+                    Item = "rune", Delta = "500" })
+      local offered = nil
+      for _ = 1, C.MOVE_RELEARN_LEVELS do
+        send(OWNER, { Action = "Admin.SetStats", PlayerId = who },
+             json.encode({ exp = 9999 }))
+        local up = send(who, { Action = "Monster.LevelUp",
+                               AttackPoints = "3", DefensePoints = "3",
+                               SpeedPoints = "2", HealthPoints = "2" })
+        if errOf(up) == nil and up.monster then offered = up.monster.pendingMove end
+      end
+      return offered
+    end
+
+    local LEARN = "LEARNERlllllllllllllllllllllllllllllllllll"
+    send(OWNER, { Action = "Admin.Unlock", Addresses = LEARN })
+    send(LEARN, { Action = "Faction.Join", Faction = "Inferno Blades" })
+    local r = send(LEARN, { Action = "Monster.LearnMove", Replace = "Firenado" })
+    ok("nothing can be learned when nothing was offered", errOf(r) ~= nil, r)
+
+    local offered = raiseToOffer(LEARN, "Inferno Blades")
+    if type(offered) == "string" and Battle.moveDef(offered) then
+      ok("a companion reaching a relearn level is offered a move", true, offered)
+
+      local before = send(LEARN, { Action = "User.Info" })
+      local swappable, signature = Battle.swappableMoves(before.monster.moves,
+        before.monster.elementType, { entryNo = before.monster.entryNo })
+
+      -- Naming the wrong offer is refused rather than applied to whatever is
+      -- pending now. A stale prompt must not spend the player's choice.
+      local stale = "Body Slam"
+      if stale == offered then stale = "Quick Jab" end
+      r = send(LEARN, { Action = "Monster.LearnMove", Move = stale,
+                        Replace = swappable[1] })
+      ok("answering a stale offer is refused", errOf(r) ~= nil, r)
+
+      r = send(LEARN, { Action = "Monster.LearnMove", Move = offered,
+                        Replace = signature })
+      ok("the species' own move cannot be replaced", errOf(r) ~= nil, r)
+
+      local giveUp = swappable[1]
+      r = send(LEARN, { Action = "Monster.LearnMove", Move = offered,
+                        Replace = giveUp })
+      if errOf(r) == nil and r.monster then
+        local count = 0
+        for _ in pairs(r.monster.moves) do count = count + 1 end
+        ok("the offered move is learned", r.monster.moves[offered] ~= nil,
+           json.encode(r.monster.moves))
+        ok("and the chosen move is given up", r.monster.moves[giveUp] == nil, giveUp)
+        ok("the roster is still the right size", count == C.MOVE_SLOTS, count)
+        ok("the species' own move survived it",
+           r.monster.moves[signature] ~= nil, tostring(signature))
+        ok("the offer is spent", r.monster.pendingMove == nil,
+           tostring(r.monster.pendingMove))
+        ok("and the learned move arrives with its full uses",
+           r.monster.moves[offered].count == Battle.moveDef(offered).count,
+           r.monster.moves[offered].count)
+      else
+        ok("the offered move is learned", false, errOf(r))
+      end
+
+      r = send(LEARN, { Action = "Monster.LearnMove", Move = offered,
+                        Replace = swappable[2] })
+      ok("an offer cannot be answered twice", errOf(r) ~= nil, r)
+
+      -- The deadline. An unanswered offer expires on the NEXT level-up of any
+      -- kind, not on the next relearn level -- so the choice has an end, and
+      -- the end is an action the player signs rather than a clock that runs
+      -- while they are away.
+      send(OWNER, { Action = "Admin.SetStats", PlayerId = LEARN },
+           json.encode({ exp = 9999 }))
+      local up = send(LEARN, { Action = "Monster.LevelUp",
+                               AttackPoints = "3", DefensePoints = "3",
+                               SpeedPoints = "2", HealthPoints = "2" })
+      if errOf(up) == nil and up.monster then
+        local milestone = (up.monster.level % C.MOVE_RELEARN_LEVELS) == 0
+        ok("levelling past an offer leaves no stale one behind",
+           milestone or up.monster.pendingMove == nil,
+           tostring(up.monster.pendingMove))
+      else
+        ok("levelling past an offer leaves no stale one behind", false, errOf(up))
+      end
+    else
+      ok("a companion reaching a relearn level is offered a move", false,
+         tostring(offered))
+    end
+
+    -- A refused level-up must not spend the offer. Everything that can refuse
+    -- one returns before the expiry line, so this is the assertion that keeps
+    -- them on that side of it.
+    do
+      local SAFE = "SAFEsssssssssssssssssssssssssssssssssssssss"
+      local pending = raiseToOffer(SAFE, "Stone Titans")
+      if type(pending) == "string" then
+        -- An illegal allocation, so the refusal comes from the validation
+        -- rather than from anything that could also be the expiry. The exp and
+        -- the Rune are both still there, which is the point: this level-up is
+        -- refused on its own terms and must still leave the envelope sealed.
+        local r2 = send(SAFE, { Action = "Monster.LevelUp",
+                                AttackPoints = "99", DefensePoints = "0",
+                                SpeedPoints = "0", HealthPoints = "0" })
+        local after = send(SAFE, { Action = "User.Info" })
+        ok("a refused level-up leaves the offer where it was",
+           errOf(r2) ~= nil and after.monster.pendingMove == pending,
+           tostring(after.monster and after.monster.pendingMove))
+      else
+        ok("a refused level-up leaves the offer where it was", false, "no offer")
+      end
+    end
+
+    -- Declining, on a second companion, because a decline is final.
+    local PASSER = "PASSERpppppppppppppppppppppppppppppppppppp"
+    local passed = raiseToOffer(PASSER, "Sky Nomads")
+    if type(passed) == "string" then
+      local before = send(PASSER, { Action = "User.Info" })
+      r = send(PASSER, { Action = "Monster.LearnMove", Move = passed })
+      if errOf(r) == nil and r.monster then
+        ok("an offer can be turned down", r.monster.pendingMove == nil,
+           tostring(r.monster.pendingMove))
+        local same = true
+        for name in pairs(before.monster.moves) do
+          if r.monster.moves[name] == nil then same = false end
+        end
+        for name in pairs(r.monster.moves) do
+          if before.monster.moves[name] == nil then same = false end
+        end
+        ok("and turning it down changes no move", same, json.encode(r.monster.moves))
+        local swappable = Battle.swappableMoves(r.monster.moves,
+          r.monster.elementType, { entryNo = r.monster.entryNo })
+        r = send(PASSER, { Action = "Monster.LearnMove", Move = passed,
+                           Replace = swappable[1] })
+        ok("a declined offer is gone for good", errOf(r) ~= nil, r)
+      else
+        ok("an offer can be turned down", false, errOf(r))
+      end
+    else
+      ok("an offer can be turned down", false, "no offer was made")
     end
   end
 
@@ -5488,6 +5669,170 @@ local function run(base, req)
          tostring(respawned.leaderboard) .. " / " .. tostring(respawned.factions))
 
     end
+  end
+
+  -- The internal venue bridge -----------------------------------------------
+  --
+  -- Assets leave the game for the venue and come back, and NOTHING is minted or
+  -- burned on the way: the point of the whole exercise is that the units are
+  -- the same units, so `total = inGame + atVenue` has to hold at every step.
+  -- That identity is what these tests are really about; the handler behaviour
+  -- around it is the Rune bridge's, verbatim, for the same reasons.
+  do
+    local VENUE = "VENUEvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvv"
+    local VSCHED = "SCHEDULERssssssssssssssssssssssssssssssssss"
+    local OTHER = "OTHERPROCESSsssssssssssssssssssssssssssssss"
+
+    local function delivered(committer, fromProcess, tags)
+      T = T + 1000
+      local body = {
+        commitments = { sig1 = { committer = committer, alg = "rsa-pss-sha512" } },
+        ["from-process"] = fromProcess,
+      }
+      for k, v in pairs(tags) do body[k] = v end
+      local res = computeOn(body, { ["scheduler-location"] = VSCHED })
+      return json.decode(res.results.output.data), res
+    end
+
+    --- The published supply key, decoded. This is the number an operator reads
+    --- and the number the venue's own `supply` is reconciled against, so the
+    --- suite reads it the same way rather than through a signed reply.
+    local function supplyOf(res, asset)
+      local decoded = json.decode(res.supply or "{}")
+      local row = type(decoded) == "table" and decoded[asset] or nil
+      if type(row) ~= "table" then return nil end
+      return math.tointeger(tonumber(row.total)),
+             math.tointeger(tonumber(row.inGame)),
+             math.tointeger(tonumber(row.atVenue))
+    end
+
+    send(OWNER, { Action = "Admin.Grant", PlayerId = ALICE,
+                  Item = "fire_berry", Amount = "40" })
+
+    local r = send(ALICE, { Action = "Venue.Send", Asset = "fire_berry", Quantity = "10" })
+    ok("nothing goes to the venue before one is named", errOf(r) ~= nil, json.encode(r))
+
+    r = send(ALICE, { Action = "Admin.SetVenueProcess", ProcessId = VENUE })
+    ok("only the owner names the venue", errOf(r) == "Not authorised", json.encode(r))
+
+    r = send(OWNER, { Action = "Admin.SetVenueProcess", ProcessId = "short" })
+    ok("the venue must be a process id", errOf(r) ~= nil, json.encode(r))
+
+    r = send(OWNER, { Action = "Admin.SetVenueProcess", ProcessId = VENUE })
+    ok("the owner names the venue", r and r.venue == VENUE, json.encode(r))
+
+    local _, beforeRes = send(ALICE, { Action = "Venue.Supply" })
+    local total0, inGame0, atVenue0 = supplyOf(beforeRes, "fire_berry")
+    ok("supply is published as three numbers", total0 ~= nil, beforeRes.supply)
+    ok("and nothing is at the venue yet", atVenue0 == 0, tostring(atVenue0))
+    ok("so the total is entirely in the game", total0 == inGame0,
+       tostring(total0) .. " / " .. tostring(inGame0))
+    ok("and every one of them is an integer, not a float",
+       string.find(beforeRes.supply or "", "%.") == nil, beforeRes.supply)
+
+    r = send(ALICE, { Action = "Venue.Send", Asset = "fire_berry", Quantity = "99999" })
+    ok("a player cannot send what they do not hold", errOf(r) ~= nil, json.encode(r))
+
+    r = send(ALICE, { Action = "Venue.Send", Asset = "not_a_thing", Quantity = "1" })
+    ok("nor an asset that does not exist", errOf(r) ~= nil, json.encode(r))
+
+    -- Alice's berry count is whatever the rest of the suite left her with plus
+    -- the forty granted above, so this reads it rather than naming a number
+    -- that a test added earlier would silently invalidate.
+    r = send(ALICE, { Action = "User.Info" })
+    local bagBefore = math.tointeger(tonumber(
+      r and r.inventory and r.inventory.fire_berry or 0))
+
+    local sent, sentRes = send(ALICE, { Action = "Venue.Send",
+      Asset = "fire_berry", Quantity = "10" })
+    ok("a player sends assets to the venue",
+       sent and sent.venue and sent.venue.status == "pending", json.encode(sent and sent.venue))
+    ok("and the outbox asks the VENUE to credit them",
+       sentRes.results.outbox and sentRes.results.outbox["venue-credit"]
+       and sentRes.results.outbox["venue-credit"].target == VENUE,
+       json.encode(sentRes.results.outbox))
+    ok("carrying a reference the venue can key a replay guard on",
+       sentRes.results.outbox["venue-credit"].Reference == sent.venue.id,
+       sentRes.results.outbox["venue-credit"].Reference)
+
+    local total1, inGame1, atVenue1 = supplyOf(sentRes, "fire_berry")
+    ok("the total did not move -- nothing was minted or burned", total1 == total0,
+       tostring(total1) .. " vs " .. tostring(total0))
+    ok("but ten of it is at the venue now", atVenue1 == 10, tostring(atVenue1))
+    ok("and ten fewer are in the game", inGame1 == inGame0 - 10,
+       tostring(inGame1) .. " vs " .. tostring(inGame0))
+
+    r = send(ALICE, { Action = "User.Info" })
+    ok("the player's own bag is ten lighter than the supply says is in the game",
+       r and r.inventory
+       and math.tointeger(tonumber(r.inventory.fire_berry or 0)) == bagBefore - 10,
+       tostring(bagBefore) .. " -> "
+         .. tostring(r and r.inventory and r.inventory.fire_berry))
+
+    -- Coming back -------------------------------------------------------------
+
+    r = send(ALICE, { Action = "Venue.Return", Account = ALICE,
+      Asset = "fire_berry", Quantity = "10", Reference = "w1" })
+    ok("a wallet cannot return assets to itself", errOf(r) == "Not authorised", json.encode(r))
+
+    r = delivered(ALICE, VENUE, { Action = "Venue.Return", Account = ALICE,
+      Asset = "fire_berry", Quantity = "10", Reference = "w1" })
+    ok("nor can one that merely CLAIMS to be the venue",
+       errOf(r) == "Not authorised", json.encode(r))
+
+    r = delivered(VSCHED, OTHER, { Action = "Venue.Return", Account = ALICE,
+      Asset = "fire_berry", Quantity = "10", Reference = "w1" })
+    ok("nor a different process, even attested",
+       errOf(r) == "Not authorised", json.encode(r))
+
+    r = delivered(VSCHED, VENUE, { Action = "Venue.Return", Account = ALICE,
+      Asset = "fire_berry", Quantity = "10" })
+    ok("a return with no reference is refused outright", errOf(r) ~= nil, json.encode(r))
+
+    r = delivered(VSCHED, VENUE, { Action = "Venue.Return", Account = ALICE,
+      Asset = "fire_berry", Quantity = "99999", Reference = "w0" })
+    ok("a return of more than was ever sent is QUARANTINED, not credited",
+       r and r.venue and r.venue.status == "unresolved", json.encode(r and r.venue))
+
+    local back, backRes = delivered(VSCHED, VENUE, { Action = "Venue.Return",
+      Account = ALICE, Asset = "fire_berry", Quantity = "6", Reference = "w1" })
+    ok("the venue returns six", back and back.venue and back.venue.status == "credited",
+       json.encode(back and back.venue))
+    ok("and the game acknowledges so the venue's row can settle",
+       backRes.results.outbox and backRes.results.outbox["venue-returned"]
+       and backRes.results.outbox["venue-returned"].target == VENUE,
+       json.encode(backRes.results.outbox))
+
+    local total2, inGame2, atVenue2 = supplyOf(backRes, "fire_berry")
+    ok("the total STILL did not move", total2 == total0, tostring(total2))
+    ok("four are left at the venue", atVenue2 == 4, tostring(atVenue2))
+    ok("and the rest is back in the game", inGame2 == total2 - 4, tostring(inGame2))
+
+    r = delivered(VSCHED, VENUE, { Action = "Venue.Return", Account = ALICE,
+      Asset = "fire_berry", Quantity = "6", Reference = "w1" })
+    ok("the same return delivered twice credits once", r and r.unchanged == true, json.encode(r))
+    local _, again = send(ALICE, { Action = "Venue.Supply" })
+    local _, _, atVenue3 = supplyOf(again, "fire_berry")
+    ok("and nothing moved on the replay", atVenue3 == 4, tostring(atVenue3))
+
+    -- Gold crosses too, and it is the one with the extra bucket ---------------
+
+    local goldTotal0, goldIn0, goldOut0 = supplyOf(again, "gold")
+    ok("Gold publishes the same three numbers", goldTotal0 ~= nil, again.supply)
+    ok("and its locked reserve counts as in the game",
+       goldTotal0 == goldIn0 + goldOut0, tostring(goldTotal0))
+
+    -- The conservation invariant, which is the whole point --------------------
+
+    local inv = send(OWNER, { Action = "Economy.View" })
+    local invariants = inv and inv.invariants or nil
+    ok("the item invariant still closes with assets at the venue",
+       invariants and invariants.assets and invariants.assets.fire_berry
+       and invariants.assets.fire_berry.ok == true,
+       json.encode(invariants and invariants.assets and invariants.assets.fire_berry))
+    ok("and so does Gold's",
+       invariants and invariants.gold and invariants.gold.ok == true,
+       json.encode(invariants and invariants.gold))
   end
 
   out[#out + 1] = ""

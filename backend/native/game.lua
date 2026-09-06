@@ -2834,14 +2834,34 @@ H["Monster.LevelUp"] = function(base, msg, timestamp)
   m.speed = m.speed + s
   m.health = m.health + h
   resolveEvolution(m)
+
+  -- An unanswered offer expires HERE, on the next level-up of any kind.
+  --
+  -- Everything above this line has already committed, which is what makes the
+  -- expiry safe to state as a rule: a refused level-up -- no Rune, an illegal
+  -- allocation, not enough exp -- returns long before this and leaves the offer
+  -- exactly where it was. Only a level-up that actually happened takes it.
+  --
+  -- The deadline is the point. An offer that waits forever is not a decision,
+  -- it is a menu item, and the record carries it until the player happens to
+  -- care. And this deadline cannot punish somebody for being away: it is not a
+  -- clock, it is an action, and the action is one the player signs and pays
+  -- Rune for. You can only lose the offer by choosing to level past it.
+  --
+  -- `Monster.LevelUp` is the one door this can happen behind, so the client
+  -- warns before it: see `LevelUpDialog`. A rule the player is not told about
+  -- before they act is a trap.
+  local expired = m.pendingMove
+  m.pendingMove = nil
+
   -- Every `C.MOVE_RELEARN_LEVELS` levels the companion is OFFERED one move.
   --
   -- The offer is not applied here and the level-up does not wait for it. That
   -- separation is the whole design: the level, the points, the Rune and the
   -- evolution all commit in this one message, so there is no such thing as a
-  -- half-levelled companion and a player who never answers is not stuck. They
-  -- are holding an unopened envelope, not an unfinished level -- they can
-  -- quest, battle, and level again with it outstanding.
+  -- half-levelled companion. A player holding an unanswered offer is holding an
+  -- unopened envelope, not an unfinished level -- they can quest, battle and
+  -- hunt with it outstanding, and only levelling again spends it.
   --
   -- The alternative, a two-step level-up that is not finished until the move is
   -- chosen, puts a partial companion on chain and lets an unanswered prompt
@@ -2850,12 +2870,15 @@ H["Monster.LevelUp"] = function(base, msg, timestamp)
   -- `resolveEvolution` runs first, so a companion that evolved this level is
   -- offered a move as its NEW stage.
   if (m.level % math.max(1, int(C.MOVE_RELEARN_LEVELS, 5))) == 0 then
-    -- A new offer REPLACES an unanswered one rather than queueing behind it.
-    -- Nothing was ever promised, so nothing is taken; and a queue would mean a
-    -- player who ignored one prompt is met with four.
     m.pendingMove = Battle.offerMove(m.moves, m.elementType, { entryNo = m.entryNo })
   end
-  return reply(base, playerView(p))
+
+  local v = playerView(p)
+  -- Told, not silently dropped. The client has a warning in front of the
+  -- level-up button, but a player who levelled from somewhere else still needs
+  -- to hear that the offer went with it.
+  if expired and expired ~= m.pendingMove then v.expired = expired end
+  return reply(base, v)
 end
 
 --- Take the offered move, or turn it down.
@@ -3190,6 +3213,42 @@ WithdrawSeq = WithdrawSeq or 0
 --- that keeps the key and drops the record, not an eviction.
 Deposits = Deposits or {}
 
+--- THE INTERNAL VENUE, and it is not a token bridge.
+---
+--- The venue holds in-game assets so they can be traded on a real order book
+--- without the game process serialising every quote behind it. Those assets are
+--- NOT tokens and are never going to be: there is no process behind
+--- `fire_berry`, and what makes a credit real over there is that exactly one
+--- process -- this one -- is allowed to say it happened.
+---
+--- So this is a pair of trusted messages in each direction, not a mint and a
+--- burn. Nothing is issued and nothing is destroyed when assets cross; the
+--- units move between `player` and `venue` in the supply ledger and the
+--- conservation invariants count both sides. See `EconomyEngine.sendToVenue`.
+VenueProcess = VenueProcess or ""
+
+--- Our own outgoing reference counter, and the venue's replay key.
+---
+--- The venue remembers `<this process>:<reference>` forever, so this must never
+--- go backwards: a counter that restarted would make old references creditable
+--- again over there. `Admin.Load` takes the MAX of what it has and what
+--- arrives, the same rule every monotonic counter in this file follows.
+VenueSeq = VenueSeq or 0
+
+--- reference -> row, both directions.
+---
+--- `VenueSends` is the outgoing ledger: this process debited the player and
+--- asked the venue to credit them. It settles when the venue acknowledges, and
+--- like `Withdrawals` it is safe to bound -- an acknowledgement moves no value.
+---
+--- `VenueReturns` is the incoming one and is NOT bounded, for exactly the
+--- reason `Deposits` is not: the venue moved first, so the credit here is the
+--- only thing that gives the assets back, and forgetting a reference re-arms a
+--- payout. See the long note on `Deposits`.
+VenueSends = VenueSends or {}
+VenueReturns = VenueReturns or {}
+
+
 --- The lower bound on a withdrawal.
 ---
 --- Rune does not divide, and a withdrawal costs a scheduler slot on two
@@ -3246,6 +3305,27 @@ local function pruneWithdrawals()
     return x.id > y.id
   end)
   for i = WITHDRAW_KEEP + 1, #closed do Withdrawals[closed[i].id] = nil end
+end
+
+
+--- The same bound, on the outgoing venue ledger, and it is safe for the same
+--- reason: `Venue.Credited` settles a row and never moves value, so a late
+--- acknowledgement naming an evicted send is answered "No such venue send" and
+--- nothing is credited twice. `VenueReturns` is left whole, exactly as
+--- `Deposits` is -- see the note on both.
+local function pruneVenueSends()
+  local closed = {}
+  for id, row in pairs(VenueSends) do
+    if type(row) == "table" and row.status ~= "pending" then
+      closed[#closed + 1] = { id = id, at = int(row.settledAt, 0) }
+    end
+  end
+  if #closed <= WITHDRAW_KEEP then return end
+  table.sort(closed, function(x, y)
+    if x.at ~= y.at then return x.at > y.at end
+    return x.id > y.id
+  end)
+  for i = WITHDRAW_KEEP + 1, #closed do VenueSends[closed[i].id] = nil end
 end
 
 --- How many CLOSED bridge rows each published ledger key carries.
@@ -3504,6 +3584,165 @@ H["Burn-Notice"] = function(base, msg, timestamp)
   -- record has to be republished or the Rune does not appear until they act.
   touchAlso(account)
   return reply(base, { deposit = Deposits[reference], player = playerView(p) })
+end
+
+
+-- The internal venue ----------------------------------------------------------
+
+--- HAND ASSETS TO THE VENUE.
+---
+--- The player says how much of what; this process debits them, moves the same
+--- units from `player` to `venue` in the supply ledger, and asks the venue to
+--- credit them. Nothing is minted and nothing is burned -- these are the same
+--- units, somewhere else -- which is what lets `goldInvariant` and
+--- `itemInvariant` still close over the boundary.
+---
+--- The debit happens BEFORE the message goes out, and that ordering is the
+--- same one the Rune bridge documents: the other way round, a credit that
+--- landed while the reply was lost pays twice. If the message never lands the
+--- player is short and the row says `pending`, which is visible and fixable;
+--- if it landed twice the venue recognises the reference and credits once.
+H["Venue.Send"] = function(base, msg, timestamp)
+  local address = signer(msg)
+  if not address then return fail(base, "Unsigned") end
+  if VenueProcess == "" then return fail(base, "The venue is not configured yet") end
+  local p, denied = actingPlayer(address, timestamp)
+  if denied then return fail(base, denied) end
+
+  -- `Asset`, not `Target`: an ANS-104 item carries a lowercase `target` field
+  -- holding this process's id, so a tag by that name is ambiguous by the time
+  -- a handler reads it. CLAUDE.md names this one specifically.
+  local asset = tostring(msg.Asset or msg.Item or "")
+  local amount = int(msg.Quantity or msg.Amount, 0)
+
+  local moved, problem = EconomyEngine.sendToVenue(
+    EconomyState, Players, address, asset, amount, timestamp)
+  if not moved then return fail(base, problem) end
+
+  VenueSeq = VenueSeq + 1
+  local reference = "v" .. string.format("%d", VenueSeq)
+  VenueSends[reference] = {
+    id = reference, address = address, asset = asset,
+    amount = moved.amount, status = "pending",
+    requestedAt = timestamp, settledAt = 0,
+  }
+  pruneVenueSends()
+
+  local v = playerView(p)
+  v.venue = { id = reference, asset = asset, amount = moved.amount, status = "pending" }
+  base.results = {
+    output = { data = encode(v) },
+    outbox = {
+      ["venue-credit"] = {
+        target = VenueProcess,
+        Action = "Venue.Credit",
+        Account = address,
+        -- Both spellings, because a name's separators do not survive the trip
+        -- and a receiver that normalises differently must still find one.
+        PlayerId = address,
+        Asset = asset, Item = asset,
+        Quantity = string.format("%d", moved.amount),
+        Reference = reference, ["Deposit-Id"] = reference,
+      },
+    },
+  }
+  return base
+end
+
+--- The venue confirming it credited a send. Settles a row; moves no value.
+H["Venue.Credited"] = function(base, msg, timestamp)
+  local from = sourceProcess(msg, base)
+  if not from or VenueProcess == "" or from ~= VenueProcess then
+    return fail(base, "Not authorised")
+  end
+  local id = msg.Reference or msg.reference or msg["Deposit-Id"]
+  local row = VenueSends[type(id) == "string" and id or ""]
+  if not row then return fail(base, "No such venue send") end
+  if row.status ~= "pending" then
+    return reply(base, { venue = row, unchanged = true })
+  end
+  row.status = "credited"
+  row.settledAt = timestamp
+  return reply(base, { venue = row })
+end
+
+--- ASSETS COMING BACK, and this is the direction where the venue moved first.
+---
+--- By the time this message exists the venue has already debited the trader, so
+--- refusing outright would lose them the assets with nothing to point at. The
+--- guards are therefore the same three the Rune deposit path uses:
+---
+---   * the sender must be the configured venue, established by `sourceProcess`
+---     -- an attested delivery, not a `from-process` a message merely claims;
+---   * the notice must carry a `Reference`, and each is credited once;
+---   * the account comes from the NOTICE, not the signer -- the signer of a
+---     delivered message is the scheduler.
+---
+--- Anything uncreditable is QUARANTINED rather than refused, and settled by
+--- hand with `Admin.SettleVenueReturn`.
+H["Venue.Return"] = function(base, msg, timestamp)
+  local from = sourceProcess(msg, base)
+  if not from or VenueProcess == "" or from ~= VenueProcess then
+    return fail(base, "Not authorised")
+  end
+
+  local reference = msg.Reference or msg.reference
+    or msg["Withdrawal-Id"] or msg.WithdrawalId
+  if type(reference) ~= "string" or reference == "" then
+    return fail(base, "A venue return must carry a Reference")
+  end
+  local seen = VenueReturns[reference]
+  if seen then return reply(base, { venue = seen, unchanged = true }) end
+
+  local account = msg.Account or msg.account or msg.PlayerId
+  local asset = tostring(msg.Asset or msg.Item or "")
+  local amount = int(msg.Quantity or msg.Amount, 0)
+
+  local function quarantine(why)
+    VenueReturns[reference] = {
+      id = reference, address = type(account) == "string" and account or nil,
+      asset = asset, amount = amount, status = "unresolved", reason = why,
+      creditedAt = 0, noticedAt = timestamp,
+    }
+    return reply(base, { venue = VenueReturns[reference] })
+  end
+
+  if type(account) ~= "string" or #account ~= 43 then
+    return quarantine("The return names no account")
+  end
+  local p = getPlayer(account, timestamp)
+  local moved, problem = EconomyEngine.returnFromVenue(
+    EconomyState, Players, account, asset, amount, timestamp)
+  if not moved then return quarantine(problem) end
+
+  VenueReturns[reference] = {
+    id = reference, address = account, asset = asset, amount = moved.amount,
+    status = "credited", creditedAt = timestamp,
+  }
+  -- The trader did not sign this -- the scheduler delivered it -- so their
+  -- record has to be republished or the assets do not appear until they act.
+  touchAlso(account)
+  base.results = {
+    output = { data = encode({ venue = VenueReturns[reference], player = playerView(p) }) },
+    outbox = {
+      -- Tell the venue the row landed, so its own withdrawal stops saying
+      -- `pending`. It carries the venue's reference back untouched, which is
+      -- what makes a repeat recognisable on that side too.
+      ["venue-returned"] = {
+        target = VenueProcess, Action = "Venue.Returned",
+        Reference = reference, ["Withdrawal-Id"] = reference,
+      },
+    },
+  }
+  return base
+end
+
+--- What is here and what is out at the venue, readable without signing.
+H["Venue.Supply"] = function(base)
+  return reply(base, {
+    venue = VenueProcess,
+    supply = EconomyEngine.venueSupply(EconomyState),
+  })
 end
 
 --- Every deposit this wallet has been credited, readable without signing.
@@ -6159,6 +6398,70 @@ H["Admin.SetRuneToken"] = function(base, msg)
   return reply(base, { runeToken = RuneToken, previous = previous })
 end
 
+--- Name the internal venue, and there is exactly one.
+---
+--- The venue is trusted to say a player's assets came back, so this is the
+--- single most consequential id in the process after the Rune token. It is an
+--- owner action, it refuses anything that is not a process id, and an empty
+--- value tears the bridge down rather than defaulting to anybody.
+H["Admin.SetVenueProcess"] = function(base, msg)
+  local denied = requireOwner(base, msg)
+  if denied then return denied end
+  local nextProcess = msg.ProcessId or msg.VenueProcess or msg.Venue
+  if nextProcess ~= "" and (type(nextProcess) ~= "string" or #nextProcess ~= 43) then
+    return fail(base, "Venue process must be a 43-character process id")
+  end
+  local previous = VenueProcess
+  VenueProcess = nextProcess or ""
+  return reply(base, {
+    venue = VenueProcess, previous = previous,
+    supply = EconomyEngine.venueSupply(EconomyState),
+  })
+end
+
+--- Resolve a quarantined return by hand.
+---
+--- A row lands here because the automatic path could not account for it -- an
+--- unknown asset, an account that is not an address, or more than this process
+--- ever sent to the venue. The assets are already gone from the venue's side,
+--- so the only two honest outcomes are "credit it to somebody" and "write it
+--- off with a reason", and both need a human who looked at both ledgers.
+H["Admin.SettleVenueReturn"] = function(base, msg, timestamp)
+  local denied = requireOwner(base, msg)
+  if denied then return denied end
+  local reference = tostring(msg.Reference or msg.reference or "")
+  local row = VenueReturns[reference]
+  if not row then return fail(base, "No such venue return") end
+  if row.status ~= "unresolved" then
+    return reply(base, { venue = row, unchanged = true })
+  end
+
+  if tostring(msg.Resolution or ""):lower() == "writeoff" then
+    row.status = "written-off"
+    row.reason = tostring(msg.Reason or row.reason or "")
+    row.creditedAt = timestamp
+    return reply(base, { venue = row })
+  end
+
+  local account = msg.Account or msg.PlayerId or row.address
+  local asset = tostring(msg.Asset or msg.Item or row.asset or "")
+  local amount = int(msg.Quantity or msg.Amount, int(row.amount, 0))
+  if type(account) ~= "string" or #account ~= 43 then
+    return fail(base, "Name the account to credit")
+  end
+  getPlayer(account, timestamp)
+  local moved, problem = EconomyEngine.returnFromVenue(
+    EconomyState, Players, account, asset, amount, timestamp)
+  if not moved then return fail(base, problem) end
+  row.status = "credited"
+  row.address = account
+  row.asset = asset
+  row.amount = moved.amount
+  row.creditedAt = timestamp
+  touchAlso(account)
+  return reply(base, { venue = row })
+end
+
 H["Admin.SetHuntProcess"] = function(base, msg)
   local denied = requireOwner(base, msg)
   if denied then return denied end
@@ -6617,6 +6920,23 @@ H["Admin.Export"] = function(base, msg)
     exported.deposits = Battle.clone(Deposits)
     exported.runeToken = RuneToken
 
+    -- The venue bridge, for both of the reasons above and one more.
+    --
+    -- `venueReturns` is what makes a return idempotent, so a new process with
+    -- an empty one credits every re-delivery as a first: the same exposure the
+    -- deposit ledger has, in a bridge where the units are not even destroyed on
+    -- the way in. And `venueSeq` must not go backwards -- the venue remembers
+    -- `<this process>:<reference>` forever, so a restarted counter would make
+    -- old references creditable over there.
+    --
+    -- The supply buckets themselves ride `EconomyState`, which is exported
+    -- whole, so a restore that carried these and not that would still be
+    -- consistent -- but it would have no idea what it was owed.
+    exported.venueSends = Battle.clone(VenueSends)
+    exported.venueReturns = Battle.clone(VenueReturns)
+    exported.venueSeq = int(VenueSeq, 0)
+    exported.venueProcess = VenueProcess
+
     -- The allow-list, which is NOT covered by the player rows above.
     --
     -- An admitted wallet that has never played has no record, so it appears in
@@ -7056,6 +7376,35 @@ H["Admin.Load"] = function(base, msg, timestamp)
   if type(payload.runeToken) == "string" and #payload.runeToken == 43
      and RuneToken == "" then
     RuneToken = payload.runeToken
+  end
+
+  -- The venue bridge. Same three rules as the Rune bridge above: merge without
+  -- replacing, take the MAX of both sequence counters, and bound only the
+  -- outgoing ledger.
+  if type(payload.venueSends) == "table" then
+    for id, row in pairs(payload.venueSends) do
+      if type(row) == "table" and not VenueSends[tostring(id)] then
+        row.amount = int(row.amount, 0)
+        row.settledAt = int(row.settledAt, 0)
+        VenueSends[tostring(id)] = row
+      end
+    end
+  end
+  if type(payload.venueReturns) == "table" then
+    for id, row in pairs(payload.venueReturns) do
+      if type(row) == "table" and not VenueReturns[tostring(id)] then
+        row.amount = int(row.amount, 0)
+        row.creditedAt = int(row.creditedAt, 0)
+        VenueReturns[tostring(id)] = row
+      end
+    end
+  end
+  VenueSeq = math.max(int(payload.venueSeq, 0), int(VenueSeq, 0),
+                      highestSeq(VenueSends, "v"))
+  pruneVenueSends()
+  if type(payload.venueProcess) == "string" and #payload.venueProcess == 43
+     and VenueProcess == "" then
+    VenueProcess = payload.venueProcess
   end
 
   -- The market, which is custody rather than an index.
@@ -8765,6 +9114,21 @@ function compute(base, req, opts)
   if dirty.economy or result.economy == nil then
     result.economy = encode(EconomyEngine.flowView(
       EconomyState, Withdrawals, Deposits, timestamp))
+  end
+  -- WHAT IS HERE AND WHAT IS OUT AT THE VENUE, as its own small key.
+  --
+  -- Three numbers per asset -- total, inGame, atVenue -- and the venue
+  -- publishes the other half of the same reconciliation as its own `supply`.
+  -- Deliberately NOT folded into `economy`: this is the key an operator or a
+  -- monitor polls, and making them parse the whole flow view to read twelve
+  -- rows would be the opposite of the point. It rides `dirty.economy` because
+  -- nothing can move a supply bucket without moving the flow ledger too.
+  --
+  -- It is ~700 bytes, and every message pays for it five times over (CLAUDE.md)
+  -- whether or not it changed -- so keep it three numbers wide. Anything
+  -- richer belongs in `economy`.
+  if dirty.economy or result.supply == nil then
+    result.supply = encode(EconomyEngine.venueSupply(EconomyState))
   end
   local bookRevision = EconomyEngine.bookRevision(EconomyState, timestamp)
   local bookChanged = bookRevision ~= BookRevision

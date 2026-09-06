@@ -1,0 +1,4173 @@
+{
+  "generator": "backend/native/gen-action-spec.mjs",
+  "source": {
+    "game.lua": "551232e5f98ebbbe",
+    "constants.lua": "163979fbfe475995",
+    "hunt.lua": "c3ce805da4708093"
+  },
+  "coverage": {
+    "actions": 106,
+    "documented": 3,
+    "undocumented": 103,
+    "aliases": 1,
+    "parseProblems": []
+  },
+  "constants": {
+    "activities": {
+      "quest": {
+        "durationSeconds": 3600,
+        "energyCost": 25,
+        "happinessCost": 25,
+        "expGain": 7,
+        "goldReward": 15
+      },
+      "play": {
+        "durationSeconds": 900,
+        "energyCost": 10,
+        "happinessGain": 25,
+        "berryCost": 1
+      },
+      "battle": {
+        "energyCost": 25,
+        "happinessCost": 25,
+        "winGold": 5,
+        "perSession": 4
+      },
+      "maxEnergy": 100,
+      "maxHappiness": 100
+    },
+    "gold": {
+      "rewardWindowCap": 60,
+      "rewardWindowHours": 20,
+      "launchSupply": 300000,
+      "shopBurnBps": 2500,
+      "perQualifiedPlayer": 1000
+    },
+    "rune": {
+      "emissionPerAccount": 48,
+      "epochLengthDays": 30,
+      "levelUpCostDivisor": 16,
+      "storeCostRune": 1
+    },
+    "hunt": {
+      "entryBerriesEach": 2,
+      "entryBerriesTotal": 8,
+      "capture": {
+        "scrollCost": 1,
+        "minRuneBid": 1,
+        "maxRuneBid": 3,
+        "baseChance": 8,
+        "runeScale": 220,
+        "runeHalf": 7,
+        "levelStep": 3,
+        "minChance": 5,
+        "maxChance": 95
+      },
+      "captureOdds": [
+        {
+          "bid": 1,
+          "chanceAtEqualLevel": 35
+        },
+        {
+          "bid": 2,
+          "chanceAtEqualLevel": 56
+        },
+        {
+          "bid": 3,
+          "chanceAtEqualLevel": 74
+        }
+      ],
+      "formulaStillInWorker": true
+    },
+    "lootTiers": [
+      {
+        "tier": 1,
+        "picks": 1,
+        "min": 5,
+        "max": 8,
+        "scrolls": 0,
+        "scrollChance": 0,
+        "expectedBerries": 6.5,
+        "expectedScrolls": 0
+      },
+      {
+        "tier": 2,
+        "picks": 2,
+        "min": 9,
+        "max": 13,
+        "scrolls": 0,
+        "scrollChance": 120,
+        "expectedBerries": 22,
+        "expectedScrolls": 0.12
+      },
+      {
+        "tier": 3,
+        "picks": 3,
+        "min": 13,
+        "max": 19,
+        "scrolls": 1,
+        "scrollChance": 0,
+        "expectedBerries": 48,
+        "expectedScrolls": 1
+      },
+      {
+        "tier": 4,
+        "picks": 4,
+        "min": 18,
+        "max": 26,
+        "scrolls": 1,
+        "scrollChance": 500,
+        "expectedBerries": 88,
+        "expectedScrolls": 1.5
+      },
+      {
+        "tier": 5,
+        "picks": 4,
+        "min": 26,
+        "max": 40,
+        "scrolls": 2,
+        "scrollChance": 500,
+        "expectedBerries": 132,
+        "expectedScrolls": 2.5
+      }
+    ],
+    "maxLootRarity": 5
+  },
+  "aliases": [
+    {
+      "action": "User.Login",
+      "sameAs": "User.Info",
+      "line": 1525
+    }
+  ],
+  "actions": [
+    {
+      "action": "Admin.AdjustAll",
+      "group": "admin",
+      "sourceLine": 6330,
+      "signed": false,
+      "requiresPass": false,
+      "ownerOnly": true,
+      "crossProcess": false,
+      "replayGuarded": false,
+      "usesTimestamp": true,
+      "tags": [
+        {
+          "name": "Attack",
+          "spellings": [
+            "Attack"
+          ],
+          "envelope": false
+        },
+        {
+          "name": "Defense",
+          "spellings": [
+            "Defense"
+          ],
+          "envelope": false
+        },
+        {
+          "name": "Energy",
+          "spellings": [
+            "Energy"
+          ],
+          "envelope": false
+        },
+        {
+          "name": "Happiness",
+          "spellings": [
+            "Happiness"
+          ],
+          "envelope": false
+        },
+        {
+          "name": "Health",
+          "spellings": [
+            "Health"
+          ],
+          "envelope": false
+        },
+        {
+          "name": "RerollMoves",
+          "spellings": [
+            "RerollMoves"
+          ],
+          "envelope": false
+        },
+        {
+          "name": "Speed",
+          "spellings": [
+            "Speed"
+          ],
+          "envelope": false
+        }
+      ],
+      "envelopeTags": [],
+      "spends": [],
+      "refusals": [
+        "Nothing to adjust: give Energy, Happiness, …"
+      ],
+      "computedRefusals": 0,
+      "documented": false
+    },
+    {
+      "action": "Admin.AdjustInventory",
+      "group": "admin",
+      "sourceLine": 6154,
+      "signed": false,
+      "requiresPass": false,
+      "ownerOnly": true,
+      "crossProcess": false,
+      "replayGuarded": false,
+      "usesTimestamp": false,
+      "tags": [
+        {
+          "name": "Amount",
+          "spellings": [
+            "Amount"
+          ],
+          "envelope": false
+        },
+        {
+          "name": "Delta",
+          "spellings": [
+            "Delta"
+          ],
+          "envelope": false
+        },
+        {
+          "name": "Item",
+          "spellings": [
+            "Item"
+          ],
+          "envelope": false
+        },
+        {
+          "name": "PlayerId",
+          "spellings": [
+            "PlayerId"
+          ],
+          "envelope": false
+        }
+      ],
+      "envelopeTags": [],
+      "spends": [],
+      "refusals": [
+        "Active economy corrections require an explicit reconciliation path",
+        "Delta must be a non-zero integer",
+        "No such player",
+        "Unknown item"
+      ],
+      "computedRefusals": 0,
+      "documented": false
+    },
+    {
+      "action": "Admin.ConfigureBattleFleet",
+      "group": "admin",
+      "sourceLine": 4624,
+      "signed": true,
+      "requiresPass": false,
+      "ownerOnly": true,
+      "crossProcess": false,
+      "replayGuarded": false,
+      "usesTimestamp": false,
+      "tags": [
+        {
+          "name": "body",
+          "spellings": [
+            "body"
+          ],
+          "envelope": false
+        },
+        {
+          "name": "Data",
+          "spellings": [
+            "Data",
+            "data"
+          ],
+          "envelope": false
+        }
+      ],
+      "envelopeTags": [
+        "Address",
+        "commitments",
+        "From"
+      ],
+      "spends": [],
+      "refusals": [
+        "Battle fleet capability is disabled",
+        "Battle fleet manifest Data must be JSON",
+        "Battle fleet manifest is already sealed",
+        "Not authorised"
+      ],
+      "computedRefusals": 1,
+      "documented": false
+    },
+    {
+      "action": "Admin.CreateMonster",
+      "group": "admin",
+      "sourceLine": 7540,
+      "signed": false,
+      "requiresPass": false,
+      "ownerOnly": true,
+      "crossProcess": false,
+      "replayGuarded": false,
+      "usesTimestamp": true,
+      "tags": [
+        {
+          "name": "Background",
+          "spellings": [
+            "Background"
+          ],
+          "envelope": false
+        },
+        {
+          "name": "Border",
+          "spellings": [
+            "Border"
+          ],
+          "envelope": false
+        },
+        {
+          "name": "EntryNo",
+          "spellings": [
+            "EntryNo"
+          ],
+          "envelope": false
+        },
+        {
+          "name": "Faction",
+          "spellings": [
+            "Faction"
+          ],
+          "envelope": false
+        },
+        {
+          "name": "Holographic",
+          "spellings": [
+            "Holographic"
+          ],
+          "envelope": false
+        },
+        {
+          "name": "Into",
+          "spellings": [
+            "Into"
+          ],
+          "envelope": false
+        },
+        {
+          "name": "Level",
+          "spellings": [
+            "Level"
+          ],
+          "envelope": false
+        },
+        {
+          "name": "Name",
+          "spellings": [
+            "Name"
+          ],
+          "envelope": false
+        },
+        {
+          "name": "PlayerId",
+          "spellings": [
+            "PlayerId"
+          ],
+          "envelope": false
+        }
+      ],
+      "envelopeTags": [],
+      "spends": [],
+      "refusals": [
+        "No such player",
+        "PlayerId must be an Arweave address"
+      ],
+      "computedRefusals": 1,
+      "documented": false
+    },
+    {
+      "action": "Admin.DeleteMonster",
+      "group": "admin",
+      "sourceLine": 7588,
+      "signed": false,
+      "requiresPass": false,
+      "ownerOnly": true,
+      "crossProcess": false,
+      "replayGuarded": false,
+      "usesTimestamp": true,
+      "tags": [
+        {
+          "name": "MonsterId",
+          "spellings": [
+            "MonsterId"
+          ],
+          "envelope": false
+        },
+        {
+          "name": "PlayerId",
+          "spellings": [
+            "PlayerId"
+          ],
+          "envelope": false
+        }
+      ],
+      "envelopeTags": [],
+      "spends": [],
+      "refusals": [
+        "No such companion",
+        "No such player"
+      ],
+      "computedRefusals": 0,
+      "documented": false
+    },
+    {
+      "action": "Admin.Deposited",
+      "group": "admin",
+      "sourceLine": 7738,
+      "signed": false,
+      "requiresPass": false,
+      "ownerOnly": true,
+      "crossProcess": false,
+      "replayGuarded": false,
+      "usesTimestamp": true,
+      "tags": [
+        {
+          "name": "AssetId",
+          "spellings": [
+            "AssetId"
+          ],
+          "envelope": false
+        },
+        {
+          "name": "PlayerId",
+          "spellings": [
+            "PlayerId"
+          ],
+          "envelope": false
+        },
+        {
+          "name": "Seq",
+          "spellings": [
+            "Seq"
+          ],
+          "envelope": false
+        }
+      ],
+      "envelopeTags": [],
+      "spends": [],
+      "refusals": [
+        "No such player",
+        "That asset did not leave this account"
+      ],
+      "computedRefusals": 0,
+      "documented": false
+    },
+    {
+      "action": "Admin.Economy.Apply",
+      "group": "admin",
+      "sourceLine": 5970,
+      "signed": true,
+      "requiresPass": false,
+      "ownerOnly": true,
+      "crossProcess": false,
+      "replayGuarded": false,
+      "usesTimestamp": true,
+      "tags": [
+        {
+          "name": "ChangeId",
+          "spellings": [
+            "ChangeId"
+          ],
+          "envelope": false
+        }
+      ],
+      "envelopeTags": [
+        "Address",
+        "commitments",
+        "From"
+      ],
+      "spends": [],
+      "refusals": [],
+      "computedRefusals": 1,
+      "documented": false
+    },
+    {
+      "action": "Admin.Economy.EmergencyPause",
+      "group": "admin",
+      "sourceLine": 5979,
+      "signed": true,
+      "requiresPass": false,
+      "ownerOnly": true,
+      "crossProcess": false,
+      "replayGuarded": false,
+      "usesTimestamp": true,
+      "tags": [
+        {
+          "name": "Reason",
+          "spellings": [
+            "Reason"
+          ],
+          "envelope": false
+        }
+      ],
+      "envelopeTags": [
+        "Address",
+        "commitments",
+        "From"
+      ],
+      "spends": [],
+      "refusals": [],
+      "computedRefusals": 1,
+      "documented": false
+    },
+    {
+      "action": "Admin.Economy.FundTestBots",
+      "group": "admin",
+      "sourceLine": 6025,
+      "signed": false,
+      "requiresPass": false,
+      "ownerOnly": true,
+      "crossProcess": false,
+      "replayGuarded": false,
+      "usesTimestamp": true,
+      "tags": [],
+      "envelopeTags": [],
+      "spends": [],
+      "refusals": [
+        "Every test wallet must be a 43-character address",
+        "Locked Gold reserve holds …",
+        "Test funding requires 1-50 wallet addresses",
+        "Test-bot funding is permanently unavailable after economy activation"
+      ],
+      "computedRefusals": 0,
+      "documented": false
+    },
+    {
+      "action": "Admin.Economy.ObserveGold",
+      "group": "admin",
+      "sourceLine": 6016,
+      "signed": true,
+      "requiresPass": false,
+      "ownerOnly": true,
+      "crossProcess": false,
+      "replayGuarded": false,
+      "usesTimestamp": true,
+      "tags": [
+        {
+          "name": "Reason",
+          "spellings": [
+            "Reason"
+          ],
+          "envelope": false
+        }
+      ],
+      "envelopeTags": [
+        "Address",
+        "commitments",
+        "From"
+      ],
+      "spends": [],
+      "refusals": [],
+      "computedRefusals": 1,
+      "documented": false
+    },
+    {
+      "action": "Admin.Economy.ObserveRuneSupply",
+      "group": "admin",
+      "sourceLine": 5998,
+      "signed": true,
+      "requiresPass": false,
+      "ownerOnly": true,
+      "crossProcess": false,
+      "replayGuarded": false,
+      "usesTimestamp": true,
+      "tags": [
+        {
+          "name": "Reason",
+          "spellings": [
+            "Reason"
+          ],
+          "envelope": false
+        },
+        {
+          "name": "TotalSupply",
+          "spellings": [
+            "TotalSupply"
+          ],
+          "envelope": false
+        }
+      ],
+      "envelopeTags": [
+        "Address",
+        "commitments",
+        "From"
+      ],
+      "spends": [],
+      "refusals": [],
+      "computedRefusals": 1,
+      "documented": false
+    },
+    {
+      "action": "Admin.Economy.PauseDesk",
+      "group": "admin",
+      "sourceLine": 5988,
+      "signed": true,
+      "requiresPass": false,
+      "ownerOnly": true,
+      "crossProcess": false,
+      "replayGuarded": false,
+      "usesTimestamp": true,
+      "tags": [
+        {
+          "name": "Item",
+          "spellings": [
+            "Item"
+          ],
+          "envelope": false
+        },
+        {
+          "name": "Reason",
+          "spellings": [
+            "Reason"
+          ],
+          "envelope": false
+        },
+        {
+          "name": "Side",
+          "spellings": [
+            "Side"
+          ],
+          "envelope": false
+        }
+      ],
+      "envelopeTags": [
+        "Address",
+        "commitments",
+        "From"
+      ],
+      "spends": [],
+      "refusals": [],
+      "computedRefusals": 1,
+      "documented": false
+    },
+    {
+      "action": "Admin.Economy.Preview",
+      "group": "admin",
+      "sourceLine": 5946,
+      "signed": false,
+      "requiresPass": false,
+      "ownerOnly": true,
+      "crossProcess": false,
+      "replayGuarded": false,
+      "usesTimestamp": true,
+      "tags": [
+        {
+          "name": "Path",
+          "spellings": [
+            "Path"
+          ],
+          "envelope": false
+        },
+        {
+          "name": "Value",
+          "spellings": [
+            "Value"
+          ],
+          "envelope": false
+        }
+      ],
+      "envelopeTags": [],
+      "spends": [],
+      "refusals": [],
+      "computedRefusals": 1,
+      "documented": false
+    },
+    {
+      "action": "Admin.Economy.Propose",
+      "group": "admin",
+      "sourceLine": 5957,
+      "signed": true,
+      "requiresPass": false,
+      "ownerOnly": true,
+      "crossProcess": false,
+      "replayGuarded": false,
+      "usesTimestamp": true,
+      "tags": [
+        {
+          "name": "Path",
+          "spellings": [
+            "Path"
+          ],
+          "envelope": false
+        },
+        {
+          "name": "Reason",
+          "spellings": [
+            "Reason"
+          ],
+          "envelope": false
+        },
+        {
+          "name": "Value",
+          "spellings": [
+            "Value"
+          ],
+          "envelope": false
+        }
+      ],
+      "envelopeTags": [
+        "Address",
+        "commitments",
+        "From"
+      ],
+      "spends": [],
+      "refusals": [],
+      "computedRefusals": 1,
+      "documented": false
+    },
+    {
+      "action": "Admin.Economy.ReleaseGold",
+      "group": "admin",
+      "sourceLine": 6007,
+      "signed": true,
+      "requiresPass": false,
+      "ownerOnly": true,
+      "crossProcess": false,
+      "replayGuarded": false,
+      "usesTimestamp": true,
+      "tags": [
+        {
+          "name": "Amount",
+          "spellings": [
+            "Amount"
+          ],
+          "envelope": false
+        },
+        {
+          "name": "Item",
+          "spellings": [
+            "Item"
+          ],
+          "envelope": false
+        },
+        {
+          "name": "Reason",
+          "spellings": [
+            "Reason"
+          ],
+          "envelope": false
+        }
+      ],
+      "envelopeTags": [
+        "Address",
+        "commitments",
+        "From"
+      ],
+      "spends": [],
+      "refusals": [],
+      "computedRefusals": 1,
+      "documented": false
+    },
+    {
+      "action": "Admin.ExpireFleetBattle",
+      "group": "admin",
+      "sourceLine": 4784,
+      "signed": true,
+      "requiresPass": false,
+      "ownerOnly": true,
+      "crossProcess": false,
+      "replayGuarded": false,
+      "usesTimestamp": true,
+      "tags": [
+        {
+          "name": "Reason",
+          "spellings": [
+            "Reason"
+          ],
+          "envelope": false
+        },
+        {
+          "name": "ReservationId",
+          "spellings": [
+            "ReservationId"
+          ],
+          "envelope": false
+        }
+      ],
+      "envelopeTags": [
+        "Address",
+        "commitments",
+        "From"
+      ],
+      "spends": [],
+      "refusals": [
+        "Active fleet reservation not found",
+        "Not authorised"
+      ],
+      "computedRefusals": 0,
+      "documented": false
+    },
+    {
+      "action": "Admin.Export",
+      "group": "admin",
+      "sourceLine": 6780,
+      "signed": false,
+      "requiresPass": false,
+      "ownerOnly": true,
+      "crossProcess": false,
+      "replayGuarded": false,
+      "usesTimestamp": false,
+      "tags": [
+        {
+          "name": "Limit",
+          "spellings": [
+            "Limit"
+          ],
+          "envelope": false
+        },
+        {
+          "name": "Offset",
+          "spellings": [
+            "Offset"
+          ],
+          "envelope": false
+        },
+        {
+          "name": "Section",
+          "spellings": [
+            "Section"
+          ],
+          "envelope": false
+        }
+      ],
+      "envelopeTags": [],
+      "spends": [],
+      "refusals": [],
+      "computedRefusals": 0,
+      "documented": false
+    },
+    {
+      "action": "Admin.ForceResolveFleetBattle",
+      "group": "admin",
+      "sourceLine": 4830,
+      "signed": true,
+      "requiresPass": false,
+      "ownerOnly": true,
+      "crossProcess": false,
+      "replayGuarded": false,
+      "usesTimestamp": true,
+      "tags": [
+        {
+          "name": "body",
+          "spellings": [
+            "body"
+          ],
+          "envelope": false
+        },
+        {
+          "name": "Data",
+          "spellings": [
+            "Data",
+            "data"
+          ],
+          "envelope": false
+        }
+      ],
+      "envelopeTags": [
+        "Address",
+        "commitments",
+        "From"
+      ],
+      "spends": [],
+      "refusals": [
+        "Fleet reservation player not found",
+        "Force resolution Data must be JSON",
+        "Not authorised"
+      ],
+      "computedRefusals": 1,
+      "documented": false
+    },
+    {
+      "action": "Admin.Grant",
+      "group": "admin",
+      "sourceLine": 6695,
+      "signed": false,
+      "requiresPass": false,
+      "ownerOnly": true,
+      "crossProcess": false,
+      "replayGuarded": false,
+      "usesTimestamp": true,
+      "tags": [
+        {
+          "name": "Amount",
+          "spellings": [
+            "Amount"
+          ],
+          "envelope": false
+        },
+        {
+          "name": "Item",
+          "spellings": [
+            "Item"
+          ],
+          "envelope": false
+        },
+        {
+          "name": "Lootboxes",
+          "spellings": [
+            "Lootboxes"
+          ],
+          "envelope": false
+        },
+        {
+          "name": "PlayerId",
+          "spellings": [
+            "PlayerId"
+          ],
+          "envelope": false
+        },
+        {
+          "name": "Rarity",
+          "spellings": [
+            "Rarity"
+          ],
+          "envelope": false
+        }
+      ],
+      "envelopeTags": [],
+      "spends": [],
+      "refusals": [
+        "Generic grants are sealed after economy activation",
+        "No PlayerId given"
+      ],
+      "computedRefusals": 0,
+      "documented": false
+    },
+    {
+      "action": "Admin.Load",
+      "group": "admin",
+      "sourceLine": 7208,
+      "signed": false,
+      "requiresPass": false,
+      "ownerOnly": true,
+      "crossProcess": false,
+      "replayGuarded": false,
+      "usesTimestamp": true,
+      "tags": [
+        {
+          "name": "body",
+          "spellings": [
+            "body"
+          ],
+          "envelope": false
+        },
+        {
+          "name": "Data",
+          "spellings": [
+            "Data",
+            "data"
+          ],
+          "envelope": false
+        }
+      ],
+      "envelopeTags": [],
+      "spends": [],
+      "refusals": [
+        "Body must be JSON"
+      ],
+      "computedRefusals": 1,
+      "documented": false
+    },
+    {
+      "action": "Admin.Lock",
+      "group": "admin",
+      "sourceLine": 6677,
+      "signed": false,
+      "requiresPass": false,
+      "ownerOnly": true,
+      "crossProcess": false,
+      "replayGuarded": false,
+      "usesTimestamp": false,
+      "tags": [
+        {
+          "name": "PlayerId",
+          "spellings": [
+            "PlayerId"
+          ],
+          "envelope": false
+        }
+      ],
+      "envelopeTags": [],
+      "spends": [],
+      "refusals": [
+        "No such player"
+      ],
+      "computedRefusals": 0,
+      "documented": false
+    },
+    {
+      "action": "Admin.Minted",
+      "group": "admin",
+      "sourceLine": 7657,
+      "signed": false,
+      "requiresPass": false,
+      "ownerOnly": true,
+      "crossProcess": false,
+      "replayGuarded": false,
+      "usesTimestamp": true,
+      "tags": [
+        {
+          "name": "AssetId",
+          "spellings": [
+            "AssetId"
+          ],
+          "envelope": false
+        },
+        {
+          "name": "Seq",
+          "spellings": [
+            "Seq"
+          ],
+          "envelope": false
+        }
+      ],
+      "envelopeTags": [],
+      "spends": [],
+      "refusals": [
+        "AssetId must be an Arweave id",
+        "No queued mint …",
+        "No such player"
+      ],
+      "computedRefusals": 0,
+      "documented": false
+    },
+    {
+      "action": "Admin.MintFailed",
+      "group": "admin",
+      "sourceLine": 7716,
+      "signed": false,
+      "requiresPass": false,
+      "ownerOnly": true,
+      "crossProcess": false,
+      "replayGuarded": false,
+      "usesTimestamp": true,
+      "tags": [
+        {
+          "name": "Reason",
+          "spellings": [
+            "Reason"
+          ],
+          "envelope": false
+        },
+        {
+          "name": "Seq",
+          "spellings": [
+            "Seq"
+          ],
+          "envelope": false
+        }
+      ],
+      "envelopeTags": [],
+      "spends": [],
+      "refusals": [
+        "No queued mint …",
+        "No such player"
+      ],
+      "computedRefusals": 0,
+      "documented": false
+    },
+    {
+      "action": "Admin.MonsterIndex.Update",
+      "group": "admin",
+      "sourceLine": 5874,
+      "signed": false,
+      "requiresPass": false,
+      "ownerOnly": true,
+      "crossProcess": false,
+      "replayGuarded": false,
+      "usesTimestamp": false,
+      "tags": [
+        {
+          "name": "body",
+          "spellings": [
+            "body"
+          ],
+          "envelope": false
+        },
+        {
+          "name": "Data",
+          "spellings": [
+            "Data",
+            "data"
+          ],
+          "envelope": false
+        },
+        {
+          "name": "EntryNo",
+          "spellings": [
+            "EntryNo"
+          ],
+          "envelope": false
+        }
+      ],
+      "envelopeTags": [],
+      "spends": [],
+      "refusals": [
+        "A catchable entry needs positive huntWeight",
+        "A non-catchable entry must have huntWeight 0",
+        "All required runtime assets must be approved before release",
+        "Body must be a JSON object",
+        "No such Monster Index entry",
+        "Only a faction-linked entry can be a starter",
+        "Only a live entry can be a starter or Hunt encounter",
+        "artRevision must be 1-64 letters, numbers, underscores or dashes",
+        "huntWeight must be 0-100000",
+        "name must be 1-80 characters",
+        "state is invalid"
+      ],
+      "computedRefusals": 0,
+      "documented": false
+    },
+    {
+      "action": "Admin.MoveMonster",
+      "group": "admin",
+      "sourceLine": 7612,
+      "signed": false,
+      "requiresPass": false,
+      "ownerOnly": true,
+      "crossProcess": false,
+      "replayGuarded": false,
+      "usesTimestamp": true,
+      "tags": [
+        {
+          "name": "Into",
+          "spellings": [
+            "Into"
+          ],
+          "envelope": false
+        },
+        {
+          "name": "MonsterId",
+          "spellings": [
+            "MonsterId"
+          ],
+          "envelope": false
+        },
+        {
+          "name": "PlayerId",
+          "spellings": [
+            "PlayerId"
+          ],
+          "envelope": false
+        },
+        {
+          "name": "Recipient",
+          "spellings": [
+            "Recipient"
+          ],
+          "envelope": false
+        }
+      ],
+      "envelopeTags": [],
+      "spends": [],
+      "refusals": [
+        "No such companion",
+        "No such player",
+        "No such recipient",
+        "Their roster is full"
+      ],
+      "computedRefusals": 0,
+      "documented": false
+    },
+    {
+      "action": "Admin.Pass.ConfigureGenesis",
+      "group": "admin",
+      "sourceLine": 6103,
+      "signed": true,
+      "requiresPass": false,
+      "ownerOnly": true,
+      "crossProcess": false,
+      "replayGuarded": false,
+      "usesTimestamp": true,
+      "tags": [],
+      "envelopeTags": [
+        "Address",
+        "commitments",
+        "From"
+      ],
+      "spends": [],
+      "refusals": [
+        "Every promised pass needs a 43-character address",
+        "Promised addresses must be an array"
+      ],
+      "computedRefusals": 1,
+      "documented": false
+    },
+    {
+      "action": "Admin.ReleaseBattle",
+      "group": "admin",
+      "sourceLine": 6300,
+      "signed": false,
+      "requiresPass": false,
+      "ownerOnly": true,
+      "crossProcess": false,
+      "replayGuarded": false,
+      "usesTimestamp": true,
+      "tags": [
+        {
+          "name": "PlayerId",
+          "spellings": [
+            "PlayerId"
+          ],
+          "envelope": false
+        }
+      ],
+      "envelopeTags": [],
+      "spends": [],
+      "refusals": [],
+      "computedRefusals": 1,
+      "documented": false
+    },
+    {
+      "action": "Admin.RemoveUser",
+      "group": "admin",
+      "sourceLine": 6744,
+      "signed": false,
+      "requiresPass": false,
+      "ownerOnly": true,
+      "crossProcess": false,
+      "replayGuarded": false,
+      "usesTimestamp": true,
+      "tags": [
+        {
+          "name": "PlayerId",
+          "spellings": [
+            "PlayerId"
+          ],
+          "envelope": false
+        }
+      ],
+      "envelopeTags": [],
+      "spends": [],
+      "refusals": [
+        "Active fleet battle must use Admin.ExpireFleetBattle, Admin.RetryFleetCancel, or Admin.ForceResolveFleetBattle",
+        "Cancel the account's Gold orders first",
+        "Cancel the account's companion listings first",
+        "Cannot remove an account that holds economic state",
+        "No such player"
+      ],
+      "computedRefusals": 1,
+      "documented": false
+    },
+    {
+      "action": "Admin.RetryFleetAck",
+      "group": "admin",
+      "sourceLine": 4853,
+      "signed": true,
+      "requiresPass": false,
+      "ownerOnly": true,
+      "crossProcess": false,
+      "replayGuarded": false,
+      "usesTimestamp": true,
+      "tags": [
+        {
+          "name": "ReservationId",
+          "spellings": [
+            "ReservationId"
+          ],
+          "envelope": false
+        }
+      ],
+      "envelopeTags": [
+        "Address",
+        "commitments",
+        "From"
+      ],
+      "spends": [],
+      "refusals": [
+        "Battle fleet authority does not support ACK recovery",
+        "Not authorised"
+      ],
+      "computedRefusals": 1,
+      "documented": false
+    },
+    {
+      "action": "Admin.RetryFleetCancel",
+      "group": "admin",
+      "sourceLine": 4794,
+      "signed": true,
+      "requiresPass": false,
+      "ownerOnly": true,
+      "crossProcess": false,
+      "replayGuarded": false,
+      "usesTimestamp": true,
+      "tags": [
+        {
+          "name": "ReservationId",
+          "spellings": [
+            "ReservationId"
+          ],
+          "envelope": false
+        }
+      ],
+      "envelopeTags": [
+        "Address",
+        "commitments",
+        "From"
+      ],
+      "spends": [],
+      "refusals": [
+        "Cancel-pending fleet reservation not found",
+        "Not authorised"
+      ],
+      "computedRefusals": 0,
+      "documented": false
+    },
+    {
+      "action": "Admin.RetryFleetOpen",
+      "group": "admin",
+      "sourceLine": 4811,
+      "signed": true,
+      "requiresPass": false,
+      "ownerOnly": true,
+      "crossProcess": false,
+      "replayGuarded": false,
+      "usesTimestamp": true,
+      "tags": [
+        {
+          "name": "ReservationId",
+          "spellings": [
+            "ReservationId"
+          ],
+          "envelope": false
+        }
+      ],
+      "envelopeTags": [
+        "Address",
+        "commitments",
+        "From"
+      ],
+      "spends": [],
+      "refusals": [
+        "Active fleet reservation not found",
+        "Fleet reservation cannot retry Open from status ",
+        "Not authorised"
+      ],
+      "computedRefusals": 0,
+      "documented": false
+    },
+    {
+      "action": "Admin.SetHuntProcess",
+      "group": "admin",
+      "sourceLine": 6465,
+      "signed": false,
+      "requiresPass": false,
+      "ownerOnly": true,
+      "crossProcess": false,
+      "replayGuarded": false,
+      "usesTimestamp": false,
+      "tags": [
+        {
+          "name": "body",
+          "spellings": [
+            "body"
+          ],
+          "envelope": false
+        },
+        {
+          "name": "Data",
+          "spellings": [
+            "Data",
+            "data"
+          ],
+          "envelope": false
+        },
+        {
+          "name": "HuntProcess",
+          "spellings": [
+            "HuntProcess"
+          ],
+          "envelope": false
+        },
+        {
+          "name": "Node",
+          "spellings": [
+            "Node"
+          ],
+          "envelope": false
+        },
+        {
+          "name": "PlayerId",
+          "spellings": [
+            "PlayerId"
+          ],
+          "envelope": false
+        },
+        {
+          "name": "ProcessId",
+          "spellings": [
+            "ProcessId"
+          ],
+          "envelope": false
+        }
+      ],
+      "envelopeTags": [],
+      "spends": [],
+      "refusals": [
+        "Each hunt worker needs a 43-character processId",
+        "Each hunt worker node must be an http(s) URL",
+        "Hunt fleet must be a JSON array of workers",
+        "Hunt node must be an http(s) URL",
+        "Hunt process must be a 43-character process id"
+      ],
+      "computedRefusals": 0,
+      "documented": false
+    },
+    {
+      "action": "Admin.SetRuneToken",
+      "group": "admin",
+      "sourceLine": 6389,
+      "signed": false,
+      "requiresPass": false,
+      "ownerOnly": true,
+      "crossProcess": false,
+      "replayGuarded": false,
+      "usesTimestamp": false,
+      "tags": [
+        {
+          "name": "PlayerId",
+          "spellings": [
+            "PlayerId"
+          ],
+          "envelope": false
+        },
+        {
+          "name": "RuneToken",
+          "spellings": [
+            "RuneToken"
+          ],
+          "envelope": false
+        }
+      ],
+      "envelopeTags": [],
+      "spends": [],
+      "refusals": [
+        "RuneToken must be a 43-character process id"
+      ],
+      "computedRefusals": 0,
+      "documented": false
+    },
+    {
+      "action": "Admin.SetStats",
+      "group": "admin",
+      "sourceLine": 6714,
+      "signed": false,
+      "requiresPass": false,
+      "ownerOnly": true,
+      "crossProcess": false,
+      "replayGuarded": false,
+      "usesTimestamp": false,
+      "tags": [
+        {
+          "name": "body",
+          "spellings": [
+            "body"
+          ],
+          "envelope": false
+        },
+        {
+          "name": "Data",
+          "spellings": [
+            "Data",
+            "data"
+          ],
+          "envelope": false
+        },
+        {
+          "name": "PlayerId",
+          "spellings": [
+            "PlayerId"
+          ],
+          "envelope": false
+        }
+      ],
+      "envelopeTags": [],
+      "spends": [],
+      "refusals": [
+        "Body must be a JSON object",
+        "No such player, or no companion"
+      ],
+      "computedRefusals": 0,
+      "documented": false
+    },
+    {
+      "action": "Admin.SettleDeposit",
+      "group": "admin",
+      "sourceLine": 6565,
+      "signed": false,
+      "requiresPass": false,
+      "ownerOnly": true,
+      "crossProcess": false,
+      "replayGuarded": false,
+      "usesTimestamp": true,
+      "tags": [
+        {
+          "name": "Account",
+          "spellings": [
+            "Account"
+          ],
+          "envelope": false
+        },
+        {
+          "name": "Amount",
+          "spellings": [
+            "Amount"
+          ],
+          "envelope": false
+        },
+        {
+          "name": "DepositId",
+          "spellings": [
+            "DepositId"
+          ],
+          "envelope": false
+        },
+        {
+          "name": "Outcome",
+          "spellings": [
+            "Outcome"
+          ],
+          "envelope": false
+        },
+        {
+          "name": "Reason",
+          "spellings": [
+            "Reason"
+          ],
+          "envelope": false
+        }
+      ],
+      "envelopeTags": [],
+      "spends": [],
+      "refusals": [
+        "Account must be a 43-character address",
+        "Amount must be a positive number of Rune",
+        "No such deposit",
+        "Outcome must be 'credit' or 'void'"
+      ],
+      "computedRefusals": 0,
+      "documented": false
+    },
+    {
+      "action": "Admin.SettleVenueReturn",
+      "group": "admin",
+      "sourceLine": 6429,
+      "signed": false,
+      "requiresPass": false,
+      "ownerOnly": true,
+      "crossProcess": false,
+      "replayGuarded": false,
+      "usesTimestamp": true,
+      "tags": [
+        {
+          "name": "Account",
+          "spellings": [
+            "Account"
+          ],
+          "envelope": false
+        },
+        {
+          "name": "Amount",
+          "spellings": [
+            "Amount"
+          ],
+          "envelope": false
+        },
+        {
+          "name": "Asset",
+          "spellings": [
+            "Asset"
+          ],
+          "envelope": false
+        },
+        {
+          "name": "Item",
+          "spellings": [
+            "Item"
+          ],
+          "envelope": false
+        },
+        {
+          "name": "PlayerId",
+          "spellings": [
+            "PlayerId"
+          ],
+          "envelope": false
+        },
+        {
+          "name": "Quantity",
+          "spellings": [
+            "Quantity"
+          ],
+          "envelope": false
+        },
+        {
+          "name": "Reason",
+          "spellings": [
+            "Reason"
+          ],
+          "envelope": false
+        },
+        {
+          "name": "Reference",
+          "spellings": [
+            "Reference",
+            "reference"
+          ],
+          "envelope": false
+        },
+        {
+          "name": "Resolution",
+          "spellings": [
+            "Resolution"
+          ],
+          "envelope": false
+        }
+      ],
+      "envelopeTags": [],
+      "spends": [],
+      "refusals": [
+        "Name the account to credit",
+        "No such venue return"
+      ],
+      "computedRefusals": 1,
+      "documented": false
+    },
+    {
+      "action": "Admin.SettleWithdrawal",
+      "group": "admin",
+      "sourceLine": 6525,
+      "signed": false,
+      "requiresPass": false,
+      "ownerOnly": true,
+      "crossProcess": false,
+      "replayGuarded": false,
+      "usesTimestamp": true,
+      "tags": [
+        {
+          "name": "Outcome",
+          "spellings": [
+            "Outcome"
+          ],
+          "envelope": false
+        },
+        {
+          "name": "WithdrawalId",
+          "spellings": [
+            "WithdrawalId"
+          ],
+          "envelope": false
+        }
+      ],
+      "envelopeTags": [],
+      "spends": [],
+      "refusals": [
+        "No such withdrawal",
+        "Outcome must be 'done' or 'refund'"
+      ],
+      "computedRefusals": 0,
+      "documented": false
+    },
+    {
+      "action": "Admin.SetVault",
+      "group": "admin",
+      "sourceLine": 7785,
+      "signed": false,
+      "requiresPass": false,
+      "ownerOnly": true,
+      "crossProcess": false,
+      "replayGuarded": false,
+      "usesTimestamp": false,
+      "tags": [
+        {
+          "name": "Vault",
+          "spellings": [
+            "Vault"
+          ],
+          "envelope": false
+        }
+      ],
+      "envelopeTags": [],
+      "spends": [],
+      "refusals": [
+        "Vault must be an Arweave address"
+      ],
+      "computedRefusals": 0,
+      "documented": false
+    },
+    {
+      "action": "Admin.SetVenueProcess",
+      "group": "admin",
+      "sourceLine": 6407,
+      "signed": false,
+      "requiresPass": false,
+      "ownerOnly": true,
+      "crossProcess": false,
+      "replayGuarded": false,
+      "usesTimestamp": false,
+      "tags": [
+        {
+          "name": "ProcessId",
+          "spellings": [
+            "ProcessId"
+          ],
+          "envelope": false
+        },
+        {
+          "name": "Venue",
+          "spellings": [
+            "Venue"
+          ],
+          "envelope": false
+        },
+        {
+          "name": "VenueProcess",
+          "spellings": [
+            "VenueProcess"
+          ],
+          "envelope": false
+        }
+      ],
+      "envelopeTags": [],
+      "spends": [],
+      "refusals": [
+        "Venue process must be a 43-character process id"
+      ],
+      "computedRefusals": 0,
+      "documented": false
+    },
+    {
+      "action": "Admin.Snapshot",
+      "group": "admin",
+      "sourceLine": 5864,
+      "signed": false,
+      "requiresPass": false,
+      "ownerOnly": true,
+      "crossProcess": false,
+      "replayGuarded": false,
+      "usesTimestamp": true,
+      "tags": [],
+      "envelopeTags": [],
+      "spends": [],
+      "refusals": [],
+      "computedRefusals": 0,
+      "documented": false
+    },
+    {
+      "action": "Admin.Unlock",
+      "group": "admin",
+      "sourceLine": 6604,
+      "signed": false,
+      "requiresPass": false,
+      "ownerOnly": true,
+      "crossProcess": false,
+      "replayGuarded": false,
+      "usesTimestamp": true,
+      "tags": [
+        {
+          "name": "Addresses",
+          "spellings": [
+            "Addresses"
+          ],
+          "envelope": false
+        },
+        {
+          "name": "body",
+          "spellings": [
+            "body"
+          ],
+          "envelope": false
+        },
+        {
+          "name": "Data",
+          "spellings": [
+            "Data",
+            "data"
+          ],
+          "envelope": false
+        },
+        {
+          "name": "Origin",
+          "spellings": [
+            "Origin"
+          ],
+          "envelope": false
+        }
+      ],
+      "envelopeTags": [],
+      "spends": [],
+      "refusals": [
+        "Pass origin must be legacy, promised, or test",
+        "The unrestricted genesis pass grant path is permanently sealed"
+      ],
+      "computedRefusals": 0,
+      "documented": false
+    },
+    {
+      "action": "Admin.UpdatePlayer",
+      "group": "admin",
+      "sourceLine": 6177,
+      "signed": false,
+      "requiresPass": false,
+      "ownerOnly": true,
+      "crossProcess": false,
+      "replayGuarded": false,
+      "usesTimestamp": true,
+      "tags": [
+        {
+          "name": "body",
+          "spellings": [
+            "body"
+          ],
+          "envelope": false
+        },
+        {
+          "name": "Data",
+          "spellings": [
+            "Data",
+            "data"
+          ],
+          "envelope": false
+        },
+        {
+          "name": "PlayerId",
+          "spellings": [
+            "PlayerId"
+          ],
+          "envelope": false
+        }
+      ],
+      "envelopeTags": [],
+      "spends": [],
+      "refusals": [
+        "Active economy corrections cannot mint inventory",
+        "Active economy corrections cannot mint loot boxes",
+        "Body must be a JSON object",
+        "Choose a faction before creating a companion",
+        "No such player",
+        "Remove the companion before clearing its faction",
+        "This player has no companion",
+        "Unknown companion status",
+        "Unknown faction '…"
+      ],
+      "computedRefusals": 1,
+      "documented": false
+    },
+    {
+      "action": "Battle.Accept",
+      "group": "player",
+      "sourceLine": 5216,
+      "signed": true,
+      "requiresPass": true,
+      "ownerOnly": false,
+      "crossProcess": false,
+      "replayGuarded": false,
+      "usesTimestamp": true,
+      "tags": [
+        {
+          "name": "BattleId",
+          "spellings": [
+            "BattleId"
+          ],
+          "envelope": false
+        },
+        {
+          "name": "Challenger",
+          "spellings": [
+            "Challenger"
+          ],
+          "envelope": false
+        }
+      ],
+      "envelopeTags": [
+        "Address",
+        "commitments",
+        "From"
+      ],
+      "spends": [],
+      "refusals": [
+        "No such open challenge",
+        "That challenge is for someone else",
+        "That challenge is no longer open",
+        "You cannot accept your own challenge"
+      ],
+      "computedRefusals": 1,
+      "documented": false
+    },
+    {
+      "action": "Battle.Attack",
+      "group": "player",
+      "sourceLine": 5270,
+      "signed": true,
+      "requiresPass": true,
+      "ownerOnly": false,
+      "crossProcess": false,
+      "replayGuarded": false,
+      "usesTimestamp": true,
+      "tags": [
+        {
+          "name": "BattleId",
+          "spellings": [
+            "BattleId"
+          ],
+          "envelope": false
+        },
+        {
+          "name": "Move",
+          "spellings": [
+            "Move"
+          ],
+          "envelope": false
+        },
+        {
+          "name": "Round",
+          "spellings": [
+            "Round"
+          ],
+          "envelope": false
+        }
+      ],
+      "envelopeTags": [
+        "Address",
+        "commitments",
+        "From"
+      ],
+      "spends": [],
+      "refusals": [
+        "Battle not found",
+        "That battle has not started",
+        "That battle is over",
+        "That round has already resolved — this is round ",
+        "You are not in this battle"
+      ],
+      "computedRefusals": 2,
+      "documented": false
+    },
+    {
+      "action": "Battle.Begin",
+      "group": "player",
+      "sourceLine": 4422,
+      "signed": true,
+      "requiresPass": true,
+      "ownerOnly": false,
+      "crossProcess": false,
+      "replayGuarded": false,
+      "usesTimestamp": true,
+      "tags": [
+        {
+          "name": "Item",
+          "spellings": [
+            "Item"
+          ],
+          "envelope": false
+        }
+      ],
+      "envelopeTags": [
+        "Address",
+        "commitments",
+        "From"
+      ],
+      "spends": [
+        "{berryId}",
+        "{cfg.cost.item}"
+      ],
+      "refusals": [
+        "Entering the arena costs …",
+        "No companion",
+        "Not enough energy",
+        "Not happy enough",
+        "That is not a battle berry",
+        "You need …",
+        "Your companion is busy: …"
+      ],
+      "computedRefusals": 1,
+      "documented": false
+    },
+    {
+      "action": "Battle.Challenge",
+      "group": "player",
+      "sourceLine": 5178,
+      "signed": true,
+      "requiresPass": true,
+      "ownerOnly": false,
+      "crossProcess": false,
+      "replayGuarded": false,
+      "usesTimestamp": true,
+      "tags": [
+        {
+          "name": "Opponent",
+          "spellings": [
+            "Opponent"
+          ],
+          "envelope": false
+        }
+      ],
+      "envelopeTags": [
+        "Address",
+        "commitments",
+        "From"
+      ],
+      "spends": [],
+      "refusals": [
+        "You cannot challenge yourself"
+      ],
+      "computedRefusals": 1,
+      "documented": false
+    },
+    {
+      "action": "Battle.Fleet.Cancelled",
+      "group": "process",
+      "sourceLine": 5122,
+      "signed": false,
+      "requiresPass": false,
+      "ownerOnly": false,
+      "crossProcess": false,
+      "replayGuarded": false,
+      "usesTimestamp": true,
+      "tags": [],
+      "envelopeTags": [],
+      "spends": [],
+      "refusals": [
+        "Battle fleet cancellation has no authoritative disposition",
+        "Battle fleet is disabled",
+        "Reserved player no longer exists"
+      ],
+      "computedRefusals": 3,
+      "documented": false
+    },
+    {
+      "action": "Battle.Fleet.FinalAcked",
+      "group": "process",
+      "sourceLine": 5157,
+      "signed": false,
+      "requiresPass": false,
+      "ownerOnly": false,
+      "crossProcess": false,
+      "replayGuarded": false,
+      "usesTimestamp": true,
+      "tags": [],
+      "envelopeTags": [],
+      "spends": [],
+      "refusals": [
+        "Battle fleet authority does not support delivery confirmation",
+        "Battle fleet is disabled"
+      ],
+      "computedRefusals": 2,
+      "documented": false
+    },
+    {
+      "action": "Battle.Fleet.Opened",
+      "group": "process",
+      "sourceLine": 5055,
+      "signed": false,
+      "requiresPass": false,
+      "ownerOnly": false,
+      "crossProcess": false,
+      "replayGuarded": false,
+      "usesTimestamp": true,
+      "tags": [],
+      "envelopeTags": [],
+      "spends": [],
+      "refusals": [
+        "Battle fleet is disabled",
+        "Reserved player no longer exists"
+      ],
+      "computedRefusals": 2,
+      "documented": false
+    },
+    {
+      "action": "Battle.Fleet.OpenRejected",
+      "group": "process",
+      "sourceLine": 5072,
+      "signed": false,
+      "requiresPass": false,
+      "ownerOnly": false,
+      "crossProcess": false,
+      "replayGuarded": false,
+      "usesTimestamp": true,
+      "tags": [],
+      "envelopeTags": [],
+      "spends": [],
+      "refusals": [
+        "Battle fleet is disabled",
+        "Reserved player no longer exists"
+      ],
+      "computedRefusals": 3,
+      "documented": false
+    },
+    {
+      "action": "Battle.Fleet.Settle",
+      "group": "process",
+      "sourceLine": 5096,
+      "signed": false,
+      "requiresPass": false,
+      "ownerOnly": false,
+      "crossProcess": false,
+      "replayGuarded": false,
+      "usesTimestamp": true,
+      "tags": [],
+      "envelopeTags": [],
+      "spends": [],
+      "refusals": [
+        "Battle fleet is disabled",
+        "Reserved player no longer exists"
+      ],
+      "computedRefusals": 3,
+      "documented": false
+    },
+    {
+      "action": "Battle.Info",
+      "group": "player",
+      "sourceLine": 5382,
+      "signed": false,
+      "requiresPass": false,
+      "ownerOnly": false,
+      "crossProcess": false,
+      "replayGuarded": false,
+      "usesTimestamp": false,
+      "tags": [
+        {
+          "name": "BattleId",
+          "spellings": [
+            "BattleId"
+          ],
+          "envelope": false
+        }
+      ],
+      "envelopeTags": [],
+      "spends": [],
+      "refusals": [
+        "Battle not found"
+      ],
+      "computedRefusals": 0,
+      "documented": false
+    },
+    {
+      "action": "Battle.Leave",
+      "group": "player",
+      "sourceLine": 4481,
+      "signed": true,
+      "requiresPass": true,
+      "ownerOnly": false,
+      "crossProcess": false,
+      "replayGuarded": false,
+      "usesTimestamp": true,
+      "tags": [],
+      "envelopeTags": [
+        "Address",
+        "commitments",
+        "From"
+      ],
+      "spends": [],
+      "refusals": [
+        "No companion"
+      ],
+      "computedRefusals": 0,
+      "documented": false
+    },
+    {
+      "action": "Battle.OpenChallenges",
+      "group": "player",
+      "sourceLine": 5406,
+      "signed": false,
+      "requiresPass": false,
+      "ownerOnly": false,
+      "crossProcess": false,
+      "replayGuarded": false,
+      "usesTimestamp": false,
+      "tags": [],
+      "envelopeTags": [],
+      "spends": [],
+      "refusals": [],
+      "computedRefusals": 0,
+      "documented": false
+    },
+    {
+      "action": "Battle.Start",
+      "group": "player",
+      "sourceLine": 5021,
+      "signed": true,
+      "requiresPass": true,
+      "ownerOnly": false,
+      "crossProcess": false,
+      "replayGuarded": false,
+      "usesTimestamp": true,
+      "tags": [
+        {
+          "name": "Difficulty",
+          "spellings": [
+            "Difficulty"
+          ],
+          "envelope": false
+        },
+        {
+          "name": "OpponentFaction",
+          "spellings": [
+            "OpponentFaction"
+          ],
+          "envelope": false
+        },
+        {
+          "name": "StartId",
+          "spellings": [
+            "StartId"
+          ],
+          "envelope": false
+        }
+      ],
+      "envelopeTags": [
+        "Address",
+        "commitments",
+        "From"
+      ],
+      "spends": [],
+      "refusals": [],
+      "computedRefusals": 1,
+      "documented": false
+    },
+    {
+      "action": "Burn-Notice",
+      "group": "player",
+      "sourceLine": 3508,
+      "signed": false,
+      "requiresPass": false,
+      "ownerOnly": false,
+      "crossProcess": true,
+      "replayGuarded": false,
+      "usesTimestamp": true,
+      "tags": [
+        {
+          "name": "Account",
+          "spellings": [
+            "Account",
+            "account"
+          ],
+          "envelope": false
+        },
+        {
+          "name": "Quantity",
+          "spellings": [
+            "Quantity"
+          ],
+          "envelope": false
+        },
+        {
+          "name": "Reference",
+          "spellings": [
+            "Reference",
+            "reference"
+          ],
+          "envelope": false
+        }
+      ],
+      "envelopeTags": [
+        "commitments",
+        "FromProcess"
+      ],
+      "spends": [],
+      "refusals": [
+        "A burn notice must carry a Reference",
+        "Not authorised"
+      ],
+      "computedRefusals": 0,
+      "documented": false
+    },
+    {
+      "action": "Daily.Claim",
+      "group": "player",
+      "sourceLine": 3052,
+      "signed": true,
+      "requiresPass": true,
+      "ownerOnly": false,
+      "crossProcess": false,
+      "replayGuarded": false,
+      "usesTimestamp": true,
+      "tags": [],
+      "envelopeTags": [
+        "Address",
+        "commitments",
+        "From"
+      ],
+      "spends": [],
+      "refusals": [
+        "Next claim in …"
+      ],
+      "computedRefusals": 0,
+      "documented": false
+    },
+    {
+      "action": "Economy.Order.Amend",
+      "group": "player",
+      "sourceLine": 2400,
+      "signed": true,
+      "requiresPass": true,
+      "ownerOnly": false,
+      "crossProcess": false,
+      "replayGuarded": false,
+      "usesTimestamp": true,
+      "tags": [
+        {
+          "name": "ActionId",
+          "spellings": [
+            "ActionId"
+          ],
+          "envelope": false
+        },
+        {
+          "name": "ExpiresIn",
+          "spellings": [
+            "ExpiresIn",
+            "expires-in",
+            "expiresin"
+          ],
+          "envelope": false
+        },
+        {
+          "name": "OrderId",
+          "spellings": [
+            "OrderId"
+          ],
+          "envelope": false
+        },
+        {
+          "name": "Price",
+          "spellings": [
+            "Price"
+          ],
+          "envelope": false
+        },
+        {
+          "name": "Quantity",
+          "spellings": [
+            "Quantity"
+          ],
+          "envelope": false
+        },
+        {
+          "name": "SelfTrade",
+          "spellings": [
+            "SelfTrade",
+            "self-trade",
+            "self_trade"
+          ],
+          "envelope": false
+        },
+        {
+          "name": "Stp",
+          "spellings": [
+            "Stp"
+          ],
+          "envelope": false
+        },
+        {
+          "name": "Tif",
+          "spellings": [
+            "Tif"
+          ],
+          "envelope": false
+        },
+        {
+          "name": "TimeInForce",
+          "spellings": [
+            "TimeInForce",
+            "time-in-force",
+            "time_in_force"
+          ],
+          "envelope": false
+        }
+      ],
+      "envelopeTags": [
+        "Address",
+        "commitments",
+        "From"
+      ],
+      "spends": [],
+      "refusals": [],
+      "computedRefusals": 1,
+      "documented": false
+    },
+    {
+      "action": "Economy.Order.Cancel",
+      "group": "player",
+      "sourceLine": 2417,
+      "signed": true,
+      "requiresPass": true,
+      "ownerOnly": false,
+      "crossProcess": false,
+      "replayGuarded": false,
+      "usesTimestamp": true,
+      "tags": [
+        {
+          "name": "ActionId",
+          "spellings": [
+            "ActionId"
+          ],
+          "envelope": false
+        },
+        {
+          "name": "OrderId",
+          "spellings": [
+            "OrderId"
+          ],
+          "envelope": false
+        }
+      ],
+      "envelopeTags": [
+        "Address",
+        "commitments",
+        "From"
+      ],
+      "spends": [],
+      "refusals": [],
+      "computedRefusals": 1,
+      "documented": false
+    },
+    {
+      "action": "Economy.Order.CancelAll",
+      "group": "player",
+      "sourceLine": 2437,
+      "signed": true,
+      "requiresPass": true,
+      "ownerOnly": false,
+      "crossProcess": false,
+      "replayGuarded": false,
+      "usesTimestamp": true,
+      "tags": [
+        {
+          "name": "ActionId",
+          "spellings": [
+            "ActionId"
+          ],
+          "envelope": false
+        },
+        {
+          "name": "Item",
+          "spellings": [
+            "Item"
+          ],
+          "envelope": false
+        },
+        {
+          "name": "OrderIds",
+          "spellings": [
+            "OrderIds"
+          ],
+          "envelope": false
+        }
+      ],
+      "envelopeTags": [
+        "Address",
+        "commitments",
+        "From"
+      ],
+      "spends": [],
+      "refusals": [],
+      "computedRefusals": 1,
+      "documented": false
+    },
+    {
+      "action": "Economy.Order.Maintain",
+      "group": "player",
+      "sourceLine": 2456,
+      "signed": true,
+      "requiresPass": true,
+      "ownerOnly": false,
+      "crossProcess": false,
+      "replayGuarded": false,
+      "usesTimestamp": true,
+      "tags": [
+        {
+          "name": "Limit",
+          "spellings": [
+            "Limit"
+          ],
+          "envelope": false
+        }
+      ],
+      "envelopeTags": [
+        "Address",
+        "commitments",
+        "From"
+      ],
+      "spends": [],
+      "refusals": [],
+      "computedRefusals": 0,
+      "documented": false
+    },
+    {
+      "action": "Economy.Order.Place",
+      "group": "player",
+      "sourceLine": 2378,
+      "signed": true,
+      "requiresPass": true,
+      "ownerOnly": false,
+      "crossProcess": false,
+      "replayGuarded": false,
+      "usesTimestamp": true,
+      "tags": [
+        {
+          "name": "ActionId",
+          "spellings": [
+            "ActionId"
+          ],
+          "envelope": false
+        },
+        {
+          "name": "ExpiresIn",
+          "spellings": [
+            "ExpiresIn",
+            "expires-in",
+            "expiresin"
+          ],
+          "envelope": false
+        },
+        {
+          "name": "Item",
+          "spellings": [
+            "Item"
+          ],
+          "envelope": false
+        },
+        {
+          "name": "Price",
+          "spellings": [
+            "Price"
+          ],
+          "envelope": false
+        },
+        {
+          "name": "Quantity",
+          "spellings": [
+            "Quantity"
+          ],
+          "envelope": false
+        },
+        {
+          "name": "SelfTrade",
+          "spellings": [
+            "SelfTrade",
+            "self-trade",
+            "self_trade"
+          ],
+          "envelope": false
+        },
+        {
+          "name": "Side",
+          "spellings": [
+            "Side"
+          ],
+          "envelope": false
+        },
+        {
+          "name": "Stp",
+          "spellings": [
+            "Stp"
+          ],
+          "envelope": false
+        },
+        {
+          "name": "Tif",
+          "spellings": [
+            "Tif"
+          ],
+          "envelope": false
+        },
+        {
+          "name": "TimeInForce",
+          "spellings": [
+            "TimeInForce",
+            "time-in-force",
+            "time_in_force"
+          ],
+          "envelope": false
+        }
+      ],
+      "envelopeTags": [
+        "Address",
+        "commitments",
+        "From"
+      ],
+      "spends": [],
+      "refusals": [],
+      "computedRefusals": 1,
+      "documented": false
+    },
+    {
+      "action": "Economy.Shop.Trade",
+      "group": "player",
+      "sourceLine": 2467,
+      "signed": true,
+      "requiresPass": true,
+      "ownerOnly": false,
+      "crossProcess": false,
+      "replayGuarded": false,
+      "usesTimestamp": true,
+      "tags": [
+        {
+          "name": "ActionId",
+          "spellings": [
+            "ActionId"
+          ],
+          "envelope": false
+        },
+        {
+          "name": "Item",
+          "spellings": [
+            "Item"
+          ],
+          "envelope": false
+        },
+        {
+          "name": "Quantity",
+          "spellings": [
+            "Quantity"
+          ],
+          "envelope": false
+        },
+        {
+          "name": "Side",
+          "spellings": [
+            "Side"
+          ],
+          "envelope": false
+        }
+      ],
+      "envelopeTags": [
+        "Address",
+        "commitments",
+        "From"
+      ],
+      "spends": [],
+      "refusals": [],
+      "computedRefusals": 1,
+      "documented": false
+    },
+    {
+      "action": "Economy.View",
+      "group": "player",
+      "sourceLine": 2325,
+      "signed": false,
+      "requiresPass": false,
+      "ownerOnly": false,
+      "crossProcess": false,
+      "replayGuarded": false,
+      "usesTimestamp": true,
+      "tags": [],
+      "envelopeTags": [],
+      "spends": [],
+      "refusals": [],
+      "computedRefusals": 0,
+      "documented": false
+    },
+    {
+      "action": "Faction.Join",
+      "group": "player",
+      "sourceLine": 1929,
+      "signed": true,
+      "requiresPass": true,
+      "ownerOnly": false,
+      "crossProcess": false,
+      "replayGuarded": false,
+      "usesTimestamp": true,
+      "tags": [
+        {
+          "name": "Faction",
+          "spellings": [
+            "Faction"
+          ],
+          "envelope": false
+        }
+      ],
+      "envelopeTags": [
+        "Address",
+        "commitments",
+        "From"
+      ],
+      "spends": [],
+      "refusals": [
+        "Faction has no companion configured",
+        "No signer address",
+        "Unknown faction '…",
+        "You have already sworn to …"
+      ],
+      "computedRefusals": 0,
+      "documented": false
+    },
+    {
+      "action": "Faction.List",
+      "group": "player",
+      "sourceLine": 1925,
+      "signed": false,
+      "requiresPass": false,
+      "ownerOnly": false,
+      "crossProcess": false,
+      "replayGuarded": false,
+      "usesTimestamp": false,
+      "tags": [],
+      "envelopeTags": [],
+      "spends": [],
+      "refusals": [],
+      "computedRefusals": 0,
+      "documented": false
+    },
+    {
+      "action": "Hunt.Begin",
+      "group": "player",
+      "sourceLine": 4010,
+      "signed": true,
+      "requiresPass": true,
+      "ownerOnly": false,
+      "crossProcess": false,
+      "replayGuarded": false,
+      "usesTimestamp": true,
+      "tags": [
+        {
+          "name": "MonsterId",
+          "spellings": [
+            "MonsterId"
+          ],
+          "envelope": false
+        }
+      ],
+      "envelopeTags": [
+        "Address",
+        "commitments",
+        "From"
+      ],
+      "spends": [
+        "{item}"
+      ],
+      "refusals": [
+        "Finish your battle first",
+        "Hunting is not configured yet",
+        "No Monster Index entries are currently catchable",
+        "You already have an open hunt",
+        "Your companion is busy: …"
+      ],
+      "computedRefusals": 3,
+      "documented": false
+    },
+    {
+      "action": "Hunt.Opened",
+      "group": "process",
+      "sourceLine": 4091,
+      "signed": false,
+      "requiresPass": false,
+      "ownerOnly": false,
+      "crossProcess": false,
+      "replayGuarded": false,
+      "usesTimestamp": false,
+      "tags": [
+        {
+          "name": "PlayerId",
+          "spellings": [
+            "PlayerId",
+            "player-id"
+          ],
+          "envelope": false
+        },
+        {
+          "name": "RunId",
+          "spellings": [
+            "RunId",
+            "run-id"
+          ],
+          "envelope": false
+        }
+      ],
+      "envelopeTags": [],
+      "spends": [],
+      "refusals": [
+        "Hunt route not found"
+      ],
+      "computedRefusals": 2,
+      "documented": false
+    },
+    {
+      "action": "Hunt.Released",
+      "group": "process",
+      "sourceLine": 4106,
+      "signed": false,
+      "requiresPass": false,
+      "ownerOnly": false,
+      "crossProcess": false,
+      "replayGuarded": false,
+      "usesTimestamp": true,
+      "tags": [
+        {
+          "name": "PlayerId",
+          "spellings": [
+            "PlayerId",
+            "player-id"
+          ],
+          "envelope": false
+        },
+        {
+          "name": "RunId",
+          "spellings": [
+            "RunId",
+            "run-id"
+          ],
+          "envelope": false
+        }
+      ],
+      "envelopeTags": [],
+      "spends": [],
+      "refusals": [],
+      "computedRefusals": 2,
+      "documented": false
+    },
+    {
+      "action": "Hunt.Settle",
+      "group": "process",
+      "sourceLine": 4169,
+      "signed": false,
+      "requiresPass": false,
+      "ownerOnly": false,
+      "crossProcess": true,
+      "replayGuarded": true,
+      "usesTimestamp": true,
+      "tags": [
+        {
+          "name": "PlayerId",
+          "spellings": [
+            "PlayerId",
+            "player-id"
+          ],
+          "envelope": false
+        },
+        {
+          "name": "RunId",
+          "spellings": [
+            "RunId",
+            "run-id"
+          ],
+          "envelope": false
+        },
+        {
+          "name": "SettlementId",
+          "spellings": [
+            "SettlementId",
+            "settlement-id"
+          ],
+          "envelope": false
+        }
+      ],
+      "envelopeTags": [
+        "commitments",
+        "FromProcess"
+      ],
+      "spends": "the Rune bid AND one Scroll, whether the binding holds or breaks",
+      "refusals": [
+        "Binding needs …",
+        "Capture does not match an open hunt",
+        "Capture roll is invalid",
+        "Capture settlement identity is invalid",
+        "Hunt process is not assigned to this run",
+        "Settlement id belongs to another capture",
+        "You do not hold enough Runes for that capture bid"
+      ],
+      "computedRefusals": 2,
+      "documented": true,
+      "summary": "Settle one capture attempt. Emitted by the Hunt worker, never signed by a player.",
+      "requires": "an open run this process assigned, rune >= bid, scroll >= scrollCost",
+      "pays": "on success, the exact defeated creature into the collection",
+      "note": "Idempotent on settlement-id: a retry is acknowledged, never paid twice. Both prices are checked before either is spent, because the worker retries a refusal and a half-charge would be charged again."
+    },
+    {
+      "action": "Leaderboard",
+      "group": "player",
+      "sourceLine": 5640,
+      "signed": false,
+      "requiresPass": false,
+      "ownerOnly": false,
+      "crossProcess": false,
+      "replayGuarded": false,
+      "usesTimestamp": false,
+      "tags": [
+        {
+          "name": "Limit",
+          "spellings": [
+            "Limit"
+          ],
+          "envelope": false
+        }
+      ],
+      "envelopeTags": [],
+      "spends": [],
+      "refusals": [],
+      "computedRefusals": 0,
+      "documented": false
+    },
+    {
+      "action": "Lootbox.Open",
+      "group": "player",
+      "sourceLine": 3773,
+      "signed": true,
+      "requiresPass": true,
+      "ownerOnly": false,
+      "crossProcess": false,
+      "replayGuarded": false,
+      "usesTimestamp": true,
+      "tags": [
+        {
+          "name": "Rarity",
+          "spellings": [
+            "Rarity"
+          ],
+          "envelope": false
+        }
+      ],
+      "envelopeTags": [
+        "Address",
+        "commitments",
+        "From"
+      ],
+      "spends": "the crate",
+      "refusals": [
+        "No loot boxes to open",
+        "No tier …"
+      ],
+      "computedRefusals": 0,
+      "documented": true,
+      "summary": "Open one crate and take what is in it.",
+      "requires": "at least one crate held",
+      "pays": "`picks` distinct berries, your own element first, plus Scrolls by tier",
+      "note": "Omit Rarity and the BEST crate on hand is opened, not the first."
+    },
+    {
+      "action": "Market.Buy",
+      "group": "player",
+      "sourceLine": 2269,
+      "signed": true,
+      "requiresPass": true,
+      "ownerOnly": false,
+      "crossProcess": false,
+      "replayGuarded": false,
+      "usesTimestamp": true,
+      "tags": [
+        {
+          "name": "ListingId",
+          "spellings": [
+            "ListingId"
+          ],
+          "envelope": false
+        }
+      ],
+      "envelopeTags": [
+        "Address",
+        "commitments",
+        "From"
+      ],
+      "spends": [
+        "rune"
+      ],
+      "refusals": [
+        "No such listing",
+        "That costs …",
+        "You cannot buy your own listing"
+      ],
+      "computedRefusals": 0,
+      "documented": false
+    },
+    {
+      "action": "Market.Cancel",
+      "group": "player",
+      "sourceLine": 2245,
+      "signed": true,
+      "requiresPass": true,
+      "ownerOnly": false,
+      "crossProcess": false,
+      "replayGuarded": false,
+      "usesTimestamp": true,
+      "tags": [
+        {
+          "name": "ListingId",
+          "spellings": [
+            "ListingId"
+          ],
+          "envelope": false
+        }
+      ],
+      "envelopeTags": [
+        "Address",
+        "commitments",
+        "From"
+      ],
+      "spends": [],
+      "refusals": [
+        "No such listing",
+        "That is not your listing"
+      ],
+      "computedRefusals": 0,
+      "documented": false
+    },
+    {
+      "action": "Market.List",
+      "group": "player",
+      "sourceLine": 2208,
+      "signed": true,
+      "requiresPass": true,
+      "ownerOnly": false,
+      "crossProcess": false,
+      "replayGuarded": false,
+      "usesTimestamp": true,
+      "tags": [
+        {
+          "name": "MonsterId",
+          "spellings": [
+            "MonsterId"
+          ],
+          "envelope": false
+        },
+        {
+          "name": "Price",
+          "spellings": [
+            "Price"
+          ],
+          "envelope": false
+        }
+      ],
+      "envelopeTags": [
+        "Address",
+        "commitments",
+        "From"
+      ],
+      "spends": [],
+      "refusals": [
+        "Only a companion in your collection can be listed",
+        "Price must be between "
+      ],
+      "computedRefusals": 0,
+      "documented": false
+    },
+    {
+      "action": "Monster.Adopt",
+      "group": "player",
+      "sourceLine": 1990,
+      "signed": true,
+      "requiresPass": true,
+      "ownerOnly": false,
+      "crossProcess": false,
+      "replayGuarded": false,
+      "usesTimestamp": true,
+      "tags": [],
+      "envelopeTags": [
+        "Address",
+        "commitments",
+        "From"
+      ],
+      "spends": [],
+      "refusals": [
+        "Faction has no companion configured",
+        "Join a faction before adopting",
+        "You have already adopted; companions now come from the market"
+      ],
+      "computedRefusals": 0,
+      "documented": false
+    },
+    {
+      "action": "Monster.Claim",
+      "group": "player",
+      "sourceLine": 2738,
+      "signed": true,
+      "requiresPass": true,
+      "ownerOnly": false,
+      "crossProcess": false,
+      "replayGuarded": false,
+      "usesTimestamp": true,
+      "tags": [
+        {
+          "name": "MonsterId",
+          "spellings": [
+            "MonsterId"
+          ],
+          "envelope": false
+        }
+      ],
+      "envelopeTags": [
+        "Address",
+        "commitments",
+        "From"
+      ],
+      "spends": [],
+      "refusals": [
+        "Nothing to claim"
+      ],
+      "computedRefusals": 2,
+      "documented": false
+    },
+    {
+      "action": "Monster.Deposit",
+      "group": "player",
+      "sourceLine": 5740,
+      "signed": true,
+      "requiresPass": true,
+      "ownerOnly": false,
+      "crossProcess": false,
+      "replayGuarded": false,
+      "usesTimestamp": true,
+      "tags": [
+        {
+          "name": "AssetId",
+          "spellings": [
+            "AssetId"
+          ],
+          "envelope": false
+        }
+      ],
+      "envelopeTags": [
+        "Address",
+        "commitments",
+        "From"
+      ],
+      "spends": [],
+      "refusals": [
+        "Already waiting on that asset",
+        "AssetId must be an Arweave id",
+        "Companion asset import is parked for the economy launch",
+        "Release or mint your companion first",
+        "That asset did not leave this account"
+      ],
+      "computedRefusals": 0,
+      "documented": false
+    },
+    {
+      "action": "Monster.Feed",
+      "group": "player",
+      "sourceLine": 2628,
+      "signed": true,
+      "requiresPass": true,
+      "ownerOnly": false,
+      "crossProcess": false,
+      "replayGuarded": false,
+      "usesTimestamp": true,
+      "tags": [
+        {
+          "name": "Item",
+          "spellings": [
+            "Item"
+          ],
+          "envelope": false
+        },
+        {
+          "name": "MonsterId",
+          "spellings": [
+            "MonsterId"
+          ],
+          "envelope": false
+        }
+      ],
+      "envelopeTags": [
+        "Address",
+        "commitments",
+        "From"
+      ],
+      "spends": [
+        "{item}"
+      ],
+      "refusals": [
+        "'…",
+        "Already at full energy",
+        "You have no …",
+        "Your companion is being minted"
+      ],
+      "computedRefusals": 1,
+      "documented": false
+    },
+    {
+      "action": "Monster.LearnMove",
+      "group": "player",
+      "sourceLine": 2896,
+      "signed": true,
+      "requiresPass": true,
+      "ownerOnly": false,
+      "crossProcess": false,
+      "replayGuarded": false,
+      "usesTimestamp": true,
+      "tags": [
+        {
+          "name": "Move",
+          "spellings": [
+            "Move"
+          ],
+          "envelope": false
+        },
+        {
+          "name": "Replace",
+          "spellings": [
+            "Replace"
+          ],
+          "envelope": false
+        }
+      ],
+      "envelopeTags": [
+        "Address",
+        "commitments",
+        "From"
+      ],
+      "spends": [],
+      "refusals": [
+        "No companion",
+        "Nothing is waiting to be learned",
+        "That would leave your companion with nothing that deals damage",
+        "The offer is …",
+        "Your companion does not know …",
+        "Your companion has no move it can give up",
+        "Your companion is being minted"
+      ],
+      "computedRefusals": 2,
+      "documented": false
+    },
+    {
+      "action": "Monster.LevelUp",
+      "group": "player",
+      "sourceLine": 2785,
+      "signed": true,
+      "requiresPass": true,
+      "ownerOnly": false,
+      "crossProcess": false,
+      "replayGuarded": false,
+      "usesTimestamp": true,
+      "tags": [
+        {
+          "name": "AttackPoints",
+          "spellings": [
+            "AttackPoints"
+          ],
+          "envelope": false
+        },
+        {
+          "name": "DefensePoints",
+          "spellings": [
+            "DefensePoints"
+          ],
+          "envelope": false
+        },
+        {
+          "name": "HealthPoints",
+          "spellings": [
+            "HealthPoints"
+          ],
+          "envelope": false
+        },
+        {
+          "name": "SpeedPoints",
+          "spellings": [
+            "SpeedPoints"
+          ],
+          "envelope": false
+        }
+      ],
+      "envelopeTags": [
+        "Address",
+        "commitments",
+        "From"
+      ],
+      "spends": [
+        "rune"
+      ],
+      "refusals": [
+        "Allocate exactly …",
+        "At most …",
+        "Levelling to …",
+        "Needs …",
+        "No companion",
+        "Your companion is being minted"
+      ],
+      "computedRefusals": 0,
+      "documented": false
+    },
+    {
+      "action": "Monster.Mint",
+      "group": "player",
+      "sourceLine": 5690,
+      "signed": true,
+      "requiresPass": true,
+      "ownerOnly": false,
+      "crossProcess": false,
+      "replayGuarded": false,
+      "usesTimestamp": true,
+      "tags": [],
+      "envelopeTags": [
+        "Address",
+        "commitments",
+        "From"
+      ],
+      "spends": [
+        "{cost.item}"
+      ],
+      "refusals": [
+        "A mint is already in flight",
+        "Minting costs …",
+        "Minting to Arweave is paused",
+        "No companion to mint",
+        "Your companion is busy: …"
+      ],
+      "computedRefusals": 0,
+      "documented": false
+    },
+    {
+      "action": "Monster.Play",
+      "group": "player",
+      "sourceLine": 2658,
+      "signed": true,
+      "requiresPass": true,
+      "ownerOnly": false,
+      "crossProcess": false,
+      "replayGuarded": false,
+      "usesTimestamp": true,
+      "tags": [
+        {
+          "name": "Item",
+          "spellings": [
+            "Item"
+          ],
+          "envelope": false
+        },
+        {
+          "name": "MonsterId",
+          "spellings": [
+            "MonsterId"
+          ],
+          "envelope": false
+        }
+      ],
+      "envelopeTags": [
+        "Address",
+        "commitments",
+        "From"
+      ],
+      "spends": [
+        "{item}"
+      ],
+      "refusals": [
+        "'…",
+        "Not enough energy",
+        "You have no …",
+        "Your companion has no berry to play with",
+        "Your companion is busy: …"
+      ],
+      "computedRefusals": 2,
+      "documented": false
+    },
+    {
+      "action": "Monster.Quest",
+      "group": "player",
+      "sourceLine": 2709,
+      "signed": true,
+      "requiresPass": true,
+      "ownerOnly": false,
+      "crossProcess": false,
+      "replayGuarded": false,
+      "usesTimestamp": true,
+      "tags": [
+        {
+          "name": "MonsterId",
+          "spellings": [
+            "MonsterId"
+          ],
+          "envelope": false
+        }
+      ],
+      "envelopeTags": [
+        "Address",
+        "commitments",
+        "From"
+      ],
+      "spends": "25 energy, 25 happiness",
+      "refusals": [
+        "A quest costs …",
+        "Not enough energy",
+        "Not happy enough",
+        "Your companion is busy: …"
+      ],
+      "computedRefusals": 2,
+      "documented": true,
+      "summary": "Send the companion away for an hour. The slow, safe verb.",
+      "requires": "status Home, no other activity, energy >= 25, happiness >= 25",
+      "pays": "exp, and Gold from the shared 20-hour allowance -- no items",
+      "then": "Monster.Claim, once the duration has elapsed",
+      "note": "Items come from the daily crate, never from a verb. A quest paid a crate until 2026-09-06 and that was the largest unintended faucet in the economy."
+    },
+    {
+      "action": "Monster.Retrieve",
+      "group": "player",
+      "sourceLine": 2075,
+      "signed": true,
+      "requiresPass": true,
+      "ownerOnly": false,
+      "crossProcess": false,
+      "replayGuarded": false,
+      "usesTimestamp": true,
+      "tags": [
+        {
+          "name": "MonsterId",
+          "spellings": [
+            "MonsterId"
+          ],
+          "envelope": false
+        }
+      ],
+      "envelopeTags": [
+        "Address",
+        "commitments",
+        "From"
+      ],
+      "spends": [],
+      "refusals": [
+        "No such companion in your collection",
+        "Switch companions instead; you already have an active companion"
+      ],
+      "computedRefusals": 0,
+      "documented": false
+    },
+    {
+      "action": "Monster.SetActive",
+      "group": "player",
+      "sourceLine": 2104,
+      "signed": true,
+      "requiresPass": true,
+      "ownerOnly": false,
+      "crossProcess": false,
+      "replayGuarded": false,
+      "usesTimestamp": true,
+      "tags": [
+        {
+          "name": "MonsterId",
+          "spellings": [
+            "MonsterId"
+          ],
+          "envelope": false
+        }
+      ],
+      "envelopeTags": [
+        "Address",
+        "commitments",
+        "From"
+      ],
+      "spends": [],
+      "refusals": [
+        "Finish your arena session first",
+        "Finish your hunt first",
+        "No such companion in your collection",
+        "That companion is not ready to become active",
+        "Your companion is busy: …"
+      ],
+      "computedRefusals": 0,
+      "documented": false
+    },
+    {
+      "action": "Monster.Store",
+      "group": "player",
+      "sourceLine": 2050,
+      "signed": true,
+      "requiresPass": true,
+      "ownerOnly": false,
+      "crossProcess": false,
+      "replayGuarded": false,
+      "usesTimestamp": true,
+      "tags": [
+        {
+          "name": "MonsterId",
+          "spellings": [
+            "MonsterId"
+          ],
+          "envelope": false
+        }
+      ],
+      "envelopeTags": [
+        "Address",
+        "commitments",
+        "From"
+      ],
+      "spends": [
+        "{cost.item}"
+      ],
+      "refusals": [
+        "Finish your battle first",
+        "Storing a companion costs ",
+        "Your companion is busy: …"
+      ],
+      "computedRefusals": 1,
+      "documented": false
+    },
+    {
+      "action": "Monster.Transfer",
+      "group": "player",
+      "sourceLine": 2145,
+      "signed": true,
+      "requiresPass": true,
+      "ownerOnly": false,
+      "crossProcess": false,
+      "replayGuarded": false,
+      "usesTimestamp": true,
+      "tags": [
+        {
+          "name": "MonsterId",
+          "spellings": [
+            "MonsterId"
+          ],
+          "envelope": false
+        },
+        {
+          "name": "Recipient",
+          "spellings": [
+            "Recipient"
+          ],
+          "envelope": false
+        }
+      ],
+      "envelopeTags": [
+        "Address",
+        "commitments",
+        "From"
+      ],
+      "spends": [],
+      "refusals": [
+        "No such account",
+        "Only a companion in your collection can be transferred",
+        "Recipient must be an Arweave address",
+        "That is already your companion"
+      ],
+      "computedRefusals": 0,
+      "documented": false
+    },
+    {
+      "action": "Pass.BeginUnbond",
+      "group": "player",
+      "sourceLine": 2596,
+      "signed": true,
+      "requiresPass": true,
+      "ownerOnly": false,
+      "crossProcess": false,
+      "replayGuarded": false,
+      "usesTimestamp": true,
+      "tags": [],
+      "envelopeTags": [
+        "Address",
+        "commitments",
+        "From"
+      ],
+      "spends": [],
+      "refusals": [
+        "This pass has no Rune bond",
+        "Unbonding is already in progress"
+      ],
+      "computedRefusals": 0,
+      "documented": false
+    },
+    {
+      "action": "Pass.Bond",
+      "group": "player",
+      "sourceLine": 2578,
+      "signed": true,
+      "requiresPass": true,
+      "ownerOnly": false,
+      "crossProcess": false,
+      "replayGuarded": false,
+      "usesTimestamp": true,
+      "tags": [],
+      "envelopeTags": [
+        "Address",
+        "commitments",
+        "From"
+      ],
+      "spends": [
+        "rune"
+      ],
+      "refusals": [
+        "Finish or cancel the existing unbond first",
+        "Not enough Rune for the configured bond",
+        "Rune bonding is not enabled",
+        "The pass already holds the required Rune bond"
+      ],
+      "computedRefusals": 0,
+      "documented": false
+    },
+    {
+      "action": "Pass.ClaimPromise",
+      "group": "player",
+      "sourceLine": 2493,
+      "signed": true,
+      "requiresPass": false,
+      "ownerOnly": false,
+      "crossProcess": false,
+      "replayGuarded": false,
+      "usesTimestamp": true,
+      "tags": [
+        {
+          "name": "ClaimId",
+          "spellings": [
+            "ClaimId"
+          ],
+          "envelope": false
+        }
+      ],
+      "envelopeTags": [
+        "Address",
+        "commitments",
+        "From"
+      ],
+      "spends": [],
+      "refusals": [
+        "ClaimId must be a public one-use promise reference",
+        "No promised pass slots remain",
+        "No signer address",
+        "That promised-pass claim was already used",
+        "The promised-pass claim window has closed",
+        "The promised-pass manifest is not sealed",
+        "This account already has a pass"
+      ],
+      "computedRefusals": 0,
+      "documented": false
+    },
+    {
+      "action": "Pass.CompleteUnbond",
+      "group": "player",
+      "sourceLine": 2611,
+      "signed": true,
+      "requiresPass": true,
+      "ownerOnly": false,
+      "crossProcess": false,
+      "replayGuarded": false,
+      "usesTimestamp": true,
+      "tags": [],
+      "envelopeTags": [
+        "Address",
+        "commitments",
+        "From"
+      ],
+      "spends": [],
+      "refusals": [
+        "No Rune unbond is in progress",
+        "The Rune bond is still locked"
+      ],
+      "computedRefusals": 0,
+      "documented": false
+    },
+    {
+      "action": "Pass.Info",
+      "group": "player",
+      "sourceLine": 2483,
+      "signed": true,
+      "requiresPass": false,
+      "ownerOnly": false,
+      "crossProcess": false,
+      "replayGuarded": false,
+      "usesTimestamp": true,
+      "tags": [],
+      "envelopeTags": [
+        "Address",
+        "commitments",
+        "From"
+      ],
+      "spends": [],
+      "refusals": [],
+      "computedRefusals": 0,
+      "documented": false
+    },
+    {
+      "action": "Pass.Recover",
+      "group": "player",
+      "sourceLine": 2535,
+      "signed": true,
+      "requiresPass": false,
+      "ownerOnly": false,
+      "crossProcess": false,
+      "replayGuarded": false,
+      "usesTimestamp": true,
+      "tags": [
+        {
+          "name": "Account",
+          "spellings": [
+            "Account"
+          ],
+          "envelope": false
+        },
+        {
+          "name": "NewController",
+          "spellings": [
+            "NewController"
+          ],
+          "envelope": false
+        }
+      ],
+      "envelopeTags": [
+        "Address",
+        "commitments",
+        "From"
+      ],
+      "spends": [],
+      "refusals": [
+        "NewController must be a 43-character address",
+        "No such recoverable account",
+        "Not authorised",
+        "The new controller already has an account"
+      ],
+      "computedRefusals": 1,
+      "documented": false
+    },
+    {
+      "action": "Pass.SetRecovery",
+      "group": "player",
+      "sourceLine": 2520,
+      "signed": true,
+      "requiresPass": true,
+      "ownerOnly": false,
+      "crossProcess": false,
+      "replayGuarded": false,
+      "usesTimestamp": true,
+      "tags": [
+        {
+          "name": "Recovery",
+          "spellings": [
+            "Recovery"
+          ],
+          "envelope": false
+        }
+      ],
+      "envelopeTags": [
+        "Address",
+        "commitments",
+        "From"
+      ],
+      "spends": [],
+      "refusals": [
+        "Recovery must be a different 43-character address"
+      ],
+      "computedRefusals": 0,
+      "documented": false
+    },
+    {
+      "action": "Rune.Deposits",
+      "group": "player",
+      "sourceLine": 3749,
+      "signed": true,
+      "requiresPass": false,
+      "ownerOnly": false,
+      "crossProcess": false,
+      "replayGuarded": false,
+      "usesTimestamp": false,
+      "tags": [],
+      "envelopeTags": [
+        "Address",
+        "commitments",
+        "From"
+      ],
+      "spends": [],
+      "refusals": [],
+      "computedRefusals": 0,
+      "documented": false
+    },
+    {
+      "action": "Rune.Minted",
+      "group": "player",
+      "sourceLine": 3451,
+      "signed": false,
+      "requiresPass": false,
+      "ownerOnly": false,
+      "crossProcess": true,
+      "replayGuarded": false,
+      "usesTimestamp": true,
+      "tags": [
+        {
+          "name": "Quantity",
+          "spellings": [
+            "Quantity"
+          ],
+          "envelope": false
+        },
+        {
+          "name": "Reference",
+          "spellings": [
+            "Reference",
+            "reference"
+          ],
+          "envelope": false
+        }
+      ],
+      "envelopeTags": [
+        "commitments",
+        "FromProcess"
+      ],
+      "spends": [],
+      "refusals": [
+        "Confirmed …",
+        "No such withdrawal",
+        "Not authorised"
+      ],
+      "computedRefusals": 0,
+      "documented": false
+    },
+    {
+      "action": "Rune.Withdraw",
+      "group": "player",
+      "sourceLine": 3358,
+      "signed": true,
+      "requiresPass": true,
+      "ownerOnly": false,
+      "crossProcess": false,
+      "replayGuarded": false,
+      "usesTimestamp": true,
+      "tags": [
+        {
+          "name": "Amount",
+          "spellings": [
+            "Amount"
+          ],
+          "envelope": false
+        }
+      ],
+      "envelopeTags": [
+        "Address",
+        "commitments",
+        "From"
+      ],
+      "spends": [
+        "rune"
+      ],
+      "refusals": [
+        "Withdraw at least …",
+        "Withdrawals are not open yet",
+        "You hold …"
+      ],
+      "computedRefusals": 0,
+      "documented": false
+    },
+    {
+      "action": "Rune.Withdrawals",
+      "group": "player",
+      "sourceLine": 3758,
+      "signed": true,
+      "requiresPass": false,
+      "ownerOnly": false,
+      "crossProcess": false,
+      "replayGuarded": false,
+      "usesTimestamp": false,
+      "tags": [],
+      "envelopeTags": [
+        "Address",
+        "commitments",
+        "From"
+      ],
+      "spends": [],
+      "refusals": [],
+      "computedRefusals": 0,
+      "documented": false
+    },
+    {
+      "action": "Sprite.Update",
+      "group": "player",
+      "sourceLine": 3013,
+      "signed": true,
+      "requiresPass": true,
+      "ownerOnly": false,
+      "crossProcess": false,
+      "replayGuarded": false,
+      "usesTimestamp": true,
+      "tags": [
+        {
+          "name": "AtlasTxId",
+          "spellings": [
+            "AtlasTxId"
+          ],
+          "envelope": false
+        },
+        {
+          "name": "body",
+          "spellings": [
+            "body"
+          ],
+          "envelope": false
+        },
+        {
+          "name": "Data",
+          "spellings": [
+            "Data",
+            "data"
+          ],
+          "envelope": false
+        },
+        {
+          "name": "SpriteAtlasTxId",
+          "spellings": [
+            "SpriteAtlasTxId"
+          ],
+          "envelope": false
+        },
+        {
+          "name": "SpriteTxId",
+          "spellings": [
+            "SpriteTxId"
+          ],
+          "envelope": false
+        },
+        {
+          "name": "TxId",
+          "spellings": [
+            "TxId"
+          ],
+          "envelope": false
+        }
+      ],
+      "envelopeTags": [
+        "Address",
+        "commitments",
+        "From"
+      ],
+      "spends": [],
+      "refusals": [
+        "AtlasTxId must be a 43-character Arweave transaction id",
+        "Body must be valid JSON",
+        "TxId must be a 43-character Arweave transaction id"
+      ],
+      "computedRefusals": 1,
+      "documented": false
+    },
+    {
+      "action": "Stats",
+      "group": "player",
+      "sourceLine": 5644,
+      "signed": false,
+      "requiresPass": false,
+      "ownerOnly": false,
+      "crossProcess": false,
+      "replayGuarded": false,
+      "usesTimestamp": true,
+      "tags": [],
+      "envelopeTags": [],
+      "spends": [],
+      "refusals": [],
+      "computedRefusals": 0,
+      "documented": false
+    },
+    {
+      "action": "User.Info",
+      "group": "player",
+      "sourceLine": 1499,
+      "signed": true,
+      "requiresPass": false,
+      "ownerOnly": false,
+      "crossProcess": false,
+      "replayGuarded": false,
+      "usesTimestamp": true,
+      "tags": [],
+      "envelopeTags": [
+        "Address",
+        "commitments",
+        "From"
+      ],
+      "spends": [],
+      "refusals": [
+        "No signer address"
+      ],
+      "computedRefusals": 0,
+      "documented": false
+    },
+    {
+      "action": "Venue.Credited",
+      "group": "player",
+      "sourceLine": 3653,
+      "signed": false,
+      "requiresPass": false,
+      "ownerOnly": false,
+      "crossProcess": true,
+      "replayGuarded": false,
+      "usesTimestamp": true,
+      "tags": [
+        {
+          "name": "Deposit-Id",
+          "spellings": [
+            "Deposit-Id"
+          ],
+          "envelope": false
+        },
+        {
+          "name": "Reference",
+          "spellings": [
+            "Reference",
+            "reference"
+          ],
+          "envelope": false
+        }
+      ],
+      "envelopeTags": [
+        "commitments",
+        "FromProcess"
+      ],
+      "spends": [],
+      "refusals": [
+        "No such venue send",
+        "Not authorised"
+      ],
+      "computedRefusals": 0,
+      "documented": false
+    },
+    {
+      "action": "Venue.Return",
+      "group": "player",
+      "sourceLine": 3683,
+      "signed": false,
+      "requiresPass": false,
+      "ownerOnly": false,
+      "crossProcess": true,
+      "replayGuarded": false,
+      "usesTimestamp": true,
+      "tags": [
+        {
+          "name": "Account",
+          "spellings": [
+            "Account",
+            "account"
+          ],
+          "envelope": false
+        },
+        {
+          "name": "Amount",
+          "spellings": [
+            "Amount"
+          ],
+          "envelope": false
+        },
+        {
+          "name": "Asset",
+          "spellings": [
+            "Asset"
+          ],
+          "envelope": false
+        },
+        {
+          "name": "Item",
+          "spellings": [
+            "Item"
+          ],
+          "envelope": false
+        },
+        {
+          "name": "PlayerId",
+          "spellings": [
+            "PlayerId"
+          ],
+          "envelope": false
+        },
+        {
+          "name": "Quantity",
+          "spellings": [
+            "Quantity"
+          ],
+          "envelope": false
+        },
+        {
+          "name": "Reference",
+          "spellings": [
+            "Reference",
+            "reference"
+          ],
+          "envelope": false
+        },
+        {
+          "name": "WithdrawalId",
+          "spellings": [
+            "Withdrawal-Id",
+            "WithdrawalId"
+          ],
+          "envelope": false
+        }
+      ],
+      "envelopeTags": [
+        "commitments",
+        "FromProcess"
+      ],
+      "spends": [],
+      "refusals": [
+        "A venue return must carry a Reference",
+        "Not authorised"
+      ],
+      "computedRefusals": 0,
+      "documented": false
+    },
+    {
+      "action": "Venue.Send",
+      "group": "player",
+      "sourceLine": 3605,
+      "signed": true,
+      "requiresPass": false,
+      "ownerOnly": false,
+      "crossProcess": false,
+      "replayGuarded": false,
+      "usesTimestamp": true,
+      "tags": [
+        {
+          "name": "Amount",
+          "spellings": [
+            "Amount"
+          ],
+          "envelope": false
+        },
+        {
+          "name": "Asset",
+          "spellings": [
+            "Asset"
+          ],
+          "envelope": false
+        },
+        {
+          "name": "Item",
+          "spellings": [
+            "Item"
+          ],
+          "envelope": false
+        },
+        {
+          "name": "Quantity",
+          "spellings": [
+            "Quantity"
+          ],
+          "envelope": false
+        }
+      ],
+      "envelopeTags": [
+        "Address",
+        "commitments",
+        "From"
+      ],
+      "spends": [],
+      "refusals": [
+        "The venue is not configured yet",
+        "Unsigned"
+      ],
+      "computedRefusals": 2,
+      "documented": false
+    },
+    {
+      "action": "Venue.Supply",
+      "group": "player",
+      "sourceLine": 3741,
+      "signed": false,
+      "requiresPass": false,
+      "ownerOnly": false,
+      "crossProcess": false,
+      "replayGuarded": false,
+      "usesTimestamp": false,
+      "tags": [],
+      "envelopeTags": [],
+      "spends": [],
+      "refusals": [],
+      "computedRefusals": 0,
+      "documented": false
+    }
+  ]
+}

@@ -137,6 +137,21 @@ Burned = Burned or 0
 --- travelling the other way.
 BurnSeq = BurnSeq or 0
 
+--- Counts the transfers, so every notice this token emits carries an id.
+---
+--- A `Credit-Notice` is how a recipient PROCESS learns it was paid, and
+--- delivery on this network is not exactly-once -- so a notice that arrives
+--- twice credits twice unless there is something to recognise the second copy
+--- by. `BurnSeq` already exists for exactly this reason on the deposit half of
+--- the bridge; this is the same idea for an ordinary transfer, and it is what
+--- lets an order-book venue key its deposits on the token's own word rather
+--- than on a message id it has to hope is stable.
+---
+--- NEVER RESET IT. The recipient's replay guard is keyed on
+--- `<this process>:<reference>`, so a counter that went backwards would make
+--- old references creditable again.
+TransferSeq = TransferSeq or 0
+
 --- withdrawal reference -> the amount already minted for it. THE MINT GUARD.
 ---
 --- The comment above says "the mint path already carries the game's withdrawal
@@ -486,6 +501,8 @@ H["Transfer"] = function(base, msg)
 
   credit(from, -amount)
   credit(to, amount)
+  TransferSeq = TransferSeq + 1
+  local reference = "t" .. asString(TransferSeq)
 
   -- Both sides of the move, so a recipient process can act on being paid and a
   -- sender's wallet can confirm what left. Delivery of these is the scheduler's
@@ -498,10 +515,14 @@ H["Transfer"] = function(base, msg)
     local debit = {
       target = from, Action = "Debit-Notice",
       Recipient = to, Quantity = asString(amount),
+      Reference = reference,
     }
     local credit_ = {
       target = to, Action = "Credit-Notice",
       Sender = from, Quantity = asString(amount),
+      -- This token's own id for this transfer. A recipient process keys its
+      -- replay guard on it; see `TransferSeq`.
+      Reference = reference,
     }
     for k, v in pairs(forwarded(msg)) do
       debit[k] = v

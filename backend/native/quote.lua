@@ -18,6 +18,21 @@ Balances = Balances or {}
 TotalSupply = TotalSupply or 0
 Minted = Minted or 0
 
+--- Counts the transfers, so every notice this token emits carries an id.
+---
+--- A `Credit-Notice` is how a recipient PROCESS learns it was paid, and
+--- delivery on this network is not exactly-once -- so a notice that arrives
+--- twice credits twice unless there is something to recognise the second copy
+--- by. `BurnSeq` already exists for exactly this reason on the deposit half of
+--- the bridge; this is the same idea for an ordinary transfer, and it is what
+--- lets an order-book venue key its deposits on the token's own word rather
+--- than on a message id it has to hope is stable.
+---
+--- NEVER RESET IT. The recipient's replay guard is keyed on
+--- `<this process>:<reference>`, so a counter that went backwards would make
+--- old references creditable again.
+TransferSeq = TransferSeq or 0
+
 local SIGNATURE_ALGS = { ["rsa-pss-sha512"] = true, ["rsa-pss-sha256"] = true }
 
 local function int(v, default)
@@ -193,10 +208,16 @@ H["Transfer"] = function(base, msg)
 
   credit(from, -amount)
   credit(to, amount)
+  TransferSeq = TransferSeq + 1
+  local reference = "t" .. asString(TransferSeq)
   local outbox = {}
   if not isCast(msg) then
-    local debit = { target = from, Action = "Debit-Notice", Recipient = to, Quantity = asString(amount) }
-    local notice = { target = to, Action = "Credit-Notice", Sender = from, Quantity = asString(amount) }
+    local debit = { target = from, Action = "Debit-Notice", Recipient = to,
+                    Quantity = asString(amount), Reference = reference }
+    -- `Reference` is this token's own id for the transfer. A recipient process
+    -- keys its replay guard on it; see `TransferSeq`.
+    local notice = { target = to, Action = "Credit-Notice", Sender = from,
+                     Quantity = asString(amount), Reference = reference }
     for k, v in pairs(forwarded(msg)) do debit[k] = v; notice[k] = v end
     outbox["debit-notice"] = debit
     outbox["credit-notice"] = notice

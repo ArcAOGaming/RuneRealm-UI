@@ -103,9 +103,18 @@ local function sortedKeys(value) -- luacheck: ignore
   return keys
 end
 
+--- `venue` is the IN-FLIGHT bucket: units this process issued that are not in
+--- this process any more.
+---
+--- They are not consumed -- nothing was destroyed -- and they are not held by a
+--- player here, so before this existed a unit handed to the internal venue
+--- simply fell out of `issued - consumed == player + escrow + shop` and the
+--- conservation invariant went red. Counting it keeps the identity true across
+--- the boundary and gives the three numbers worth publishing: the TOTAL
+--- outstanding, how much of it is IN the game, and how much is out at a venue.
 local function assetRow()
   return {
-    issued = 0, consumed = 0, player = 0, escrow = 0, shop = 0,
+    issued = 0, consumed = 0, player = 0, escrow = 0, shop = 0, venue = 0,
     daily = {}, sources = {}, sinks = {},
   }
 end
@@ -353,6 +362,9 @@ function M.newState()
       --- and the remainder of `launchSupply`; `goldInvariant` proves it.
       shop = 90000,
       locked = 210000,
+      --- Gold handed to the internal venue. See `assetRow`; the Gold ledger
+      --- needs the same bucket for the same reason.
+      venue = 0,
       feesRouted = 0,
       daily = {},
     },
@@ -459,7 +471,7 @@ end
 
 local function normaliseAsset(row)
   row = type(row) == "table" and row or assetRow()
-  for _, field in ipairs({ "issued", "consumed", "player", "escrow", "shop" }) do
+  for _, field in ipairs({ "issued", "consumed", "player", "escrow", "shop", "venue" }) do
     row[field] = math.max(0, int(row[field], 0))
   end
   row.daily = type(row.daily) == "table" and row.daily or {}
@@ -581,7 +593,7 @@ function M.normaliseV1(state)
   end
   state.gold = type(state.gold) == "table" and state.gold or M.newState().gold
   for _, field in ipairs({ "issued", "burned", "authorized", "ceiling", "player",
-                           "escrow", "shop", "locked", "feesRouted" }) do
+                           "escrow", "shop", "locked", "venue", "feesRouted" }) do
     state.gold[field] = math.max(0, int(state.gold[field], 0))
   end
   state.gold.daily = type(state.gold.daily) == "table" and state.gold.daily or {}
@@ -912,8 +924,27 @@ local function afterPlayer(p)
   return row
 end
 
+--- Verbs that do their own supply accounting, so this must do NONE.
+---
+--- `recordPlayerDeltas` infers what happened from how player records changed:
+--- a bag that got lighter is a consumption, one that got heavier is issuance.
+--- That inference is right for every gameplay verb and catastrophically wrong
+--- for a verb that already moved the buckets itself -- it would subtract the
+--- same units twice and record a sink that never happened.
+---
+--- The `Economy.` prefix below is the same rule for the order book. These are
+--- the venue bridge, where units cross to another process without being
+--- created or destroyed: `sendToVenue` and `returnFromVenue` move `player` and
+--- `venue` in one step, and anything this function added would be a second one.
+local MANAGED_ACTIONS = {
+  ["Pass.Recover"] = true,
+  ["Venue.Send"] = true,
+  ["Venue.Return"] = true,
+  ["Admin.SettleVenueReturn"] = true,
+}
+
 local function actionKind(action, delta)
-  if action == "Pass.Recover" then return "managed" end
+  if MANAGED_ACTIONS[action] then return "managed" end
   if TRANSFER_ACTIONS[action] then return "transfer" end
   if string.sub(action or "", 1, 8) == "Economy." then return "managed" end
   if delta > 0 then return "issue" end
@@ -1003,7 +1034,14 @@ function M.recordPlayerDeltas(state, before, players, action, timestamp)
   end
   -- No existing non-economy verb may create Gold. A legacy/admin load can carry
   -- a balance, but it is funded from the locked launch allocation, never minted.
-  if goldDelta ~= 0 and string.sub(action or "", 1, 6) == "Admin." then
+  --
+  -- A MANAGED verb is excluded here as well as above, and specifically because
+  -- one of them starts with `Admin.`: `Admin.SettleVenueReturn` credits Gold
+  -- that came back from the venue, and funding that out of the locked reserve
+  -- would issue it a second time on top of the bucket move the verb already
+  -- made.
+  if goldDelta ~= 0 and not MANAGED_ACTIONS[action]
+     and string.sub(action or "", 1, 6) == "Admin." then
     state.gold.player = math.max(0, int(state.gold.player, 0) + goldDelta)
     state.gold.locked = math.max(0, int(state.gold.locked, 0) - goldDelta)
   end
@@ -1659,6 +1697,107 @@ end
 --- rather than a hope about which screen the player opened. ORDERBOOK.md §3.1.
 local deskQuote, deskSettle, deskAnchors
 
+--- WHAT IS OUT AT A VENUE, AND WHAT IS STILL HERE.
+---
+--- Three numbers per asset, and they are three because two of them are
+--- routinely mistaken for each other:
+---
+---   `total`        everything this process has issued and not destroyed. The
+---                  supply, and the only one of the three that a sink or a
+---                  mint moves.
+---   `inGame`       the part of it inside this process -- player bags, order
+---                  escrow, shop shelves and, for Gold, the locked reserve.
+---   `atVenue`      the part handed to the internal venue and not yet taken
+---                  home. Outstanding, in the ordinary sense of the word.
+---
+--- `total == inGame + atVenue` is `goldInvariant`/`itemInvariant` restated, so
+--- publishing all three makes the invariant something a client can check
+--- rather than a claim this process makes about itself. The venue publishes
+--- its own `supply` for the other half of the same reconciliation.
+function M.venueSupply(state)
+  state = M.ensureState(state)
+  local function row(record, extra)
+    local inGame = int(record.player, 0) + int(record.escrow, 0)
+      + int(record.shop, 0) + int(extra, 0)
+    local atVenue = int(record.venue, 0)
+    return { total = inGame + atVenue, inGame = inGame, atVenue = atVenue }
+  end
+  local out = { gold = row(state.gold, state.gold.locked) }
+  for _, item in ipairs(ITEM_IDS) do out[item] = row(state.assets[item]) end
+  return out
+end
+
+--- The supply row an asset name refers to. Gold keeps its own because it is
+--- issued rather than dropped; everything else is a row in `state.assets`.
+--- Loot boxes are deliberately absent: a box is opened, never traded.
+local function venueAsset(state, asset)
+  if asset == "gold" then return state.gold end
+  return state.assets[asset]
+end
+
+--- HAND ASSETS TO THE VENUE.
+---
+--- Take them off the player and move the same amount from `player` into
+--- `venue`. Nothing is issued and nothing is consumed -- this is the same unit,
+--- somewhere else -- which is exactly why the bucket has to exist rather than
+--- the units being quietly burned here and minted there.
+---
+--- The debit happens HERE, before the message asking the venue to credit is
+--- emitted, for the reason the Rune bridge documents at length: the other way
+--- round, a credit that landed while the reply was lost pays twice.
+function M.sendToVenue(state, players, account, asset, amount, timestamp)
+  state = M.ensureState(state)
+  local ledger = asLedger(players)
+  amount = int(amount, 0)
+  local record = venueAsset(state, asset)
+  if not record then return nil, "That asset cannot leave the game" end
+  if amount <= 0 then return nil, "Send a positive whole amount" end
+  if not ledger.exists(account) then return nil, "No such player" end
+  if ledger.balance(account, asset) < amount then
+    return nil, "You do not hold that much " .. tostring(asset)
+  end
+  if state.policy.emergency and state.policy.emergency.paused then
+    return nil, "Economy is paused: "
+      .. tostring(state.policy.emergency.reason or "emergency pause")
+  end
+  if not ledger.debit(account, asset, amount) then
+    return nil, "You do not hold that much " .. tostring(asset)
+  end
+  record.player = math.max(0, int(record.player, 0) - amount)
+  record.venue = int(record.venue, 0) + amount
+  return { asset = asset, amount = amount, atVenue = int(record.venue, 0),
+           at = timestamp }, nil
+end
+
+--- TAKE THEM BACK.
+---
+--- The mirror, and the direction where the venue moved first: by the time this
+--- runs the venue has already debited the trader, so refusing here would lose
+--- them the assets outright. It therefore only refuses what it cannot possibly
+--- account for -- an unknown asset, or more than this process ever sent -- and
+--- the caller quarantines those rather than dropping them.
+---
+--- `venue` is the ceiling on purpose. A venue that asked to return more than
+--- it was ever given is either broken or lying, and crediting it would issue
+--- units nothing ever minted.
+function M.returnFromVenue(state, players, account, asset, amount, timestamp)
+  state = M.ensureState(state)
+  local ledger = asLedger(players)
+  amount = int(amount, 0)
+  local record = venueAsset(state, asset)
+  if not record then return nil, "That asset does not exist here" end
+  if amount <= 0 then return nil, "Return a positive whole amount" end
+  if amount > int(record.venue, 0) then
+    return nil, "More " .. tostring(asset) .. " than was ever sent to the venue"
+  end
+  if not ledger.exists(account) then return nil, "No such player" end
+  record.venue = math.max(0, int(record.venue, 0) - amount)
+  record.player = int(record.player, 0) + amount
+  ledger.credit(account, asset, amount)
+  return { asset = asset, amount = amount, atVenue = int(record.venue, 0),
+           at = timestamp }, nil
+end
+
 --- THE GAME'S HOST, and the book's public verbs behind it.
 ---
 --- `orderbook.lua` is a venue that knows nothing about players, issuance or an
@@ -1907,10 +2046,18 @@ local function usageRows(desk, account, timestamp)
   return accountRow, desk.globalUsage, desk.epochUsage
 end
 
+--- Conservation, and it now closes ACROSS the venue boundary.
+---
+--- `venue` is on the accounted side because a unit at the venue still exists
+--- and this process still issued it. That is what makes the invariant a real
+--- check of the bridge rather than something that goes red the first time
+--- anybody uses it: if the game says 400 berries are at the venue and the
+--- venue's published `supply` says 380, somebody has lost 20 and both numbers
+--- are readable without signing anything.
 local function goldInvariant(state)
   local gold = state.gold
   local accounted = int(gold.player, 0) + int(gold.escrow, 0)
-    + int(gold.shop, 0) + int(gold.locked, 0)
+    + int(gold.shop, 0) + int(gold.locked, 0) + int(gold.venue, 0)
   return int(gold.issued, 0) - int(gold.burned, 0) == accounted,
     int(gold.issued, 0) - int(gold.burned, 0), accounted
 end
@@ -1918,6 +2065,7 @@ end
 local function itemInvariant(state, item)
   local row = state.assets[item]
   local accounted = int(row.player, 0) + int(row.escrow, 0) + int(row.shop, 0)
+    + int(row.venue, 0)
   return int(row.issued, 0) - int(row.consumed, 0) == accounted,
     int(row.issued, 0) - int(row.consumed, 0), accounted
 end
