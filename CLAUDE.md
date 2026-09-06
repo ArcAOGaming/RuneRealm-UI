@@ -88,9 +88,9 @@ its **own file** with `useTourSteps` — `COMPANION_TOUR` in `screens/Companion.
 `HUNT_TOUR` — precisely so that changing what the arena charges and changing
 the sentence that says what the arena charges are the same diff.
 
-Those sentences state real numbers and real rules: one Rune for four battles,
-25 energy and 25 happiness to enter, +5 from three berries, a 2% seller fee on
-the trading floor, one to five Rune to bind and consumed either way. **If you
+Those sentences state real numbers and real rules: a free session of four
+battles, 25 energy and 25 happiness to enter, +5 from three berries, a Scroll
+and one to three Rune to bind and all of it consumed either way. **If you
 move any of those, the walkthrough moves with them in the same commit.** A tour
 describing rules the game no longer has is worse than no tour: it is
 confidently wrong, and the player has no way to tell.

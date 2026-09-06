@@ -7,7 +7,7 @@ arena. A React SPA over a single HyperBEAM process — no legacynet, anywhere.
 [LORE.md](LORE.md). [MINTING.md](MINTING.md) documents the parked historical
 companion-asset implementation; it is not a release workflow.
 [MARKETPLACE.md](MARKETPLACE.md) covers the integrated Gold/companion markets,
-Rune AMM, test quote token, and their deployment and verification flow.
+test quote token, and their deployment and verification flow.
 [HYPERBEAM.md](HYPERBEAM.md) records platform facts that were verified by
 running them rather than read in the docs.
 [MONSTER_INDEX.md](MONSTER_INDEX.md) defines the numbered Monster Index, evolution
@@ -116,7 +116,7 @@ See HANDOFF.md §6 before changing any of it.
 | `src/gfx/` | The aether field and the sigils. No dependencies. |
 | `src/lib/card/` | The card builder. Browser-active; its minter consumer is parked. |
 | `src/lib/mint.ts` | Parked source for the old companion-asset chain path. |
-| `src/lib/marketplace.ts` | Rune bridge and Rune/quote AMM reads and writes. |
+| `src/lib/marketplace.ts` | Rune bridge, token reads, and the quote faucet. |
 | `src/screens/Marketplace.tsx` | Gold goods order book, finite NPC shop, companion market, and Rune exchange. |
 | `src/_hidden/` | Parked features — see the README in there. |
 | `backend/native/` | The process, its tests, and the deploy tooling. |
@@ -163,7 +163,7 @@ npm run monster-index:sync             # validate asset repo + regenerate runtim
 npm run monster-index:check            # fail if the two repositories drifted
 npm run test:lua                  # the process suite, on a public node, free
 npm run test:hunt                 # Hunt process + game bridge, offline
-npm run test:marketplace:local    # AMM + quote + Rune suites, offline
+npm run test:marketplace:local    # quote + Rune + marketplace suites, offline
 node backend/native/e2e.mjs       # play the game through the real client code
 ```
 
@@ -190,9 +190,19 @@ the app's own client code:
 ```bash
 npm run swarm:wallets                         # local key generation only
 npm run swarm:plan                            # all names, roles, descriptions
-HB_WALLET=owner.json npm run swarm:unlock     # one explicit live admin write
-npm run swarm -- --live --duration 2h         # defaults to 4 writers at once
+npm run swarm:config                          # prove every process link live
+HB_WALLET=owner.json npm run fleet:prepare    # test funding + companions
+npm run swarm:lived-in                        # one hour, directed + gated
 ```
+
+The lived-in profile keeps all fifty wallet workers online, safely gates write
+starts at the measured node limit, and uses progression-aware randomized play
+while directing different actors toward missing features. Its receipt fails unless
+worship, loot, care, progression, PvE, PvP, Hunt, character customization,
+companion custody/trading, the Gold order book and NPC shop, the Rune bridge,
+and the Rune bridge all produced successful live outcomes. Every generated
+client receives one validated game/Hunt/Rune/quote/AMM graph; a `--pid`
+override can no longer retain external process ids from another deployment.
 
 Game actions need no AR funding. See
 [`backend/native/swarm/README.md`](backend/native/swarm/README.md) for load
