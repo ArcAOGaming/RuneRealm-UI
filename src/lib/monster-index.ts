@@ -1,5 +1,10 @@
-import { GENERATED_MONSTER_INDEX } from '../generated/monster-index';
-import { Affinity, MonsterIndexCatalog, MonsterIndexEntry, MonsterIndexView, Element, Listing, Monster, Player } from './types';
+import { Affinity, MonsterIndexEntry, Element, Listing, Monster, Player } from './types';
+// The catalog join lives in `monster-catalog.ts`, with no asset imports, so a
+// Node bundle can use it without dragging `import.meta.glob` in. Re-exported
+// here so every existing caller of this module is unchanged.
+import { AUTHORED_BY_NO, authoredEntries } from './monster-catalog';
+
+export { authoredEntries, authoredMonsterIndex, mergeMonsterIndex } from './monster-catalog';
 
 const urls = (value: Record<string, unknown>) => value as Record<string, string>;
 const PORTRAITS = urls(import.meta.glob('../assets/monster-index/*/portrait.png', {
@@ -61,56 +66,11 @@ export type MonsterDefinition = {
   art?: MonsterIndexArt;
 };
 
-const authoredEntries = GENERATED_MONSTER_INDEX.entries as unknown as MonsterIndexEntry[];
-const AUTHORED_BY_NO = new Map(authoredEntries.map((entry) => [entry.entryNo, entry]));
-
 const assetKey = (entryNo: number, file: string) => {
   const folder = String(entryNo).padStart(3, '0');
   return Object.keys(file === 'portrait.png' ? PORTRAITS : file === 'atlas.png' ? ATLASES : ATLAS_URLS)
     .find((key) => key.endsWith(`/monster-index/${folder}/${file}`));
 };
-
-export function authoredMonsterIndex(): MonsterIndexCatalog {
-  return {
-    schemaVersion: GENERATED_MONSTER_INDEX.schemaVersion,
-    catalogHash: GENERATED_MONSTER_INDEX.catalogHash,
-    revision: 0,
-    nextEntryNo: GENERATED_MONSTER_INDEX.nextEntryNo,
-    entries: authoredEntries,
-  };
-}
-
-/**
- * Join local plans/assets with the contract's mutable names and channel flags.
- *
- * Two shapes arrive here. The published `monsterindex` key carries only
- * `overrides` — a sparse map of the six fields an admin may patch — because the
- * full `entries` array is a verbatim copy of the catalog this bundle already
- * ships, and publishing it cost 32 KB on a map every message pays for five
- * times. `Monster.Index` and any process deployed before that change still
- * reply with `entries`, so both are honoured and the authored catalog is the
- * base either way.
- */
-export function mergeMonsterIndex(live?: MonsterIndexView | null): MonsterIndexCatalog {
-  if (!live) return authoredMonsterIndex();
-  const liveByNo = new Map((live.entries ?? []).map((entry) => [entry.entryNo, entry]));
-  const overrides = live.overrides ?? {};
-  if (!liveByNo.size && !Object.keys(overrides).length) {
-    // Nothing mutable on the wire: the authored catalog IS the answer, but keep
-    // the live revision/hash so a caller can still tell one publish from another.
-    return { ...authoredMonsterIndex(), ...live, entries: authoredEntries };
-  }
-  const entries = authoredEntries.map((authored) => {
-    const current = liveByNo.get(authored.entryNo);
-    const patch = overrides[String(authored.entryNo)];
-    if (!current && !patch) return authored;
-    return {
-      ...authored, ...current, ...patch,
-      assets: authored.assets, plan: authored.plan,
-    };
-  });
-  return { ...live, entries };
-}
 
 export const monsterIndexEntry = (entryNo?: number | null) => (
   entryNo ? AUTHORED_BY_NO.get(entryNo) : undefined

@@ -19,7 +19,7 @@ import {
   AcceptedWriteError, activeAddress, deliverSlot, HB_NODE, OutboxDeliveryError,
   readJSON, readState, send, GAME_PROCESS, type SendOptions,
 } from './hyperbeam';
-import { mergeMonsterIndex } from './monster-index';
+import { mergeMonsterIndex } from './monster-catalog';
 import {
   AdminAuditEntry, AdminFactionStats, AdminMetrics, AdminPlayerPatch,
   AdminPlayerSummary, AdminSnapshot, Battle, BattleFleetConfig, BattleFleetRoute, BerryItemId,
@@ -665,6 +665,24 @@ export const levelUp = (points: {
     DefensePoints: String(points.defense),
     SpeedPoints: String(points.speed),
     HealthPoints: String(points.health),
+  });
+
+/**
+ * Answer the move a companion was offered at a relearn level.
+ *
+ * `replace` names the move to give up; omit it to turn the offer down, and a
+ * decline is FINAL — anything else makes this a slot machine.
+ *
+ * `move` is sent so the process can refuse a STALE answer. A prompt left open
+ * across another relearn level is looking at an offer the record no longer
+ * holds, and applying that click to whatever is pending now would spend the
+ * player's one choice on a move they never saw.
+ */
+export const learnMove = (move: string, replace?: string) =>
+  write<Player>({
+    Action: 'Monster.LearnMove',
+    Move: move,
+    ...(replace ? { Replace: replace } : {}),
   });
 
 /**
