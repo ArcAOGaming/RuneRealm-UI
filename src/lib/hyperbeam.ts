@@ -37,6 +37,11 @@ import {
   getWallet, type ArweaveWallet, activeAddress, connectWallet, disconnectWallet,
   PERMISSIONS, restoreWallet,
 } from './wallet';
+// The slot-settle POLICY, shared byte-for-byte with `backend/native/hbclient.mjs`.
+// A shape handled in one transport and not the other is the defect that cost a
+// night of deploys; there is exactly one copy of it. See the file for the
+// measurement behind it.
+import { settleHeadIfUseful } from './slot-settle.mjs';
 
 export {
   getWallet, type ArweaveWallet, activeAddress, connectWallet, disconnectWallet,
@@ -68,10 +73,10 @@ export const HB_NODES: string[] = [
 
 /** The game process. Set VITE_GAME_PROCESS after a deploy. */
 export const GAME_PROCESS: string =
-  env.VITE_GAME_PROCESS || 'o_jsAb7YIdJvvWV8Cu3V0pa7QJU9IAteDU8dAP9w1ak';
+  env.VITE_GAME_PROCESS || 'kUIrz96cRRzaBrBVACkr8xXxulT3mzYMWFooNojZFmU';
 
 /** Separate roaming/battle authority. Empty until `deploy-hunt.mjs` wires it. */
-export const HUNT_PROCESS: string = env.VITE_HUNT_PROCESS || 'F0ah_8vph3NwhKNzU4NL0xvedBr1vgSbfiPHOVww_r4';
+export const HUNT_PROCESS: string = env.VITE_HUNT_PROCESS || 'ZfKNgpPEPsJwW2rwXHUOcCBNi3aCl_FbHZ8jjqUTpUc';
 export const HUNT_NODE: string = env.VITE_HUNT_NODE || 'https://hyperbeam.tylerw.ai';
 
 /**
@@ -823,6 +828,14 @@ export type ReadSlotOptions = {
    * caller that would rather wait than reconcile.
    */
   timeoutMs?: number;
+  /**
+   * How long to wait for the computed head to reach this slot before the
+   * compute read. See the note in `readSlot`: on a node whose worker advances
+   * the head by itself this is one round trip and removes the race; on one that
+   * does not, it is a flat cost per action, which is why it is small and
+   * separately tunable rather than folded into `timeoutMs`.
+   */
+  settleHeadMs?: number;
   signal?: AbortSignal;
   /**
    * Called once per compute read. A reply that took four attempts and one that
@@ -855,6 +868,7 @@ export async function readSlot<T>(
   {
     process: pid = GAME_PROCESS, node = HB_NODE,
     attempts = 12, delayMs = 500, maxDelayMs = 4_000, timeoutMs = 25_000,
+    settleHeadMs = 1_200,
     signal, onAttempt,
   }: ReadSlotOptions = {},
 ): Promise<T> {
@@ -906,6 +920,60 @@ export async function readSlot<T>(
       : `The process completed slot ${slot}, but its reply is not available.`,
     );
   };
+
+  // SETTLE THE HEAD BEFORE ADDRESSING THE SLOT.
+  //
+  // This used to go straight to the compute read below, on the reasoning that
+  // the read both triggers the computation and returns it, so probing the head
+  // first could only cost a round trip. The reasoning was right about the
+  // request count and wrong about what the two requests DO.
+  //
+  // `compute&slot=N` for a slot the head has not reached is served off a path
+  // with no live worker behind it, and `priv` — where the Luerl globals live —
+  // is not cached. `dev_lua` re-enters `init` and the handler runs against a
+  // complete `base` and an empty `Players`: the caller's own record is minted
+  // from nothing, its Rune and Gold are gone, its `joinedAt` is rewritten, and
+  // a wallet that already swore an oath swears it again. Nothing errors, so the
+  // reply this function returns looks entirely ordinary. Measured five times out
+  // of five on a fresh process; see `slot-settle.mjs`.
+  //
+  // `now/at-slot` is what makes the process compute to the head THROUGH the
+  // live worker, so the work moves under that request instead of being added to
+  // it, and the compute read after it is a cache hit. `budgetMs` is the same
+  // wall-clock budget recovery gets: past it, read the slot anyway — a read
+  // that races is still better than an action that never returns, and the
+  // recovery path below still covers a lost response.
+  // BOUNDED HARD, and the bound is the interesting part.
+  //
+  // The head advances on its own only while the process has a live worker, and
+  // on this node that is NOT true for the app's own writes: measured on a fresh
+  // process, `now/at-slot` sat one slot behind for the full 25 s while nothing
+  // else read it. The deploy tooling's httpsig-scheduled writes do advance, in
+  // ~350 ms; these ANS-104 items do not. So on today's node this settle is a
+  // cheap ATTEMPT, not a guarantee, and it must never become the action's cost.
+  //
+  // `settleHeadMs` is therefore about one round trip's worth of patience, not
+  // the recovery budget: if the head is going to move on its own it has already
+  // moved, and if it is not, waiting longer buys a slower action and the same
+  // read. Returning null here is not an error — the compute read below still
+  // runs, exactly as it always did.
+  //
+  // And `settleHeadIfUseful` is what keeps it from being a flat tax: it stops
+  // probing a process whose head has never once arrived, and re-probes every so
+  // often in case the node changes under us. Measured per action against a
+  // fresh process on this node: 1.90 s with no settle, 3.23 s probing every
+  // action, 1.98 s with this. The moment the head does advance for these
+  // writes, the probe stays on and the race is gone.
+  await settleHeadIfUseful(`${clean(node)}|${pid}`, {
+    readHead: () => computedSlot(pid, node, signal),
+    slot,
+    attempts: 4,
+    delayMs: 150,
+    maxDelayMs: 400,
+    budgetMs: Math.min(settleHeadMs, budgetMs > 0 ? budgetMs : settleHeadMs),
+    isCancelled: () => signal?.aborted === true,
+  });
+  throwIfCancelled(signal);
 
   // The one request the happy path needs. Pull this accepted slot immediately,
   // exactly once: it is both the request for computation and the read of it.

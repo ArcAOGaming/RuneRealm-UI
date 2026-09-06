@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 
 import { useGame } from '../state/gameContext';
 import { isAbort } from '../state/usePoll';
@@ -23,14 +24,13 @@ import { ITEM_ART } from '../ui/art';
 import { useToast } from '../ui/toastContext';
 import { useTourSteps, type TourStep } from '../ui/tourContext';
 import { Arrow, ELEMENT_ICON, Exchange, Refresh, Rune, Sparkle, Wallet } from '../ui/icons';
-import { MarketForge, MarketForgeMode } from '../ui/MarketForge';
+import { MarketVenue, MarketVenuePicker, usePopover, venueFromSearch } from '../ui/marketVenues';
+import { MarketForge } from '../ui/MarketForge';
 import { MarketDiorama } from '../ui/MarketDiorama';
 import type { MarketDioramaStockItem } from '../gfx/marketDiorama';
 import { economyPreview } from '../lib/economy-preview';
 
-type MarketTab = 'goods' | 'rune' | 'monsters';
 type MonsterSort = 'recent' | 'price-low' | 'price-high' | 'level' | 'attack' | 'defense';
-type RuneDesk = 'trade' | 'bridge' | 'pool';
 
 const ELEMENTS: Element[] = ['fire', 'water', 'air', 'rock'];
 const EMPTY_DEPOSIT = (address = ''): AmmDeposit => ({ address, base: '0', quote: '0', shares: '0' });
@@ -41,10 +41,9 @@ const inputClass = 'h-11 w-full rounded-[3px] border border-edge bg-void/35 px-3
  * The market's walkthrough.
  *
  * Four sentences, and each one is about a rule rather than a control: which
- * counter you are standing at, who is setting the price, what happens to the
- * part of your order that does not trade, and how far from the realm's own
- * price it will let you go. Those are the things that cost somebody gold when
- * they are not known.
+ * counter you are standing at, that both books are the same instrument, who is
+ * setting the price, and how far from the realm's own price it will let you
+ * go. Those are the things that cost somebody gold when they are not known.
  *
  * **It states the fee, the corridor and where the realm's desk is.** If the
  * fee changes, if the desk stops quoting into the ladder, or if the price band
@@ -53,52 +52,56 @@ const inputClass = 'h-11 w-full rounded-[3px] border border-edge bg-void/35 px-3
  */
 const MARKET_TOUR: TourStep[] = [
   {
-    target: '[data-tour="market-tabs"]',
-    title: 'Three counters',
-    body: 'Goods is berries and scrolls for gold. Rune is the token itself — bridge it, pool it, trade it. Monsters is companions changing hands.',
+    /* The header tab on desktop, the screen's own picker on a phone. Both
+       carry the same four rows; whichever is on screen is the one pointed at.
+       See `findTarget` in `ui/Tour.tsx`. */
+    target: '[data-tour-to="/market"], .market-venue-trigger',
+    title: 'Four counters, one list',
+    body: 'Market opens onto four counters. The shop sells at a price the realm sets and cannot be haggled with. The internal book is players trading goods for Gold. The external book is that same instrument on real tokens in your wallet. Monsters is companions changing hands.',
   },
   {
-    target: '[data-tour="market-desks"]',
-    title: 'Choose your counter',
-    body: 'The realm’s shop fills immediately at a fixed price. The player exchange is a live limit-order book, and trading on it is free — the shop’s spread is what the realm takes.',
+    target: '[data-tour="market-book"]',
+    title: 'Two books, one shape',
+    body: 'Both books draw the same strip, the same ladder and the same ticket, so what you learn on one you already know on the other. The internal book matches resting orders. The external one is a pool, so its ladder is how far its price moves as you take size, and it always fills now.',
   },
   {
     target: '[data-tour="market-desks"]',
     title: 'The realm quotes on the floor too',
-    body: 'The shop’s bid and ask sit in the exchange’s own ladder, marked with a ◆. So you never have to compare the two counters: whichever is better fills you, and a player quoting inside the realm’s spread is always taken first.',
+    body: 'The shop’s bid and ask sit in the internal book’s own ladder, marked with a ◆. So you never have to compare the two counters: whichever is better fills you, and a player quoting inside the realm’s spread is always taken first. Trading on the book itself is free — the shop’s spread is what the realm takes.',
   },
   {
     target: '[data-tour="market-ticket"]',
     title: 'Read the trade ticket',
-    body: 'Limit rests at your price; Market takes what the ladder has now and cancels the rest; All-or-none does the whole size or nothing; Maker-only refuses to cross. Prices must sit inside the band shown here — the realm refuses anything far outside its own quote, so one fat finger cannot set the market’s price.',
+    body: 'Limit rests at your price; Market takes what the ladder has now and cancels the rest; All-or-none does the whole size or nothing; Maker-only refuses to cross. Prices must sit inside the band shown here — the realm refuses anything far outside its own quote, so one fat finger cannot set the market’s price. At the shop counter the realm reprices after every unit it trades, so a large order fills at several rates; the ticket lists each one before you commit.',
   },
 ];
 
+/**
+ * The market screen.
+ *
+ * Which counter you are at is in the URL and nowhere else, because the control
+ * that sets it is in the header next to Arena — see `ui/marketVenues.tsx`.
+ * Below `lg` there is no header nav to hang it off, so the screen carries the
+ * same picker itself and hides it above.
+ */
 export default function Marketplace() {
   useTourSteps('market', MARKET_TOUR);
-  const [tab, setTab] = useState<MarketTab>('goods');
+  const [params] = useSearchParams();
+  const navigate = useNavigate();
+  const venue = venueFromSearch(params.toString());
+  const setVenue = (next: MarketVenue) =>
+    navigate(next === 'shop' ? '/market' : `/market?venue=${next}`, { replace: true });
 
   return (
     <div className="market-screen animate-rise space-y-4">
-      <nav aria-label="Market sections" role="tablist"
-           data-tour="market-tabs"
-           className="market-tabs grid grid-cols-3 gap-1 rounded-[4px] border border-edge bg-surface/75 p-1">
-        <MarketTabButton active={tab === 'goods'} onClick={() => setTab('goods')}
-                         icon={<Exchange className="h-4 w-4" />}>
-          Goods
-        </MarketTabButton>
-        <MarketTabButton active={tab === 'rune'} onClick={() => setTab('rune')}
-                         icon={<Rune className="h-4 w-4" />}>
-          Rune
-        </MarketTabButton>
-        <MarketTabButton active={tab === 'monsters'} onClick={() => setTab('monsters')}
-                         icon={<Sparkle className="h-4 w-4" />}>
-          Monsters
-        </MarketTabButton>
-      </nav>
+      <MarketVenuePicker venue={venue} onVenue={setVenue} className="lg:hidden" />
 
       <div role="tabpanel" className="market-tabpanel">
-        {tab === 'goods' ? <GoodsMarket /> : tab === 'rune' ? <RuneExchange /> : <MonsterMarket />}
+        {venue === 'shop' || venue === 'internal'
+          ? <GoodsMarket desk={venue === 'shop' ? 'shop' : 'floor'}
+                         onDesk={(next) => setVenue(next === 'shop' ? 'shop' : 'internal')} />
+          : venue === 'external' ? <ExternalBook />
+          : <MonsterMarket />}
       </div>
     </div>
   );
@@ -163,11 +166,12 @@ function shopPauseCopy(reason: string): string {
   return reason;
 }
 
-function GoodsMarket() {
+function GoodsMarket({ desk: deskTab, onDesk: setDeskTab }: {
+  desk: GoodsDesk; onDesk: (desk: GoodsDesk) => void;
+}) {
   const { address, player, connect, connecting, run, isPending, refresh } = useGame();
   const [economy, setEconomy] = useState<EconomyView | null>(null);
   const [error, setError] = useState<unknown>(null);
-  const [deskTab, setDeskTab] = useState<GoodsDesk>('shop');
   const [item, setItem] = useState<GoldMarketItemId>('fire_berry');
   const [side, setSide] = useState<GoldOrderSide>('buy');
   const [range, setRange] = useState<FloorRange>('12h');
@@ -176,7 +180,11 @@ function GoodsMarket() {
   const [price, setPrice] = useState('');
   const [quantity, setQuantity] = useState('5');
   const [tif, setTif] = useState<GoldOrderTif>('GTC');
-  const [counts, setCounts] = useState<Partial<Record<GoldMarketItemId, number>>>({});
+  /* One quantity for the whole shop, not one per item and side. It is the size
+     of the trade the player is setting up; changing which berry they are
+     looking at, or which way they are trading, is not them changing their mind
+     about how many. Only the stepper and the field move it. */
+  const [count, setCount] = useState(5);
 
   const load = useCallback(async (signal?: AbortSignal) => {
     setError(null);
@@ -281,8 +289,28 @@ function GoodsMarket() {
 
   return (
     <div className="market-goods">
-      <GoodsDeskChooser desk={deskTab} onDesk={setDeskTab}
-                        gold={gold} liveOrders={economy.orders.length} ok={economy.invariants.ok} />
+      <MarketHealthStrip
+        lead={deskTab === 'floor' && (
+          <MarketPicker value={item} onPick={(next) => setItem(next as GoldMarketItemId)}
+                        format={formatInteger}
+                        glyph={(id) => <ItemGlyph item={id as GoldMarketItemId} className="h-4 w-4" />}
+                        markets={GOLD_ITEMS.map((id) => ({
+                          id,
+                          label: `${ITEM_NAME[id]} / Gold`,
+                          bestBid: economy.market[id]?.bestBid,
+                          bestAsk: economy.market[id]?.bestAsk,
+                        }))} />
+        )}
+        stats={[
+          { label: 'Gold', value: formatInteger(gold), tone: 'text-rune' },
+          { label: 'Book orders', value: formatInteger(economy.orders.length), tone: 'text-arcane' },
+          { label: 'Market', value: economy.invariants.ok ? 'Stable' : 'Paused',
+            tone: economy.invariants.ok ? 'text-good' : 'text-bad' },
+        ]}
+        actions={
+          <Button size="sm" variant="quiet" onClick={() => void load()}
+                  icon={<Refresh className="h-3.5 w-3.5" />}>Refresh</Button>
+        } />
 
       {error !== null && <ErrorNote error={error} onRetry={() => void load()} />}
 
@@ -290,12 +318,12 @@ function GoodsMarket() {
         <RealmShop economy={economy} gold={gold} inventory={player?.inventory}
                    item={item} onItem={setItem} side={side} onSide={setSide}
                    connected={Boolean(address)} connecting={connecting} onConnect={connect}
-                   counts={counts} onCount={(id, value) => setCounts((current) => ({ ...current, [id]: value }))}
+                   count={count} onCount={setCount}
                    isPending={isPending} onTrade={shopTrade} onRefresh={() => void load()}
                    onOpenFloor={openPlayerExchange} />
       ) : (
         <TradingFloor economy={economy} address={address} gold={gold} inventory={player?.inventory}
-                      item={item} onItem={setItem}
+                      item={item}
                       range={range} onRange={setRange} chartMode={chartMode} onChartMode={setChartMode}
                       candleInterval={candleInterval} onCandleInterval={setCandleInterval}
                       side={side} onSide={setSide} tif={tif} onTif={setTif}
@@ -312,61 +340,196 @@ function GoodsMarket() {
 }
 
 /**
- * The chooser. Carved bone-gold for the realm's own counter — the wordmark's
- * colour, the realm's voice — against arcane violet for the floor, which is
- * the only place in the app where a number moving is somebody else's decision.
+ * Which market the book is showing.
+ *
+ * A dropdown rather than a band of tiles. The external registry holds one pair
+ * today and arbitrary pairs later, so a six-wide strip holding one tile is a
+ * strip of five empty cells — and the answer to "which market" belongs on the
+ * same line as "what do I hold in it", because that is one thought.
+ *
+ * The touch rides in the trigger. Whichever pair you are on, its bid and ask
+ * are readable without opening anything.
  */
-function GoodsDeskChooser({ desk, onDesk, gold, liveOrders, ok }: {
-  desk: GoodsDesk; onDesk: (desk: GoodsDesk) => void; gold: number; liveOrders: number; ok: boolean;
+function MarketPicker({ markets, value, onPick, glyph, format }: {
+  markets: Array<{ id: string; label: string; bestBid?: number; bestAsk?: number }>;
+  value: string; onPick: (id: string) => void;
+  glyph: (id: string) => React.ReactNode; format: (value: number) => string;
+}) {
+  const [open, setOpen] = useState(false);
+  const { host, list } = usePopover(open, () => setOpen(false));
+  const current = markets.find((row) => row.id === value) ?? markets[0];
+  if (!current) return null;
+
+  const quote = (row: { bestBid?: number; bestAsk?: number }) => (
+    <span className="market-pair-quote">
+      <b className="text-good">{row.bestBid ? format(row.bestBid) : '--'}</b>
+      <i>/</i>
+      <b className="text-bad">{row.bestAsk ? format(row.bestAsk) : '--'}</b>
+    </span>
+  );
+
+  return (
+    <div ref={host} className="market-pair relative">
+      <button type="button" className="market-pair-trigger" aria-haspopup="listbox" aria-expanded={open}
+              aria-label={`Market: ${current.label}`}
+              onClick={() => setOpen((was) => !was)}
+              onKeyDown={(event) => {
+                if (event.key === 'ArrowDown' && !open) { event.preventDefault(); setOpen(true); }
+              }}>
+        {glyph(current.id)}
+        <span className="market-pair-name">{current.label}</span>
+        {quote(current)}
+        <Arrow className={cx('market-venue-caret h-3.5 w-3.5', open && 'is-open')} />
+      </button>
+      {open && (
+        <div ref={list} role="listbox" aria-label="Markets" className="market-venue-list market-pair-list">
+          {markets.map((row, index) => (
+            <button key={row.id} type="button" role="option" aria-selected={row.id === value}
+                    data-selected={row.id === value} className="market-venue-option market-pair-option"
+                    onKeyDown={(event) => {
+                      if (event.key !== 'ArrowDown' && event.key !== 'ArrowUp') return;
+                      event.preventDefault();
+                      const next = (index + (event.key === 'ArrowDown' ? 1 : markets.length - 1)) % markets.length;
+                      list.current?.querySelectorAll<HTMLElement>('[role="option"]')[next]?.focus();
+                    }}
+                    onClick={() => { onPick(row.id); setOpen(false); }}>
+              {glyph(row.id)}
+              <span className="market-pair-name min-w-0 flex-1">{row.label}</span>
+              {quote(row)}
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+/**
+ * The bar over every counter.
+ *
+ * The same row on both books, in the same place, so the eye does not have to
+ * re-learn where the venue tells you its state. What it holds is the one thing
+ * the two books are allowed to differ on, because on the internal book your
+ * position is Gold in a player record and on the external one it is two tokens
+ * in a wallet you own.
+ */
+function MarketHealthStrip({ lead, stats, actions }: {
+  stats: Array<{ label: string; value: string; tone?: string }>;
+  /** Which market, when the venue has more than one. Sits before the actions. */
+  lead?: React.ReactNode;
+  actions?: React.ReactNode;
 }) {
   return (
-    <Panel data-tour="market-desks" className="market-desk-bar flex flex-wrap items-stretch gap-2 p-2">
-      <div role="tablist" aria-label="Goods desks" className="market-desk-switcher grid min-w-0 flex-1 grid-cols-2">
-        <button type="button" role="tab" aria-selected={desk === 'shop'} onClick={() => onDesk('shop')}
-                className={cx('market-desk-choice market-desk-shop', desk === 'shop' && 'is-active')}>
-          <span className="market-desk-title font-display">Realm shop</span>
-          <span className="market-desk-note">Fixed price &middot; instant trade</span>
-        </button>
-        <button type="button" role="tab" aria-selected={desk === 'floor'} onClick={() => onDesk('floor')}
-                className={cx('market-desk-choice market-desk-floor', desk === 'floor' && 'is-active')}>
-          <span className="market-desk-title font-mono">Player exchange</span>
-          <span className="market-desk-note">Live book &middot; no trading fee</span>
-        </button>
-      </div>
+    /* Not a `Panel`: `.panel` draws its notched corner with `clip-path`, and a
+       clip-path clips descendants — which ate the market picker's popover. The
+       bar wears the panel's surface without its shape. */
+    <div data-tour="market-desks" className="market-desk-bar flex flex-wrap items-center gap-2 p-2">
+      {lead}
+      <div className="market-desk-actions flex min-w-0 flex-1 flex-wrap items-center gap-1.5">{actions}</div>
       <dl className="market-desk-health flex items-center justify-end gap-2">
-        <div><dt>Gold</dt><dd className="text-rune">{formatInteger(gold)}</dd></div>
-        <div><dt>Book orders</dt><dd className="text-arcane">{formatInteger(liveOrders)}</dd></div>
-        <div><dt>Market</dt><dd className={ok ? 'text-good' : 'text-bad'}>{ok ? 'Stable' : 'Paused'}</dd></div>
+        {stats.map((row) => (
+          <div key={row.label}>
+            <dt>{row.label}</dt>
+            <dd className={row.tone}>{row.value}</dd>
+          </div>
+        ))}
       </dl>
-    </Panel>
+    </div>
   );
 }
 
 // The realm's shop ----------------------------------------------------------
 
+/**
+ * What one unit of a desk trade costs, unit by unit.
+ *
+ * The desk reprices against its OWN STOCK after every single unit -- see the
+ * pricing loop in `economy.lua`'s `shopTrade`, which walks `deskBand` against
+ * the stock that will exist immediately before each unit. So the headline
+ * quote is the price of the FIRST unit and says nothing about the fifth:
+ * selling five berries into a fresh desk bidding 5 pays 23, not 25, because
+ * the third unit pushes the desk's stock over a band edge and the last two
+ * fill at 4.
+ *
+ * A ticket that multiplies the headline by the quantity is therefore not
+ * approximating, it is wrong, and it is wrong in the direction that costs the
+ * player -- they are told 25 and handed 23. Walking the ladder is the only
+ * honest total.
+ *
+ * Nothing new crosses the wire for this. `marketStats` already publishes the
+ * desk's own levels inside `depth`, best price first, with `house` counting
+ * the desk's units at each price; the player orders resting alongside them are
+ * a different venue and are deliberately not walked here.
+ */
+interface DeskFillPlan {
+  /** Units the published ladder can price, and what they cost together. */
+  units: number;
+  total: number;
+  /** One entry per PRICE, in fill order. More than one means the rate moved. */
+  steps: Array<{ price: number; units: number }>;
+  /** Units the request runs past the end of the published ladder. */
+  unpriced: number;
+  first: number;
+  last: number;
+}
+
+function deskFillPlan(
+  depth: EconomyMarketStats['depth'] | undefined,
+  side: GoldOrderSide,
+  count: number,
+): DeskFillPlan {
+  const rows = (side === 'buy' ? depth?.asks : depth?.bids) ?? [];
+  const steps: Array<{ price: number; units: number }> = [];
+  let remaining = Math.max(0, count);
+  let total = 0;
+  let units = 0;
+  for (const row of rows) {
+    if (remaining <= 0) break;
+    /* `quantity` is the desk AND the players at this price; only the desk is
+       on the other side of a shop ticket. */
+    const available = row.house ?? 0;
+    if (available <= 0) continue;
+    const take = Math.min(available, remaining);
+    steps.push({ price: row.price, units: take });
+    total += row.price * take;
+    units += take;
+    remaining -= take;
+  }
+  return {
+    units,
+    total,
+    steps,
+    unpriced: remaining,
+    first: steps[0]?.price ?? 0,
+    last: steps[steps.length - 1]?.price ?? 0,
+  };
+}
+
+
 function RealmShop({
   economy, gold, inventory, item, onItem, side, onSide, connected, connecting, onConnect,
-  counts, onCount, isPending, onTrade, onRefresh, onOpenFloor,
+  count, onCount, isPending, onTrade, onRefresh, onOpenFloor,
 }: {
   economy: EconomyView; gold: number; inventory: Partial<Record<GoldMarketItemId, number>> | undefined;
   item: GoldMarketItemId; onItem: (item: GoldMarketItemId) => void;
   side: GoldOrderSide; onSide: (side: GoldOrderSide) => void;
   connected: boolean; connecting: boolean; onConnect: () => void;
-  counts: Partial<Record<GoldMarketItemId, number>>;
-  onCount: (item: GoldMarketItemId, value: number) => void;
+  count: number;
+  onCount: (value: number) => void;
   isPending: (key: string) => boolean;
   onTrade: (item: GoldMarketItemId, side: GoldOrderSide, count: number) => Promise<void>;
   onRefresh: () => void; onOpenFloor: () => void;
 }) {
   const desk = economy.desks[item];
   const held = inventory?.[item] ?? 0;
-  const count = counts[item] ?? (item.endsWith('_berry') ? 5 : 1);
+  /* One walk, two consumers: the ticket states the total and the diorama
+     piles up the Gold that total actually is. */
+  const plan = deskFillPlan(economy.market[item]?.depth, side, count);
   const sceneInventory = GOLD_ITEMS.map((id) => ({
     id,
     name: ITEM_NAME[id],
     art: ITEM_ART[id],
     element: ITEM_ELEMENT[id] ?? 'arcane',
-    berry: id.endsWith('_berry'),
     stock: economy.desks[id]?.stock ?? 0,
     stockCap: economy.desks[id]?.stockCap ?? 0,
     bid: economy.desks[id]?.bid,
@@ -377,11 +540,12 @@ function RealmShop({
   }));
   return (
     <div className="market-goods-body market-shop-workspace">
-      <ShopShowcase item={item} desk={desk} side={side} count={count} sceneInventory={sceneInventory}
+      <ShopShowcase item={item} desk={desk} plan={plan} side={side} count={count} sceneInventory={sceneInventory}
                     onItem={onItem} onRefresh={onRefresh} />
 
-      <ShopTradeTicket item={item} desk={desk} market={economy.market[item]} held={held} gold={gold}
-                       count={count} onCount={(value) => onCount(item, value)}
+      <ShopTradeTicket item={item} desk={desk} market={economy.market[item]} plan={plan}
+                       held={held} gold={gold}
+                       count={count} onCount={onCount}
                        side={side} onSide={onSide} connected={connected}
                        connecting={connecting} onConnect={onConnect}
                        busy={isPending(`npc-${side}-${item}`)}
@@ -390,9 +554,9 @@ function RealmShop({
   );
 }
 
-function ShopShowcase({ item, desk, side, count, sceneInventory, onItem, onRefresh }: {
+function ShopShowcase({ item, desk, plan, side, count, sceneInventory, onItem, onRefresh }: {
   item: GoldMarketItemId; desk: EconomyDesk | undefined;
-  side: GoldOrderSide; count: number; sceneInventory: MarketDioramaStockItem[];
+  plan: DeskFillPlan; side: GoldOrderSide; count: number; sceneInventory: MarketDioramaStockItem[];
   onItem: (item: GoldMarketItemId) => void; onRefresh: () => void;
 }) {
   const stock = desk?.stock ?? 0;
@@ -416,9 +580,11 @@ function ShopShowcase({ item, desk, side, count, sceneInventory, onItem, onRefre
         <div className="market-diorama-fallback absolute inset-0" aria-hidden="true">
           <div className="market-shop-room-backdrop" />
         </div>
-        <MarketDiorama quantity={count} inventory={sceneInventory}
-                       gold={side === 'buy' ? (desk?.ask ?? 0) * count : 0}
-                       item={{ id: item, art: ITEM_ART[item], element: ITEM_ELEMENT[item] ?? 'arcane', berry: item.endsWith('_berry') }}
+        {/* Gold sits on the upper table either way: it is what you pay when
+            buying and what you take when selling. */}
+        <MarketDiorama quantity={count} inventory={sceneInventory} mode={side}
+                       gold={plan.total}
+                       item={{ id: item, art: ITEM_ART[item], element: ITEM_ELEMENT[item] ?? 'arcane' }}
                        selected={item} onSelect={(id) => onItem(id as GoldMarketItemId)}
                        className="absolute inset-0 z-[3]" />
       </div>
@@ -427,10 +593,11 @@ function ShopShowcase({ item, desk, side, count, sceneInventory, onItem, onRefre
 }
 
 function ShopTradeTicket({
-  item, desk, market, held, gold, count, onCount, side, onSide,
+  item, desk, market, plan, held, gold, count, onCount, side, onSide,
   connected, connecting, onConnect, busy, onTrade, onOpenFloor,
 }: {
   item: GoldMarketItemId; desk: EconomyDesk | undefined; market: EconomyMarketStats | undefined;
+  plan: DeskFillPlan;
   held: number; gold: number;
   count: number; onCount: (value: number) => void; side: GoldOrderSide; onSide: (side: GoldOrderSide) => void;
   connected: boolean; connecting: boolean; onConnect: () => void; busy: boolean;
@@ -443,12 +610,24 @@ function ShopTradeTicket({
   const playerUnits = playerDepth
     .filter((row) => row.price === playerPrice)
     .reduce((sum, row) => sum + row.quantity, 0);
+  const perAction = Math.max(1, desk?.limits?.perAction ?? 1);
   const playerBetter = Boolean(playerPrice && unitPrice && (side === 'buy' ? playerPrice < unitPrice : playerPrice > unitPrice));
   const priceEdge = playerBetter ? Math.abs(playerPrice - unitPrice) * Math.min(count, playerUnits || count) : 0;
-  const total = unitPrice * count;
-  const perAction = Math.max(1, desk?.limits?.perAction ?? 1);
+  /* The walked total, not the headline times the quantity. Anything the
+     published ladder could not price is carried at the last rate it did
+     quote, which is the closest honest guess and is flagged as one. */
+  const total = plan.total + plan.unpriced * (plan.last || unitPrice);
+  /* Rounded to the Gold the desk actually deals in -- there are no fractions
+     of a Gold anywhere in the process, so an average is a reading, not a
+     price, and it is labelled as an average for that reason. */
+  const average = count > 0 ? total / count : 0;
+  const rateMoves = plan.steps.length > 1;
   const shortBy = side === 'buy' ? Math.max(0, total - gold) : Math.max(0, count - held);
-  const canTrade = Boolean(desk && unitPrice && !paused && !shortBy);
+  /* The quantity is the shop's, not the desk's, so it can outrun a stricter
+     desk's per-action limit. Say so rather than offering a trade the process
+     will refuse — the number itself is the player's and does not move. */
+  const overLimit = Math.max(0, count - perAction);
+  const canTrade = Boolean(desk && unitPrice && !paused && !shortBy && !overLimit);
   const goldAfter = side === 'buy' ? gold - total : gold + total;
   const heldAfter = side === 'buy' ? held + count : held - count;
 
@@ -469,7 +648,9 @@ function ShopTradeTicket({
           <ItemGlyph item={item} className="h-10 w-10" />
           <div className="min-w-0 flex-1">
             <div className="truncate text-sm font-semibold">{ITEM_NAME[item]}</div>
-            <div className="mt-0.5 font-mono text-[10px] text-faint">{side === 'buy' ? 'Realm asks' : 'Realm bids'}</div>
+            <div className="mt-0.5 font-mono text-[10px] text-faint">
+              {side === 'buy' ? 'Realm asks' : 'Realm bids'}{rateMoves ? ' · first unit' : ''}
+            </div>
           </div>
           <div className="font-mono text-xl text-element">{unitPrice ? formatInteger(unitPrice) : '--'}<span className="text-[10px] text-faint">g</span></div>
         </div>
@@ -497,12 +678,50 @@ function ShopTradeTicket({
           </button>
         )}
 
+        {/* The desk reprices per unit, so a trade big enough to cross a band
+            edge fills at two or three different rates. Showing only the total
+            would leave the player to discover that from their balance; this
+            names every rate and the quantity that filled at it. */}
+        {rateMoves && (
+          <div className="market-ticket-steps mt-3">
+            <div className="eyebrow">
+              Rate {side === 'buy' ? 'rises' : 'drops'} {plan.steps.length - 1}
+              {plan.steps.length === 2 ? ' time' : ' times'} in this trade
+            </div>
+            <ol className="mt-1.5 space-y-1">
+              {plan.steps.map((step, index) => (
+                <li key={step.price} className="flex items-baseline justify-between gap-3 font-mono text-[11px]">
+                  <span className="text-faint">
+                    {index === 0 ? 'First' : 'Next'} {formatInteger(step.units)}
+                  </span>
+                  <span className={index === 0 ? 'text-element' : 'text-faint'}>
+                    {formatInteger(step.price)}g each
+                  </span>
+                </li>
+              ))}
+            </ol>
+            <p className="mt-1.5 text-[10px] leading-relaxed text-faint">
+              The realm reprices after every unit it {side === 'buy' ? 'sells' : 'buys'}.
+            </p>
+          </div>
+        )}
+
         <dl className="market-ticket-summary mt-3 space-y-2">
-          <div><dt>Unit price</dt><dd>{unitPrice ? `${formatInteger(unitPrice)} Gold` : '--'}</dd></div>
+          <div>
+            <dt>{rateMoves ? 'Average unit' : 'Unit price'}</dt>
+            <dd>{unitPrice ? `${rateMoves ? average.toFixed(1) : formatInteger(unitPrice)} Gold` : '--'}</dd>
+          </div>
           <div><dt>{side === 'buy' ? 'Total cost' : 'You receive'}</dt><dd className="text-element">{unitPrice ? `${formatInteger(total)} Gold` : '--'}</dd></div>
           <div><dt>Gold after</dt><dd>{canTrade ? formatInteger(goldAfter) : formatInteger(gold)}</dd></div>
           <div><dt>Held after</dt><dd>{canTrade ? formatInteger(heldAfter) : formatInteger(held)}</dd></div>
         </dl>
+        {plan.unpriced > 0 && unitPrice > 0 && (
+          <p className="mt-2 text-[10px] leading-relaxed text-faint">
+            The realm publishes its ladder {formatInteger(plan.units)} deep; the last
+            {' '}{formatInteger(plan.unpriced)} are estimated at {formatInteger(plan.last || unitPrice)}g
+            and may fill for {side === 'buy' ? 'more' : 'less'}.
+          </p>
+        )}
 
         <div className="mt-auto pt-4">
           {!desk && <p className="mb-2 text-[11px] text-faint">This good is available on the player exchange only.</p>}
@@ -512,7 +731,12 @@ function ShopTradeTicket({
               {playerPrice > 0 && <button type="button" onClick={onOpenFloor} className="mt-1.5 flex items-center gap-1 text-[11px] text-ink hover:text-arcane">Trade on the player exchange <Arrow className="h-3 w-3" /></button>}
             </div>
           )}
-          {!paused && Boolean(shortBy) && (
+          {!paused && Boolean(overLimit) && (
+            <p className="mb-2 text-[11px] text-warn">
+              {ITEM_NAME[item]} trades at most {formatInteger(perAction)} at a time.
+            </p>
+          )}
+          {!paused && !overLimit && Boolean(shortBy) && (
             <p className="mb-2 text-[11px] text-warn">
               {side === 'buy' ? `Need ${formatInteger(shortBy)} more Gold.` : `Need ${formatInteger(shortBy)} more in your satchel.`}
             </p>
@@ -586,14 +810,14 @@ function sweepLadder(
 }
 
 function TradingFloor({
-  economy, address, gold, inventory, item, onItem, range, onRange,
+  economy, address, gold, inventory, item, range, onRange,
   chartMode, onChartMode, candleInterval, onCandleInterval, side, onSide, tif, onTif,
   price, onPrice, quantity, onQuantity, ownOrders, recentFills, connecting, onConnect,
   isPending, onSubmit, onCancel, onCancelAll, onAmend,
 }: {
   economy: EconomyView; address: string | null; gold: number;
   inventory: Partial<Record<GoldMarketItemId, number>> | undefined;
-  item: GoldMarketItemId; onItem: (item: GoldMarketItemId) => void;
+  item: GoldMarketItemId;
   range: FloorRange; onRange: (range: FloorRange) => void;
   chartMode: ChartMode; onChartMode: (mode: ChartMode) => void;
   candleInterval: CandleInterval; onCandleInterval: (interval: CandleInterval) => void;
@@ -610,7 +834,6 @@ function TradingFloor({
   const now = Date.now();
   const from = now - RANGE_MS[range];
   const series = useMemo(() => seriesByItem(economy.fills, from), [economy.fills, from]);
-  const watchSeries = useMemo(() => seriesByItem(economy.fills, now - RANGE_MS['24h']), [economy.fills, now]);
   const book = economy.market[item];
   const points = series[item] ?? [];
   /* Daily bars come from the process. `economy.fills` is a 500-row ring shared
@@ -683,46 +906,21 @@ function TradingFloor({
 
   return (
     <div className="market-goods-body market-floor flex min-h-0 flex-col gap-2.5">
-      <div className="market-floor-strip grid grid-cols-2 gap-2 sm:grid-cols-3 xl:grid-cols-6">
-        {GOLD_ITEMS.map((id) => (
-          <FloorTile key={id} item={id} active={item === id} onClick={() => onItem(id)}
-                     stats={economy.market[id]} points={watchSeries[id] ?? []} />
-        ))}
-      </div>
-
-      <div className="market-floor-body grid min-h-0 flex-1 gap-2.5 xl:grid-cols-[minmax(0,1.6fr)_minmax(0,.85fr)_19rem]">
+      <div data-tour="market-book" className="market-book-body grid min-h-0 flex-1 gap-2.5">
         <Panel className="market-order-book flex min-h-0 flex-col overflow-hidden p-3.5">
           <div className="flex flex-wrap items-center justify-between gap-2">
             <h3 className="font-mono text-sm tracking-tight">
               {ITEM_NAME[item]} <span className="text-faint">/ Gold</span>
             </h3>
-            <div className="market-chart-toolbar flex flex-wrap justify-end gap-1">
-              {(['line', 'candles'] as ChartMode[]).map((value) => (
-                <ChartControl key={value} active={chartMode === value} onClick={() => onChartMode(value)}>
-                  {value === 'line' ? 'Line' : 'Candles'}
-                </ChartControl>
-              ))}
-              <span className="market-chart-divider" aria-hidden="true" />
-              {chartMode === 'candles' && (['5m', '30m', '1h', '4h', '1d'] as CandleInterval[]).map((value) => (
-                <ChartControl key={value} active={candleInterval === value} onClick={() => onCandleInterval(value)}>
-                  {value}
-                </ChartControl>
-              ))}
-              {chartMode === 'candles' && <span className="market-chart-divider" aria-hidden="true" />}
-              {(['12h', '24h', '7d', '30d'] as FloorRange[]).map((value) => (
-                <button key={value} type="button" aria-pressed={range === value} onClick={() => onRange(value)}
-                        className={cx(
-                          'rounded-[2px] border px-2 py-1 font-mono text-[10px] uppercase transition-colors',
-                          range === value ? 'border-arcane/60 bg-arcane/12 text-arcane'
-                                          : 'border-edge text-faint hover:text-ink',
-                        )}>{value}</button>
-              ))}
-            </div>
+            <BookChartToolbar chartMode={chartMode} onChartMode={onChartMode}
+                              candleInterval={candleInterval} onCandleInterval={onCandleInterval}
+                              range={range} onRange={onRange} />
           </div>
-          <MarketTicker book={book} points={points} />
+          <BookTicker rows={internalTicks(book, points)} />
           <PriceChart className="mt-2.5 min-h-[15rem] flex-1 lg:min-h-0" points={points} from={from} to={now}
                       bid={book?.bestBid} ask={book?.bestAsk} mode={chartMode}
-                      candleMs={CANDLE_MS[candleInterval]} published={publishedBars} />
+                      candleMs={CANDLE_MS[candleInterval]} published={publishedBars}
+                      unit="Gold" format={formatInteger} />
           {publishedBars !== undefined && publishedBars.length > 0 && (
             <p className="mt-1.5 text-[10px] text-faint">
               Daily candles come from the process and are kept for 30 days. The raw fill
@@ -733,14 +931,15 @@ function TradingFloor({
 
         <Panel className="market-depth-panel flex min-h-0 flex-col overflow-hidden p-3.5">
           <div className="grid grid-cols-2 gap-px overflow-hidden rounded-[3px] border border-arcane/15 bg-arcane/12 p-px">
-            <BookPrice label="Best bid" value={book?.bestBid} tone="good" />
-            <BookPrice label="Best ask" value={book?.bestAsk} tone="bad" />
+            <BookPrice label="Best bid" value={book?.bestBid} tone="good" unit="gold" format={formatInteger} />
+            <BookPrice label="Best ask" value={book?.bestAsk} tone="bad" unit="gold" format={formatInteger} />
           </div>
-          <DepthMountain bids={book?.depth.bids ?? []} asks={book?.depth.asks ?? []} className="mt-3 min-h-[9rem] flex-1" />
+          <DepthMountain bids={book?.depth.bids ?? []} asks={book?.depth.asks ?? []}
+                         unit="g" format={formatInteger} className="mt-3 min-h-[9rem] flex-1" />
           <div className="market-depth-ladders mt-3 grid max-h-44 grid-cols-2 gap-4 overflow-y-auto">
-            <DepthList label="Bids" tone="good" rows={book?.depth.bids ?? []}
+            <DepthList label="Bids" tone="good" rows={book?.depth.bids ?? []} unit="Gold" format={formatInteger}
                        onPick={(value) => pickDepth('sell', value)} action="Sell into bid" />
-            <DepthList label="Asks" tone="bad" rows={book?.depth.asks ?? []}
+            <DepthList label="Asks" tone="bad" rows={book?.depth.asks ?? []} unit="Gold" format={formatInteger}
                        onPick={(value) => pickDepth('buy', value)} action="Buy from ask" />
           </div>
           {/* The realm's desk is IN this ladder, and saying so once, here, is
@@ -961,58 +1160,6 @@ function TradingFloor({
   );
 }
 
-/** Every pair at once: last, move over the window, and the shape of the move. */
-function FloorTile({ item, active, onClick, stats, points }: {
-  item: GoldMarketItemId; active: boolean; onClick: () => void;
-  stats?: EconomyMarketStats; points: PricePoint[];
-}) {
-  const last = points.at(-1)?.v ?? stats?.bestAsk ?? stats?.bestBid;
-  const first = points[0]?.v;
-  const change = first && last ? ((last - first) / first) * 100 : 0;
-  const tone = change >= 0 ? 'good' : 'bad';
-  return (
-    <button type="button" aria-pressed={active} onClick={onClick}
-            className={cx('market-floor-tile', active && 'is-active')}>
-      <span className="flex items-center gap-1.5">
-        <ItemGlyph item={item} className="h-4 w-4" />
-        <span className="min-w-0 truncate font-mono text-[10px] uppercase tracking-wide text-muted">{ITEM_NAME[item]}</span>
-      </span>
-      <span className="mt-1 flex items-baseline gap-1.5">
-        <span className="font-mono text-base leading-none">{last ? formatInteger(last) : '--'}</span>
-        {points.length > 1 && (
-          <span className={cx('font-mono text-[10px]', tone === 'good' ? 'text-good' : 'text-bad')}>
-            {change >= 0 ? '+' : ''}{change.toFixed(1)}%
-          </span>
-        )}
-      </span>
-      <span className="market-floor-quotes mt-1.5 grid grid-cols-2 gap-px">
-        <span><i>Bid</i><b className="text-good">{stats?.bestBid ? formatInteger(stats.bestBid) : '--'}</b></span>
-        <span><i>Ask</i><b className="text-bad">{stats?.bestAsk ? formatInteger(stats.bestAsk) : '--'}</b></span>
-      </span>
-      <Spark points={points} tone={tone} className="mt-1.5 h-6 w-full" />
-    </button>
-  );
-}
-
-function Spark({ points, tone, className }: { points: PricePoint[]; tone: 'good' | 'bad'; className?: string }) {
-  if (points.length < 2) {
-    return <span className={cx('grid place-items-center font-mono text-[9px] text-faint', className)}>no fills</span>;
-  }
-  const xs = points.map((point) => point.t);
-  const ys = points.map((point) => point.v);
-  const x0 = Math.min(...xs); const spanX = Math.max(...xs) - x0 || 1;
-  const y0 = Math.min(...ys); const spanY = Math.max(...ys) - y0 || 1;
-  const path = points.map((point, index) =>
-    `${index ? 'L' : 'M'}${((point.t - x0) / spanX * 100).toFixed(2)} ${(100 - (point.v - y0) / spanY * 100).toFixed(2)}`,
-  ).join(' ');
-  return (
-    <svg className={className} viewBox="0 0 100 100" preserveAspectRatio="none" aria-hidden="true">
-      <path d={`${path} L100 100 L0 100 Z`} fill={`rgb(var(--${tone}) / .14)`} />
-      <path d={path} fill="none" stroke={`rgb(var(--${tone}))`} strokeWidth="1.5" vectorEffect="non-scaling-stroke" />
-    </svg>
-  );
-}
-
 /**
  * The floor's price history, over real time rather than over an index.
  *
@@ -1022,6 +1169,39 @@ function Spark({ points, tone, className }: { points: PricePoint[]; tone: 'good'
  * best bid and ask are dashed across it, because where the last trade sits
  * relative to the live book is the only reading anybody takes from this.
  */
+/**
+ * Line or candles, which candle, and how far back.
+ *
+ * Extracted the moment there were two books: a toolbar that lives in one
+ * screen's JSX is a toolbar the other screen grows a slightly different copy
+ * of, and then the two stop being the same instrument.
+ */
+function BookChartToolbar({ chartMode, onChartMode, candleInterval, onCandleInterval, range, onRange }: {
+  chartMode: ChartMode; onChartMode: (mode: ChartMode) => void;
+  candleInterval: CandleInterval; onCandleInterval: (interval: CandleInterval) => void;
+  range: FloorRange; onRange: (range: FloorRange) => void;
+}) {
+  return (
+    <div className="market-chart-toolbar flex flex-wrap justify-end gap-1">
+      {(['line', 'candles'] as ChartMode[]).map((value) => (
+        <ChartControl key={value} active={chartMode === value} onClick={() => onChartMode(value)}>
+          {value === 'line' ? 'Line' : 'Candles'}
+        </ChartControl>
+      ))}
+      <span className="market-chart-divider" aria-hidden="true" />
+      {chartMode === 'candles' && (['5m', '30m', '1h', '4h', '1d'] as CandleInterval[]).map((value) => (
+        <ChartControl key={value} active={candleInterval === value} onClick={() => onCandleInterval(value)}>
+          {value}
+        </ChartControl>
+      ))}
+      {chartMode === 'candles' && <span className="market-chart-divider" aria-hidden="true" />}
+      {(['12h', '24h', '7d', '30d'] as FloorRange[]).map((value) => (
+        <ChartControl key={value} active={range === value} onClick={() => onRange(value)}>{value}</ChartControl>
+      ))}
+    </div>
+  );
+}
+
 function ChartControl({ active, onClick, children }: {
   active: boolean; onClick: () => void; children: React.ReactNode;
 }) {
@@ -1053,8 +1233,12 @@ function candleBars(points: PricePoint[], interval: number): CandleBar[] {
   return [...buckets.values()].sort((a, b) => a.t - b.t);
 }
 
-function PriceChart({ points, from, to, bid, ask, mode, candleMs, published, className }: {
+function PriceChart({ points, from, to, bid, ask, mode, candleMs, published, unit, format, className }: {
   points: PricePoint[]; from: number; to: number; mode: ChartMode; candleMs: number;
+  /* The quote asset's name and how to print a price in it. A book quoted in
+     Gold prints whole numbers; one quoted in a six-decimal token does not, and
+     `formatInteger` rounded every external price to the same integer. */
+  unit: string; format: (value: number) => string;
   /* Daily bars straight from the process, when it has them for this window.
      They are the whole reason candles were added: `economy.fills` is a 500-row
      ring, so a chart derived from it silently loses everything older than the
@@ -1132,7 +1316,7 @@ function PriceChart({ points, from, to, bid, ask, mode, candleMs, published, cla
         ctx.beginPath(); ctx.moveTo(pad.left, py); ctx.lineTo(pad.left + plotW, py); ctx.stroke();
         ctx.restore();
         ctx.fillStyle = colour; ctx.textAlign = 'left'; ctx.textBaseline = 'middle';
-        ctx.fillText(`${label} ${value}`, pad.left + plotW + 5, py);
+        ctx.fillText(`${label} ${format(value)}`, pad.left + plotW + 5, py);
       };
       rule(bid, 'rgb(74,210,149)', 'B');
       rule(ask, 'rgb(255,94,105)', 'A');
@@ -1194,9 +1378,10 @@ function PriceChart({ points, from, to, bid, ask, mode, candleMs, published, cla
           ctx.beginPath(); ctx.moveTo(pad.left, py); ctx.lineTo(pad.left + plotW, py); ctx.stroke(); ctx.restore();
           const timeLabel = new Date(nearest.t).toLocaleString(undefined, { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' });
           const valueLabel = nearest.bar
-            ? `O ${nearest.bar.open}  H ${nearest.bar.high}  L ${nearest.bar.low}  C ${nearest.bar.close}`
-            : `${formatInteger(nearest.v)} Gold`;
-          const boxW = nearest.bar ? 190 : 132; const boxH = 34;
+            ? `O ${format(nearest.bar.open)}  H ${format(nearest.bar.high)}`
+              + `  L ${format(nearest.bar.low)}  C ${format(nearest.bar.close)}`
+            : `${format(nearest.v)} ${unit}`;
+          const boxW = nearest.bar ? 212 : 148; const boxH = 34;
           const boxX = px + boxW + 12 > pad.left + plotW ? px - boxW - 8 : px + 8;
           const boxY = Math.max(pad.top + 3, Math.min(py - boxH - 7, pad.top + priceH - boxH));
           ctx.fillStyle = 'rgba(10,12,20,.94)'; ctx.fillRect(boxX, boxY, boxW, boxH);
@@ -1224,14 +1409,14 @@ function PriceChart({ points, from, to, bid, ask, mode, candleMs, published, cla
       element.removeEventListener('mousemove', onMove);
       element.removeEventListener('mouseleave', onLeave);
     };
-  }, [points, bars, from, to, bid, ask, mode, candleMs]);
+  }, [points, bars, from, to, bid, ask, mode, candleMs, unit, format]);
 
   return (
     <div ref={host} className={cx('market-price-chart relative overflow-hidden rounded-[3px]', className)}>
       {mode === 'candles' && latestBar && (
         <div className="market-candle-readout" aria-hidden="true">
-          <span>O {formatInteger(latestBar.open)}</span><span>H {formatInteger(latestBar.high)}</span>
-          <span>L {formatInteger(latestBar.low)}</span><span>C {formatInteger(latestBar.close)}</span>
+          <span>O {format(latestBar.open)}</span><span>H {format(latestBar.high)}</span>
+          <span>L {format(latestBar.low)}</span><span>C {format(latestBar.close)}</span>
         </div>
       )}
       <canvas ref={canvas} className="absolute inset-0 h-full w-full cursor-crosshair"
@@ -1251,33 +1436,49 @@ function seriesByItem(fills: EconomyFill[], from: number): Partial<Record<GoldMa
   return out;
 }
 
-/** The strip that says this half is a market: last, spread, volume, traders. */
-function MarketTicker({ book, points }: { book?: EconomyMarketStats; points: PricePoint[] }) {
+/**
+ * The strip that says this half is a market: last, spread, volume, traders.
+ *
+ * It takes rows rather than a book, because the external venue has all eight
+ * of these numbers and not one of them comes out of an `EconomyMarketStats`.
+ * Both books use the same eight labels in the same order on purpose — that
+ * repetition is the whole point of the strip.
+ */
+function BookTicker({ rows }: {
+  rows: Array<{ label: string; value: string; tone?: 'good' | 'bad' }>;
+}) {
+  return (
+    <dl className="market-ticker mt-2 flex flex-wrap gap-x-4 gap-y-1 border-y border-arcane/15 py-1.5">
+      {rows.map((row) => <Tick key={row.label} label={row.label} tone={row.tone}>{row.value}</Tick>)}
+    </dl>
+  );
+}
+
+/* The internal book's eight, including who is on the touch.
+
+   The realm's desk quotes into this same ladder, so "is the best bid a player
+   or the house" is the one reading a trader cannot work out from the numbers
+   themselves — and it is the difference between a market with players in it
+   and an empty one being held open by the house. */
+function internalTicks(book: EconomyMarketStats | undefined, points: PricePoint[]) {
   const spread = book?.bestBid && book?.bestAsk ? book.bestAsk - book.bestBid : undefined;
   const last = points.at(-1)?.v;
-  /* Whether the best price on each side is the realm's desk or another player.
-     The desk quotes into this same ladder, so "who is on the touch" is the one
-     reading a trader cannot work out from the numbers themselves — and it is
-     the difference between a market with players in it and an empty one being
-     held open by the house. */
   const houseBid = book?.houseBid !== undefined && book.bestBid === book.houseBid
     && (book.p2pBid === undefined || book.p2pBid < book.houseBid);
   const houseAsk = book?.houseAsk !== undefined && book.bestAsk === book.houseAsk
     && (book.p2pAsk === undefined || book.p2pAsk > book.houseAsk);
-  return (
-    <dl className="market-ticker mt-2 flex flex-wrap gap-x-4 gap-y-1 border-y border-arcane/15 py-1.5">
-      <Tick label="Last">{last ? formatInteger(last) : '--'}</Tick>
-      <Tick label={houseBid ? 'Bid · realm' : 'Bid'} tone="good">
-        {book?.bestBid ? formatInteger(book.bestBid) : '--'}</Tick>
-      <Tick label={houseAsk ? 'Ask · realm' : 'Ask'} tone="bad">
-        {book?.bestAsk ? formatInteger(book.bestAsk) : '--'}</Tick>
-      <Tick label="Spread">{spread === undefined ? '--' : formatInteger(spread)}</Tick>
-      <Tick label="Med 7d">{book?.median7d ? formatInteger(book.median7d) : '--'}</Tick>
-      <Tick label="Vol 24h">{formatInteger(book?.volume24h ?? 0)}</Tick>
-      <Tick label="Vol 7d">{formatInteger(book?.volume7d ?? 0)}</Tick>
-      <Tick label="Fills">{formatInteger(points.length)}</Tick>
-    </dl>
-  );
+  return [
+    { label: 'Last', value: last ? formatInteger(last) : '--' },
+    { label: houseBid ? 'Bid · realm' : 'Bid', tone: 'good' as const,
+      value: book?.bestBid ? formatInteger(book.bestBid) : '--' },
+    { label: houseAsk ? 'Ask · realm' : 'Ask', tone: 'bad' as const,
+      value: book?.bestAsk ? formatInteger(book.bestAsk) : '--' },
+    { label: 'Spread', value: spread === undefined ? '--' : formatInteger(spread) },
+    { label: 'Med 7d', value: book?.median7d ? formatInteger(book.median7d) : '--' },
+    { label: 'Vol 24h', value: formatInteger(book?.volume24h ?? 0) },
+    { label: 'Vol 7d', value: formatInteger(book?.volume7d ?? 0) },
+    { label: 'Fills', value: formatInteger(points.length) },
+  ];
 }
 
 function Tick({ label, children, tone }: { label: string; children: React.ReactNode; tone?: 'good' | 'bad' }) {
@@ -1318,13 +1519,16 @@ function Stepper({ value, max, onChange, label }: {
   );
 }
 
-function BookPrice({ label, value, tone }: { label: string; value?: number; tone: 'good' | 'bad' }) {
+function BookPrice({ label, value, tone, unit, format }: {
+  label: string; value?: number; tone: 'good' | 'bad'; unit: string;
+  format: (value: number) => string;
+}) {
   return (
-    <div className="bg-void/25 px-3 py-2">
+    <div className="min-w-0 bg-void/25 px-3 py-2">
       <div className="eyebrow">{label}</div>
-      <div className={cx('mt-1 font-mono text-lg leading-none',
+      <div className={cx('mt-1 truncate font-mono text-lg leading-none',
         value ? (tone === 'good' ? 'text-good' : 'text-bad') : 'text-faint')}>
-        {value ? formatInteger(value) : '--'} <span className="eyebrow">gold</span>
+        {value ? format(value) : '--'} <span className="eyebrow">{unit}</span>
       </div>
     </div>
   );
@@ -1345,8 +1549,9 @@ function aggregateDepth(rows: MarketDepthRow[], tone: 'good' | 'bad') {
 }
 
 /** Cumulative market depth: bid liquidity grows left, ask liquidity grows right. */
-function DepthMountain({ bids: rawBids, asks: rawAsks, className }: {
+function DepthMountain({ bids: rawBids, asks: rawAsks, unit, format, className }: {
   bids: MarketDepthRow[]; asks: MarketDepthRow[]; className?: string;
+  unit: string; format: (value: number) => string;
 }) {
   const bids = aggregateDepth(rawBids, 'good').slice(0, 10);
   const asks = aggregateDepth(rawAsks, 'bad').slice(0, 10);
@@ -1388,21 +1593,31 @@ function DepthMountain({ bids: rawBids, asks: rawAsks, className }: {
         {askPoints.length > 0 && <path d={steppedArea(askPoints)} fill="rgb(var(--bad) / .14)" stroke="rgb(var(--bad) / .78)" strokeWidth="1.3" vectorEffect="non-scaling-stroke" />}
         <path d={`M${bestBidX} 10V88 M${bestAskX} 10V88`} stroke="rgb(var(--arcane) / .28)" strokeDasharray="2 3" vectorEffect="non-scaling-stroke" />
       </svg>
-      <div className="market-depth-axis"><span>{formatInteger(minPrice)}g</span><span>spread</span><span>{formatInteger(maxPrice)}g</span></div>
+      <div className="market-depth-axis"><span>{format(minPrice)}{unit}</span><span>spread</span><span>{format(maxPrice)}{unit}</span></div>
     </div>
   );
 }
 
 /** Price ladder beneath the cumulative depth view. */
-function DepthList({ label, rows, tone, onPick, action }: {
+function DepthList({ label, rows, tone, onPick, action, unit, format, formatSize, houseNote }: {
   label: string; tone: 'good' | 'bad'; rows: MarketDepthRow[];
   onPick: (price: number) => void; action: string;
+  unit: string; format: (value: number) => string; formatSize?: (value: number) => string;
+  /* The external pool has no resting orders, so "3 resting orders" would be a
+     lie on that ladder. The venue supplies the sentence for a level's size. */
+  houseNote?: (row: { quantity: number; orders: number; house: number }) => string;
 }) {
   /* The deployed view may still publish one row per order. Collapse it here so
      the ladder always reads as price levels while the process moves to the
      smaller aggregated contract described in ORDERBOOK.md. */
   const shown = aggregateDepth(rows, tone).slice(0, 8);
   const peak = Math.max(1, ...shown.map((row) => row.quantity));
+  const size = formatSize ?? formatInteger;
+  const note = houseNote ?? ((row: { quantity: number; orders: number; house: number }) =>
+    (row.house >= row.quantity
+      ? `${formatInteger(row.house)} units quoted by the realm's desk`
+      : `${formatInteger(row.orders)} resting ${row.orders === 1 ? 'order' : 'orders'}`
+        + (row.house ? `, plus ${formatInteger(row.house)} from the realm's desk` : '')));
   return (
     <div className="min-w-0">
       <div className="eyebrow mb-2">{label}</div>
@@ -1410,18 +1625,14 @@ function DepthList({ label, rows, tone, onPick, action }: {
         <ul className="space-y-1">
           {shown.map((row, index) => (
             <li key={`${row.price}-${index}`}>
-              <button type="button" title={`${action} at ${formatInteger(row.price)} Gold`}
+              <button type="button" title={`${action} at ${format(row.price)} ${unit}`}
                       onClick={() => onPick(row.price)} className="market-depth-row">
                 <span aria-hidden="true"
                       className={cx('absolute inset-y-0 left-0', tone === 'good' ? 'bg-good/10' : 'bg-bad/10')}
                       style={{ width: `${(row.quantity / peak) * 100}%` }} />
-                <span className={cx('relative', tone === 'good' ? 'text-good' : 'text-bad')}>{formatInteger(row.price)}</span>
-                <span className="relative text-faint"
-                      title={row.house >= row.quantity
-                        ? `${formatInteger(row.house)} units quoted by the realm's desk`
-                        : `${formatInteger(row.orders)} resting ${row.orders === 1 ? 'order' : 'orders'}`
-                          + (row.house ? `, plus ${formatInteger(row.house)} from the realm's desk` : '')}>
-                  &times; {formatInteger(row.quantity)}
+                <span className={cx('relative', tone === 'good' ? 'text-good' : 'text-bad')}>{format(row.price)}</span>
+                <span className="relative text-faint" title={note(row)}>
+                  &times; {size(row.quantity)}
                   {/* The house is in the same ladder as everyone else, so the
                       only honest way to show it is here, on the level it is
                       quoting — not in a second tab the player has to compare. */}
@@ -1435,26 +1646,6 @@ function DepthList({ label, rows, tone, onPick, action }: {
     </div>
   );
 }
-function MarketTabButton({ active, onClick, icon, children }: {
-  active: boolean; onClick: () => void; icon: React.ReactNode; children: React.ReactNode;
-}) {
-  // A full-bleed slab of element colour across a third of the screen was the
-  // loudest thing on the page and read as a banner rather than a tab. The
-  // selection is a tint and an underline now; the colour still says which one.
-  return (
-    <button type="button" role="tab" aria-selected={active} onClick={onClick}
-            className={cx(
-              'market-tab flex min-h-12 items-center justify-center gap-2 rounded-[3px] px-3 transition-colors',
-              active
-                ? 'bg-element/12 text-element shadow-[inset_0_-2px_0_0_rgb(var(--element))]'
-                : 'text-muted hover:bg-raised hover:text-ink',
-            )}>
-      <span className={cx('shrink-0', active ? 'text-element' : 'text-faint')}>{icon}</span>
-      <span className="text-sm font-semibold">{children}</span>
-    </button>
-  );
-}
-
 // Monster market ------------------------------------------------------------
 
 /**
@@ -1754,11 +1945,94 @@ function ListMonsterDialog({ monsters, busy, onClose, onSubmit }: {
 
 // Rune exchange -------------------------------------------------------------
 
-function RuneExchange() {
+// The external book ---------------------------------------------------------
+
+/**
+ * The pool's ladder, and why a pool has one.
+ *
+ * A constant-product pool holds no resting orders, so the honest instinct is
+ * that it cannot draw a book. It can: the curve says exactly how much size it
+ * takes to move the marginal price to any level, which is the same question a
+ * ladder answers. With reserves Rb and Rq, fee f and k = Rb·Rq, the size that
+ * walks the pool from its touch to a marginal price P is
+ *
+ *     ask side   x = Rb − √( k / ((1−f)·P) )
+ *     bid side   x = ( √( (1−f)·k / P ) − Rb ) / (1−f)
+ *
+ * and a level's quantity is that size minus the previous level's. So the two
+ * ladders are read the same way — "this much is available before the price
+ * gets to there" — and only the mechanism underneath differs.
+ *
+ * The levels are proportional rather than absolute because a pool's depth is
+ * scale-free: 1% away from the touch means the same thing whatever the price.
+ */
+const CURVE_STEPS = [0.0025, 0.005, 0.01, 0.02, 0.035, 0.05, 0.075, 0.1];
+
+function curveDepth(
+  reserveBase: number, reserveQuote: number, fee: number, side: 'bid' | 'ask',
+): MarketDepthRow[] {
+  if (!(reserveBase > 0) || !(reserveQuote > 0)) return [];
+  const k = reserveBase * reserveQuote;
+  const spot = reserveQuote / reserveBase;
+  const touch = side === 'ask' ? spot / (1 - fee) : spot * (1 - fee);
+  const rows: MarketDepthRow[] = [];
+  let taken = 0;
+  for (const step of CURVE_STEPS) {
+    const price = side === 'ask' ? touch * (1 + step) : touch * (1 - step);
+    if (!(price > 0)) continue;
+    const size = side === 'ask'
+      ? reserveBase - Math.sqrt(k / ((1 - fee) * price))
+      : (Math.sqrt((1 - fee) * k / price) - reserveBase) / (1 - fee);
+    if (!Number.isFinite(size) || size <= taken) continue;
+    rows.push({ price, quantity: size - taken, orders: 0, house: 0 });
+    taken = size;
+  }
+  return rows;
+}
+
+/** A swap read back as a price point, oldest first. */
+function poolSeries(records: AmmSwap[], pool: AmmPool, from: number): PricePoint[] {
+  const points: PricePoint[] = [];
+  for (const record of records ?? []) {
+    const baseInput = record.inputToken === pool.baseToken;
+    const base = Number(formatUnits(baseInput ? record.input : record.output,
+      pool.baseDenomination, pool.baseDenomination));
+    const quote = Number(formatUnits(baseInput ? record.output : record.input,
+      pool.quoteDenomination, pool.quoteDenomination));
+    // The process writes seconds; the harness writes milliseconds. Same guard
+    // as `relativeTime`, and for the same reason.
+    const t = record.timestamp < 10_000_000_000 ? record.timestamp * 1000 : record.timestamp;
+    if (!(base > 0) || !(quote > 0) || !Number.isFinite(t) || t < from) continue;
+    points.push({ t, v: quote / base, q: base });
+  }
+  return points.sort((a, b) => a.t - b.t);
+}
+
+function median(values: number[]): number | undefined {
+  if (!values.length) return undefined;
+  const sorted = [...values].sort((a, b) => a - b);
+  const middle = Math.floor(sorted.length / 2);
+  return sorted.length % 2 ? sorted[middle] : (sorted[middle - 1] + sorted[middle]) / 2;
+}
+
+/**
+ * The external book.
+ *
+ * The same three panels as the internal one, in the same order, drawn by the
+ * same components: the market strip, the chart with its ticker, the depth with
+ * its ladders, and the ticket. What sits underneath is a constant-product pool
+ * rather than a matching engine, and the screen says so exactly twice — in the
+ * one time-in-force it can offer, and in the note under the ladder. Everywhere
+ * else a trader is reading the same instrument in the same place, which is the
+ * entire point: what you learn on Gold you already know on real tokens.
+ *
+ * Moving Rune across the bridge and pairing liquidity are not trading, so they
+ * are not on the trading screen. They are dialogs off the bar, next to the
+ * stats, where the shop's own second-order actions live.
+ */
+function ExternalBook() {
   const { address, player, connect, connecting, run: runGame, isPending, refresh: refreshGame } = useGame();
   const toast = useToast();
-  const [desk, setDesk] = useState<RuneDesk>('trade');
-  const [statsOpen, setStatsOpen] = useState(false);
   const [pool, setPool] = useState<AmmPool | null>(null);
   const [deposit, setDeposit] = useState<AmmDeposit>(() => EMPTY_DEPOSIT());
   const [quoteInfo, setQuoteInfo] = useState<TokenInfo | null>(null);
@@ -1766,12 +2040,17 @@ function RuneExchange() {
   const [swaps, setSwaps] = useState<AmmSwap[]>([]);
   const [error, setError] = useState<unknown>(null);
   const [busy, setBusy] = useState('');
-  const [baseIn, setBaseIn] = useState(true);
+  const [dialog, setDialog] = useState<'' | 'bridge' | 'pool' | 'stats'>('');
+
+  const [side, setSide] = useState<GoldOrderSide>('buy');
   const [amount, setAmount] = useState('');
   const [slippage, setSlippage] = useState('1');
   const [bridgeAmount, setBridgeAmount] = useState('');
   const [lpBase, setLpBase] = useState('');
   const [lpQuote, setLpQuote] = useState('');
+  const [range, setRange] = useState<FloorRange>('12h');
+  const [chartMode, setChartMode] = useState<ChartMode>('line');
+  const [candleInterval, setCandleInterval] = useState<CandleInterval>('30m');
 
   const refresh = useCallback(async () => {
     setError(null);
@@ -1802,11 +2081,46 @@ function RuneExchange() {
   };
 
   if (!exchangeConfigured()) {
-    return <Panel><Empty icon={<Exchange />} title="The Rune desk needs its three process ids">Configure Rune, TEST-RELIC, and the AMM process before enabling bridge or pool actions.</Empty></Panel>;
+    return (
+      <Panel>
+        <Empty icon={<Exchange />} title="The external book needs its three process ids">
+          Configure Rune, the quote token and the pool process before enabling trading here.
+        </Empty>
+      </Panel>
+    );
   }
-  if (!pool && !error) return <div className="grid gap-4 lg:grid-cols-3"><Skeleton className="h-96 lg:col-span-2" /><Skeleton className="h-96" /></div>;
+  if (!pool && !error) {
+    return (
+      <div className="market-goods">
+        <Skeleton className="h-16" />
+        <div className="market-book-body mt-2.5">
+          <Skeleton className="h-96" /><Skeleton className="h-96" /><Skeleton className="h-96" />
+        </div>
+      </div>
+    );
+  }
   if (!pool) return <ErrorNote error={error} onRetry={() => void refresh()} />;
 
+  const now = Date.now();
+  const from = now - RANGE_MS[range];
+  const fee = pool.feeBps / 10_000;
+  const reserveBase = Number(formatUnits(pool.reserveBase, pool.baseDenomination, pool.baseDenomination));
+  const reserveQuote = Number(formatUnits(pool.reserveQuote, pool.quoteDenomination, pool.quoteDenomination));
+  const pairLive = pool.configured && reserveBase > 0 && reserveQuote > 0;
+  const spot = pairLive ? reserveQuote / reserveBase : 0;
+  const bestAsk = pairLive ? spot / (1 - fee) : undefined;
+  const bestBid = pairLive ? spot * (1 - fee) : undefined;
+
+  const points = poolSeries(swaps, pool, from);
+  const dayPoints = poolSeries(swaps, pool, now - RANGE_MS['24h']);
+  const weekPoints = poolSeries(swaps, pool, now - RANGE_MS['7d']);
+  const bids = curveDepth(reserveBase, reserveQuote, fee, 'bid');
+  const asks = curveDepth(reserveBase, reserveQuote, fee, 'ask');
+
+  /* Buying Rune spends the quote token; selling Rune spends Rune. The ticket
+     says Bid and Ask because that is what the other book says, and the pair is
+     always quoted Rune-first for the same reason. */
+  const baseIn = side === 'sell';
   const inputToken = baseIn ? pool.baseToken : pool.quoteToken;
   const inputDenom = baseIn ? pool.baseDenomination : pool.quoteDenomination;
   const outputDenom = baseIn ? pool.quoteDenomination : pool.baseDenomination;
@@ -1818,12 +2132,22 @@ function RuneExchange() {
   const quoted = parsed.value ? quoteFromPool(pool, inputToken, parsed.value) : '0';
   const slip = Math.max(0, Math.min(50, Number(slippage) || 0));
   const minimum = (BigInt(quoted) * BigInt(Math.floor((100 - slip) * 100)) / 10_000n).toString();
-  const pairLive = pool.configured && BigInt(pool.reserveBase) > 0n && BigInt(pool.reserveQuote) > 0n;
-  const gameRune = player?.inventory?.rune ?? 0;
-  const priceSeries = swapPrices(swaps, pool);
-  const forgeMode: MarketForgeMode = desk === 'trade' ? 'trade' : desk === 'bridge' ? 'bridge' : 'pool';
-  const bridgeParsed = tryParseUnits(bridgeAmount, pool.baseDenomination);
 
+  const sent = Number(formatUnits(parsed.value ?? '0', inputDenom, inputDenom));
+  const received = Number(formatUnits(quoted, outputDenom, outputDenom));
+  /* The price this order actually gets, in quote per base, whichever way round
+     it is going. It is the external book's answer to "limit, taken from the
+     ladder": one number, worked out from the curve, not typed by the player. */
+  const fillPrice = baseIn ? (sent > 0 ? received / sent : 0) : (received > 0 ? sent / received : 0);
+  const impact = fillPrice && spot ? Math.abs(fillPrice - spot) / spot * 100 : 0;
+  const notional = baseIn ? received : sent;
+  const poolFee = sent * fee;
+  const shortBalance = parsed.value ? BigInt(parsed.value) > BigInt(inputBalance) : false;
+  const needsDeposit = parsed.value ? BigInt(credited) < BigInt(parsed.value) : false;
+  const orderReady = Boolean(parsed.value) && !needsDeposit && pairLive && !pool.paused;
+
+  const gameRune = player?.inventory?.rune ?? 0;
+  const bridgeParsed = tryParseUnits(bridgeAmount, pool.baseDenomination);
   const needWallet = (action: () => void) => { if (!address) connect(); else action(); };
   const doWithdraw = async () => {
     const value = Number(bridgeAmount);
@@ -1839,158 +2163,357 @@ function RuneExchange() {
     }, `${bridgeAmount} Rune burned into your game balance.`).then(() => setBridgeAmount(''));
   };
 
+  /* Picking a level off the ladder sets the size that reaches it, the same
+     gesture as picking a price off the internal ladder. Cumulative, because
+     that is what the level means. */
+  const pickDepth = (nextSide: GoldOrderSide, price: number) => {
+    const rows = nextSide === 'buy' ? asks : bids;
+    let units = 0;
+    for (const row of aggregateDepth(rows, nextSide === 'buy' ? 'bad' : 'good')) {
+      units += row.quantity;
+      if (nextSide === 'buy' ? row.price >= price : row.price <= price) break;
+    }
+    if (!(units > 0)) return;
+    setSide(nextSide);
+    // Buying is quoted in the quote token, so the size in Rune becomes a spend.
+    setAmount((nextSide === 'buy' ? units * price : units).toFixed(Math.min(6, nextSide === 'buy' ? pool.quoteDenomination : pool.baseDenomination)));
+  };
+
+  const priceOf = (value: number) => compactNumber(value);
+  const ticks = [
+    { label: 'Last', value: points.at(-1)?.v ? priceOf(points.at(-1)!.v) : (spot ? priceOf(spot) : '--') },
+    { label: 'Bid', tone: 'good' as const, value: bestBid ? priceOf(bestBid) : '--' },
+    { label: 'Ask', tone: 'bad' as const, value: bestAsk ? priceOf(bestAsk) : '--' },
+    { label: 'Spread', value: bestBid && bestAsk ? priceOf(bestAsk - bestBid) : '--' },
+    { label: 'Med 7d', value: median(weekPoints.map((point) => point.v)) !== undefined ? priceOf(median(weekPoints.map((point) => point.v))!) : '--' },
+    { label: 'Vol 24h', value: compactNumber(dayPoints.reduce((sum, point) => sum + point.q, 0)) },
+    { label: 'Vol 7d', value: compactNumber(weekPoints.reduce((sum, point) => sum + point.q, 0)) },
+    { label: 'Fills', value: formatInteger(points.length) },
+  ];
+
   return (
-    <div className="market-rune space-y-3">
+    <div className="market-goods market-external">
+      <MarketHealthStrip
+        lead={
+          <MarketPicker value={pool.baseToken} onPick={() => undefined} format={priceOf}
+                        glyph={() => <Rune className="h-4 w-4 shrink-0 text-element" />}
+                        markets={[{
+                          id: pool.baseToken,
+                          label: `${pool.baseTicker} / ${pool.quoteTicker}`,
+                          bestBid, bestAsk,
+                        }]} />
+        }
+        stats={[
+          { label: `Wallet ${pool.baseTicker}`, value: formatToken(balances.base, pool.baseDenomination), tone: 'text-rune' },
+          { label: `Wallet ${pool.quoteTicker}`, value: formatToken(balances.quote, pool.quoteDenomination), tone: 'text-arcane' },
+          { label: 'Pool', value: pool.paused ? 'Paused' : pairLive ? 'Stable' : 'Unfunded',
+            tone: pool.paused ? 'text-bad' : pairLive ? 'text-good' : 'text-warn' },
+        ]}
+        actions={<>
+          <Button size="sm" variant="quiet" onClick={() => void refresh()}
+                  icon={<Refresh className="h-3.5 w-3.5" />}>Refresh</Button>
+          <Button size="sm" variant="quiet" onClick={() => setDialog('bridge')}>Move Rune</Button>
+          <Button size="sm" variant="quiet" onClick={() => setDialog('pool')}>Pair</Button>
+          <Button size="sm" variant="quiet" onClick={() => setDialog('stats')}>Stats</Button>
+        </>} />
+
       {error !== null && <ErrorNote error={error} onRetry={() => void refresh()} />}
 
-      <div className="market-rune-workspace grid gap-4 lg:grid-cols-[minmax(0,1.25fr)_minmax(25rem,1fr)]">
-        <div className="market-rune-actions min-h-0">
-          <Panel className="market-rune-action-panel h-full overflow-hidden">
-            <div className="grid grid-cols-4 gap-px border-b border-rune/10 bg-rune/10 p-px">
-              <DeskButton active={desk === 'trade'} onClick={() => setDesk('trade')} label="Trade" />
-              <DeskButton active={desk === 'bridge'} onClick={() => setDesk('bridge')} label="Move Rune" />
-              <DeskButton active={desk === 'pool'} onClick={() => setDesk('pool')} label="Pair" />
-              <DeskButton active={false} onClick={() => setStatsOpen(true)} label="Stats" />
+      <div className="market-goods-body market-floor flex min-h-0 flex-col gap-2.5">
+        <div data-tour="market-book" className="market-book-body grid min-h-0 flex-1 gap-2.5">
+          <Panel className="market-order-book flex min-h-0 flex-col overflow-hidden p-3.5">
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <h3 className="font-mono text-sm tracking-tight">
+                {pool.baseTicker} <span className="text-faint">/ {pool.quoteTicker}</span>
+              </h3>
+              <BookChartToolbar chartMode={chartMode} onChartMode={setChartMode}
+                                candleInterval={candleInterval} onCandleInterval={setCandleInterval}
+                                range={range} onRange={setRange} />
+            </div>
+            <BookTicker rows={ticks} />
+            <PriceChart className="mt-2.5 min-h-[15rem] flex-1 lg:min-h-0" points={points} from={from} to={now}
+                        bid={bestBid} ask={bestAsk} mode={chartMode}
+                        candleMs={CANDLE_MS[candleInterval]}
+                        unit={pool.quoteTicker} format={priceOf} />
+            <p className="mt-1.5 text-[10px] text-faint">
+              Every trade here is a real token moving between wallets, so this chart is the
+              pool&rsquo;s whole history and nothing trims it.
+            </p>
+          </Panel>
+
+          <Panel className="market-depth-panel flex min-h-0 flex-col overflow-hidden p-3.5">
+            <div className="grid grid-cols-2 gap-px overflow-hidden rounded-[3px] border border-arcane/15 bg-arcane/12 p-px">
+              <BookPrice label="Best bid" value={bestBid} tone="good" unit={pool.quoteTicker} format={priceOf} />
+              <BookPrice label="Best ask" value={bestAsk} tone="bad" unit={pool.quoteTicker} format={priceOf} />
+            </div>
+            <DepthMountain bids={bids} asks={asks} unit={` ${pool.quoteTicker}`} format={priceOf}
+                           className="mt-3 min-h-[9rem] flex-1" />
+            <div className="market-depth-ladders mt-3 grid max-h-44 grid-cols-2 gap-4 overflow-y-auto">
+              <DepthList label="Bids" tone="good" rows={bids} unit={pool.quoteTicker} format={priceOf}
+                         formatSize={compactNumber}
+                         houseNote={(row) => `${compactNumber(row.quantity)} ${pool.baseTicker} before the pool's price reaches this level`}
+                         onPick={(value) => pickDepth('sell', value)} action="Sell into bid" />
+              <DepthList label="Asks" tone="bad" rows={asks} unit={pool.quoteTicker} format={priceOf}
+                         formatSize={compactNumber}
+                         houseNote={(row) => `${compactNumber(row.quantity)} ${pool.baseTicker} before the pool's price reaches this level`}
+                         onPick={(value) => pickDepth('buy', value)} action="Buy from ask" />
+            </div>
+            <p className="mt-2.5 border-t border-edge/60 pt-2 text-[10px] leading-relaxed text-faint">
+              Nothing is resting here. The pool is a curve, so a level is the size that moves
+              its price to that point &mdash; and the {(pool.feeBps / 100).toFixed(2)}% fee is
+              the spread you see at the touch.
+            </p>
+          </Panel>
+
+          <Panel data-tour="market-ticket" className="market-order-ticket flex min-h-0 flex-col overflow-hidden p-3.5">
+            <div className="flex items-start justify-between gap-3">
+              <div className="min-w-0"><div className="eyebrow">Order ticket</div>
+                <h3 className="mt-1 text-sm font-semibold leading-tight">
+                  {pool.baseTicker} / {pool.quoteTicker}</h3></div>
+              <div className="flex shrink-0 flex-wrap justify-end gap-1">
+                <Badge tone={pairLive ? 'good' : 'warn'}>{pairLive ? 'Fills now' : 'Unfunded'}</Badge>
+                <Badge tone="plain">{(pool.feeBps / 100).toFixed(2)}% fee</Badge>
+              </div>
             </div>
 
-            <div className="market-rune-action-content p-4 sm:p-5">
-              {desk === 'trade' && (
-                <div>
-                  <DeskHeading title={`${pool.baseTicker} / ${pool.quoteTicker}`}
-                    right={<Badge tone={pairLive ? 'good' : 'warn'}>{pairLive ? 'Ready' : 'Unfunded'}</Badge>} />
-                  <div className="market-trade-form space-y-3">
-                    <TokenInput label="You send" ticker={inputTicker} value={amount} onChange={setAmount}
-                                balance={formatToken(inputBalance, inputDenom)}
-                                onMax={() => setAmount(formatUnits(inputBalance, inputDenom, inputDenom))} />
-                    <button type="button" aria-label="Reverse trading pair" onClick={() => { setBaseIn((value) => !value); setAmount(''); }}
-                            className="market-swap-direction mx-auto grid h-10 w-10 place-items-center rounded-[3px] border border-edge bg-raised text-element transition-transform hover:rotate-180 hover:border-element/60">
-                      <Exchange className="h-4 w-4" />
-                    </button>
-                    <TokenOutput ticker={outputTicker} amount={formatToken(quoted, outputDenom)}
-                                 caption={parsed.error || (pairLive ? 'Live pool estimate' : 'Seed the pool before trading')} />
-                    <div className="market-price-protection flex items-center justify-between gap-3 rounded-[3px] border border-edge/60 bg-void/25 p-3 text-xs text-faint">
-                      <span>Price protection</span>
-                      <label className="flex items-center gap-2">Slippage
-                        <input className="h-8 w-16 rounded-[3px] border border-edge bg-surface px-2 font-mono text-ink"
-                               inputMode="decimal" value={slippage} onChange={(event) => setSlippage(event.target.value)} />%
-                      </label>
-                    </div>
-                    {!address ? (
-                      <Button className="w-full" variant="primary" busy={connecting} onClick={connect} icon={<Wallet className="h-4 w-4" />}>Connect to trade</Button>
-                    ) : (
-                      <div className="grid gap-2 sm:grid-cols-2">
-                        <Button busy={busy === 'swap-deposit'} disabled={!parsed.value || BigInt(parsed.value) > BigInt(inputBalance)}
-                          onClick={() => parsed.value && void run('swap-deposit', () => depositToken(inputToken, parsed.value!), `${inputTicker} sent to your credited pool balance.`)}>
-                          1 / Deposit {inputTicker}
-                        </Button>
-                        <Button variant="primary" busy={busy === 'swap'} disabled={!parsed.value || BigInt(credited) < BigInt(parsed.value) || !pairLive || pool.paused}
-                          onClick={() => parsed.value && void run('swap', () => swap(inputToken, parsed.value!, minimum, Date.now() + 10 * 60_000), `Trade submitted for about ${formatToken(quoted, outputDenom)} ${outputTicker}.`)}>
-                          2 / Execute trade
-                        </Button>
-                      </div>
-                    )}
-                  </div>
-                </div>
-              )}
-
-              {desk === 'bridge' && (
-                <div>
-                  <DeskHeading title="Move Rune" right={<Badge tone="plain">Whole Rune only</Badge>} />
-                  <TokenInput label="Amount to move" ticker="Rune" value={bridgeAmount} onChange={setBridgeAmount} />
-                  <div className="mt-4 grid gap-3 sm:grid-cols-2">
-                    <BridgeCard title="Withdraw to wallet" from={`${formatInteger(gameRune)} game Rune`} to={`${formatToken(balances.base, pool.baseDenomination)} wallet ${pool.baseTicker}`}>
-                      <Button className="mt-4 w-full" variant="primary" busy={isPending('rune-withdraw')}
-                              disabled={!address || !bridgeAmount || Number(bridgeAmount) > gameRune} onClick={() => needWallet(() => void doWithdraw())}>Game to wallet</Button>
-                    </BridgeCard>
-                    <BridgeCard title="Deposit to game" from={`${formatToken(balances.base, pool.baseDenomination)} wallet ${pool.baseTicker}`} to={`${formatInteger(gameRune)} game Rune`}>
-                      <Button className="mt-4 w-full" busy={busy === 'game-deposit'}
-                              disabled={!address || !bridgeParsed.value || BigInt(bridgeParsed.value ?? '0') > BigInt(balances.base)} onClick={() => needWallet(doGameDeposit)}>Wallet to game</Button>
-                    </BridgeCard>
-                  </div>
-                </div>
-              )}
-
-              {desk === 'pool' && (
-                <div>
-                  <DeskHeading title={pairLive ? 'Add liquidity' : 'Create pool'} right={<Badge tone={pairLive ? 'good' : 'warn'}>{pairLive ? 'Paired' : 'Not funded'}</Badge>} />
-                  <div className="grid gap-3 sm:grid-cols-2">
-                    <TokenInput label="Rune side" ticker={pool.baseTicker} value={lpBase} onChange={setLpBase} balance={formatToken(balances.base, pool.baseDenomination)} />
-                    <TokenInput label="Relic side" ticker={pool.quoteTicker} value={lpQuote} onChange={setLpQuote} balance={formatToken(balances.quote, pool.quoteDenomination)} />
-                  </div>
-                  {!address ? (
-                    <Button className="mt-4 w-full" variant="primary" busy={connecting} onClick={connect}>Connect to pair tokens</Button>
-                  ) : (
-                    <div className="mt-4 grid gap-2 sm:grid-cols-3">
-                      <Button busy={busy === 'lp-base'} onClick={() => {
-                        const value = tryParseUnits(lpBase, pool.baseDenomination);
-                        if (!value.value) return setError(new Error(value.error));
-                        void run('lp-base', () => depositToken(pool.baseToken, value.value!), 'Rune side deposited.');
-                      }}>Deposit Rune</Button>
-                      <Button busy={busy === 'lp-quote'} onClick={() => {
-                        const value = tryParseUnits(lpQuote, pool.quoteDenomination);
-                        if (!value.value) return setError(new Error(value.error));
-                        void run('lp-quote', () => depositToken(pool.quoteToken, value.value!), `${pool.quoteTicker} side deposited.`);
-                      }}>Deposit {pool.quoteTicker}</Button>
-                      <Button variant="primary" busy={busy === 'lp-add'} onClick={() => {
-                        const base = tryParseUnits(lpBase, pool.baseDenomination);
-                        const quote = tryParseUnits(lpQuote, pool.quoteDenomination);
-                        if (!base.value || !quote.value) return setError(new Error(base.error || quote.error));
-                        void run('lp-add', () => addLiquidity(base.value!, quote.value!), pairLive ? 'Liquidity shares minted.' : 'Rune pair seeded and liquidity shares minted.');
-                      }}>{pairLive ? 'Add liquidity' : 'Create pool'}</Button>
-                    </div>
-                  )}
-                  <div className="mt-4 grid gap-3 sm:grid-cols-2">
-                    <CreditedBalance label="Rune credited" value={formatToken(deposit.base, pool.baseDenomination)}
-                      action={BigInt(deposit.base) > 0n ? <Button size="sm" variant="quiet" onClick={() => void run('refund-base', () => refundDeposit(pool.baseToken, deposit.base), 'Rune deposit refunded.')}>Refund</Button> : undefined} />
-                    <CreditedBalance label={`${pool.quoteTicker} credited`} value={formatToken(deposit.quote, pool.quoteDenomination)}
-                      action={BigInt(deposit.quote) > 0n ? <Button size="sm" variant="quiet" onClick={() => void run('refund-quote', () => refundDeposit(pool.quoteToken, deposit.quote), `${pool.quoteTicker} deposit refunded.`)}>Refund</Button> : undefined} />
-                  </div>
-                  {BigInt(deposit.shares) > 0n && (
-                    <div className="mt-3 flex items-center justify-between rounded-[3px] border border-good/20 bg-good/[0.05] p-3">
-                      <span className="text-xs text-muted">Your position <b className="font-mono text-good">{formatIntegerString(deposit.shares)} shares</b></span>
-                      <Button size="sm" busy={busy === 'lp-remove'} onClick={() => void run('lp-remove', () => removeLiquidity(deposit.shares), 'Liquidity returned to your wallet.')}>Remove all</Button>
-                    </div>
-                  )}
-                </div>
-              )}
+            <div className="mt-3 grid grid-cols-2 gap-1.5">
+              <Button size="sm" variant={side === 'buy' ? 'primary' : 'quiet'}
+                      onClick={() => { setSide('buy'); setAmount(''); }}>Bid</Button>
+              <Button size="sm" variant={side === 'sell' ? 'primary' : 'quiet'}
+                      onClick={() => { setSide('sell'); setAmount(''); }}>Ask</Button>
             </div>
+
+            {/* The same four choices in the same place, and three of them are
+                off. A pool cannot rest an order, cancel a remainder or refuse
+                to cross, and saying which three are missing teaches the
+                difference between the venues better than hiding the row. */}
+            <div className="market-tif mt-2 grid grid-cols-4 gap-1" role="group" aria-label="Time in force">
+              {TIF_CHOICES.map((choice) => (
+                <button key={choice.value} type="button" disabled={choice.value !== 'IOC'}
+                        aria-pressed={choice.value === 'IOC'}
+                        title={choice.value === 'IOC' ? choice.blurb
+                          : 'Needs a resting book. The internal market has it.'}
+                        className={cx('market-tif-choice', choice.value === 'IOC' && 'is-active')}>
+                  {choice.label}
+                </button>
+              ))}
+            </div>
+            <p className="mt-1.5 text-[10px] leading-relaxed text-faint">
+              A pool fills the whole order now, at the price the curve gives. Nothing rests,
+              so there is no remainder to keep.
+            </p>
+
+            <label className="mt-2.5 block"><span className="eyebrow mb-1 block">Slippage guard / %</span>
+              <input className={inputClass} inputMode="decimal" value={slippage}
+                     onChange={(event) => setSlippage(event.target.value)} /></label>
+
+            <div className="mt-2.5 rounded-[3px] border border-edge/70 bg-void/25 px-3 py-2">
+              <div className="eyebrow">Price, taken from the curve</div>
+              <div className={cx('mt-1 truncate font-mono text-lg leading-none', fillPrice ? 'text-ink' : 'text-faint')}>
+                {fillPrice ? priceOf(fillPrice) : '--'} <span className="eyebrow">{pool.quoteTicker}</span>
+              </div>
+              <p className="mt-1.5 text-[10px] leading-relaxed text-faint">
+                The average this whole size gets, not the touch. Spot is {spot ? priceOf(spot) : '--'}.
+              </p>
+            </div>
+
+            <label className="mt-2 block">
+              <span className="eyebrow mb-1 block">Amount / {inputTicker}</span>
+              <input className={inputClass} inputMode="decimal" value={amount} placeholder="0"
+                     onChange={(event) => setAmount(event.target.value)} />
+            </label>
+            <button type="button" className="market-ticket-link mt-1 self-start"
+                    onClick={() => setAmount(formatUnits(inputBalance, inputDenom, inputDenom))}>
+              Use all {formatToken(inputBalance, inputDenom)} {inputTicker}
+            </button>
+
+            <dl className="market-ticket-summary mt-3 space-y-2">
+              <div><dt>You receive</dt>
+                <dd className={received ? 'text-good' : ''}>
+                  {received ? `${formatToken(quoted, outputDenom)} ${outputTicker}` : '--'}
+                </dd></div>
+              <div><dt>Order value</dt><dd>{notional ? `${compactNumber(notional)} ${pool.quoteTicker}` : '--'}</dd></div>
+              <div><dt>Pool fee</dt><dd>{poolFee ? `${compactNumber(poolFee)} ${inputTicker}` : `${(pool.feeBps / 100).toFixed(2)}%`}</dd></div>
+              <div><dt>Price impact</dt>
+                <dd className={impact > 3 ? 'text-bad' : impact ? 'text-good' : ''}>
+                  {impact ? `${impact.toFixed(2)}%` : '--'}
+                </dd></div>
+              <div><dt>Worst case</dt>
+                <dd className="text-faint">
+                  {parsed.value ? `${formatToken(minimum, outputDenom)} ${outputTicker}` : '--'}
+                </dd></div>
+            </dl>
+
+            <p className="mt-3 border-t border-edge/60 pt-2 text-[10px] leading-relaxed text-faint">
+              Fills immediately &middot; no queue &middot; the pool keeps the whole size
+            </p>
+            {parsed.error && <p className="mt-2 text-[11px] text-warn">{parsed.error}</p>}
+            {shortBalance && <p className="mt-2 text-[11px] text-warn">More {inputTicker} than your wallet holds.</p>}
+            {!pairLive && <p className="mt-2 text-[11px] text-warn">The pair has no liquidity yet. Seed it from Pair.</p>}
+            {pool.paused && <p className="mt-2 text-[11px] text-warn">The pool is paused.</p>}
+            {impact > 3 && <p className="mt-2 text-[11px] text-warn">This size moves the pool {impact.toFixed(1)}%. Split it, or widen the guard.</p>}
+
+            {!address ? (
+              <Button className="mt-2.5 w-full" variant="primary" busy={connecting} onClick={connect}
+                      icon={<Wallet className="h-4 w-4" />}>Connect to trade</Button>
+            ) : (
+              <div className="mt-2.5 grid gap-1.5">
+                {/* Two messages, and the screen admits it. A token deposit is
+                    its own signed transfer; the pool cannot reach into a
+                    wallet. Once credited, the trade is one message. */}
+                <Button busy={busy === 'swap-deposit'}
+                        disabled={!parsed.value || shortBalance}
+                        onClick={() => parsed.value && void run('swap-deposit', () => depositToken(inputToken, parsed.value!), `${inputTicker} credited to the pool.`)}>
+                  1 / Credit {inputTicker}
+                </Button>
+                <Button variant="primary" busy={busy === 'swap'} disabled={!orderReady}
+                        onClick={() => parsed.value && void run('swap', () => swap(inputToken, parsed.value!, minimum, Date.now() + 10 * 60_000), `Trade submitted for about ${formatToken(quoted, outputDenom)} ${outputTicker}.`)}>
+                  2 / {side === 'buy' ? 'Take the ask' : 'Hit the bid'}
+                </Button>
+              </div>
+            )}
+
+            <div className="eyebrow mt-4">Your credited balance</div>
+            <ul className="mt-1.5 space-y-1">
+              {[
+                { ticker: pool.baseTicker, value: deposit.base, denom: pool.baseDenomination, token: pool.baseToken },
+                { ticker: pool.quoteTicker, value: deposit.quote, denom: pool.quoteDenomination, token: pool.quoteToken },
+              ].map((row) => (
+                <li key={row.ticker} className="flex items-center gap-2 rounded-[2px] border border-edge/70 px-2 py-1.5">
+                  <span className="min-w-0 flex-1 font-mono text-[10px]">
+                    {formatToken(row.value, row.denom)} <span className="text-faint">{row.ticker}</span>
+                  </span>
+                  {BigInt(row.value || '0') > 0n && (
+                    <Button size="sm" variant="quiet" busy={busy === `refund-${row.ticker}`}
+                            onClick={() => void run(`refund-${row.ticker}`, () => refundDeposit(row.token, row.value), `${row.ticker} refunded.`)}>
+                      Refund
+                    </Button>
+                  )}
+                </li>
+              ))}
+            </ul>
+
+            <div className="eyebrow mt-4">Recent pool trades</div>
+            <ul className="mt-1.5 min-h-0 flex-1 space-y-1 overflow-y-auto">
+              {!swaps.length
+                ? <li className="py-2 text-[11px] text-faint">Nothing filled yet.</li>
+                : [...swaps].reverse().slice(0, 12).map((record) => {
+                  const soldRune = record.inputToken === pool.baseToken;
+                  const base = soldRune ? record.input : record.output;
+                  return (
+                    <li key={record.id} className="flex items-center gap-2 px-1 py-1 font-mono text-[10px]">
+                      <Rune className="h-3.5 w-3.5 shrink-0 text-element" />
+                      <b className={soldRune ? 'text-bad' : 'text-good'}>{soldRune ? 'SELL' : 'BUY'}</b>
+                      <span className="min-w-0 flex-1 truncate">
+                        {formatToken(base, pool.baseDenomination)}
+                        <span className="text-faint"> &middot; {shortAddress(record.trader, 4)}</span>
+                      </span>
+                      <span className="text-faint">{relativeTime(record.timestamp)}</span>
+                    </li>
+                  );
+                })}
+            </ul>
           </Panel>
         </div>
-
-        <aside className="market-rune-aside grid gap-4">
-          <MarketForge mode={forgeMode} reversed={!baseIn} active={Boolean(busy) || isPending('rune-withdraw')}
-                       className="min-h-[240px] overflow-hidden rounded-[4px] border border-rune/15" />
-          <Panel className="market-rune-price p-4 sm:p-5">
-            <DeskHeading title={`${pool.quoteTicker} / Rune`}
-              right={<Button size="sm" variant="quiet" onClick={() => void refresh()} icon={<Refresh className="h-3.5 w-3.5" />}>Refresh</Button>} />
-            <LineChart values={priceSeries} empty="No pool trades." suffix={` ${pool.quoteTicker}`} className="h-48" />
-          </Panel>
-          <div className="market-rune-side-stack grid gap-4">
-            <Panel className="market-rune-faucet p-4 sm:p-5">
-              <DeskHeading title={`Mint ${quoteInfo?.Name ?? pool.quoteTicker}`} right={<Sparkle className="h-5 w-5 text-element" />} />
-              <div className="rounded-[3px] border border-element/20 bg-element/[0.06] p-3 text-center">
-                <div className="font-mono text-2xl text-element">{formatToken(balances.quote, pool.quoteDenomination)}</div><div className="eyebrow mt-1">Wallet {pool.quoteTicker}</div>
-              </div>
-              {quoteInfo?.FaucetAmount && (
-                <Button className="mt-3 w-full" variant="primary" busy={busy === 'faucet'}
-                  onClick={() => needWallet(() => void run('faucet', claimQuoteFaucet, `${formatToken(quoteInfo.FaucetAmount!, pool.quoteDenomination)} ${pool.quoteTicker} minted.`))}
-                  icon={<Sparkle className="h-4 w-4" />}>
-                  Mint {formatToken(quoteInfo.FaucetAmount, pool.quoteDenomination)} {pool.quoteTicker}
-                </Button>
-              )}
-            </Panel>
-
-            <Panel className="market-rune-trades flex min-h-0 flex-col overflow-hidden">
-              <div className="shrink-0 border-b border-rune/10 px-4 py-3"><div className="eyebrow">Recent pool trades</div></div>
-              {swaps.length ? <div className="market-swap-list min-h-0 flex-1 divide-y divide-rune/10 overflow-y-auto">{[...swaps].reverse().slice(0, 6).map((record) => <SwapRow key={record.id} swap={record} pool={pool} />)}</div>
-                : <div className="grid min-h-0 flex-1 place-items-center px-4 py-5 text-center text-xs text-faint">No trades settled yet.</div>}
-            </Panel>
-          </div>
-        </aside>
       </div>
 
-      {statsOpen && (
-        <Dialog title="Rune market stats" onClose={() => setStatsOpen(false)}>
+      {dialog === 'bridge' && (
+        <Dialog title="Move Rune" onClose={() => setDialog('')}>
+          <MarketForge mode="bridge" active={Boolean(busy) || isPending('rune-withdraw')}
+                       className="mt-4 min-h-[180px] overflow-hidden rounded-[4px] border border-rune/15" />
+          <div className="mt-4"><TokenInput label="Amount to move" ticker="Rune" value={bridgeAmount} onChange={setBridgeAmount} /></div>
+          <div className="mt-4 grid gap-3 sm:grid-cols-2">
+            <BridgeCard title="Withdraw to wallet" from={`${formatInteger(gameRune)} game Rune`} to={`${formatToken(balances.base, pool.baseDenomination)} wallet ${pool.baseTicker}`}>
+              <Button className="mt-4 w-full" variant="primary" busy={isPending('rune-withdraw')}
+                      disabled={!address || !bridgeAmount || Number(bridgeAmount) > gameRune}
+                      onClick={() => needWallet(() => void doWithdraw())}>Game to wallet</Button>
+            </BridgeCard>
+            <BridgeCard title="Deposit to game" from={`${formatToken(balances.base, pool.baseDenomination)} wallet ${pool.baseTicker}`} to={`${formatInteger(gameRune)} game Rune`}>
+              <Button className="mt-4 w-full" busy={busy === 'game-deposit'}
+                      disabled={!address || !bridgeParsed.value || BigInt(bridgeParsed.value ?? '0') > BigInt(balances.base)}
+                      onClick={() => needWallet(doGameDeposit)}>Wallet to game</Button>
+            </BridgeCard>
+          </div>
+          <p className="mt-3 text-[11px] leading-relaxed text-faint">
+            Whole Rune only, in both directions. In-game Rune is indivisible, so the bridge
+            refuses a fraction rather than quietly rounding one away.
+          </p>
+
+          {/* The other side of the pair, in the same dialog. Getting hold of
+              something to trade with is one errand, and the quote token is a
+              free-minting stand-in rather than anything you earn — so it does
+              not deserve a second door. */}
+          {quoteInfo?.FaucetAmount && (
+            <div className="mt-4 rounded-[3px] border border-element/20 bg-element/[0.06] p-3">
+              <div className="flex flex-wrap items-center justify-between gap-3">
+                <div className="min-w-0">
+                  <div className="eyebrow">Wallet {pool.quoteTicker}</div>
+                  <div className="mt-1 font-mono text-xl text-element">
+                    {formatToken(balances.quote, pool.quoteDenomination)}
+                  </div>
+                </div>
+                <Button variant="primary" busy={busy === 'faucet'} icon={<Sparkle className="h-4 w-4" />}
+                        onClick={() => needWallet(() => void run('faucet', claimQuoteFaucet, `${formatToken(quoteInfo.FaucetAmount!, pool.quoteDenomination)} ${pool.quoteTicker} minted.`))}>
+                  Mint {formatToken(quoteInfo.FaucetAmount, pool.quoteDenomination)} {pool.quoteTicker}
+                </Button>
+              </div>
+              <p className="mt-2 text-[11px] leading-relaxed text-faint">
+                {quoteInfo.Name ?? pool.quoteTicker} is a stand-in quote token. It free-mints so the
+                external book can be traded before real pairs are listed.
+              </p>
+            </div>
+          )}
+        </Dialog>
+      )}
+
+      {dialog === 'pool' && (
+        <Dialog title={pairLive ? 'Add liquidity' : 'Create the pair'} onClose={() => setDialog('')}
+                busy={busy.startsWith('lp-')}>
+          <MarketForge mode="pool" active={busy.startsWith('lp-')}
+                       className="mt-4 min-h-[180px] overflow-hidden rounded-[4px] border border-rune/15" />
+          <div className="mt-4 grid gap-3 sm:grid-cols-2">
+            <TokenInput label="Rune side" ticker={pool.baseTicker} value={lpBase} onChange={setLpBase} balance={formatToken(balances.base, pool.baseDenomination)} />
+            <TokenInput label={`${pool.quoteTicker} side`} ticker={pool.quoteTicker} value={lpQuote} onChange={setLpQuote} balance={formatToken(balances.quote, pool.quoteDenomination)} />
+          </div>
+          {!address ? (
+            <Button className="mt-4 w-full" variant="primary" busy={connecting} onClick={connect}>Connect to pair tokens</Button>
+          ) : (
+            <div className="mt-4 grid gap-2 sm:grid-cols-3">
+              <Button busy={busy === 'lp-base'} onClick={() => {
+                const value = tryParseUnits(lpBase, pool.baseDenomination);
+                if (!value.value) return setError(new Error(value.error));
+                void run('lp-base', () => depositToken(pool.baseToken, value.value!), 'Rune side deposited.');
+              }}>Deposit Rune</Button>
+              <Button busy={busy === 'lp-quote'} onClick={() => {
+                const value = tryParseUnits(lpQuote, pool.quoteDenomination);
+                if (!value.value) return setError(new Error(value.error));
+                void run('lp-quote', () => depositToken(pool.quoteToken, value.value!), `${pool.quoteTicker} side deposited.`);
+              }}>Deposit {pool.quoteTicker}</Button>
+              <Button variant="primary" busy={busy === 'lp-add'} onClick={() => {
+                const base = tryParseUnits(lpBase, pool.baseDenomination);
+                const quote = tryParseUnits(lpQuote, pool.quoteDenomination);
+                if (!base.value || !quote.value) return setError(new Error(base.error || quote.error));
+                void run('lp-add', () => addLiquidity(base.value!, quote.value!), pairLive ? 'Liquidity shares minted.' : 'Rune pair seeded and liquidity shares minted.');
+              }}>{pairLive ? 'Add liquidity' : 'Create pool'}</Button>
+            </div>
+          )}
+          <div className="mt-4 grid gap-3 sm:grid-cols-2">
+            <CreditedBalance label="Rune credited" value={formatToken(deposit.base, pool.baseDenomination)}
+              action={BigInt(deposit.base) > 0n ? <Button size="sm" variant="quiet" onClick={() => void run('refund-base', () => refundDeposit(pool.baseToken, deposit.base), 'Rune deposit refunded.')}>Refund</Button> : undefined} />
+            <CreditedBalance label={`${pool.quoteTicker} credited`} value={formatToken(deposit.quote, pool.quoteDenomination)}
+              action={BigInt(deposit.quote) > 0n ? <Button size="sm" variant="quiet" onClick={() => void run('refund-quote', () => refundDeposit(pool.quoteToken, deposit.quote), `${pool.quoteTicker} deposit refunded.`)}>Refund</Button> : undefined} />
+          </div>
+          {BigInt(deposit.shares) > 0n && (
+            <div className="mt-3 flex items-center justify-between rounded-[3px] border border-good/20 bg-good/[0.05] p-3">
+              <span className="text-xs text-muted">Your position <b className="font-mono text-good">{formatIntegerString(deposit.shares)} shares</b></span>
+              <Button size="sm" busy={busy === 'lp-remove'} onClick={() => void run('lp-remove', () => removeLiquidity(deposit.shares), 'Liquidity returned to your wallet.')}>Remove all</Button>
+            </div>
+          )}
+        </Dialog>
+      )}
+
+      {dialog === 'stats' && (
+        <Dialog title="External book stats" onClose={() => setDialog('')}>
           <div className="mt-4 grid grid-cols-2 gap-px overflow-hidden rounded-[3px] border border-rune/10 bg-rune/10 p-px sm:grid-cols-4">
             <MarketMetric label="Pair" value={`${pool.baseTicker} / ${pool.quoteTicker}`} detail={pool.paused ? 'paused' : pairLive ? 'live' : 'unfunded'} />
             <MarketMetric label="Game" value={formatInteger(gameRune)} detail="Rune" />
@@ -2001,22 +2524,15 @@ function RuneExchange() {
             <MarketMetric label="Trades" value={formatInteger(pool.swaps)} detail={`${(pool.feeBps / 100).toFixed(2)}% fee`} />
             <MarketMetric label="LP shares" value={formatIntegerString(deposit.shares)} detail={BigInt(deposit.shares) ? 'active' : 'none'} />
           </div>
+          {swaps.length > 0 && (
+            <div className="mt-4 max-h-52 divide-y divide-rune/10 overflow-y-auto rounded-[3px] border border-rune/10">
+              {[...swaps].reverse().slice(0, 12).map((record) => <SwapRow key={record.id} swap={record} pool={pool} />)}
+            </div>
+          )}
         </Dialog>
       )}
     </div>
   );
-}
-
-function DeskButton({ active, onClick, label }: { active: boolean; onClick: () => void; label: string }) {
-  return (
-    <button type="button" onClick={onClick} className={cx('min-h-12 bg-surface px-2 py-2 text-center text-sm font-semibold transition-colors', active ? 'bg-element/10 text-element' : 'text-muted hover:bg-raised hover:text-ink')}>
-      {label}
-    </button>
-  );
-}
-
-function DeskHeading({ title, right }: { title: string; right?: React.ReactNode }) {
-  return <div className="market-desk-heading mb-4 flex items-start justify-between gap-4"><h3 className="text-lg font-semibold">{title}</h3>{right}</div>;
 }
 
 function TokenInput({ label, ticker, value, onChange, balance, onMax }: {
@@ -2033,10 +2549,6 @@ function TokenInput({ label, ticker, value, onChange, balance, onMax }: {
       </span>
     </label>
   );
-}
-
-function TokenOutput({ ticker, amount, caption }: { ticker: string; amount: string; caption: string }) {
-  return <div className="market-token-output rounded-[3px] border border-element/25 bg-element/[0.055] p-4"><div className="flex items-end justify-between gap-3"><span className="text-xs text-faint">You receive</span><span className="font-mono text-xl text-element">{amount} {ticker}</span></div><p className="mt-1 text-right text-[10px] text-faint">{caption}</p></div>;
 }
 
 function BridgeCard({ title, from, to, children }: { title: string; from: string; to: string; children: React.ReactNode }) {
@@ -2149,15 +2661,6 @@ function tryParseUnits(value: string, denomination: number): { value: string | n
   if (!value.trim()) return { value: null, error: '' };
   try { return { value: parseUnits(value, denomination), error: '' }; }
   catch (caught) { return { value: null, error: caught instanceof Error ? caught.message : String(caught) }; }
-}
-
-function swapPrices(records: AmmSwap[], pool: AmmPool): number[] {
-  return records.map((record) => {
-    const baseInput = record.inputToken === pool.baseToken;
-    const base = Number(formatUnits(baseInput ? record.input : record.output, pool.baseDenomination, pool.baseDenomination));
-    const quote = Number(formatUnits(baseInput ? record.output : record.input, pool.quoteDenomination, pool.quoteDenomination));
-    return base > 0 ? quote / base : 0;
-  }).filter((value) => Number.isFinite(value) && value > 0);
 }
 
 function formatToken(value: string | bigint, denomination: number): string { return formatUnits(value, denomination, 4); }

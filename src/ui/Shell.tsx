@@ -7,24 +7,25 @@
  * the only thing on screen.
  */
 import { useEffect, useState } from 'react';
-import { NavLink, useLocation } from 'react-router-dom';
+import { NavLink, useLocation, useNavigate } from 'react-router-dom';
 import { useGame } from '../state/gameContext';
 import { shortAddress } from '../lib/format';
 import { useAether } from './aetherContext';
 import { Sigil } from './Sigil';
 import { Button, cx } from './primitives';
-import { Berry, Exchange, Map, Paw, Rune, Sword, Users, Wallet } from './icons';
+import { Arrow, Berry, Exchange, Map, Paw, Rune, Sword, Users, Wallet } from './icons';
+import { VENUES, VenueOptions, usePopover, venueFromSearch } from './marketVenues';
 import { Worship } from './Worship';
 import { TourChip } from './Tour';
 import { Wordmark } from './Mark';
 
-type Tab = { to: string; label: string; Icon: (p: any) => JSX.Element };
+type Tab = { to: string; label: string; Icon: (p: any) => JSX.Element; menu?: 'market' };
 
 export function Shell({ children }: { children: React.ReactNode }) {
   const {
     address, player, connect, connecting, walletProviderName,
   } = useGame();
-  const { pathname } = useLocation();
+  const { pathname, search } = useLocation();
   const onHome = pathname === '/';
   const onPublicStory = onHome || pathname === '/lore';
   const onMarket = pathname === '/market';
@@ -36,7 +37,7 @@ export function Shell({ children }: { children: React.ReactNode }) {
   if (player) tabs.push({ to: '/monster-index', label: 'Monster Index', Icon: Paw });
   if (player?.monster) tabs.push({ to: '/arena', label: 'Arena', Icon: Sword });
   if (player?.hunt) tabs.push({ to: '/hunt', label: 'Hunt', Icon: Map });
-  tabs.push({ to: '/market', label: 'Market', Icon: Exchange });
+  tabs.push({ to: '/market', label: 'Market', Icon: Exchange, menu: 'market' });
 
   const element = player?.monster?.elementType;
 
@@ -118,20 +119,23 @@ export function Shell({ children }: { children: React.ReactNode }) {
 
           {!onPublicStory && (
             <nav aria-label="Primary" className="ml-4 hidden items-center gap-1 lg:flex">
-              {tabs.map(({ to, label, Icon }) => (
-                /* `data-tour-to` and not a per-tab id: the walkthrough points
-                   at whichever of these two strips is on screen, and the route
-                   is the only thing the header row and the phone bar agree on.
-                   See `findTarget` in Tour.tsx. */
-                <NavLink key={to} to={to} data-tour-to={to} className={({ isActive }) => cx(
-                  'flex h-9 items-center gap-2 rounded-[3px] px-3 text-sm transition-colors',
-                  isActive
-                    ? 'bg-raised text-ink'
-                    : 'text-muted hover:bg-raised/60 hover:text-ink',
-                )}>
-                  <Icon className="h-4 w-4" />
-                  {label}
-                </NavLink>
+              {tabs.map(({ to, label, Icon, menu }) => (
+                menu === 'market'
+                  ? <MarketNavMenu key={to} to={to} label={label} Icon={Icon}
+                                   active={onMarket} search={search} />
+                  /* `data-tour-to` and not a per-tab id: the walkthrough points
+                     at whichever of these two strips is on screen, and the route
+                     is the only thing the header row and the phone bar agree on.
+                     See `findTarget` in Tour.tsx. */
+                  : <NavLink key={to} to={to} data-tour-to={to} className={({ isActive }) => cx(
+                      'flex h-9 items-center gap-2 rounded-[3px] px-3 text-sm transition-colors',
+                      isActive
+                        ? 'bg-raised text-ink'
+                        : 'text-muted hover:bg-raised/60 hover:text-ink',
+                    )}>
+                      <Icon className="h-4 w-4" />
+                      {label}
+                    </NavLink>
               ))}
             </nav>
           )}
@@ -237,6 +241,50 @@ export function Shell({ children }: { children: React.ReactNode }) {
             })}
           </div>
         </nav>
+      )}
+    </div>
+  );
+}
+
+/**
+ * Market, and which counter.
+ *
+ * The market is the one route with four rooms behind it, and picking a room is
+ * the same gesture as picking a page — so it is in the same strip, one tab
+ * along from Arena, rather than a second row of tabs inside the screen. The
+ * label carries where you are standing once you are standing there; clicking a
+ * counter from anywhere else takes you straight to it.
+ */
+function MarketNavMenu({ to, label, Icon, active, search }: {
+  to: string; label: string; Icon: (p: any) => JSX.Element; active: boolean; search: string;
+}) {
+  const navigate = useNavigate();
+  const [open, setOpen] = useState(false);
+  const { host, list } = usePopover(open, () => setOpen(false));
+  const venue = venueFromSearch(search);
+  const current = VENUES.find((row) => row.id === venue) ?? VENUES[0];
+
+  return (
+    <div ref={host} className="market-nav-menu relative">
+      <button type="button" data-tour-to={to} aria-haspopup="listbox" aria-expanded={open}
+              onClick={() => setOpen((value) => !value)}
+              onKeyDown={(event) => {
+                if (event.key === 'ArrowDown' && !open) { event.preventDefault(); setOpen(true); }
+              }}
+              className={cx(
+                'flex h-9 items-center gap-2 rounded-[3px] px-3 text-sm transition-colors',
+                active ? 'bg-raised text-ink' : 'text-muted hover:bg-raised/60 hover:text-ink',
+              )}>
+        <Icon className="h-4 w-4" />
+        {label}
+        {active && <span className="text-faint">&middot; {current.short}</span>}
+        <Arrow className={cx('market-venue-caret h-3.5 w-3.5', open && 'is-open')} />
+      </button>
+      {open && (
+        <VenueOptions venue={venue} listRef={list} onPick={(next) => {
+          setOpen(false);
+          navigate(next === 'shop' ? to : `${to}?venue=${next}`);
+        }} />
       )}
     </div>
   );

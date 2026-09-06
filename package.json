@@ -40,6 +40,7 @@
     "test:rune": "bash backend/native/run-rune-test.sh",
     "test:marketplace": "bash backend/native/run-marketplace-test.sh",
     "test:marketplace:local": "node backend/native/run-local-marketplace-test.mjs",
+    "test:slots": "node backend/native/slot-continuity.mjs",
     "test:swarm": "node backend/native/swarm/swarm.test.mjs",
     "test:battle-fleet": "node backend/native/battle-fleet/run-local-test.mjs && node backend/native/battle-fleet-integration.mjs && node --test backend/native/battle-fleet/allocator.test.mjs backend/native/battle-fleet/http-error.test.mjs backend/native/battle-fleet/probe-devices.test.mjs backend/native/battle-fleet/manifest.test.mjs backend/native/battle-fleet/mixed-runtime-contract.test.mjs backend/native/battle-fleet-config.test.mjs backend/native/battle-fleet-recovery.test.mjs",
     "test:battle-rust": "cargo test --offline --manifest-path backend/native/battle-fleet-rust/Cargo.toml",

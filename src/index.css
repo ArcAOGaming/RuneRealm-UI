@@ -1724,13 +1724,185 @@ pre,
 }
 
 /* Market ------------------------------------------------------------------ */
-.market-tabs {
-  position: sticky;
-  top: calc(var(--app-header-height, 4rem) + .5rem);
-  z-index: 20;
+/*
+ * The counter chooser.
+ *
+ * Closed it is one row that still prints the sentence for wherever you are
+ * standing, because "internal" and "external" mean nothing on their own. The
+ * icon carries the venue's colour: bone-gold is the realm's own voice, arcane
+ * violet is a book where the number moving is somebody else's decision.
+ */
+.market-venue { position: relative; max-width: 27rem; }
+
+/*
+ * In the header the chooser is a nav tab that opens, so the trigger is the tab
+ * and only the list is ours. It hangs from the tab's left edge and takes the
+ * width the sentences need, not the width of the word "Market".
+ */
+.market-nav-menu .market-venue-list { right: auto; min-width: 20rem; }
+
+/*
+ * Which market, on the bar with what you hold in it.
+ *
+ * Both books use it, and it replaced a band of tiles: a strip sized for six
+ * markets holding one is five empty cells, and a strip is a whole row of
+ * height spent on a question a line can answer. The touch rides in the
+ * trigger, so the price you are looking at is readable without opening it.
+ */
+.market-pair { flex: none; max-width: 100%; }
+
+/*
+ * A FIXED width, and it is not cosmetic.
+ *
+ * "Scroll / Gold" and "TEST-RUNE / TEST-RELIC" are eight characters apart, so
+ * a control sized to its contents jumps every time you change market — and it
+ * drags Refresh and everything after it along the bar with it. The name gets
+ * the slack and truncates; the touch keeps its own column with the slash
+ * pinned, so the bid and the ask stay where your eye left them.
+ */
+.market-pair-trigger {
+  display: flex;
+  /* Wide enough for the longest label anything lists today —
+     `TEST-RUNE / TEST-RELIC` — so the fixed width never costs a name. */
+  width: 23rem;
+  max-width: 100%;
+  min-height: 2.5rem;
+  align-items: center;
+  gap: .5rem;
+  padding: .3rem .55rem;
+  border: 1px solid rgb(var(--edge));
+  border-radius: 3px;
+  background: rgb(var(--void) / .45);
+  transition: border-color .14s ease, background .14s ease;
+}
+
+.market-pair-trigger:hover { border-color: rgb(var(--arcane) / .5); background: rgb(var(--raised) / .6); }
+.market-pair-trigger[aria-expanded="true"] { border-color: rgb(var(--arcane) / .62); }
+
+.market-pair-name {
+  overflow: hidden;
+  flex: 1;
+  min-width: 0;
+  color: rgb(var(--ink));
+  font-family: 'JetBrains Mono', ui-monospace, monospace;
+  font-size: 12px;
+  letter-spacing: -.01em;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.market-pair-quote {
+  display: flex;
+  flex: none;
+  width: 7.75rem;
+  align-items: baseline;
+  gap: .25rem;
+  padding-left: .5rem;
+  border-left: 1px solid rgb(var(--edge) / .8);
+  font-family: 'JetBrains Mono', ui-monospace, monospace;
+  font-size: 11px;
+}
+.market-pair-quote i { flex: none; color: rgb(var(--faint)); font-style: normal; }
+.market-pair-quote b {
+  overflow: hidden;
+  flex: 1;
+  min-width: 0;
+  font-weight: 500;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.market-pair-quote b:first-of-type { text-align: right; }
+.market-pair-quote b:last-of-type { text-align: left; }
+
+.market-pair-list { right: auto; width: 23rem; max-width: calc(100vw - 2rem); }
+.market-pair-option { min-height: 2.6rem; gap: .5rem; }
+
+
+.market-venue-trigger,
+.market-venue-option {
+  display: flex;
+  width: 100%;
+  min-height: 3.25rem;
+  align-items: center;
+  gap: .6rem;
+  padding: .5rem .7rem;
+  text-align: left;
+}
+
+.market-venue-trigger {
+  border: 1px solid rgb(var(--edge));
+  border-radius: 4px;
+  background: rgb(var(--surface) / .92);
   backdrop-filter: blur(16px) saturate(130%);
   box-shadow: 0 14px 34px -24px rgb(0 0 0 / .95);
+  transition: border-color .14s ease;
 }
+
+.market-venue-trigger:hover { border-color: rgb(var(--element) / .5); }
+.market-venue-trigger[aria-expanded="true"] { border-color: rgb(var(--element) / .62); }
+
+.market-venue-icon { flex: none; color: rgb(var(--element)); }
+.market-venue-trigger[data-accent="rune"] .market-venue-icon,
+.market-venue-option[data-accent="rune"] .market-venue-icon { color: rgb(var(--rune)); }
+.market-venue-trigger[data-accent="arcane"] .market-venue-icon,
+.market-venue-option[data-accent="arcane"] .market-venue-icon { color: rgb(var(--arcane)); }
+
+.market-venue-lines { display: flex; min-width: 0; flex: 1; flex-direction: column; }
+.market-venue-lines b {
+  overflow: hidden;
+  color: rgb(var(--ink));
+  font-family: 'Cinzel', Georgia, serif;
+  font-size: .95rem;
+  font-weight: 650;
+  line-height: 1.15;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.market-venue-lines small {
+  margin-top: .12rem;
+  overflow: hidden;
+  color: rgb(var(--faint));
+  font-size: 10px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.market-venue-caret {
+  flex: none;
+  color: rgb(var(--faint));
+  transform: rotate(90deg);
+  transition: transform .16s ease;
+}
+.market-venue-caret.is-open { transform: rotate(-90deg); }
+
+.market-venue-list {
+  position: absolute;
+  z-index: 40;
+  top: calc(100% + .3rem);
+  right: 0;
+  left: 0;
+  overflow: hidden;
+  border: 1px solid rgb(var(--element) / .3);
+  border-radius: 4px;
+  background: rgb(var(--surface));
+  box-shadow: 0 26px 54px -22px rgb(0 0 0 / .95);
+}
+
+.market-venue-option { background: transparent; transition: background .12s ease; }
+.market-venue-option + .market-venue-option { border-top: 1px solid rgb(var(--edge) / .7); }
+.market-venue-option:hover,
+.market-venue-option:focus-visible { background: rgb(var(--raised) / .82); outline: none; }
+.market-venue-option[data-selected="true"] { background: rgb(var(--element) / .09); }
+
+/*
+ * The body both books share.
+ *
+ * Chart on the left, depth in the middle, ticket on the right, at the same
+ * widths on both — the internal book and the external one are the same
+ * instrument over different custody, and the layout is where a player is told
+ * that before they read a word.
+ */
+.market-book-body { display: grid; min-height: 0; gap: .625rem; }
 
 .market-forge {
   isolation: isolate;
@@ -1807,35 +1979,6 @@ pre,
  * floor is arcane violet, gridded and monospaced, with bid green and ask red:
  * the only place in the app where a number moving is somebody else's decision.
  */
-.market-desk-choice {
-  position: relative;
-  display: flex;
-  min-height: 5.5rem;
-  flex-direction: column;
-  gap: .2rem;
-  overflow: hidden;
-  padding: .7rem .9rem .75rem;
-  border: 1px solid rgb(var(--edge));
-  text-align: left;
-  transition: border-color .18s ease, background-color .18s ease, opacity .18s ease;
-}
-
-.market-desk-choice:not(.is-active) { opacity: .66; }
-.market-desk-choice:not(.is-active):hover { opacity: .85; }
-
-.market-desk-title {
-  font-size: 1.05rem;
-  font-weight: 600;
-  line-height: 1.15;
-  color: rgb(var(--ink));
-}
-
-.market-desk-note {
-  font-size: 11px;
-  line-height: 1.35;
-  color: rgb(var(--faint));
-}
-
 .market-desk-stat {
   margin-top: auto;
   padding-top: .35rem;
@@ -1844,52 +1987,6 @@ pre,
 }
 
 /* The realm's counter: carved, warm, bone-gold. */
-.market-desk-shop {
-  background:
-    linear-gradient(180deg, rgb(var(--rune) / .06), transparent 70%),
-    rgb(var(--surface) / .7);
-  clip-path: polygon(
-    0 0,
-    calc(100% - var(--notch)) 0,
-    100% var(--notch),
-    100% 100%,
-    0 100%
-  );
-}
-
-.market-desk-shop.is-active {
-  border-color: rgb(var(--rune) / .5);
-  background:
-    linear-gradient(180deg, rgb(var(--rune) / .12), transparent 72%),
-    rgb(var(--surface) / .82);
-  box-shadow: inset 0 1px 0 rgb(var(--rune) / .25);
-}
-
-/* The floor: a cold terminal, ruled into a grid. */
-.market-desk-floor { background: rgb(var(--void) / .72); }
-
-.market-desk-floor.is-active {
-  border-color: rgb(var(--arcane) / .55);
-  background: rgb(var(--void) / .92);
-}
-
-.market-desk-floor::before {
-  content: '';
-  position: absolute;
-  inset: 0;
-  z-index: 0;
-  pointer-events: none;
-  background-image:
-    linear-gradient(rgb(var(--arcane) / .12) 1px, transparent 1px),
-    linear-gradient(90deg, rgb(var(--arcane) / .12) 1px, transparent 1px);
-  background-size: 22px 22px;
-  mask-image: linear-gradient(100deg, black, transparent 72%);
-}
-
-.market-desk-floor > * { position: relative; z-index: 1; }
-
-/* Shop tiles ------------------------------------------------------------- */
-
 .market-tile {
   transition: border-color .18s ease, box-shadow .18s ease;
 }
@@ -1956,56 +2053,18 @@ pre,
 /* One compact mode bar replaces two competing hero cards. Rune-gold marks
    immediate realm trades; arcane marks prices supplied by other players. */
 .market-desk-bar {
-  border-color: rgb(var(--rune) / .18);
+  position: relative;
+  z-index: 20;
+  border: 1px solid rgb(var(--rune) / .18);
+  border-radius: 4px;
+  backdrop-filter: blur(10px) saturate(120%);
   background:
     linear-gradient(90deg, rgb(var(--rune) / .045), transparent 42%),
     rgb(var(--surface) / .82);
+  box-shadow:
+    0 1px 0 0 rgb(255 255 255 / .045) inset,
+    0 18px 44px -20px rgb(0 0 0 / .85);
 }
-
-.market-desk-switcher {
-  max-width: 34rem;
-  overflow: hidden;
-  border: 1px solid rgb(var(--edge));
-  border-radius: 3px;
-  background: rgb(var(--void) / .52);
-}
-
-.market-desk-bar .market-desk-choice {
-  min-height: 3.35rem;
-  justify-content: center;
-  gap: .16rem;
-  padding: .55rem .85rem;
-  border: 0;
-  clip-path: none;
-  background: transparent;
-  transition: background-color .16s ease, opacity .16s ease;
-}
-
-.market-desk-bar .market-desk-choice + .market-desk-choice { border-left: 1px solid rgb(var(--edge)); }
-.market-desk-bar .market-desk-choice:not(.is-active) { opacity: .58; }
-.market-desk-bar .market-desk-choice:not(.is-active):hover { opacity: .9; background: rgb(var(--raised) / .55); }
-.market-desk-bar .market-desk-choice::before { content: none; }
-.market-desk-bar .market-desk-choice::after {
-  content: '';
-  position: absolute;
-  inset: auto 0 0;
-  height: 2px;
-  opacity: 0;
-  background: rgb(var(--desk-colour));
-  transition: opacity .16s ease;
-}
-.market-desk-bar .market-desk-choice.is-active::after { opacity: 1; }
-.market-desk-bar .market-desk-shop { --desk-colour: var(--rune); }
-.market-desk-bar .market-desk-floor { --desk-colour: var(--arcane); }
-.market-desk-bar .market-desk-shop.is-active { background: rgb(var(--rune) / .09); box-shadow: none; }
-.market-desk-bar .market-desk-floor.is-active {
-  background:
-    linear-gradient(rgb(var(--arcane) / .06) 1px, transparent 1px) 0 0 / 18px 18px,
-    rgb(var(--arcane) / .075);
-}
-
-.market-desk-bar .market-desk-title { font-size: .9rem; font-weight: 650; line-height: 1.1; }
-.market-desk-bar .market-desk-note { font-size: 10px; line-height: 1.3; }
 
 .market-desk-health > div {
   min-width: 6rem;
@@ -2086,125 +2145,224 @@ pre,
 .market-shop-room-backdrop { width: 100%; height: 100%; background: linear-gradient(145deg, rgb(var(--muted) / .2), rgb(var(--raised))); }
 .market-diorama { overflow: hidden; }
 .market-diorama canvas { display: block; width: 100%; height: 100%; image-rendering: auto; touch-action: pan-y; }
-.market-pixel-inventory { z-index: 2; pointer-events: none; }
+/* The pixel layer is projected from the same shelf geometry the scene is built
+   from, so it sways with the camera as one piece rather than per sprite. */
+.market-pixel-inventory {
+  z-index: 2;
+  pointer-events: none;
+  transform: translate(var(--market-sway-x, 0px), var(--market-sway-y, 0px));
+  will-change: transform;
+}
+/* A bay covers its shelf exactly — frame, board and all — so pointing at the
+   shelf is what selects the good, and the highlight reads as the shelf lighting
+   up rather than a card floating in front of it. */
 .market-pixel-bay {
   position: absolute;
-  width: 27%;
   border: 1px solid transparent;
   border-radius: 2px;
   text-align: left;
   pointer-events: auto;
   transition: border-color .14s ease, background-color .14s ease, box-shadow .14s ease;
 }
-.market-pixel-bay:hover { border-color: rgb(var(--element) / .34); background: rgb(var(--element) / .035); }
-.market-pixel-bay.is-selected {
-  border-color: rgb(var(--element) / .62);
-  background: linear-gradient(135deg, rgb(var(--element) / .08), transparent 58%);
-  box-shadow: inset 0 0 20px rgb(var(--element) / .055);
+.market-pixel-bay:hover,
+.market-pixel-bay:focus-visible {
+  border-color: rgb(var(--element) / .5);
+  background: linear-gradient(180deg, rgb(var(--element) / .05), rgb(var(--element) / .015) 62%);
+  box-shadow: inset 0 -14px 22px -14px rgb(var(--element) / .55), 0 0 16px -6px rgb(var(--element) / .4);
+  outline: none;
 }
-.market-pixel-bay-mark {
-  display: flex;
-  align-items: center;
-  gap: .25rem;
-  color: rgb(var(--rune) / .72);
-  font-family: 'JetBrains Mono', ui-monospace, monospace;
-  font-size: 7px;
-  letter-spacing: .1em;
-  text-transform: uppercase;
-}
-.market-pixel-bay-mark img,
-.market-pixel-bay-mark svg { width: 1.25rem; height: 1.25rem; object-fit: contain; image-rendering: pixelated; filter: drop-shadow(0 3px 5px rgb(var(--void) / .9)); }
-.market-pixel-bay-mark i { font-style: normal; }
-.market-pixel-bay-data {
+/* One card per shelf, sitting inside the bay opening rather than on its frame.
+   It sizes off `--bay-h` — the shelf's own projected height — so it stays in
+   proportion with the shelf at every canvas size instead of at one of them. */
+.market-pixel-bay-card {
   position: absolute;
-  top: .22rem;
-  right: .28rem;
+  top: 7%;
+  right: 4.5%;
   display: flex;
-  max-width: 62%;
-  flex-direction: column;
-  align-items: flex-end;
-  padding: .18rem .26rem;
-  background: rgb(var(--void) / .62);
-  color: rgb(var(--muted));
+  max-width: 74%;
+  align-items: center;
+  gap: .55em;
+  padding: .5em .6em;
+  border: 1px solid rgb(var(--element) / .3);
+  border-radius: 2px;
+  background: linear-gradient(140deg, rgb(var(--void) / .9), rgb(var(--void) / .72));
+  box-shadow: 0 2px 10px rgb(var(--void) / .55);
   font-family: 'JetBrains Mono', ui-monospace, monospace;
-  font-size: 6px;
+  font-size: clamp(8px, calc(var(--bay-h, 120px) * .058), 11px);
   line-height: 1.35;
-  text-align: right;
+  transition: opacity .28s ease;
+  text-align: left;
 }
-.market-pixel-bay-data b { color: rgb(var(--ink)); font-size: 8px; font-weight: 600; }
-.market-pixel-bay-data small { font-size: inherit; white-space: nowrap; }
-.market-container-decal {
-  position: absolute;
-  z-index: 3;
-  display: flex;
-  transform: translate(-50%, -50%);
-  flex-direction: column;
-  align-items: center;
-  line-height: 1;
-  pointer-events: none;
+.market-pixel-bay-art {
+  display: grid;
+  flex: none;
+  width: 2.6em;
+  height: 2.6em;
+  place-items: center;
+  border: 1px solid rgb(var(--element) / .26);
+  background: rgb(var(--element) / .1);
 }
-.market-container-decal img,
-.market-container-decal svg {
-  width: 15px;
-  height: 15px;
+.market-pixel-bay-art img,
+.market-pixel-bay-art svg {
+  width: 2em;
+  height: 2em;
   object-fit: contain;
   image-rendering: pixelated;
   filter: drop-shadow(0 2px 3px rgb(var(--void) / .9));
 }
-.market-container-decal b {
-  margin-top: 1px;
-  padding: 1px 2px;
-  border: 1px solid rgb(var(--rune) / .2);
-  background: rgb(var(--void) / .82);
-  color: rgb(var(--rune));
-  font-family: 'JetBrains Mono', ui-monospace, monospace;
-  font-size: 7px;
-  font-weight: 600;
+.market-pixel-bay-lines { display: flex; min-width: 0; flex-direction: column; }
+.market-pixel-bay-lines i {
+  color: rgb(var(--rune) / .8);
+  font-size: 1.02em;
+  font-style: normal;
+  letter-spacing: .1em;
+  text-transform: uppercase;
 }
-.market-container-decal.is-100 img,
-.market-container-decal.is-100 svg { width: 18px; height: 18px; }
-.market-container-decal.is-1000 img,
-.market-container-decal.is-1000 svg { width: 22px; height: 22px; }
-.market-container-decal.is-1000 b { font-size: 8px; }
-.market-order-basket-decal { z-index: 5; }
-.market-pixel-stock-unit,
-.market-pixel-order-unit,
-.market-pixel-flight,
-.market-stock-flight {
+.market-pixel-bay-lines small { margin-top: .15em; color: rgb(var(--muted)); font-size: 1.1em; white-space: nowrap; }
+.market-pixel-bay-lines b { color: rgb(var(--ink)); font-weight: 600; }
+/* The staged order re-entering after a change of good, under the scene's puff. */
+.market-order-swap { animation: market-order-swap .42s ease-out; }
+@keyframes market-order-swap {
+  0% { opacity: 0; }
+  38% { opacity: 0; }
+  100% { opacity: 1; }
+}
+
+/* The wall the player is not trading against stands down: its shelving and its
+   wooden containers stay, its cards, hit target and pixel goods do not.
+   The goods have to go because the overlay is drawn OVER the canvas and cannot
+   be depth-tested against it — a berry on the far wall would otherwise be
+   painted across the exchange tables standing in front of it. */
+.market-pixel-bay.is-offstage { pointer-events: none; }
+.market-pixel-bay.is-offstage .market-pixel-bay-card { opacity: 0; }
+.market-shelf-goods { transition: opacity .28s ease; }
+.market-shelf-goods.is-offstage { opacity: 0; }
+
+/* The player's own rack: warm leather rather than the shop's cold ironwork, so
+   the satchel wall reads as theirs even though the grid is identical. */
+.market-pixel-bay.is-satchel:hover,
+.market-pixel-bay.is-satchel:focus-visible {
+  border-color: rgb(var(--rune) / .45);
+  background: linear-gradient(180deg, rgb(var(--rune) / .05), rgb(var(--rune) / .015) 62%);
+  box-shadow: inset 0 -14px 22px -14px rgb(var(--rune) / .5), 0 0 16px -6px rgb(var(--rune) / .34);
+}
+.market-pixel-bay.is-satchel .market-pixel-bay-card {
+  border-color: rgb(var(--rune) / .32);
+}
+.market-pixel-bay.is-satchel .market-pixel-bay-art {
+  border-color: rgb(var(--rune) / .28);
+  background: rgb(var(--rune) / .09);
+}
+
+/* Label plates hanging off the front lip of each exchange table. They are
+   sized off the projection like everything else, so they stay attached to the
+   table edge rather than to a percentage of the canvas. */
+.market-exchange-plate {
   position: absolute;
-  width: clamp(15px, 1.55vw, 25px);
+  z-index: 6;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: .3em .55em;
+  border: 1px solid rgb(var(--edge));
+  border-radius: 2px;
+  background: rgb(var(--void) / .88);
+  box-shadow: 0 2px 9px rgb(var(--void) / .6);
+  font-family: 'JetBrains Mono', ui-monospace, monospace;
+  font-size: clamp(7px, calc(var(--plate-unit, 90px) * .1), 11px);
+  line-height: 1.3;
+  transform: translate(-50%, -50%);
+  pointer-events: none;
+  white-space: nowrap;
+}
+.market-exchange-plate i {
+  color: rgb(var(--faint));
+  font-size: .86em;
+  font-style: normal;
+  letter-spacing: .12em;
+  text-transform: uppercase;
+}
+.market-exchange-plate b { font-size: 1.1em; font-weight: 600; }
+.market-exchange-plate.is-give { border-color: rgb(var(--bad) / .5); }
+.market-exchange-plate.is-give b { color: rgb(var(--bad)); }
+.market-exchange-plate.is-get { border-color: rgb(var(--good) / .5); }
+.market-exchange-plate.is-get b { color: rgb(var(--good)); }
+
+/* Goods draw over the shelf plate but hand their clicks to it. */
+.market-shelf-goods { position: absolute; inset: 0; z-index: 3; pointer-events: none; }
+/* Position, size, anchor and clip all come from the projection; only the look
+   is here. A good is centred on the point its container names and cut by that
+   container's own lip or lid, so it belongs to the crate rather than floating
+   in front of it. */
+.market-unit-good {
+  position: absolute;
+  z-index: 3;
   height: auto;
   object-fit: contain;
   image-rendering: pixelated;
-  filter: drop-shadow(0 3px 4px rgb(var(--void) / .92));
+  transform: translate(-50%, -50%);
+  filter: drop-shadow(0 1px 0 rgb(var(--void) / .9));
+  pointer-events: none;
+}
+/* The count is stencilled on the container's own front, not stacked under the
+   good, so a pallet can read as a logo and a number side by side. */
+.market-unit-count {
+  position: absolute;
+  z-index: 4;
+  padding: .1em .28em;
+  border: 1px solid rgb(var(--rune) / .34);
+  border-radius: 1px;
+  background: rgb(var(--void) / .84);
+  color: rgb(var(--rune));
+  font-family: 'JetBrains Mono', ui-monospace, monospace;
+  font-weight: 700;
+  letter-spacing: .04em;
+  line-height: 1;
+  transform: translate(-50%, -50%);
+  pointer-events: none;
+  white-space: nowrap;
+}
+.market-unit-good.is-order,
+.market-unit-count.is-order { z-index: 5; }
+.market-unit-count.is-gold {
+  border-color: rgb(var(--warn) / .42);
+  color: rgb(var(--warn));
+}
+.market-pixel-stock-unit,
+.market-pixel-order-unit,
+.market-pixel-flight {
+  position: absolute;
+  height: auto;
+  object-fit: contain;
+  image-rendering: pixelated;
+  /* A hard contact edge under the sprite, then the cast shadow: the berry reads
+     as standing on the board instead of hovering over it. */
+  filter: drop-shadow(0 1px 0 rgb(var(--void) / .95)) drop-shadow(0 3px 4px rgb(var(--void) / .82));
 }
 .market-pixel-order-unit { z-index: 4; }
-.market-pixel-flight { top: 76%; z-index: 5; opacity: 0; }
-.market-pixel-flight.is-in { animation: market-pixel-drop .76s cubic-bezier(.3,.05,.3,1) forwards; }
-.market-pixel-flight.is-out { animation: market-pixel-fall-through .7s cubic-bezier(.5,0,.8,.45) forwards; }
-.market-stock-flight { z-index: 6; opacity: 0; }
-.market-stock-flight.is-to-counter { animation: market-stock-to-counter .82s cubic-bezier(.32,.02,.28,1) forwards; }
-.market-stock-flight.is-to-shelf { animation: market-stock-to-shelf .82s cubic-bezier(.32,.02,.28,1) forwards; }
-@keyframes market-pixel-drop {
-  0% { opacity: 0; transform: translateY(-280px) rotate(-12deg); }
-  12% { opacity: 1; }
-  78% { opacity: 1; transform: translateY(0) rotate(7deg); }
-  100% { opacity: 0; transform: translateY(5px) scale(.86); }
+.market-pixel-flight {
+  z-index: 6;
+  opacity: 0;
+  transform: translate(-50%, -100%);
+  animation: market-fly .82s cubic-bezier(.32,.02,.28,1) forwards;
 }
-@keyframes market-pixel-fall-through {
-  0% { opacity: 1; transform: translateY(0) rotate(0); }
-  68% { opacity: 1; }
-  100% { opacity: 0; transform: translateY(185px) rotate(18deg); }
-}
-@keyframes market-stock-to-counter {
-  0% { opacity: 1; transform: scale(.82); }
-  72% { opacity: 1; left: 85%; top: 76%; transform: scale(1); }
-  100% { opacity: 0; left: 85%; top: 76%; transform: scale(.82); }
-}
-@keyframes market-stock-to-shelf {
-  0% { opacity: 1; transform: scale(.9); }
-  72% { opacity: 1; left: var(--stock-target-x); top: var(--stock-target-y); transform: scale(.82); }
-  100% { opacity: 0; left: var(--stock-target-x); top: var(--stock-target-y); transform: scale(.72); }
+/* One flight path, run in either direction: start at the projected source,
+   land on the projected target. Both ends are shelf geometry, so a good comes
+   off the board it was stocked on and goes back to it. */
+@keyframes market-fly {
+  0% {
+    opacity: 0;
+    transform: translate(calc(-50% + var(--fly-x, 0px)), calc(-100% + var(--fly-y, 0px))) scale(.86);
+  }
+  14% { opacity: 1; }
+  74% {
+    opacity: 1;
+    transform: translate(calc(-50% + var(--fly-spread, 0px)), -100%) scale(1);
+  }
+  100% {
+    opacity: 0;
+    transform: translate(calc(-50% + var(--fly-spread, 0px)), -100%) scale(.84);
+  }
 }
 .market-shop-showcase-copy { flex: none; padding: .85rem; }
 .market-shop-showcase-metrics > div { min-width: 0; padding: .55rem .65rem; background: rgb(var(--surface)); }
@@ -2218,6 +2376,16 @@ pre,
     rgb(var(--surface) / .82);
 }
 .market-ticket-item { background: linear-gradient(90deg, rgb(var(--element) / .045), transparent); }
+/* The desk's ladder, when a trade is big enough to cross a band edge. It is a
+   warning about the price, so it is toned like one and set apart from the
+   summary below it rather than blending into the list. */
+.market-ticket-steps {
+  border: 1px solid rgb(var(--warn) / .3);
+  background: rgb(var(--warn) / .05);
+  border-radius: 3px;
+  padding: .625rem .75rem;
+}
+.market-ticket-steps .eyebrow { color: rgb(var(--warn)); }
 .market-ticket-summary > div { display: flex; align-items: baseline; justify-content: space-between; gap: 1rem; }
 .market-ticket-summary dt { color: rgb(var(--faint)); font-size: 10px; }
 .market-ticket-summary dd { font-family: 'JetBrains Mono', ui-monospace, monospace; font-size: 11px; text-align: right; }
@@ -2293,6 +2461,9 @@ pre,
 /* Floor tiles ------------------------------------------------------------ */
 
 .market-floor { --element: var(--arcane); }
+
+/* The bar's actions sit left of its numbers and wrap before they do. */
+.market-desk-actions:empty { display: none; }
 
 .market-floor-tile {
   display: flex;
@@ -2430,12 +2601,6 @@ pre,
     flex-direction: column;
   }
 
-  .market-screen > .market-tabs {
-    position: relative;
-    top: auto;
-    flex: none;
-  }
-
   .market-tabpanel {
     display: flex;
     min-height: 0;
@@ -2446,8 +2611,7 @@ pre,
   .market-tabpanel > * { width: 100%; }
 
   .market-goods,
-  .market-monsters,
-  .market-rune {
+  .market-monsters {
     display: flex;
     min-height: 0;
     flex: 1;
@@ -2455,8 +2619,7 @@ pre,
     gap: .625rem;
   }
 
-  .market-monsters > :not(.market-monsters-scroll),
-  .market-rune > :not(.market-rune-workspace) { flex: none; }
+  .market-monsters > :not(.market-monsters-scroll) { flex: none; }
 
   /*
    * Whichever desk is chosen owns the rest of the viewport, and neither of
@@ -2472,6 +2635,10 @@ pre,
   }
 
   .market-shop-workspace { grid-template-columns: minmax(0, 3fr) minmax(17rem, 1fr); }
+
+  .market-book-body { grid-template-columns: minmax(0, 1.6fr) minmax(0, .85fr) 19rem; }
+
+  .market-book-body > * { min-width: 0; min-height: 0; }
 
   .market-shop-workspace > * { min-width: 0; min-height: 0; }
 
@@ -2490,78 +2657,22 @@ pre,
     scrollbar-color: rgb(var(--element) / .45) transparent;
   }
 
-  .market-rune-workspace {
-    min-height: 0;
-    flex: 1;
-  }
-
-  .market-rune-actions,
-  .market-rune-action-panel,
-  .market-rune-aside { min-height: 0; }
-
-  .market-rune-action-content {
-    padding: .75rem 1rem;
-  }
-
-  .market-rune-action-panel .market-desk-heading { margin-bottom: .75rem; }
-
-  .market-rune-action-panel .market-token-input {
-    padding: .625rem .75rem;
-  }
-
-  .market-rune-action-panel .market-token-output {
-    padding: .75rem;
-  }
-
-  .market-rune-action-panel .market-price-protection {
-    padding: .625rem .75rem;
-  }
-
-  .market-rune-action-panel .market-swap-direction {
-    width: 2rem;
-    height: 2rem;
-  }
-
-  .market-rune-action-panel .market-trade-form > :not([hidden]) ~ :not([hidden]) {
-    margin-top: .5rem;
-  }
-
-  .market-rune-aside {
-    grid-template-columns: minmax(0, 1.08fr) minmax(15rem, .92fr);
-    grid-template-rows: minmax(12rem, .8fr) minmax(13rem, 1fr);
-  }
-
-  .market-rune-aside > .market-forge {
-    grid-column: 1 / -1;
-    min-height: 0;
-  }
-
-  .market-rune-price {
-    display: flex;
-    min-height: 0;
-    flex-direction: column;
-  }
-
-  .market-rune-price .market-chart {
-    height: auto;
-    min-height: 0;
-    flex: 1;
-  }
-
-  .market-rune-side-stack {
-    min-height: 0;
-    grid-template-rows: auto minmax(0, 1fr);
-  }
 }
 
 @media (max-width: 1023px) {
-  .market-tabs { top: calc(var(--app-header-height, 4rem) + .25rem); }
+  /* No header nav down here, so the market screen carries the chooser and
+     keeps it in reach while the counter's own page scrolls under it. */
+  .market-venue {
+    position: sticky;
+    top: calc(var(--app-header-height, 4rem) + .25rem);
+    z-index: 30;
+  }
   .market-shop-ledger-list { max-height: 27rem; }
   .market-shop-showcase-art { min-height: 20rem; }
 }
 
 @media (max-width: 700px) {
-  .market-desk-switcher { width: 100%; max-width: none; }
+  .market-venue { max-width: none; }
   .market-desk-health { width: 100%; justify-content: stretch; }
   .market-desk-health > div { min-width: 0; flex: 1; border-top: 1px solid rgb(var(--edge) / .72); border-left: 0; }
   .market-desk-health > div + div { border-left: 1px solid rgb(var(--edge) / .72); }
@@ -2579,7 +2690,9 @@ pre,
 
 @media (max-width: 1023px) {
   .button-control,
-  .market-tab,
+  .market-venue-trigger,
+  .market-venue-option,
+  .market-pair-trigger,
   .filter-chip,
   .sort-chip,
   .difficulty-button,
