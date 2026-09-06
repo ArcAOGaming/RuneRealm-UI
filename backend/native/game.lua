@@ -278,6 +278,28 @@ local function int(v, default)
   return math.tointeger(n) or default
 end
 
+--- How many days of by-day telemetry `Metrics.daily` keeps.
+local METRICS_KEEP_DAYS = 90
+
+--- Drop day-keyed rows that have aged out of a retention window.
+---
+--- For maps keyed by epoch-day (`timestamp // 86400000`). Call it where a NEW
+--- day is created, not on every message: the sweep is O(days held) and the only
+--- moment the answer can change is the moment a day appears.
+---
+--- The key arrives as whatever the day was stored as, which after an
+--- `Admin.Load` round-trip through JSON is a string, so it is narrowed here
+--- rather than compared raw. A key that will not narrow is not a day and goes.
+local function pruneDailyMap(map, today, keepDays)
+  if type(map) ~= "table" then return end
+  local newest = int(today, 0)
+  if newest <= 0 then return end
+  for key in pairs(map) do
+    local day = int(key, -1)
+    if day < 0 or (newest - day) >= keepDays then map[key] = nil end
+  end
+end
+
 -- Monster Index ------------------------------------------------------------
 
 local MONSTER_INDEX_STATES = {
@@ -1466,6 +1488,21 @@ FactionAggregates = FactionAggregates or nil
 FactionRosters = FactionRosters or nil
 LeaderboardTop = LeaderboardTop or nil
 AggregateRebuilds = AggregateRebuilds or 0
+
+--- What was in `leaderboard`/`factions` the last time either was encoded.
+---
+--- Globals rather than locals for the same reason the three caches above are:
+--- they are disposable, they are rebuilt for free when they are missing, and a
+--- fresh spawn or a snapshot restore that loses them re-encodes exactly once.
+--- They must NEVER be published, and nothing here writes them into `result`.
+BoardFingerprint = BoardFingerprint or nil
+FactionFingerprint = FactionFingerprint or nil
+--- The same idea for the orderbook half of the economy. See
+--- `EconomyEngine.bookRevision`; this holds what it said when `economybook` was
+--- last written.
+BookRevision = BookRevision or nil
+--- How many board encodes the content gate skipped. Diagnostics only.
+BoardEncodesSkipped = BoardEncodesSkipped or 0
 
 --- Everything the two derived views need from one account, and nothing else.
 --- Deliberately flat and scalar: these rows are held for the ranked members and
@@ -2759,10 +2796,6 @@ H["Sprite.Update"] = function(base, msg, timestamp)
   local p = getPlayer(address, timestamp)
   local denied = requireAccess(base, p)
   if denied then return denied end
-  if not C.CHARACTER_CUSTOMISER_ENABLED then
-    return fail(base, "The character creator is parked for the economy launch")
-  end
-
   local body = bodyOf(msg)
   if body ~= "" then
     local decoded, value = pcall(json.decode, body)
@@ -2839,6 +2872,16 @@ H["Daily.Claim"] = function(base, msg, timestamp)
   p.offerings = int(p.offerings, 0) + 1
 
   -- Bucket this claim by streak, on the day it happened.
+  --
+  -- Deliberately NOT pruned, unlike `Metrics.daily` above it.
+  --
+  -- This is a recovered series: 131 days of the old Alter's engagement history,
+  -- 2025-05-03 to 2025-09-13, carried across the shutdown by `Admin.Load` and
+  -- irreplaceable. A retention window applied here would delete it on the first
+  -- daily claim a restored process handled -- a restore taking something away
+  -- by the back door, which is the one thing the load rules exist to stop. The
+  -- cost of keeping it is one three-integer table per calendar day, which is
+  -- the slowest-growing thing in this file by two orders of magnitude.
   local day = timestamp // 86400000
   local today = Checkins[day]
   if not today then
@@ -2931,6 +2974,24 @@ WithdrawSeq = WithdrawSeq or 0
 --- delivered twice would pay for a burn that happened once, and there is no
 --- second source to reconcile against — so the reference is remembered and a
 --- repeat is recognised rather than acted on.
+---
+--- And that is why this map is NOT trimmed, while `Withdrawals` is.
+---
+--- Every other list in this file is bounded at the point of append and this one
+--- looks exactly like a leak that was missed. It is not. Forgetting a reference
+--- here is not forgetting a record, it is re-arming a payout: the next
+--- re-delivery of that burn notice finds no `seen` row and credits Rune a
+--- second time, out of nothing, against supply that was destroyed once. The
+--- outgoing ledger has no equivalent exposure -- `Rune.Minted` settles a row
+--- and never moves value, so an evicted withdrawal costs a late confirmation
+--- and nothing else, which is what makes THAT one safe to bound.
+---
+--- What is bounded instead is the PUBLICATION: `/now/runedeposits` carries the
+--- unresolved rows and a window of recent credits rather than the whole map
+--- (see `bridgeLedgerView`), so the part every message pays five times over
+--- stops growing even though the replay guard does not. A row is one flat table
+--- of seven scalars; if this ever needs to shrink, the answer is a tombstone
+--- that keeps the key and drops the record, not an eviction.
 Deposits = Deposits or {}
 
 --- The lower bound on a withdrawal.
@@ -2940,6 +3001,83 @@ Deposits = Deposits or {}
 --- queue useless for everyone else. One is still allowed; this is here to be
 --- raised if that turns out to matter.
 local MIN_WITHDRAW = 1
+
+--- How many CLOSED withdrawals the ledger keeps.
+---
+--- `MarketHistory` is trimmed to a hundred at the point of insert and that is
+--- the pattern every list in this file is supposed to follow. This one did not
+--- follow it: nothing in the process ever removed a `Withdrawals` row, so the
+--- ledger was O(withdrawals ever made) in a table the node marshals five times
+--- on every message. Measured at 490 bytes and one live table each; at the
+--- observed soak rate (40 withdrawals in 257 actions) a day of play at three
+--- actions a second is forty thousand rows -- twenty megabytes of heap and
+--- forty thousand tables, on top of a published list that grows with it.
+local WITHDRAW_KEEP = 200
+
+--- Forget withdrawals that are finished and cannot be acted on again.
+---
+--- Two rules, and the first is the one that matters:
+---
+---   * a `pending` row is NEVER evicted, at any age or count. It is Rune this
+---     process has already taken from a player and is still waiting on the
+---     token to confirm -- the only record saying who is short and by how much,
+---     and the only thing `Admin.SettleWithdrawal` can act on. Dropping one
+---     takes something away from a player who has already paid, which is the
+---     failure `Admin.Load`'s max/merge rules exist to prevent and is no more
+---     acceptable arriving from a trim than from a restore. The bound is
+---     therefore on closed rows only, and a process swamped with unconfirmed
+---     withdrawals grows -- correctly, and visibly, because that is an
+---     operational problem rather than a storage one.
+---
+---   * a closed row (`minted` or `refunded`) past the newest `WITHDRAW_KEEP`
+---     goes. This is safe in a way the deposit ledger is NOT: `Rune.Minted`
+---     settles a row and never moves value, so a late confirmation naming an
+---     evicted withdrawal is answered "No such withdrawal" and nothing is
+---     minted twice. `Deposits` is deliberately left whole for exactly the
+---     opposite reason -- see the note there.
+local function pruneWithdrawals()
+  local closed = {}
+  for id, w in pairs(Withdrawals) do
+    if type(w) == "table" and w.status ~= "pending" then
+      closed[#closed + 1] = { id = id, at = int(w.settledAt, 0) }
+    end
+  end
+  if #closed <= WITHDRAW_KEEP then return end
+  -- Newest first. The id is the tiebreak so the choice is deterministic when
+  -- several rows settled in the same millisecond, matching `pruneBattles`.
+  table.sort(closed, function(x, y)
+    if x.at ~= y.at then return x.at > y.at end
+    return x.id > y.id
+  end)
+  for i = WITHDRAW_KEEP + 1, #closed do Withdrawals[closed[i].id] = nil end
+end
+
+--- How many CLOSED bridge rows each published ledger key carries.
+local BRIDGE_PUBLISH_KEEP = 50
+
+--- One bridge ledger, as the list `/now/runewithdrawals` publishes.
+---
+--- Everything still open, plus the newest `BRIDGE_PUBLISH_KEEP` finished rows.
+--- `openp` says which is which and `stamp` names the field that dates a closed
+--- row, because the two ledgers disagree on both: a withdrawal is open while it
+--- is `pending` and dated by `settledAt`, a deposit is open while it is
+--- `unresolved` and dated by `creditedAt`.
+local function bridgeLedgerView(ledger, stamp, openp)
+  local out, closed = {}, {}
+  for _, row in pairs(ledger) do
+    if type(row) == "table" then
+      if openp(row) then out[#out + 1] = row
+      else closed[#closed + 1] = row end
+    end
+  end
+  table.sort(closed, function(x, y)
+    local xa, ya = int(x[stamp], 0), int(y[stamp], 0)
+    if xa ~= ya then return xa > ya end
+    return tostring(x.id) > tostring(y.id)
+  end)
+  for i = 1, math.min(#closed, BRIDGE_PUBLISH_KEEP) do out[#out + 1] = closed[i] end
+  return out
+end
 
 H["Rune.Withdraw"] = function(base, msg, timestamp)
   local address = signer(msg)
@@ -2977,6 +3115,10 @@ H["Rune.Withdraw"] = function(base, msg, timestamp)
     requestedAt = timestamp,
     settledAt = 0,
   }
+  -- Bounded at the point of APPEND, which is the only place a bound holds. A
+  -- list trimmed on read is a permanent tax on every message that is not that
+  -- read.
+  pruneWithdrawals()
 
   local v = playerView(p)
   v.withdrawal = { id = id, amount = amount, status = "pending" }
@@ -3215,6 +3357,23 @@ H["Lootbox.Open"] = function(base, msg, timestamp)
   local rarity = table.remove(p.lootboxes, index)
   local multiplier = 1.0 + 0.5 * (rarity - 1)
   local rewards = {}
+  -- One line per ITEM, not per loot-table row. Every tier above 1 rolls the
+  -- lower tiers' rows as well, so a tier-2 box hits `rock_berry` twice -- once
+  -- for 1 and once for 5 -- and the receipt used to read "Rock Berry +1" above
+  -- "Rock Berry +8" as if they were two different things. The grant was always
+  -- correct; only the telling of it was split. Merging here rather than in the
+  -- client also fixes the duplicate React key in LootVault's receipt.
+  local seen = {}
+  local function award(item, amount)
+    grant(p, item, amount)
+    local at = seen[item]
+    if at then
+      rewards[at].amount = rewards[at].amount + amount
+    else
+      rewards[#rewards + 1] = { item = item, name = C.ITEMS[item].name, amount = amount }
+      seen[item] = #rewards
+    end
+  end
   for _, entry in ipairs(C.LOOT_TABLE) do
     if rarity >= entry.minBox then
       local chance = math.min(C.LOOT_CHANCE_CAP, math.floor(entry.chance * multiplier))
@@ -3226,8 +3385,7 @@ H["Lootbox.Open"] = function(base, msg, timestamp)
         elseif swing >= 80 then
           amount = math.ceil(amount * 1.5)
         end
-        grant(p, entry.item, amount)
-        rewards[#rewards + 1] = { item = entry.item, name = C.ITEMS[entry.item].name, amount = amount }
+        award(entry.item, amount)
       end
     end
   end
@@ -3236,10 +3394,7 @@ H["Lootbox.Open"] = function(base, msg, timestamp)
   if #rewards == 0 then
     local faction = C.FACTION_BY_NAME[p.faction or ""]
     local floorItem = faction and faction.berry or "air_berry"
-    grant(p, floorItem, 1)
-    rewards[#rewards + 1] = {
-      item = floorItem, name = C.ITEMS[floorItem].name, amount = 1,
-    }
+    award(floorItem, 1)
   end
 
   local v = playerView(p)
@@ -3501,6 +3656,40 @@ H["Hunt.Released"] = function(base, msg, timestamp)
   return reply(base, playerView(p))
 end
 
+--- How long a settlement stays recognisable as one that has already been paid.
+local HUNT_SETTLEMENT_MS = 24 * 60 * 60 * 1000
+
+--- Forget capture receipts that can no longer be replayed.
+---
+--- `HuntSettlements` was O(captures ever made) in a map nothing ever removed
+--- from, so it is bounded here -- but ONLY by age, and the reason there is no
+--- count cap is worth being explicit about.
+---
+--- This map is the replay guard: a `Hunt.Settle` naming an id already in it is
+--- acknowledged rather than acted on. Evicting an entry re-opens that door, and
+--- through it the worker's retry grants a SECOND companion and spends the bid
+--- again. The other half of the guard is `p.hunt.runId`, which refuses a
+--- settlement once the run is over -- so the exposure is only ever a run that
+--- is still open, and a run lasts minutes.
+---
+--- A count cap cannot know that. Under a burst it evicts the newest window,
+--- which is precisely the set of runs still in flight. Age can: a day is three
+--- orders of magnitude longer than a run, and it turns an unbounded map into
+--- one that is O(captures in a day) -- bounded by how fast hunts can physically
+--- be run, and self-emptying whenever they are not.
+local function pruneHuntSettlements(timestamp)
+  local now = int(timestamp, 0)
+  if now <= 0 then return end
+  for id, receipt in pairs(HuntSettlements) do
+    -- A receipt with no stamp predates this and is by definition older than
+    -- anything worth keeping.
+    if type(receipt) ~= "table"
+       or (now - int(receipt.settledAt, 0)) > HUNT_SETTLEMENT_MS then
+      HuntSettlements[id] = nil
+    end
+  end
+end
+
 --- Charge the player's Rune bid, then materialise the already-rolled wild
 --- creature in collection on success. The bid is paid on failure too: those
 --- Runes were committed to the one binding attempt.
@@ -3570,8 +3759,27 @@ H["Hunt.Settle"] = function(base, msg, timestamp)
     monster = captured and forClient(Battle.clone(captured)) or nil,
     settledAt = timestamp,
   }
-  HuntSettlements[settlementId] = receipt
+  -- The replay ledger gets the LEAN receipt, not this one.
+  --
+  -- `HuntSettlements` exists for one purpose: recognising a settlement id that
+  -- has already been paid, and the branch above that does it reads `playerId`
+  -- and `runId` and nothing else. Storing the captured companion in it as well
+  -- kept a second copy of something already in `p.collection` -- about a
+  -- kilobyte and a dozen live Lua tables per capture, in a map that is never
+  -- pruned and is marshalled on every message from every player.
+  --
+  -- The id is kept instead of the companion. It is enough to answer "what did
+  -- that settlement grant" by looking in the collection, and it costs a string.
+  HuntSettlements[settlementId] = {
+    settlementId = settlementId, runId = runId, playerId = address,
+    success = success, monsterId = captured and captured.id or nil,
+    settledAt = timestamp,
+  }
+  pruneHuntSettlements(timestamp)
   p.hunt.status = "roaming"
+  -- The player's own record keeps the FULL receipt: this is the one the client
+  -- reads back to show what it caught, and there is exactly one per player
+  -- rather than one per capture ever made.
   p.hunt.lastCapture = receipt
   touchAlso(address)
   local v = playerView(p)
@@ -3622,9 +3830,51 @@ end
 ---
 --- Idempotent: `settled` guards it, so ending the same battle twice cannot
 --- award two wins.
+---
+--- What a finished fight stops carrying
+--- ------------------------------------
+---
+--- A live turn entry is four Lua tables: the entry, `statsChanged`, and a
+--- ten-field snapshot of BOTH combatants (`battle.lua`'s `act`). A seven-round
+--- fight is fourteen of them, and a measured battle costs **76 live tables and
+--- 47.8 KB** of Luerl heap because of it. That is the whole reason a process
+--- holding a hundred retained fights marshals ~4 MB on every slot: `dev_lua`
+--- loads, encodes, decodes and writes the ENTIRE Luerl store five times per
+--- message, and Luerl's collector is O(live tables squared) on top of that.
+---
+--- The snapshots exist for exactly one consumer: `BattleScene` animating a
+--- round it has not played yet. Once a fight is over there is at most one such
+--- round left -- the closing one -- so every EARLIER entry keeps its text and
+--- loses its three sub-tables. Nothing visible changes: `RoundLog` renders the
+--- full history from scalars alone (`move`, `missed`, `critical`, the two
+--- damage numbers), and `BattleScene.reconcile` already treats a missing
+--- snapshot as "nothing to correct".
+---
+--- This is not the same lever as `keep = roundCap * 2` in `battle.lua`. That
+--- one bounds a LIVE log and cutting it to ten broke the game at round six,
+--- because clients detect a resolved round by the log growing. This runs once,
+--- after the fight is over and nothing more will be appended.
+local function compactTurnLog(b)
+  local turns = b and b.turns
+  if type(turns) ~= "table" or #turns == 0 then return end
+  -- The last entry is the last thing that happened, so its round is the one
+  -- still owed an animation. Read it rather than trusting `b.round`, which a
+  -- forfeit can advance past anything the log holds.
+  local finalRound = int(turns[#turns].round, 0)
+  for i = 1, #turns do
+    local e = turns[i]
+    if type(e) == "table" and int(e.round, 0) ~= finalRound then
+      e.attackerState = nil
+      e.defenderState = nil
+      e.statsChanged = nil
+    end
+  end
+end
+
 function settleBattle(b, timestamp)
   if not b or b.settled then return end
   b.settled = true
+  compactTurnLog(b)
   -- When it finished, which is what `pruneBattles` sorts on. `Battle.resolve`
   -- sets the status but has no clock; this is the one place every real fight
   -- passes through on its way to being over.
@@ -3803,15 +4053,35 @@ end
 ---   * every ended battle younger than `RETAIN_ENDED_MS`. The client animates
 ---     the closing round out of `turns` and then shows a result screen built
 ---     from the same log, so a fight has to survive its own ending. Dropping
----     `turns` in `settleBattle` would blank the last swing of every fight.
+---     `turns` wholesale in `settleBattle` would blank the last swing of every
+---     fight; `compactTurnLog` there drops the per-swing SNAPSHOTS from every
+---     round except the closing one instead, which is the part no finished
+---     fight has a reader for.
 ---   * failing that, the `RETAIN_ENDED_MAX` most recently ended. This is the
 ---     backstop that makes the bound hold regardless of how many fights land
 ---     inside the window.
 ---
+--- Why the backstop is twenty and not a hundred
+--- --------------------------------------------
+---
+--- The cap is not a safety valve that rarely fires -- it IS the steady state,
+--- and therefore it is the process's resting heap size. Measured on the real
+--- `game.lua` in a local AOS module: a hundred retained fights is 6,148 live
+--- Lua tables and 3.87 MB, which is essentially all of the 4.9 MB the node
+--- reports as `computed_slot_size`. Every message pays for that five times
+--- over in `dev_lua`, and quadratically again in Luerl's collector.
+---
+--- Twenty is chosen against what a retained fight is FOR: a player looking at
+--- the result screen of the fight they just finished, and `Battle.Info` for a
+--- reload a moment later. `RETAIN_ENDED_MS` already says that window is half an
+--- hour; twenty is what a busy half hour of a single arena actually contains.
+--- Nothing reads the twenty-first, and the whole file has no lookup that walks
+--- ended battles expecting history.
+---
 --- Called when a battle is CREATED, so the message that ends a fight never
 --- prunes the fight it just ended.
 local RETAIN_ENDED_MS = 30 * 60 * 1000
-local RETAIN_ENDED_MAX = 100
+local RETAIN_ENDED_MAX = 20
 
 local function pruneBattles(timestamp)
   local ended = {}
@@ -4580,7 +4850,13 @@ H["Battle.Attack"] = function(base, msg, timestamp)
   end
 
   local v = playerView(p)
-  v.battle = Battle.view(b)
+  -- `playerView` has ALREADY built this: the battle is live and `activeBattleId`
+  -- still points at it, so its own branch set `v.battle`. Assigning it again
+  -- deep-cloned the whole battle -- turn log included -- and threw the first
+  -- clone away, on every round of every fight. The terminal branch above still
+  -- assigns explicitly, and has to: `settleBattle` marks the battle ended
+  -- before `playerView` runs, so that branch deliberately does not carry it.
+  if not v.battle then v.battle = Battle.view(b) end
   return reply(base, v)
 end
 
@@ -4656,10 +4932,24 @@ local function leaderboardCard(m)
     -- volatility: a threshold only moves when the level does, which is a
     -- standings change anyway.
     nextLevelExp = C.requiredExp(int(m.level, 0)),
-    image = m.image,
-    sprite = m.sprite,
-    -- `compactMoves` builds and returns a new table rather than editing the one
-    -- it is handed, so this may read the live roster's moves directly.
+    -- `image` and `sprite` are NOT published on a standings row.
+    --
+    -- Both are ~43-character transaction ids, both are a function of `entryNo`
+    -- alone, and neither is read from a board row anywhere in `src/`:
+    -- `portrait()` in `ui/art.ts` already resolves the card art from `entryNo`
+    -- against the bundled index, and the only reader of `sprite` is
+    -- `BattleScene`, which takes it from a battle view. They were ~110 bytes
+    -- per row, fifty rows, in a map the node loads, encodes, decodes and
+    -- writes five times on every message. Measured: 18,727 B -> 15,208 B of
+    -- board, and 277.5 ms -> 268 ms of Monster.Feed on a live `~lua@5.3a`.
+    --
+    -- `moves` STAYS, and deliberately. A move set is ROLLED per companion, so
+    -- unlike the two above it is not a function of `entryNo` and the client
+    -- cannot join it back from `catalog` or `monsterindex`. `CardPreview`
+    -- draws all four move tiles on the board's cards; dropping them would be a
+    -- silent product change, not a compaction. `compactMoves` builds and
+    -- returns a new table rather than editing the one it is handed, so this
+    -- may read the live roster's moves directly.
     moves = Battle.compactMoves(m.moves),
   }
 end
@@ -4692,6 +4982,90 @@ local function leaderboard(limit)
     end
   end
   return out
+end
+
+--- What the two board keys would SAY, cheaply enough to ask every message.
+---
+--- The top-N index made BUILDING the board free -- `leaderboard(50)` is fifty
+--- indexed lookups, and measured against a live `~lua@5.3a` the difference
+--- between calling it and not calling it is inside the repeat noise. What was
+--- never free is `encode`: 18.7 kB of leaderboard and 6.5 kB of factions, and
+--- 77 ms of a 277 ms `Monster.Feed`, re-encoded on every one of the thirty-five
+--- actions whose `ACTION_DIRTY` entry sets `aggregates`.
+---
+--- Most of those actions cannot move the board. A standings row publishes
+--- level, exp, wins, losses, quests and the projected card; a `Monster.Feed`
+--- moves energy, `totalTimesFed` and one berry, and NONE of those appear in it.
+--- That was measured directly against this file before the gate existed: the
+--- published `leaderboard` string is byte-identical either side of a feed.
+---
+--- So the gate is on CONTENT, not on intent. That distinction is the whole
+--- point and it is what makes this safe to be wrong about:
+---
+---   * it cannot go stale. A fingerprint is derived from the rows that are
+---     about to be published, so anything that moves them re-encodes, whether
+---     or not anybody classified the verb that moved them.
+---   * it covers the cases a `dirty` flag cannot. A REFUSED action re-encodes
+---     nothing because it changed nothing, without this file having to decide
+---     which handlers can mutate before they fail.
+---   * it is cheap by construction: ~20 scalars per row concatenated once,
+---     against the escaping, key names and nesting of the JSON encoder. Fifty
+---     rows of fingerprint is about 1.5 kB of string against 18.7 kB of JSON.
+---
+--- Every field either function reads is a field the matching view publishes,
+--- and that is the invariant to preserve: ADDING a field to `leaderboardCard`
+--- or to `factionStats` means adding it here, or the board can move without
+--- the fingerprint noticing. `game_test.lua` asserts both directions.
+local function leaderboardFingerprint(rows)
+  local parts = {}
+  for i = 1, #rows do
+    local row = rows[i]
+    local m = row.monster or {}
+    -- A rolled move set is `{ name = { count = n } }`. Both the names and the
+    -- counts are published, so both have to be in the fingerprint -- and the
+    -- names have to be ordered, because `pairs` is not.
+    local names, uses = {}, 0
+    for name, move in pairs(m.moves or {}) do
+      names[#names + 1] = name
+      uses = uses + int(move.count, 0)
+    end
+    table.sort(names)
+    parts[i] = table.concat({
+      row.address, tostring(row.faction), tostring(row.name), tostring(row.element),
+      int(row.level, 0), int(row.exp, 0), int(row.wins, 0), int(row.losses, 0),
+      int(row.quests, 0),
+      tostring(m.entryNo), tostring(m.entryKey), tostring(m.name),
+      tostring(m.elementType), tostring(m.evolutionStage), tostring(m.faction),
+      int(m.level, 0), int(m.nextLevelExp, 0),
+      table.concat(names, ","), uses,
+    }, "|")
+  end
+  return table.concat(parts, ";")
+end
+
+local function factionFingerprint(rows)
+  local parts = {}
+  for i = 1, #rows do
+    local row = rows[i]
+    -- `name`, `element`, `description`, `mascot`, `berry` and the three
+    -- `monster*` fields are copied verbatim out of `C.FACTIONS` and cannot
+    -- change without a redeploy, which spawns an empty `base` and re-encodes
+    -- everything anyway. Only the tallies and the roster are state.
+    local sub = {
+      row.name, int(row.memberCount, 0), int(row.monsterCount, 0),
+      tostring(row.averageLevel), int(row.totalTimesFed, 0),
+      int(row.totalTimesPlay, 0), int(row.totalTimesQuest, 0),
+    }
+    for j = 1, #(row.members or {}) do
+      local member = row.members[j]
+      sub[#sub + 1] = table.concat({
+        member.id, int(member.level, 0), int(member.wins, 0),
+        int(member.timesFed, 0), int(member.timesPlay, 0), int(member.timesQuest, 0),
+      }, ",")
+    end
+    parts[i] = table.concat(sub, "|")
+  end
+  return table.concat(parts, ";")
 end
 
 --- The pre-index leaderboard, kept for `Admin.*` paths that legitimately want a
@@ -5147,10 +5521,37 @@ H["Admin.Economy.FundTestBots"] = function(base, msg, timestamp)
     rune = math.max(0, math.min(100, int(body.rune, 25))),
     scroll = math.max(0, math.min(20, int(body.scroll, 5))),
   }
+  --- Gold is NOT an inventory item, and it is not minted here.
+  ---
+  --- `grant()` moves `C.ITEMS`, and Gold is deliberately not one of them: it
+  --- lives at `p.gold` and its supply is conserved across
+  --- `issued = player + escrow + shop + locked`. So a test wallet is topped up
+  --- OUT OF the locked launch allocation, exactly the way `Admin.Load` funds a
+  --- restored balance -- `syncHoldings` below moves the delta from `locked` to
+  --- `player` and the conservation identity still holds afterwards.
+  ---
+  --- That is also why the shortfall is totalled BEFORE anything is written.
+  --- `syncHoldings` silently declines a delta the locked pool cannot cover, so
+  --- funding fifty wallets past it would leave the ledger disagreeing with the
+  --- records rather than failing -- and a supply ledger that quietly stops
+  --- matching the accounts is worse than a refused admin message.
+  local goldTarget = math.max(0, math.min(5000, int(body.gold, 0)))
   local funded = 0
   for _, address in ipairs(addresses) do
     if type(address) ~= "string" or #address ~= 43 then
       return fail(base, "Every test wallet must be a 43-character address")
+    end
+  end
+  if goldTarget > 0 then
+    local shortfall = 0
+    for _, address in ipairs(addresses) do
+      local held = Players[address] and math.max(0, int(Players[address].gold, 0)) or 0
+      if held < goldTarget then shortfall = shortfall + (goldTarget - held) end
+    end
+    local available = math.max(0, int((EconomyState.gold or {}).locked, 0))
+    if shortfall > available then
+      return fail(base, "Locked Gold reserve holds " .. string.format("%d", available)
+        .. " and this funding needs " .. string.format("%d", shortfall))
     end
   end
   for _, address in ipairs(addresses) do
@@ -5171,12 +5572,15 @@ H["Admin.Economy.FundTestBots"] = function(base, msg, timestamp)
       local held = itemCount(p, item)
       if held < minimum then grant(p, item, minimum - held) end
     end
+    if math.max(0, int(p.gold, 0)) < goldTarget then p.gold = goldTarget end
     touchAlso(address)
     funded = funded + 1
   end
   EconomyState = EconomyEngine.syncHoldings(
     EconomyState, Players, timestamp, "Admin.Economy.FundTestBots")
-  return reply(base, { funded = funded, minimums = targets, testing = true })
+  return reply(base, {
+    funded = funded, minimums = targets, gold = goldTarget, testing = true,
+  })
 end
 
 H["Admin.Pass.ConfigureGenesis"] = function(base, msg, timestamp)
@@ -6012,255 +6416,24 @@ end
 
 --- Bulk load of whole player records, used by the deploy script to restore a
 --- recovered snapshot or to carry a previous deployment across.
-H["Admin.Load"] = function(base, msg, timestamp)
-  local denied = requireOwner(base, msg)
-  if denied then return denied end
-  local ok, payload = pcall(json.decode, bodyOf(msg) ~= "" and bodyOf(msg) or "{}")
-  if not ok or type(payload) ~= "table" then return fail(base, "Body must be JSON") end
-  if type(payload.monsterIndexOverrides) == "table" then
-    for rawEntryNo, raw in pairs(payload.monsterIndexOverrides) do
-      local entryNo = int(rawEntryNo, 0)
-      local baseEntry = monsterIndexBase(entryNo)
-      if baseEntry and type(raw) == "table" then
-        local restored = {}
-        if type(raw.name) == "string" and #raw.name >= 1 and #raw.name <= 80 then
-          restored.name = raw.name
-        end
-        if type(raw.state) == "string" and MONSTER_INDEX_STATES[raw.state]
-           and (raw.state ~= "live" or baseEntry.assetReady == true) then
-          restored.state = raw.state
-        end
-        if type(raw.artRevision) == "string" and #raw.artRevision >= 1
-           and #raw.artRevision <= 64
-           and not string.find(raw.artRevision, "[^%w_%-]", 1) then
-          restored.artRevision = raw.artRevision
-        end
-        if type(raw.starter) == "boolean" then restored.starter = raw.starter end
-        if type(raw.huntCatchable) == "boolean" then restored.huntCatchable = raw.huntCatchable end
-        local weight = int(raw.huntWeight, -1)
-        if weight >= 0 and weight <= 100000 then restored.huntWeight = weight end
-
-        local state = restored.state or baseEntry.state
-        local starter = restored.starter
-        if starter == nil then starter = baseEntry.starter end
-        local catchable = restored.huntCatchable
-        if catchable == nil then catchable = baseEntry.huntCatchable end
-        local huntWeight = restored.huntWeight
-        if huntWeight == nil then huntWeight = int(baseEntry.huntWeight, 0) end
-        if state == "live"
-           and (not starter or baseEntry.starterFaction)
-           and ((catchable and huntWeight > 0) or (not catchable and huntWeight == 0)) then
-          MonsterIndexOverrides[tostring(entryNo)] = restored
-        elseif not starter and not catchable and huntWeight == 0 then
-          MonsterIndexOverrides[tostring(entryNo)] = restored
-        end
-      end
-    end
-    MonsterIndexRevision = math.max(int(MonsterIndexRevision, 1), int(payload.monsterIndexRevision, 1))
-  end
-  if type(payload.economy) == "table" then
-    local imported, economyProblem = EconomyEngine.importState(EconomyState, payload.economy)
-    if economyProblem then return fail(base, economyProblem) end
-    EconomyState = imported
-  end
-  -- The Alter's faction tally is process-global, not per player, so it rides
-  -- alongside the rows rather than inside one. Highest wins, like every other
-  -- counter here: a restore must not lower a total.
-  -- The recovered daily history. Same rule as everything else: a restore may
-  -- not lower a count.
-  if type(payload.checkins) == "table" then
-    for day, buckets in pairs(payload.checkins) do
-      local key = math.tointeger(tonumber(day))
-      if key and type(buckets) == "table" then
-        local have = Checkins[key] or { high = 0, medium = 0, low = 0 }
-        for _, b in ipairs({ "high", "medium", "low" }) do
-          have[b] = math.max(int(buckets[b], 0), int(have[b], 0))
-        end
-        Checkins[key] = have
-      end
-    end
-  end
-
-  -- Monotonic, like wins and quests: a restore may never lower it.
-  BattlesCompleted = math.max(int(payload.battlesCompleted, 0), int(BattlesCompleted, 0))
-
-  if type(payload.offerings) == "table" then
-    for faction, count in pairs(payload.offerings) do
-      if C.FACTION_BY_NAME[faction] then
-        Offerings[faction] = math.max(int(count, 0), int(Offerings[faction], 0))
-      end
-    end
-  end
-
-  if type(payload.metrics) == "table" then
-    local incoming = payload.metrics
-    local incomingSince = int(incoming.since, 0)
-    local knownSince = int(Metrics.since, 0)
-    if incomingSince > 0 then
-      Metrics.since = knownSince > 0 and math.min(knownSince, incomingSince) or incomingSince
-    end
-    if type(incoming.totals) == "table" then
-      Metrics.totals = Metrics.totals or {}
-      for key, value in pairs(incoming.totals) do
-        Metrics.totals[key] = math.max(int(Metrics.totals[key], 0), int(value, 0))
-      end
-    end
-    if type(incoming.daily) == "table" then
-      Metrics.daily = Metrics.daily or {}
-      for rawDay, row in pairs(incoming.daily) do
-        local day = math.tointeger(tonumber(rawDay))
-        if day and type(row) == "table" then
-          local have = Metrics.daily[day] or { actions = {}, factions = {} }
-          for key, value in pairs(row) do
-            if key == "actions" or key == "factions" then
-              have[key] = have[key] or {}
-              if type(value) == "table" then
-                for nested, count in pairs(value) do
-                  have[key][nested] = math.max(int(have[key][nested], 0), int(count, 0))
-                end
-              end
-            elseif type(value) == "number" then
-              have[key] = math.max(int(have[key], 0), int(value, 0))
-            end
-          end
-          Metrics.daily[day] = have
-        end
-      end
-    end
-  end
-
-  -- The bridge ledgers.
-  --
-  -- Both are keyed by a reference that another process issued, so a restore
-  -- adds rows and never overwrites one: whatever this process already holds for
-  -- a reference happened after the export was taken, and replacing a settled
-  -- withdrawal with the pending copy in an older snapshot would invite it to be
-  -- settled a second time.
-  if type(payload.withdrawals) == "table" then
-    for id, row in pairs(payload.withdrawals) do
-      if type(row) == "table" and not Withdrawals[tostring(id)] then
-        row.amount = int(row.amount, 0)
-        row.requestedAt = int(row.requestedAt, 0)
-        row.settledAt = int(row.settledAt, 0)
-        Withdrawals[tostring(id)] = row
-      end
-    end
-  end
-  WithdrawSeq = math.max(int(payload.withdrawSeq, 0), int(WithdrawSeq, 0),
-                         highestSeq(Withdrawals, "w"))
-
-  if type(payload.deposits) == "table" then
-    for id, row in pairs(payload.deposits) do
-      if type(row) == "table" and not Deposits[tostring(id)] then
-        row.amount = int(row.amount, 0)
-        row.creditedAt = int(row.creditedAt, 0)
-        Deposits[tostring(id)] = row
-      end
-    end
-  end
-
-  -- The token the bridge points at. Without it a restored process refuses every
-  -- withdrawal and rejects every burn notice as coming from a stranger.
-  if type(payload.runeToken) == "string" and #payload.runeToken == 43
-     and RuneToken == "" then
-    RuneToken = payload.runeToken
-  end
-
-  -- The market, which is custody rather than an index.
-  --
-  -- A listed companion is in `Market` and in nobody's collection, so a
-  -- migration that walks only the player table does not forget the listings --
-  -- it destroys the creatures inside them. There is nowhere else to look them
-  -- up from.
-  --
-  -- An existing listing is never overwritten. Whatever this process is holding
-  -- now happened after the export was taken, so the export is the older story;
-  -- and a listing id names custody of a specific creature, so replacing one
-  -- would swap a companion out from under a sale that is already in progress.
-  if type(payload.market) == "table" then
-    for _, listing in pairs(payload.market) do
-      if type(listing) == "table" and type(listing.id) == "string"
-         and type(listing.seller) == "string" and type(listing.monster) == "table"
-         and not Market[listing.id] then
-        Market[listing.id] = {
-          id = listing.id,
-          seller = listing.seller,
-          price = int(listing.price, 0),
-          listedAt = int(listing.listedAt, 0),
-          monster = restoreMonster(listing.monster, timestamp),
-        }
-      end
-    end
-  end
-  -- Same reason as `monsterSeq`: a counter that restarts below the ids already
-  -- in `Market` would issue a listing id that is already taken, and the new
-  -- listing would take custody of the old one's companion.
-  MarketSeq = math.max(int(payload.marketSeq, 0), int(MarketSeq, 0),
-                       highestSeq(Market, "L"))
-
-  if type(payload.marketHistory) == "table" and #MarketHistory == 0 then
-    for _, sale in ipairs(payload.marketHistory) do
-      if type(sale) == "table" then
-        sale.price = int(sale.price, 0)
-        sale.soldAt = int(sale.soldAt, 0)
-        sale.level = int(sale.level, 0)
-        MarketHistory[#MarketHistory + 1] = sale
-      end
-    end
-    while #MarketHistory > 100 do table.remove(MarketHistory) end
-  end
-
-  if type(payload.audit) == "table" and #AdminAudit == 0 then
-    local first = math.max(1, #payload.audit - 199)
-    for i = first, #payload.audit do
-      if type(payload.audit[i]) == "table" then
-        AdminAudit[#AdminAudit + 1] = payload.audit[i]
-        AdminAuditSeq = math.max(AdminAuditSeq, int(payload.audit[i].seq, 0))
-      end
-    end
-  end
-
-  -- The allow-list. Restored BEFORE the player rows, so that a row for an
-  -- address the same payload also admits materialises the account and hands the
-  -- admission over in one pass rather than leaving both standing.
-  --
-  -- Purely additive, like every other rule in this handler: a payload that
-  -- carries no allow-list does not empty the one this process holds, and an
-  -- address that already has a record is not admitted a second time. A restore
-  -- may never take something away, and an admission is the only thing an
-  -- account that has never played actually owns.
-  local admittedRows = payload.unlockedAddresses
-  if type(admittedRows) == "table" then
-    for _, entry in pairs(admittedRows) do
-      local admittedAddress, admittedOrigin = nil, "legacy"
-      if type(entry) == "string" then
-        admittedAddress = entry
-      elseif type(entry) == "table" and type(entry.address) == "string" then
-        admittedAddress = entry.address
-        if type(entry.origin) == "string" then admittedOrigin = entry.origin end
-      end
-      if admittedAddress and admittedAddress ~= ""
-         and Players[admittedAddress] == nil
-         and admitPending(admittedAddress, admittedOrigin) then
-        -- Counted here for the same reason `Admin.Unlock` counts: the grant is
-        -- the admission. A payload that also carries the economy section
-        -- overwrites the whole pass policy afterwards, exactly as it already
-        -- does for the passes the player rows below mint.
-        local passes = EconomyState.policy.passes
-        passes.lifetimePassCount = int(passes.lifetimePassCount, 0) + 1
-        if admittedOrigin == "promised" then
-          passes.promisedCount = int(passes.promisedCount, 0) + 1
-        else
-          passes.legacyCount = int(passes.legacyCount, 0) + 1
-        end
-      end
-    end
-  end
-
-  local rows = payload.players or payload
-  local loaded = 0
-  for _, row in pairs(rows) do
-    if type(row) == "table" and type(row.address) == "string" then
+--- Restore ONE exported/published player row into `Players`, faithfully.
+---
+--- Extracted from `Admin.Load` so the corrupt-restore SELF-HEAL at the top of
+--- `compute` can reuse the EXACT reconstruction a migration uses -- see the
+--- guard there. Returns true when a row was loaded.
+---
+--- A published `player-<address>` view is a SUPERSET of an export row: it is
+--- `playerView`, a clone of the record plus DERIVED fields (`openOrders`,
+--- `recentFills`, `battle`, `rosterMax`, `dailyReadyAt`, ...). This reads only
+--- the authoritative fields BY NAME, so every derived field is ignored and the
+--- record round-trips byte-for-byte through `playerView` again. Numbers arrive
+--- from `json.decode` as floats and are narrowed here, exactly as a migration
+--- narrows them. `EconomyEngine.ensurePass` takes its non-counting branch
+--- because the published view always carries `pass` as a table, so replaying a
+--- row against an INTACT `EconomyState` (the self-heal case) never re-tallies a
+--- pass.
+local function loadPlayerRow(row, timestamp)
+  if type(row) ~= "table" or type(row.address) ~= "string" then return false end
       local p = getPlayer(row.address, timestamp)
       p.unlocked = row.unlocked ~= false
       if type(row.pass) == "table" then
@@ -6428,9 +6601,278 @@ H["Admin.Load"] = function(base, msg, timestamp)
       -- Republish this account and no others. A restore arrives in pages, so
       -- the cost of a load is the size of the page rather than the size of the
       -- table it is landing in.
-      touchAlso(row.address)
-      loaded = loaded + 1
+  touchAlso(row.address)
+  return true
+end
+
+H["Admin.Load"] = function(base, msg, timestamp)
+  local denied = requireOwner(base, msg)
+  if denied then return denied end
+  local ok, payload = pcall(json.decode, bodyOf(msg) ~= "" and bodyOf(msg) or "{}")
+  if not ok or type(payload) ~= "table" then return fail(base, "Body must be JSON") end
+  if type(payload.monsterIndexOverrides) == "table" then
+    for rawEntryNo, raw in pairs(payload.monsterIndexOverrides) do
+      local entryNo = int(rawEntryNo, 0)
+      local baseEntry = monsterIndexBase(entryNo)
+      if baseEntry and type(raw) == "table" then
+        local restored = {}
+        if type(raw.name) == "string" and #raw.name >= 1 and #raw.name <= 80 then
+          restored.name = raw.name
+        end
+        if type(raw.state) == "string" and MONSTER_INDEX_STATES[raw.state]
+           and (raw.state ~= "live" or baseEntry.assetReady == true) then
+          restored.state = raw.state
+        end
+        if type(raw.artRevision) == "string" and #raw.artRevision >= 1
+           and #raw.artRevision <= 64
+           and not string.find(raw.artRevision, "[^%w_%-]", 1) then
+          restored.artRevision = raw.artRevision
+        end
+        if type(raw.starter) == "boolean" then restored.starter = raw.starter end
+        if type(raw.huntCatchable) == "boolean" then restored.huntCatchable = raw.huntCatchable end
+        local weight = int(raw.huntWeight, -1)
+        if weight >= 0 and weight <= 100000 then restored.huntWeight = weight end
+
+        local state = restored.state or baseEntry.state
+        local starter = restored.starter
+        if starter == nil then starter = baseEntry.starter end
+        local catchable = restored.huntCatchable
+        if catchable == nil then catchable = baseEntry.huntCatchable end
+        local huntWeight = restored.huntWeight
+        if huntWeight == nil then huntWeight = int(baseEntry.huntWeight, 0) end
+        if state == "live"
+           and (not starter or baseEntry.starterFaction)
+           and ((catchable and huntWeight > 0) or (not catchable and huntWeight == 0)) then
+          MonsterIndexOverrides[tostring(entryNo)] = restored
+        elseif not starter and not catchable and huntWeight == 0 then
+          MonsterIndexOverrides[tostring(entryNo)] = restored
+        end
+      end
     end
+    MonsterIndexRevision = math.max(int(MonsterIndexRevision, 1), int(payload.monsterIndexRevision, 1))
+  end
+  if type(payload.economy) == "table" then
+    local imported, economyProblem = EconomyEngine.importState(EconomyState, payload.economy)
+    if economyProblem then return fail(base, economyProblem) end
+    EconomyState = imported
+  end
+  -- The Alter's faction tally is process-global, not per player, so it rides
+  -- alongside the rows rather than inside one. Highest wins, like every other
+  -- counter here: a restore must not lower a total.
+  -- The recovered daily history. Same rule as everything else: a restore may
+  -- not lower a count.
+  if type(payload.checkins) == "table" then
+    for day, buckets in pairs(payload.checkins) do
+      local key = math.tointeger(tonumber(day))
+      if key and type(buckets) == "table" then
+        local have = Checkins[key] or { high = 0, medium = 0, low = 0 }
+        for _, b in ipairs({ "high", "medium", "low" }) do
+          have[b] = math.max(int(buckets[b], 0), int(have[b], 0))
+        end
+        Checkins[key] = have
+      end
+    end
+  end
+
+  -- Monotonic, like wins and quests: a restore may never lower it.
+  BattlesCompleted = math.max(int(payload.battlesCompleted, 0), int(BattlesCompleted, 0))
+
+  if type(payload.offerings) == "table" then
+    for faction, count in pairs(payload.offerings) do
+      if C.FACTION_BY_NAME[faction] then
+        Offerings[faction] = math.max(int(count, 0), int(Offerings[faction], 0))
+      end
+    end
+  end
+
+  if type(payload.metrics) == "table" then
+    local incoming = payload.metrics
+    local incomingSince = int(incoming.since, 0)
+    local knownSince = int(Metrics.since, 0)
+    if incomingSince > 0 then
+      Metrics.since = knownSince > 0 and math.min(knownSince, incomingSince) or incomingSince
+    end
+    if type(incoming.totals) == "table" then
+      Metrics.totals = Metrics.totals or {}
+      for key, value in pairs(incoming.totals) do
+        Metrics.totals[key] = math.max(int(Metrics.totals[key], 0), int(value, 0))
+      end
+    end
+    if type(incoming.daily) == "table" then
+      Metrics.daily = Metrics.daily or {}
+      for rawDay, row in pairs(incoming.daily) do
+        local day = math.tointeger(tonumber(rawDay))
+        if day and type(row) == "table" then
+          local have = Metrics.daily[day] or { actions = {}, factions = {} }
+          for key, value in pairs(row) do
+            if key == "actions" or key == "factions" then
+              have[key] = have[key] or {}
+              if type(value) == "table" then
+                for nested, count in pairs(value) do
+                  have[key][nested] = math.max(int(have[key][nested], 0), int(count, 0))
+                end
+              end
+            elseif type(value) == "number" then
+              have[key] = math.max(int(have[key], 0), int(value, 0))
+            end
+          end
+          Metrics.daily[day] = have
+        end
+      end
+      -- The same retention the writer applies, so a load cannot restore the
+      -- unbounded shape by the one door that writes in bulk. An export taken
+      -- from a long-lived process carries every day it ever saw; merging them
+      -- and leaving them would put years of by-day telemetry back into a key
+      -- that is republished on every message.
+      --
+      -- `timestamp` is this message's clock, not the export's, which is the
+      -- right axis: retention is measured from now.
+      pruneDailyMap(Metrics.daily, int(timestamp, 0) // 86400000, METRICS_KEEP_DAYS)
+    end
+  end
+
+  -- The bridge ledgers.
+  --
+  -- Both are keyed by a reference that another process issued, so a restore
+  -- adds rows and never overwrites one: whatever this process already holds for
+  -- a reference happened after the export was taken, and replacing a settled
+  -- withdrawal with the pending copy in an older snapshot would invite it to be
+  -- settled a second time.
+  if type(payload.withdrawals) == "table" then
+    for id, row in pairs(payload.withdrawals) do
+      if type(row) == "table" and not Withdrawals[tostring(id)] then
+        row.amount = int(row.amount, 0)
+        row.requestedAt = int(row.requestedAt, 0)
+        row.settledAt = int(row.settledAt, 0)
+        Withdrawals[tostring(id)] = row
+      end
+    end
+  end
+  -- A load may not resurrect the unbounded shape. An older export was taken
+  -- from a process that never trimmed this ledger, so the payload can carry
+  -- thousands of closed rows; merging them and leaving them there would put the
+  -- leak back by the one door that is allowed to write in bulk. `WithdrawSeq`
+  -- is taken from the payload BEFORE the trim, so evicting a settled row can
+  -- never let its id be handed out a second time.
+  WithdrawSeq = math.max(int(payload.withdrawSeq, 0), int(WithdrawSeq, 0),
+                         highestSeq(Withdrawals, "w"))
+  -- Every `pending` row survives this, which is what keeps the restore from
+  -- taking anything away: the rows a player could still be owed for are exactly
+  -- the ones the bound does not apply to.
+  pruneWithdrawals()
+
+  if type(payload.deposits) == "table" then
+    for id, row in pairs(payload.deposits) do
+      if type(row) == "table" and not Deposits[tostring(id)] then
+        row.amount = int(row.amount, 0)
+        row.creditedAt = int(row.creditedAt, 0)
+        Deposits[tostring(id)] = row
+      end
+    end
+  end
+
+  -- The token the bridge points at. Without it a restored process refuses every
+  -- withdrawal and rejects every burn notice as coming from a stranger.
+  if type(payload.runeToken) == "string" and #payload.runeToken == 43
+     and RuneToken == "" then
+    RuneToken = payload.runeToken
+  end
+
+  -- The market, which is custody rather than an index.
+  --
+  -- A listed companion is in `Market` and in nobody's collection, so a
+  -- migration that walks only the player table does not forget the listings --
+  -- it destroys the creatures inside them. There is nowhere else to look them
+  -- up from.
+  --
+  -- An existing listing is never overwritten. Whatever this process is holding
+  -- now happened after the export was taken, so the export is the older story;
+  -- and a listing id names custody of a specific creature, so replacing one
+  -- would swap a companion out from under a sale that is already in progress.
+  if type(payload.market) == "table" then
+    for _, listing in pairs(payload.market) do
+      if type(listing) == "table" and type(listing.id) == "string"
+         and type(listing.seller) == "string" and type(listing.monster) == "table"
+         and not Market[listing.id] then
+        Market[listing.id] = {
+          id = listing.id,
+          seller = listing.seller,
+          price = int(listing.price, 0),
+          listedAt = int(listing.listedAt, 0),
+          monster = restoreMonster(listing.monster, timestamp),
+        }
+      end
+    end
+  end
+  -- Same reason as `monsterSeq`: a counter that restarts below the ids already
+  -- in `Market` would issue a listing id that is already taken, and the new
+  -- listing would take custody of the old one's companion.
+  MarketSeq = math.max(int(payload.marketSeq, 0), int(MarketSeq, 0),
+                       highestSeq(Market, "L"))
+
+  if type(payload.marketHistory) == "table" and #MarketHistory == 0 then
+    for _, sale in ipairs(payload.marketHistory) do
+      if type(sale) == "table" then
+        sale.price = int(sale.price, 0)
+        sale.soldAt = int(sale.soldAt, 0)
+        sale.level = int(sale.level, 0)
+        MarketHistory[#MarketHistory + 1] = sale
+      end
+    end
+    while #MarketHistory > 100 do table.remove(MarketHistory) end
+  end
+
+  if type(payload.audit) == "table" and #AdminAudit == 0 then
+    local first = math.max(1, #payload.audit - 199)
+    for i = first, #payload.audit do
+      if type(payload.audit[i]) == "table" then
+        AdminAudit[#AdminAudit + 1] = payload.audit[i]
+        AdminAuditSeq = math.max(AdminAuditSeq, int(payload.audit[i].seq, 0))
+      end
+    end
+  end
+
+  -- The allow-list. Restored BEFORE the player rows, so that a row for an
+  -- address the same payload also admits materialises the account and hands the
+  -- admission over in one pass rather than leaving both standing.
+  --
+  -- Purely additive, like every other rule in this handler: a payload that
+  -- carries no allow-list does not empty the one this process holds, and an
+  -- address that already has a record is not admitted a second time. A restore
+  -- may never take something away, and an admission is the only thing an
+  -- account that has never played actually owns.
+  local admittedRows = payload.unlockedAddresses
+  if type(admittedRows) == "table" then
+    for _, entry in pairs(admittedRows) do
+      local admittedAddress, admittedOrigin = nil, "legacy"
+      if type(entry) == "string" then
+        admittedAddress = entry
+      elseif type(entry) == "table" and type(entry.address) == "string" then
+        admittedAddress = entry.address
+        if type(entry.origin) == "string" then admittedOrigin = entry.origin end
+      end
+      if admittedAddress and admittedAddress ~= ""
+         and Players[admittedAddress] == nil
+         and admitPending(admittedAddress, admittedOrigin) then
+        -- Counted here for the same reason `Admin.Unlock` counts: the grant is
+        -- the admission. A payload that also carries the economy section
+        -- overwrites the whole pass policy afterwards, exactly as it already
+        -- does for the passes the player rows below mint.
+        local passes = EconomyState.policy.passes
+        passes.lifetimePassCount = int(passes.lifetimePassCount, 0) + 1
+        if admittedOrigin == "promised" then
+          passes.promisedCount = int(passes.promisedCount, 0) + 1
+        else
+          passes.legacyCount = int(passes.legacyCount, 0) + 1
+        end
+      end
+    end
+  end
+
+  local rows = payload.players or payload
+  local loaded = 0
+  for _, row in pairs(rows) do
+    if loadPlayerRow(row, timestamp) then loaded = loaded + 1 end
   end
   -- Listings are custody outside the player's collection. A seller still saw
   -- and owned that form before listing it, so a migration that restores the
@@ -7139,6 +7581,16 @@ local function recordTelemetry(action, actor, target, before, deltaBefore,
   if not today then
     today = { actions = {}, factions = {} }
     Metrics.daily[day] = today
+    -- Only when the day rolls, so this is at most one sweep a day rather than
+    -- a loop on the action path.
+    --
+    -- `daily` is published through `/now/metrics`, so every day ever recorded
+    -- was being re-encoded into every message forever -- three live tables and
+    -- a per-handler action histogram each. `Metrics.totals` is the lifetime
+    -- number and is untouched; what expires here is the by-day breakdown, which
+    -- is an operational trend and is read as one. Ninety days is a quarter,
+    -- which is longer than any window this process reports over.
+    pruneDailyMap(Metrics.daily, day, METRICS_KEEP_DAYS)
   end
   today.actions = today.actions or {}
   today.actions[action] = int(today.actions[action], 0) + 1
@@ -7293,6 +7745,45 @@ local function isReadOnly(action)
   return READ_ONLY[tostring(action):lower()] == true
 end
 
+--- The verbs that cannot touch `Players` AT ALL, so they need not rewrite the
+--- caller's `player-<address>` key.
+---
+--- Deliberately a second, SHORTER list than `READ_ONLY` rather than a reuse of
+--- it. `READ_ONLY` means "changes no derived surface", which is a claim about
+--- publication; this means "does not write a byte of any account", which is a
+--- claim about the store, and two members of `READ_ONLY` fail it:
+---
+---   * `Pass.Info` calls `EconomyEngine.ensurePass`, which mints the pass
+---     record onto the player the first time anybody looks at it;
+---   * `Admin.Snapshot` and `Admin.Economy.Preview` are admin surfaces whose
+---     cost nobody is waiting on, so they are left alone rather than audited.
+---
+--- Each of the ten below was read for this: they take `Players[address]`
+--- directly or not at all, never `getPlayer`, and none of them assigns to a
+--- record. Adding a verb here without checking that is how a client comes to
+--- poll a record the process has already changed.
+---
+--- Worth 8 ms of a 102 ms `User.Info` on a live `~lua@5.3a` -- one ~7 kB
+--- `Battle.clone` plus its encode, to republish bytes identical to the ones
+--- already sitting in `base`. The key is still written when it is ABSENT, so a
+--- wallet whose record has never been published still gets one from a read.
+local PURE_READS = {
+  ["user.info"] = true,
+  ["user.login"] = true,
+  ["faction.list"] = true,
+  ["battle.info"] = true,
+  ["battle.openchallenges"] = true,
+  ["leaderboard"] = true,
+  ["stats"] = true,
+  ["rune.deposits"] = true,
+  ["rune.withdrawals"] = true,
+  ["economy.view"] = true,
+}
+
+local function isPureRead(action)
+  return PURE_READS[tostring(action):lower()] == true
+end
+
 --- Which derived read surfaces a known action can make stale.
 ---
 --- Missing actions deliberately mean ALL domains. Adding a handler without
@@ -7418,6 +7909,39 @@ local ECONOMY_DIRTY = {
 }
 
 local function dirtyDomains(action, succeeded)
+  -- A REFUSAL CHANGED NOTHING, SO IT DIRTIES ALMOST NOTHING.
+  --
+  -- `metrics` and `economy` below were already gated on `succeeded`; the
+  -- classified table was not, so a refused `Monster.Feed` -- "you have no Fire
+  -- Berry" -- re-encoded the board, the market, the asset registry, both bridge
+  -- ledgers and both queues to publish a world it had not touched. That the
+  -- refusal changes nothing is the invariant `fuzz.mjs` asserts on every
+  -- illegal op, and roughly two in five of its draws are illegal.
+  --
+  -- `users` is the ONE exception and it is not a hedge. `actingPlayer` calls
+  -- `getPlayer`, which materialises the record for an admitted wallet BEFORE
+  -- the handler can refuse -- so a wallet's first action failing still adds an
+  -- account, and the published population would be one behind until somebody
+  -- else's action happened to rewrite it. It is a `string.format` over a
+  -- counter the telemetry sync already maintained, so keeping it costs nothing
+  -- measurable and removes the one way this could publish a wrong number.
+  --
+  -- The two board keys need no exception: their gate is a fingerprint of the
+  -- rows themselves (see `leaderboardFingerprint`), so a refusal that did
+  -- somehow move a ranking still re-encodes, and one that did not still does
+  -- not -- whatever this table says.
+  --
+  -- This is checked BEFORE the unclassified fallback below, deliberately: an
+  -- unknown verb and a verb nobody has classified both refuse or mutate, and
+  -- when they refuse there is nothing for the blanket to catch either. Every
+  -- publish block below still has its `or result.<key> == nil` half, so a
+  -- FIRST message that fails on a fresh spawn still leaves a complete
+  -- published state behind it.
+  if not succeeded then return { users = true } end
+
+  --- Missing actions deliberately mean ALL domains -- see the note above the
+  --- table. Adding a handler without adding it there costs the old blanket
+  --- republish but cannot leave a stale public key.
   local classified = ACTION_DIRTY[tostring(action):lower()]
   if not classified then
     return {
@@ -7428,10 +7952,19 @@ local function dirtyDomains(action, succeeded)
   end
   local dirty = {}
   for domain, changed in pairs(classified) do dirty[domain] = changed end
-  if succeeded and TRACKED_MUTATIONS[action] then dirty.metrics = true end
-  if succeeded and ECONOMY_DIRTY[tostring(action):lower()] then dirty.economy = true end
+  if TRACKED_MUTATIONS[action] then dirty.metrics = true end
+  if ECONOMY_DIRTY[tostring(action):lower()] then dirty.economy = true end
   return dirty
 end
+
+-- How far `Players` may legitimately fall below the committed witness before a
+-- restore is treated as lossy. ZERO: the guard runs before the handler, so the
+-- one legal shrink (`Admin.RemoveUser`) has not happened yet at check time, and
+-- healthy operation carries the exact committed count into every slot. Zero is
+-- therefore the smallest value that never false-positives AND still catches a
+-- restore short by a single wallet -- the signer-only loss seen live. See the
+-- guard at the top of `compute`.
+local RESTORE_LOSS_TOLERANCE = 0
 
 function compute(base, req, opts)
   resolveOwner(base)
@@ -7454,6 +7987,164 @@ function compute(base, req, opts)
   -- spelling: `admin.grant` mutated successfully while looking non-admin to
   -- target selection, audit, telemetry and publication.
   action = action or requestedAction
+
+  -- SELF-HEAL a snapshot restore that lost Lua globals.
+  --
+  -- On this node a process's globals (`Players`, `Battles`, `EconomyState`,
+  -- ...) ride the worker's `priv` across slots, while the published map
+  -- (`base`) rides the message cache. Under load a restore can hand `compute`
+  -- an INTACT `base` -- every `player-<address>`, `factions`, `leaderboard`
+  -- present and correct -- with globals that are SHORT one or more wallets.
+  -- Nothing errors: `getPlayer` finds `Players[address]` nil and MINTS A FRESH
+  -- RECORD over a real, funded account -- funding zeroed, `joinedAt` rewritten,
+  -- an already-sworn wallet re-sworn -- and that corrupt result persists as the
+  -- slot's canonical state and carries forward.
+  --
+  -- The loss is PARTIAL and CUMULATIVE, not all-or-nothing. Audited on a
+  -- corrupted live process: of 61 records, 33 fully zeroed, and a corrupt
+  -- restore is often short by just the signer, recreating it and eroding the
+  -- roster a wallet at a time. So the check is a COUNT comparison, never an
+  -- emptiness check -- `Players` is rarely truly empty while it is being
+  -- hollowed out.
+  --
+  -- The asymmetry this exploits: `base` survives the corruption and the globals
+  -- do not. `playercommit` (written at the END of every slot, below) is the
+  -- witness: how many accounts the last good slot actually held. If this slot
+  -- restored with FEWER live accounts than `base` committed, the restore was
+  -- lossy.
+  --
+  -- REFUSING was not enough. Refuse returned `base` unchanged and ran no
+  -- handler, so it never PUBLISHED corruption -- but the node snapshots the
+  -- Luerl VM regardless of the return value, so the EMPTY globals a refused
+  -- slot ran with were photographed anyway; a later cold-resume restored that
+  -- empty snapshot, refused again, and the poison compounded until even a
+  -- single-user action was refused ("base commits 63 but only 0 survived").
+  -- Neither `snapshot-slots` 1 nor 50 escaped it.
+  --
+  -- So we REBUILD instead. `player-<address>` is `playerView`, a SUPERSET of an
+  -- `Admin.Export` row (the derived fields -- `openOrders`, `battle`,
+  -- `rosterMax` -- are simply not read by name), so every account `base`
+  -- committed can be reconstructed FAITHFULLY from its own published key
+  -- through the exact path a migration uses (`loadPlayerRow`). We restore only
+  -- the MISSING wallets -- an intact record is left untouched -- then fall
+  -- through to the handler. Every compute now produces FULL correct globals,
+  -- the snapshot captures full state, and the chain self-heals at any
+  -- `snapshot-slots` setting with no node change.
+  --
+  -- ONLY `Players` is rebuilt, and that is deliberate. It is the confirmed
+  -- authoritative-and-lost global AND the only one whose loss persists into
+  -- `base` (via `getPlayer` minting a record that `publishPlayer` then writes).
+  -- `EconomyState` is NOT faithfully recoverable -- `now/economy` publishes a
+  -- lossy `flowView`, never the `exportState` shape with orders, fills and pass
+  -- policy -- so per CLAUDE.md we do not lossily reconstruct it; it is also not
+  -- written to `base` except by economy verbs, so rebuilding `Players` and
+  -- running a non-economy handler never republishes it from lost state.
+  -- `Battles` is not published at all and a fight cannot survive a global loss,
+  -- exactly as `Admin.Load` and `playerView` already discard a dangling battle.
+  --
+  -- If reconstruction cannot reach the witness (a `player-<address>` key was
+  -- absent, "null", or undecodable), we REFUSE the whole message rather than
+  -- run a handler over a still-short roster -- the old safe behaviour, kept as
+  -- the honest fallback for the case rebuild cannot cover.
+  --
+  -- Why the tolerance is ZERO, and why that does not false-positive on the one
+  -- legitimate shrink (`Admin.RemoveUser`): this runs BEFORE the handler, so at
+  -- check time `Players` still holds the pre-removal count -- exactly the
+  -- witness -- and the removal only lands afterward, recommitting `N-1` for the
+  -- next slot. In healthy operation the count carried into a slot ALWAYS equals
+  -- what the previous slot committed, because the same globals ride forward; the
+  -- only thing that makes it short is the priv-loss bug. So `live < committed`
+  -- means loss, down to a single missing wallet. A fresh process (witness 0)
+  -- and the first signup (checked before the new wallet is counted) both pass,
+  -- and `Admin.Load` recommits from the loaded count rather than leaving the
+  -- witness stale.
+  --
+  -- `Admin.Load` is exempt, and only it. It is the recovery/migration door and
+  -- already rebuilds the roster itself; letting the guard rebuild ahead of it
+  -- would double the work and could fight its merge rules. Every other verb --
+  -- player actions, which are what `getPlayer` mints on, and every other admin
+  -- write -- is healed.
+  do
+    local committed = int(base and base.playercommit, 0)
+    local need = committed - RESTORE_LOSS_TOLERANCE
+    if need >= 1 and action ~= "Admin.Load" then
+      local live = 0
+      for _ in pairs(Players) do
+        live = live + 1
+        if live >= need then break end
+      end
+      if live < need then
+        -- The roster was lost -- but `EconomyState` rides the SAME priv, so it
+        -- may have gone with it. Rebuild it FIRST, before the roster, so pass
+        -- accounting and holdings line up when `loadPlayerRow` runs.
+        --
+        -- `economycommit` is the ledger's witness, the exact analogue of
+        -- `playercommit`: a monotonic count of lifetime issuance, committed
+        -- every slot. A live ledger that has issued LESS than the last good
+        -- slot committed was reset with the priv. `now/economy` is a lossy
+        -- `flowView`, useless for rebuilding -- but `economystate` is the FULL
+        -- `exportState`, published every time the ledger moves, and it round-
+        -- trips through `importState` (orders, fills, escrow, gold pools, the
+        -- policy record and all). So rebuild the ledger from THAT, exactly as a
+        -- migration would, and only refuse if it is absent or undecodable --
+        -- which cannot happen once the key is published on every change.
+        local economyCommitted = int(base and base.economycommit, 0)
+        if economyCommitted >= 1
+           and EconomyEngine.issuedWitness(EconomyState) < economyCommitted then
+          local rawEconomy = base and base.economystate
+          local rebuilt
+          if type(rawEconomy) == "string" and rawEconomy ~= "" and rawEconomy ~= "null" then
+            local okDecode, decoded = pcall(json.decode, rawEconomy)
+            if okDecode and type(decoded) == "table" then
+              local imported, problem = EconomyEngine.importState(EconomyState, decoded)
+              if not problem then rebuilt = imported end
+            end
+          end
+          if rebuilt == nil or EconomyEngine.issuedWitness(rebuilt) < economyCommitted then
+            return fail(base, "state restore lost the economy ledger and it " ..
+              "could not be rebuilt from the published export (economystate " ..
+              "absent or undecodable); refusing to run a handler over a broken " ..
+              "economy (defense-in-depth against a node snapshot bug)")
+          end
+          EconomyState = rebuilt
+        end
+        -- Rebuild the missing accounts from base's own published records. Runs
+        -- ONLY on this rare lost-globals path, never on the warm path, so the
+        -- cost of decoding N player views is acceptable. `loadPlayerRow`
+        -- `touchAlso`s each rebuilt address, so the healed records are
+        -- republished from full globals in this very slot.
+        for key, value in pairs(base) do
+          if type(key) == "string" and string.sub(key, 1, 7) == "player-"
+             and type(value) == "string" and value ~= "null" then
+            local address = string.sub(key, 8)
+            if address ~= "" and Players[address] == nil then
+              local decoded, row = pcall(json.decode, value)
+              if decoded and type(row) == "table" then
+                if type(row.address) ~= "string" then row.address = address end
+                loadPlayerRow(row, timestamp)
+              end
+            end
+          end
+        end
+        -- Only fall through if the rebuild reached the witness. Otherwise a key
+        -- was absent or unfaithful, so REFUSE exactly as before rather than run
+        -- a handler over a roster that is still short.
+        local healed = 0
+        for _ in pairs(Players) do
+          healed = healed + 1
+          if healed >= need then break end
+        end
+        if healed < need then
+          return fail(base, "state restore lost globals: base commits " ..
+            tostring(committed) .. " account(s) but only " .. tostring(healed) ..
+            " could be rebuilt from published state (>= " .. tostring(need) ..
+            " required); refusing to run a handler over a short roster " ..
+            "(defense-in-depth against a node snapshot bug)")
+        end
+      end
+    end
+  end
+
   local actionIsAdmin = type(action) == "string" and string.sub(action, 1, 6) == "Admin."
   local target = actionIsAdmin and tags.PlayerId or actor
   local before = capturePlayerState(target)
@@ -7611,7 +8302,24 @@ function compute(base, req, opts)
     result["player-" .. tostring(address)] = encodedPlayerView(address)
   end
 
-  if touched and Players[touched] then publishPlayer(touched) end
+  -- A PURE READ DOES NOT REWRITE THE RECORD IT JUST READ.
+  --
+  -- `result` IS `base`, so the key already holds what the last message that
+  -- changed this wallet wrote -- and a verb in `PURE_READS` did not change it.
+  -- Rewriting it anyway cost a ~7 kB `Battle.clone` and its encode on every
+  -- signed read: 8 ms of a 102 ms `User.Info` on a live `~lua@5.3a`, to
+  -- reproduce bytes that were already there.
+  --
+  -- The reader is not left with nothing either way. `User.Info` returns the
+  -- whole record in its own reply, which is what the caller signed for; the
+  -- published key is for everyone ELSE, and nothing they can see moved. The
+  -- `== nil` half still writes it when the wallet has never been published, so
+  -- a first-ever read still populates the key rather than leaving the client
+  -- polling an absent one.
+  if touched and Players[touched]
+     and (not isPureRead(action) or result["player-" .. tostring(touched)] == nil) then
+    publishPlayer(touched)
+  end
 
   -- The battle the caller is in, so a PvP opponent sees the round land without
   -- signing anything.
@@ -7708,13 +8416,76 @@ function compute(base, req, opts)
   if dirty.metrics or result.metrics == nil then
     result.metrics = encode(metricsView())
   end
+  -- The economy, as two keys. See the note above `EconomyEngine.flowView`.
+  --
+  -- `economy` is the flow half: ledgers, loot boxes, Gold, emission. Every
+  -- gameplay verb moves one of those, so it keeps `dirty.economy`.
+  --
+  -- `economybook` is the orderbook half: ladders, candles, desks, resting
+  -- orders, the fill ring, the market registry and the rejection tally.
+  --
+  -- Two gates, either of which is enough, for the reason spelled out on
+  -- `bookRevision`. `dirty.market` catches the desk and the registry, which
+  -- have no revision of their own -- `Market.*` names that domain directly and
+  -- every `Economy.Order.*`/`Economy.Shop.Trade` is unclassified in
+  -- `ACTION_DIRTY`, so it takes the blanket path and sets it. The revision
+  -- catches what a domain flag cannot see: an order that EXPIRED on the clock
+  -- during some unrelated message, which `reconcile` drops out of the book
+  -- without any verb having asked it to.
   if dirty.economy or result.economy == nil then
-    result.economy = encode(EconomyEngine.publicView(
+    result.economy = encode(EconomyEngine.flowView(
       EconomyState, Withdrawals, Deposits, timestamp))
   end
+  local bookRevision = EconomyEngine.bookRevision(EconomyState, timestamp)
+  local bookChanged = bookRevision ~= BookRevision
+  if dirty.market or bookChanged or result.economybook == nil then
+    BookRevision = bookRevision
+    result.economybook = encode(EconomyEngine.bookView(
+      EconomyState, Withdrawals, Deposits, timestamp))
+  end
+  -- The AUTHORITATIVE economy, as its own recoverable export.
+  --
+  -- `economy`/`economybook` above are DISPLAY views -- lossy `flowView`/
+  -- `bookView`, no use for rebuilding state. `EconomyState` rides the same lost
+  -- `priv` as `Players`, and unlike a player record it has no per-key mirror in
+  -- `base` to rebuild from. So the self-heal at the top of `compute` needs the
+  -- one shape that round-trips through `importState` -- `exportState` -- present
+  -- in `base` when the priv is lost. This is that key.
+  --
+  -- Gated on the SAME conditions as the two views above (the union of a flow
+  -- change and a book change), so it re-encodes only when the ledger actually
+  -- moved. `base` keeps the last value across every warm slot in between, so a
+  -- non-economy message pays NOTHING to encode it -- the published-map rule in
+  -- CLAUDE.md. It is the one export whose cost buys a live process under a lost
+  -- restore instead of a livelocked one; the read views stay separate because
+  -- the browser reads those and must not pay to parse the whole ledger.
+  if dirty.economy or dirty.market or bookChanged or result.economystate == nil then
+    result.economystate = encode(EconomyEngine.exportState(EconomyState, { forRestore = true }))
+  end
+  -- The two board keys, gated on what they would SAY rather than on which verb
+  -- said it. See `leaderboardFingerprint`: building either view off the
+  -- maintained top-N is free and encoding it is 77 ms of a 277 ms write, so the
+  -- build always happens and the encode happens only when the answer moved.
+  --
+  -- The `== nil` half of each guard still fires first on a fresh spawn, and the
+  -- fingerprint globals are absent there too -- so the first message writes
+  -- both keys and records what it wrote, and a snapshot restore that dropped
+  -- the fingerprints re-encodes exactly once.
   if dirty.aggregates or result.factions == nil or result.leaderboard == nil then
-    result.factions = encode(factionStats())
-    result.leaderboard = encode(leaderboard(50))
+    local board = leaderboard(50)
+    local boardPrint = leaderboardFingerprint(board)
+    if boardPrint ~= BoardFingerprint or result.leaderboard == nil then
+      BoardFingerprint = boardPrint
+      result.leaderboard = encode(board)
+    else
+      BoardEncodesSkipped = int(BoardEncodesSkipped, 0) + 1
+    end
+    local tallies = factionStats()
+    local tallyPrint = factionFingerprint(tallies)
+    if tallyPrint ~= FactionFingerprint or result.factions == nil then
+      FactionFingerprint = tallyPrint
+      result.factions = encode(tallies)
+    end
   end
   if dirty.challenges or result.challenges == nil then
     result.challenges = encode(openChallenges())
@@ -7909,13 +8680,28 @@ function compute(base, req, opts)
   -- settlement check pass by never being able to fail.
   --
   -- Lists, not objects: nothing indexes these by id, and a row carries its own.
+  --
+  -- OPEN rows in full, closed rows only as far back as `BRIDGE_PUBLISH_KEEP`.
+  --
+  -- Every message pays for the whole published map, five times over, whatever
+  -- the message was -- so a key that grows with the number of withdrawals ever
+  -- made makes every action slower for everyone, forever, exactly the way
+  -- `player-<address>` did. What a reader actually needs is the unfinished
+  -- work, which is unbounded only if the bridge is broken, plus enough recent
+  -- history to see that settlements are landing. `verify-withdraw.mjs` reads a
+  -- withdrawal it has just made, so it is looking at the newest rows; nothing
+  -- pages back through this.
+  --
+  -- The MAP behind `runedeposits` is deliberately not trimmed to match. A
+  -- credited deposit is the anti-replay record for supply the token has already
+  -- destroyed, and forgetting one means a re-delivered burn notice is credited
+  -- a second time out of nothing. It stays whole in memory and merely stops
+  -- being republished in full.
   if dirty.bridge or result.runewithdrawals == nil or result.runedeposits == nil then
-    local out = {}
-    for _, w in pairs(Withdrawals) do out[#out + 1] = w end
-    result.runewithdrawals = encode(out)
-    local back = {}
-    for _, d in pairs(Deposits) do back[#back + 1] = d end
-    result.runedeposits = encode(back)
+    result.runewithdrawals = encode(bridgeLedgerView(Withdrawals, "settledAt",
+      function(w) return w.status == "pending" end))
+    result.runedeposits = encode(bridgeLedgerView(Deposits, "creditedAt",
+      function(d) return d.status == "unresolved" end))
   end
 
   -- The mint pipeline's read path.
@@ -7980,6 +8766,46 @@ function compute(base, req, opts)
     result.users = string.format("%d", playerCount)
     result.allowlisted = string.format("%d", int(UnlockedPending, 0))
   end
+
+  -- The corrupt-restore witness. See the guard at the TOP of compute.
+  --
+  -- Written on EVERY slot, unconditionally, and from the live `Players` table
+  -- rather than the telemetry gauge -- it must be ground truth, because it is
+  -- what the next slot trusts about how many accounts existed when a lost
+  -- snapshot restore hands it an empty `Players`. `users` above cannot serve:
+  -- it is gated on `dirty.users`, and the population-growing bulk verbs
+  -- (`Admin.Economy.FundTestBots`) do not set it, so it lags -- the exact case
+  -- the guard has to catch. The value is a plain integer string, a handful of
+  -- bytes that do not grow with the player count, so it is free against the
+  -- published-map cost model. Counting the table is O(accounts) of CPU, which
+  -- is a rounding error next to a 100 ms message.
+  do
+    local witnessCount = 0
+    for _ in pairs(Players) do witnessCount = witnessCount + 1 end
+    result.playercommit = string.format("%d", witnessCount)
+  end
+
+  -- The economy's witness, beside the roster's. `EconomyState` rides the same
+  -- `priv` as `Players`, so a lost restore can hollow it too -- and unlike a
+  -- player record it is NOT recoverable from published state (`now/economy` is
+  -- a lossy `flowView`). This commits its lifetime issuance, which only grows,
+  -- so the self-heal at the top of `compute` can tell a Players-only loss (heal)
+  -- from a loss that took the ledger with it (refuse). A handful of bytes that
+  -- do not grow with the player count, so it is free against the published-map
+  -- cost model -- exactly like `playercommit`.
+  -- Floored against the last commit. Lifetime issuance is MONOTONIC -- it only
+  -- grows -- so the committed witness must never rewind. Without the floor, a
+  -- single slot that reached this line with a hollowed `EconomyState` (the heal
+  -- refused because `economystate` was momentarily absent, or a future edit
+  -- regressed it) would publish a LOWER number, and every later lost-ledger
+  -- compute would then compare against that rewound commit, pass the guard, and
+  -- run against empty economy state -- the guard would have disarmed itself
+  -- permanently on that process. `max` makes that unreachable. `playercommit`
+  -- above is deliberately NOT floored: an account count legitimately falls on
+  -- `Admin.RemoveUser`, and its heal-before-publish already blocks a rewind.
+  result.economycommit = string.format("%d", math.max(
+    int(base and base.economycommit, 0),
+    EconomyEngine.issuedWitness(EconomyState)))
 
   -- Always publish the action, even on failure. Without it the client waits out
   -- its whole timeout on a typo instead of seeing the error in about a second.

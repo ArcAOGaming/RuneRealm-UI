@@ -60,11 +60,19 @@ player deliberately tries to drain it.
   Arweave asset, deposited, or returned from an external collection for now.
 - Quote is an external payment/pairing token, not a game inventory item.
 
-Existing companion-asset, collection-deployment, mint-worker, character
-creator, and customiser code stays in the repository but is parked. It must be
-disabled and excluded from normal deployment, with a source note explaining
-that the feature is intentionally inactive. There are no stuck companion mint
-jobs to migrate or settle, so the build must not invent such a migration.
+Existing companion-asset, collection-deployment and mint-worker code stays in
+the repository but is parked. It must be disabled and excluded from normal
+deployment, with a source note explaining that the feature is intentionally
+inactive. There are no stuck companion mint jobs to migrate or settle, so the
+build must not invent such a migration.
+
+The **character creator is not in that set and is on**. It was originally
+listed here because the old one wrote a finished sprite sheet to Arweave, which
+is the same permanent-asset problem as a companion mint. The one that shipped
+does not: an outfit is six style/colour pairs stored on the player record, the
+browser derives the walk sheet locally, and saving it is an ordinary signed
+message with no upload, no gateway and nothing minted. Nothing about the
+economy launch is served by refusing it.
 
 ### 1.3 On-chain paid participation
 
@@ -1118,9 +1126,10 @@ This is implementation order, not rollout order:
    counterparty unmistakable.
 7. Remove `marketplace.lua` from deployment; retain separate Rune, quote, and
    AMM deployment.
-8. Disable companion mint/export/import, collection deployment, mint worker,
-   creator, and customiser from normal routes and deploys; keep their source
-   with parked-feature notes.
+8. Disable companion mint/export/import, collection deployment and the mint
+   worker from normal routes and deploys; keep their source with
+   parked-feature notes. The character creator is excluded from this — see
+   §1.2: it mints nothing and stays enabled.
 9. Add the on-chain proceeds ledger, Rune acquisition budget, execution limits,
    and Rune Reward Reserve interfaces. The payment mechanism itself is outside
    this build plan.
@@ -1159,7 +1168,8 @@ This is implementation order, not rollout order:
 - P2P remains usable when only the NPC runs out of stock or reserve.
 - Admin preview matches the state produced when the delayed policy applies.
 - No normal deployment creates a marketplace process or companion collection,
-  runs a companion mint worker, or exposes creator/customiser routes.
+  or runs a companion mint worker. The character creator IS exposed on every
+  deployment; `Sprite.Update` uploads nothing.
 - Only Rune, quote, and AMM remain as separate economy Lua contracts.
 
 ---

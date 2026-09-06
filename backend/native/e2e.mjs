@@ -21,6 +21,12 @@ import * as esbuild from 'esbuild';
 import { installWalletShim } from './ans104.mjs';
 import { listBurners, loadBurner, liveProcess } from './burners.mjs';
 import { sendMessage as ownerSend } from './hbclient.mjs';
+import { useKeepAlive } from './keepalive.mjs';
+
+// So the journey is timed over the same connection the swarm uses. Without it
+// every request pays a fresh three-round-trip handshake and e2e reports a
+// latency the harness it is standing in for does not actually see.
+await useKeepAlive({ quiet: false });
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.resolve(HERE, '..', '..');
@@ -235,14 +241,21 @@ async function journey(api, { address, faction, pid, node }) {
   }
 
   step('7. Quest, same treatment');
-  if (player.monster.status.type === 'Home' && (player.inventory.rune ?? 0) >= 2
+  if (player.monster.status.type === 'Home'
       && player.monster.energy >= 25 && player.monster.happiness >= 25) {
-    const runesBefore = player.inventory.rune;
+    const runesBefore = player.inventory.rune ?? 0;
     const expBefore = player.monster.exp;
     const boxesBefore = player.lootboxes.length;
     player = await api.startQuest();
     check('quest starts', player.monster.status.type === 'Quest', player.monster.status.type);
-    check('quest costs one Rune', (player.inventory.rune ?? 0) === runesBefore - 1,
+    // v2 made the core loop free: the timer already caps how often you may act,
+    // and charging Rune on top made zero Rune mean zero gameplay -- the one
+    // lockout the design cannot have. Asserted as a COST OF ZERO rather than
+    // deleted, because "quest is free" is now a rule someone could undo by
+    // putting `cost` back in `C.ACTIVITIES.quest`, and nothing else would catch
+    // it. See ECONOMY_V2.md §6; the rune gate on entering this branch went with
+    // it, or a wallet with one Rune would skip the whole step.
+    check('quest is free', (player.inventory.rune ?? 0) === runesBefore,
       `${runesBefore} -> ${player.inventory.rune}`);
     if (await fastForward(pid, node, address)) {
       player = await api.claim();

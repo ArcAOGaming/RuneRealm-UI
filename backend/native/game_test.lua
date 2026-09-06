@@ -5,6 +5,16 @@
 --- gmatch("[^,%s]+") — fails here before it ever reaches a deployed process.
 
 local function run(base, req)
+  --- Whether to run the assertions that are correct everywhere but too
+  --- expensive for the LIVE suite's budget.
+  ---
+  --- `npm run test:lua` is one HTTP request carrying ~700 messages, and a node
+  --- cuts it at about three minutes; the suite already sits at ~183 s of that,
+  --- so a few extra aggregate encodes are the difference between a green run
+  --- and a bare `500` with no output. `run-local-game-test.mjs` sets this,
+  --- because ao-loader has no ceiling and the assertions it gates are about
+  --- table and encode behaviour rather than anything Luerl-specific.
+  local deep = req and req.body and req.body.deep == "on"
   local out = {}
   local passed, failed = 0, 0
   local function ok(label, cond, extra)
@@ -152,7 +162,9 @@ local function run(base, req)
   ok("alice joins Inferno Blades", r and r.faction == "Inferno Blades", errOf(r))
   ok("joining does not create per-wallet Rune", r and (r.inventory.rune or 0) == 0,
      r and json.encode(r.inventory))
-  -- THREE, from C.STARTER_LOOTBOXES, once.
+  -- The constant's worth of boxes, ONCE. Counted from `C.STARTER_LOOTBOXES`
+  -- rather than typed, because the size of the satchel is a balance number
+  -- that moves and the thing under test is that it is granted exactly once.
   --
   -- It used to be six: the seeding block granted the constant and then the
   -- inline adopt branch a few lines later granted three more, so every wallet
@@ -160,8 +172,10 @@ local function run(base, req)
   -- sourced 265 of each berry (53 x 5, right) against 318 tier-1 boxes
   -- (53 x 6). Unbounded in wallet count, and berries monetise into Gold at the
   -- NPC desk, which is the contract's only net Gold faucet.
+  local starterBoxes = 0
+  for _, count in pairs(C.STARTER_LOOTBOXES) do starterBoxes = starterBoxes + count end
   ok("joining seeds starter loot boxes once, not twice",
-     r and #r.lootboxes == 3, r and #r.lootboxes)
+     r and #r.lootboxes == starterBoxes, r and #r.lootboxes)
   ok("and hands over the companion in the same turn",
      r and r.monster ~= nil and r.adopted == true, errOf(r))
   -- The local suite runs the process in its explicit pre-launch testing mode.
@@ -185,7 +199,7 @@ local function run(base, req)
   ok("companion matches faction element", r and r.monster.elementType == "fire", r and r.monster.elementType)
   ok("companion starts at home", r and r.monster.status.type == "Home", r and r.monster.status.type)
   ok("swearing grants one starter satchel, not two",
-     r and #r.lootboxes == 3, r and #r.lootboxes)
+     r and #r.lootboxes == starterBoxes, r and #r.lootboxes)
   ok("and it is in the roster, not loose", r and r.activeId
      and r.monsters and r.monsters[r.activeId] ~= nil, r and r.activeId)
   ok("and the oath is recorded as spent", r and r.adopted == true, r and tostring(r.adopted))
@@ -378,6 +392,29 @@ local function run(base, req)
 
   r = send(ALICE, { Action = "Lootbox.Open", Rarity = "5" })
   ok("asking for a tier you do not own is refused", errOf(r) ~= nil, r)
+
+  -- A box above tier 1 rolls the lower tiers' rows too, so the same berry can
+  -- come from two rows. The receipt has to say "Rock Berry +9" once, not "+1"
+  -- and "+8" as though they were separate finds -- the client keys that list
+  -- by item, so a repeat is a duplicate React key besides.
+  do
+    send(OWNER, { Action = "Admin.Grant", PlayerId = ALICE,
+                  Lootboxes = "30", Rarity = "2" })
+    local duplicated, opened = 0, 0
+    for _ = 1, 30 do
+      local res = send(ALICE, { Action = "Lootbox.Open", Rarity = "2" })
+      if res and res.lootResult then
+        opened = opened + 1
+        local seen = {}
+        for _, reward in ipairs(res.lootResult.rewards) do
+          if seen[reward.item] then duplicated = duplicated + 1 end
+          seen[reward.item] = true
+        end
+      end
+    end
+    ok("a box lists each item once", opened == 30 and duplicated == 0,
+       duplicated .. " repeats over " .. opened .. " boxes")
+  end
 
   -- Combat ------------------------------------------------------------------
 
@@ -1013,7 +1050,14 @@ local function run(base, req)
     -- Model the empty state of a brand-new process directly. Admin.Load is the
     -- migration door; Admin.RemoveUser is deliberately no longer a way to burn
     -- a real player's inventory, Gold, boxes, pass, and companions.
+    --
+    -- A brand-new process also carries NO committed population witness, so clear
+    -- it alongside the record. Without this the corrupt-restore guard would
+    -- rightly read "witness N, but ALICE is gone from Players" as exactly the
+    -- lossy restore it refuses -- which is the real signature, not this migration
+    -- rehearsal. The next compute recommits the witness from the loaded count.
     Players[ALICE] = nil
+    STATE.playercommit = nil
     local gone = send(ALICE, { Action = "User.Info" })
     ok("the migration target starts without the player", gone.exists == false, tostring(gone.exists))
 
@@ -1033,6 +1077,387 @@ local function run(base, req)
        back.monster.status.type ~= "Battle", back.monster.status.type)
     ok("reloaded numbers are integers, not floats",
        math.type(back.monster.level) ~= nil, tostring(back.monster.level))
+  end
+
+  -- Corrupt state-restore guard: SELF-HEAL -----------------------------------
+  --
+  -- The failure the single-VM suites otherwise cannot reach: a snapshot restore
+  -- hands `compute` an INTACT published map with globals that are SHORT one or
+  -- more wallets (the story is in slot-continuity.mjs and in the guard at the
+  -- top of `compute`). Every other message here keeps `Players` untouched, so
+  -- the loss can never happen. Reproduced by dropping entries from `Players` --
+  -- the global a lost `priv` hollows out -- while handing the SAME populated
+  -- STATE straight back in, exactly as a node feeds one slot's result forward
+  -- as the next slot's base.
+  --
+  -- The guard used to REFUSE. It now SELF-HEALS: it rebuilds the missing
+  -- accounts from base's own `player-<address>` keys (a `playerView`, which is
+  -- a superset of an `Admin.Export` row) through the exact migration path
+  -- `Admin.Load` uses, then runs the handler on full globals. So the assertions
+  -- below are upgraded from "refused" to: the action SUCCEEDS, and the rebuilt
+  -- record is byte-for-byte the one that was dropped -- same funding, age,
+  -- faction, roster, collection, move counts and lootboxes -- with integers
+  -- still integers. The loss on the live process was PARTIAL and CUMULATIVE
+  -- (33 of 61 records zeroed, often short by just the signer), so the sharpest
+  -- case is a restore short by a SINGLE wallet, and the total collapse is
+  -- covered too.
+  do
+    local function refusedGlobals(raw)
+      return string.find(tostring(raw or ""), "restore lost globals", 1, true) ~= nil
+    end
+    -- Read a field straight out of the RAW published bytes. The record is
+    -- re-encoded from Lua integers with sorted keys, so a value read here is
+    -- the byte the slot actually published -- decoding it with `json` would
+    -- turn every number into a float and prove nothing (CLAUDE.md).
+    local function rawInt(blob, field)
+      return string.match(tostring(blob), '"' .. field .. '":(%-?%d+)')
+    end
+    local function rawStr(blob, field)
+      return string.match(tostring(blob), '"' .. field .. '":"([^"]*)"')
+    end
+    local function rawObj(blob, field)
+      return string.match(tostring(blob), '"' .. field .. '":(%b{})')
+    end
+    local function rawArr(blob, field)
+      return string.match(tostring(blob), '"' .. field .. '":(%b[])')
+    end
+    local function rosterCount(p)
+      local n = 0
+      for _ in pairs((p and p.monsters) or {}) do n = n + 1 end
+      return n
+    end
+    local function moveCount(m)
+      local n = 0
+      for _ in pairs((m and m.moves) or {}) do n = n + 1 end
+      return n
+    end
+
+    local witnessBefore = STATE.playercommit
+    ok("every slot commits a population witness",
+       tonumber(witnessBefore) ~= nil and tonumber(witnessBefore) >= 1, witnessBefore)
+    local aliceRowBefore = STATE["player-" .. ALICE]
+    ok("the witness stands beside a real, published account record",
+       aliceRowBefore ~= nil)
+    -- The identity the heal must reproduce, snapshotted from the bytes BEFORE
+    -- any drop, so a mismatch afterwards is the reconstruction's fault.
+    local goldBefore = rawInt(aliceRowBefore, "gold")
+    local runeBefore = rawInt(aliceRowBefore, "rune")
+    local joinedBefore = rawInt(aliceRowBefore, "joinedAt")
+    local factionBefore = rawStr(aliceRowBefore, "faction")
+    local winsBefore = rawInt(aliceRowBefore, "wins")
+    local monstersBefore = rawObj(aliceRowBefore, "monsters")
+    local collectionBefore = rawObj(aliceRowBefore, "collection")
+    local lootBefore = rawArr(aliceRowBefore, "lootboxes")
+    ok("the published record carries the fields the heal must round-trip",
+       goldBefore ~= nil and joinedBefore ~= nil and factionBefore ~= nil
+       and monstersBefore ~= nil, aliceRowBefore and string.sub(aliceRowBefore, 1, 80))
+
+    -- THE SHARPEST CASE: a restore short by JUST the signing wallet. The guard
+    -- rebuilds ALICE from her own published key and lets the read run.
+    local savedAlice = Players[ALICE]
+    Players[ALICE] = nil
+    T = T + 1000
+    local partialRes = compute(STATE, { body = {
+      Address = ALICE, Action = "User.Info",
+    }, timestamp = T }, {})
+    local partialRaw = partialRes.results.output.data
+    local rebuilt = Players[ALICE]  -- the SELF-HEALED record, live in globals
+    STATE = partialRes
+
+    ok("a restore short by a SINGLE wallet (the signer) SELF-HEALS, not refused",
+       not refusedGlobals(partialRaw), partialRaw)
+    ok("the reconstructed player reads back as existing",
+       string.find(tostring(partialRaw), '"exists":true', 1, true) ~= nil,
+       string.sub(tostring(partialRaw), 1, 120))
+    ok("the signer is rebuilt back into the live roster", rebuilt ~= nil)
+    -- Asserted on the LIVE reconstructed record, not a decoded reply: these are
+    -- the actual stored Lua values, so `math.type` proves the narrowing held
+    -- and no float was stored.
+    ok("the heal keeps the signer's Gold, as an integer",
+       rebuilt ~= nil and rebuilt.gold == savedAlice.gold
+       and math.type(rebuilt.gold) == "integer", rebuilt and tostring(rebuilt.gold))
+    ok("the heal keeps the signer's Rune, as an integer",
+       rebuilt ~= nil and (rebuilt.inventory or {}).rune == (savedAlice.inventory or {}).rune
+       and math.type((rebuilt.inventory or {}).rune) == "integer",
+       rebuilt and tostring((rebuilt.inventory or {}).rune))
+    ok("the heal keeps the age it was minted with, unmoved and integer",
+       rebuilt ~= nil and rebuilt.joinedAt == savedAlice.joinedAt
+       and math.type(rebuilt.joinedAt) == "integer", rebuilt and tostring(rebuilt.joinedAt))
+    ok("the heal keeps the signer's faction",
+       rebuilt ~= nil and rebuilt.faction == savedAlice.faction, rebuilt and rebuilt.faction)
+    ok("the heal keeps the signer's wins, as an integer",
+       rebuilt ~= nil and rebuilt.wins == savedAlice.wins
+       and math.type(rebuilt.wins) == "integer", rebuilt and tostring(rebuilt.wins))
+    ok("the heal keeps the whole roster, not just the active companion",
+       rebuilt ~= nil and rosterCount(rebuilt) == rosterCount(savedAlice),
+       rebuilt and rosterCount(rebuilt))
+    ok("the heal keeps the active companion's move counts",
+       rebuilt ~= nil and rebuilt.monster ~= nil
+       and moveCount(rebuilt.monster) == moveCount(savedAlice.monster),
+       rebuilt and rebuilt.monster and moveCount(rebuilt.monster))
+    ok("the heal keeps the signer's lootboxes",
+       rebuilt ~= nil and #(rebuilt.lootboxes or {}) == #(savedAlice.lootboxes or {}),
+       rebuilt and #(rebuilt.lootboxes or {}))
+    -- A pure read on the signer does not rewrite its own key, so the published
+    -- record was carried forward untouched: no corruption reached the surface.
+    ok("the signer's published record is never corrupted on the heal",
+       partialRes["player-" .. ALICE] == aliceRowBefore)
+    ok("the heal recommits the full population witness",
+       partialRes.playercommit == witnessBefore, partialRes.playercommit)
+    Players[ALICE] = savedAlice  -- the rest of the suite runs on the real table
+
+    -- THE TOTAL COLLAPSE: intact base, wholly empty globals. Signed by BOB so
+    -- that ALICE -- rebuilt but NOT the signer -- is re-encoded and republished
+    -- from the reconstructed record. Sorted-key encoding makes the comparison
+    -- below a byte-for-byte round-trip proof of the published surface.
+    --
+    -- Gated to the local suite: rebuilding the WHOLE roster from every published
+    -- key, and republishing each one, is far heavier than the single-wallet heal
+    -- above, and the live suite has only ~2 s of headroom under the node's cut.
+    -- The sharpest case (a restore short by one wallet) stays unconditional.
+    if deep then
+    local savedPlayers = Players
+    Players = {}
+    T = T + 1000
+    local emptyRes = compute(STATE, { body = {
+      Address = BOB, Action = "User.Info",
+    }, timestamp = T }, {})
+    local emptyRaw = emptyRes.results.output.data
+    Players = savedPlayers
+    STATE = emptyRes
+    local aliceRowAfter = emptyRes["player-" .. ALICE]
+
+    ok("a total collapse to empty globals SELF-HEALS, not refused",
+       not refusedGlobals(emptyRaw), emptyRaw)
+    ok("a rebuilt non-signer is republished after a total collapse",
+       aliceRowAfter ~= nil and aliceRowAfter ~= "null",
+       aliceRowAfter and string.sub(aliceRowAfter, 1, 80))
+    -- Byte-for-byte, field by field, against the bytes captured before the drop.
+    ok("the rebuilt record keeps its Gold, byte-for-byte",
+       rawInt(aliceRowAfter, "gold") == goldBefore, rawInt(aliceRowAfter, "gold"))
+    ok("the rebuilt record keeps its Rune, byte-for-byte",
+       rawInt(aliceRowAfter, "rune") == runeBefore, rawInt(aliceRowAfter, "rune"))
+    ok("the rebuilt record keeps its joinedAt, byte-for-byte",
+       rawInt(aliceRowAfter, "joinedAt") == joinedBefore, rawInt(aliceRowAfter, "joinedAt"))
+    ok("the rebuilt record keeps its faction",
+       rawStr(aliceRowAfter, "faction") == factionBefore, rawStr(aliceRowAfter, "faction"))
+    ok("the rebuilt record keeps its wins, byte-for-byte",
+       rawInt(aliceRowAfter, "wins") == winsBefore, rawInt(aliceRowAfter, "wins"))
+    ok("the rebuilt record keeps its whole roster and move counts, byte-for-byte",
+       rawObj(aliceRowAfter, "monsters") == monstersBefore,
+       rawObj(aliceRowAfter, "monsters") and string.sub(rawObj(aliceRowAfter, "monsters"), 1, 80))
+    ok("the rebuilt record keeps its collection, byte-for-byte",
+       rawObj(aliceRowAfter, "collection") == collectionBefore)
+    ok("the rebuilt record keeps its lootboxes, byte-for-byte",
+       rawArr(aliceRowAfter, "lootboxes") == lootBefore, rawArr(aliceRowAfter, "lootboxes"))
+    ok("the heal recommits the full population witness after a total collapse",
+       emptyRes.playercommit == witnessBefore, emptyRes.playercommit)
+    end
+
+    -- The over-fire and healthy-slot proofs, gated to the local suite (they
+    -- send real messages, and the live suite has ~2 s of headroom under the
+    -- node's cut).
+    if deep then
+      -- The witness is not stale after the Admin.Load in the block above: it is
+      -- rewritten every slot from the live population, so it matches Stats.
+      local statNow = send(OWNER, { Action = "Stats" })
+      ok("the committed witness matches the live population, even after a load",
+         tonumber(STATE.playercommit) == statNow.players, STATE.playercommit)
+
+      -- A healthy slot (globals intact) neither refuses nor rebuilds.
+      local healthy = send(ALICE, { Action = "User.Info" })
+      ok("a healthy slot is not refused or disturbed as a lost restore",
+         healthy.exists == true and not refusedGlobals(errOf(healthy)), errOf(healthy))
+
+      -- A legitimate shrink is never a lossy restore. Admin.RemoveUser reaches
+      -- its handler (which refuses BOB for holding economic state) -- the point
+      -- is that the GUARD lets it through, because it runs before the handler
+      -- while Players still holds the full pre-removal count.
+      local _, rmRes = send(OWNER, { Action = "Admin.RemoveUser", PlayerId = BOB })
+      ok("a legitimate removal is never mistaken for a lossy restore",
+         not refusedGlobals(rmRes.results.output.data), rmRes.results.output.data)
+
+      -- Recovery is automatic and idempotent: with good globals the slot is normal.
+      local recovered = send(ALICE, { Action = "User.Info" })
+      ok("a correctly-restored slot recovers on its own and is not refused",
+         recovered.exists == true and not refusedGlobals(errOf(recovered)),
+         tostring(recovered.exists))
+    end
+
+    -- A genuinely fresh process (no witness, empty globals) must PASS, and the
+    -- first signup must pass because the guard checks BEFORE the new wallet is
+    -- counted -- and with witness 0 there is nothing to rebuild. Gated to the
+    -- local suite: a fresh base re-encodes every derived key.
+    if deep then
+      local savedPlayers2 = Players
+      Players = {}
+      T = T + 1000
+      local freshRes = compute({ process = PROCESS }, { body = {
+        Address = OWNER, Action = "Stats",
+      }, timestamp = T }, {})
+      ok("a fresh process (no witness, empty globals) is NOT refused",
+         not refusedGlobals(freshRes.results.output.data), freshRes.results.output.data)
+      ok("and the fresh process commits a zero witness",
+         freshRes.playercommit == "0", freshRes.playercommit)
+
+      -- Admin.Unlock admits a wallet but mints no player, so the witness stays
+      -- zero -- and the guard does not trip on the way.
+      T = T + 1000
+      local unlocked = compute(freshRes, { body = {
+        Address = OWNER, Action = "Admin.Unlock", Addresses = ALICE,
+      }, timestamp = T }, {})
+      ok("admitting a wallet on a fresh process keeps the witness at zero",
+         not refusedGlobals(unlocked.results.output.data) and
+         unlocked.playercommit == "0", unlocked.playercommit)
+
+      -- First signup: base still commits 0 and Players is empty at guard time,
+      -- so it passes and grows the roster to one.
+      T = T + 1000
+      local firstJoin = compute(unlocked, { body = {
+        Address = ALICE, Action = "Faction.Join", Faction = "Inferno Blades",
+      }, timestamp = T }, {})
+      Players = savedPlayers2
+      ok("the first signup on a fresh process is NOT refused",
+         not refusedGlobals(firstJoin.results.output.data),
+         firstJoin.results.output.data)
+      ok("and the first signup commits a witness of one",
+         firstJoin.playercommit == "1", firstJoin.playercommit)
+    end
+  end
+
+  -- The heal covers BOTH globals, or refuses only what it cannot rebuild ------
+  --
+  -- `Players` AND `EconomyState` ride the same lost `priv`. The roster rebuilds
+  -- from per-wallet published records; the ledger rebuilds from its OWN full
+  -- export, published as `economystate` (the `importState` round-trip shape, not
+  -- the lossy `flowView`). Both must heal, so gameplay stays LIVE under a lost
+  -- restore instead of livelocking. The witness that tells a lost ledger from an
+  -- intact one is `economycommit` (lifetime issuance, monotonic) -- the exact
+  -- analogue of `playercommit`.
+  do
+    -- `ok` is a boolean and a `difference` is asserted `== 0`; neither a float
+    -- decode can corrupt. The raw-bytes checks prove conservation a second way.
+    local function ledgerOk(view)
+      return view ~= nil and view.invariants ~= nil and view.invariants.ok == true
+        and view.invariants.gold.ok == true
+        and view.invariants.assets.fire_berry.difference == 0
+        and view.invariants.assets.rock_berry.difference == 0
+    end
+    local function rawConserved(blob)
+      if type(blob) ~= "string" then return false end
+      for d in string.gmatch(blob, '"difference":(%-?%d+)') do
+        if d ~= "0" then return false end
+      end
+      return true
+    end
+
+    ok("the economy reconciles before any drop", ledgerOk(send(OWNER, { Action = "Economy.View" })))
+
+    -- CASE 1: roster lost, ledger INTACT -> the consuming action HEALS and the
+    -- published economy still conserves supply. Cheap (one record), unconditional.
+    local savedAlice = Players[ALICE]
+    local savedEconomy = EconomyEngine.exportState(EconomyState)
+    Players[ALICE] = nil
+    local feed, feedRes = send(ALICE, { Action = "Monster.Feed", Item = "fire_berry" })
+    ok("a roster-only loss HEALS a consuming action instead of refusing",
+       feed.error == nil, feed.error)
+    ok("and the published economy still reconciles after the heal",
+       ledgerOk(send(OWNER, { Action = "Economy.View" })))
+    ok("every published invariant difference is zero, in raw bytes",
+       rawConserved(feedRes.economy),
+       feedRes.economy and string.match(tostring(feedRes.economy), '"fire_berry":%b{}'))
+    Players[ALICE] = savedAlice
+    EconomyState = EconomyEngine.importState(nil, savedEconomy)
+
+    -- CASE 2: BOTH globals lost, with real orders, a fill and escrow in the book
+    -- -> HEAL the ledger from `economystate` and reconstruct it FAITHFULLY. Gated
+    -- to the local suite: it rebuilds the whole ledger export, too heavy for the
+    -- live suite's ~2 s headroom.
+    if deep then
+      local alicePre = Battle.clone(Players[ALICE])
+      local bobPre = Battle.clone(Players[BOB])
+      local economyPre = EconomyEngine.exportState(EconomyState)
+
+      -- Gold to pay the order-creation cost and the buy escrow (funded from the
+      -- locked reserve, so supply stays conserved and the clone above rolls it
+      -- back). Then a resting sell that escrows berries and a crossing buy that
+      -- fills part of it -- so the book carries an open order, live escrow AND a
+      -- fill for the heal to reconstruct.
+      send(OWNER, { Action = "Admin.Economy.FundTestBots" },
+        json.encode({ addresses = { ALICE, BOB }, gold = 1000 }))
+      send(ALICE, { Action = "Economy.Order.Place", Side = "sell",
+                    Item = "fire_berry", Price = "10", Quantity = "5" })
+      send(BOB, { Action = "Economy.Order.Place", Side = "buy",
+                  Item = "fire_berry", Price = "12", Quantity = "3" })
+      local beforeView = send(ALICE, { Action = "Economy.View" })
+      local ordersBefore = 0
+      for _ in pairs((beforeView.orders or {})) do ordersBefore = ordersBefore + 1 end
+      -- The RAW published export, captured with the order/fill/escrow present.
+      local preEcon = tostring(STATE.economystate)
+      local preOrders = string.match(preEcon, '"orders":(%b{})')
+      local preFills = string.match(preEcon, '"fills":(%b[])')
+      local preFireEscrow = string.match(preEcon,
+        '"fire_berry":{[^}]-"escrow":(%-?%d+)')
+      ok("the book carries a resting order before the drop",
+         ordersBefore >= 1 and preOrders ~= nil and preFills ~= nil, ordersBefore)
+
+      -- Drop BOTH globals; hand the SAME intact base back; run a MUTATING action.
+      local savedPlayers = Players
+      Players = {}
+      EconomyState = EconomyEngine.newState()
+      local healFeed, healRes = send(ALICE, { Action = "Monster.Feed", Item = "fire_berry" })
+      Players = savedPlayers
+      local afterView = send(ALICE, { Action = "Economy.View" })
+      local postEcon = tostring(healRes.economystate)
+
+      ok("a loss that took the LEDGER too HEALS the action, it does not refuse",
+         healFeed.error == nil, healFeed.error)
+      ok("the reconstructed ledger still reconciles",
+         ledgerOk(afterView), afterView and afterView.invariants and afterView.invariants.ok)
+      ok("the resting order survives the ledger heal",
+         (function()
+            local n = 0
+            for _ in pairs((afterView.orders or {})) do n = n + 1 end
+            return n
+          end)() == ordersBefore, "orders after heal")
+      -- The feed touches only fire_berry HOLDINGS, never the book, so the whole
+      -- orders block and the fill ring must come back BYTE-FOR-BYTE through the
+      -- JSON round-trip (whole-number fields re-encode identically).
+      ok("orders reconstruct byte-for-byte through the export round-trip",
+         string.match(postEcon, '"orders":(%b{})') == preOrders,
+         string.match(postEcon, '"orders":(%b{})'))
+      ok("the fill ring reconstructs byte-for-byte",
+         string.match(postEcon, '"fills":(%b[])') == preFills)
+      ok("the item escrow survives the heal, in raw bytes",
+         string.match(postEcon, '"fire_berry":{[^}]-"escrow":(%-?%d+)') == preFireEscrow,
+         preFireEscrow)
+      ok("supply is conserved after the ledger heal, in raw bytes",
+         rawConserved(healRes.economy))
+
+      -- Roll the book back to before the test trade so the suite is undisturbed.
+      Players[ALICE] = alicePre
+      Players[BOB] = bobPre
+      EconomyState = EconomyEngine.importState(nil, economyPre)
+    end
+
+    -- A ledger loss with NO published export to rebuild from is the one case
+    -- that must still REFUSE -- it cannot happen once `economystate` is written
+    -- on every change, but the guard proves it rather than trusting it.
+    local savedAlice3 = Players[ALICE]
+    local savedEconomy3 = EconomyState
+    local savedExport = STATE.economystate
+    Players[ALICE] = nil
+    EconomyState = EconomyEngine.newState()
+    STATE.economystate = nil
+    local refused = send(ALICE, { Action = "Monster.Feed", Item = "fire_berry" })
+    ok("a ledger loss with no published export to rebuild from is REFUSED",
+       type(refused.error) == "string"
+       and string.find(refused.error, "economy ledger", 1, true) ~= nil, refused.error)
+    Players[ALICE] = savedAlice3
+    EconomyState = savedEconomy3
+    STATE.economystate = savedExport
+    ok("the economy still reconciles after that refusal",
+       ledgerOk(send(OWNER, { Action = "Economy.View" })))
   end
 
   -- Determinism ---------------------------------------------------------------
@@ -1533,6 +1958,104 @@ local function run(base, req)
     local afterTwice = send(WREN, { Action = "User.Info" })
     ok("the balance is still right after a double settle",
        ((afterTwice.inventory or {}).rune or 0) == heldBefore, (afterTwice.inventory or {}).rune)
+
+    -- The ledger is BOUNDED, and bounded on the closed rows only -------------
+    --
+    -- Nothing used to remove a `Withdrawals` row, so the ledger was O(every
+    -- withdrawal ever made) in a table the node marshals five times on every
+    -- message. It is trimmed at the point of append now, and the half of that
+    -- which actually matters is what the trim refuses to touch: a `pending` row
+    -- is Rune already taken from a player and not yet confirmed, and it is the
+    -- only record naming who is short.
+    --
+    -- The rows are written straight into the ledger rather than withdrawn for
+    -- real. Two hundred and fifty withdrawal messages is two hundred and fifty
+    -- slots to prove a `while` loop, and the thing under test is the bound, not
+    -- the path that reaches it.
+    do
+      local STALE_PENDING = "wtest-pending-never-evicted"
+      Withdrawals[STALE_PENDING] = {
+        id = STALE_PENDING, address = WREN, amount = 3,
+        -- The oldest row in the ledger by a wide margin, so an eviction that
+        -- sorted by age alone would take this one first.
+        status = "pending", requestedAt = 1, settledAt = 0,
+      }
+      for i = 1, 250 do
+        local id = "wtest-closed-" .. string.format("%d", i)
+        Withdrawals[id] = {
+          id = id, address = WREN, amount = 1,
+          status = "minted", requestedAt = i, settledAt = i,
+        }
+      end
+      send(OWNER, { Action = "Admin.Grant", PlayerId = WREN, Item = "rune", Amount = "5" })
+      local trimmed = send(WREN, { Action = "Rune.Withdraw", Amount = "1" })
+      ok("a withdrawal still succeeds with a full ledger", errOf(trimmed) == nil,
+         json.encode(trimmed))
+
+      local closed, pending = 0, 0
+      for _, w in pairs(Withdrawals) do
+        if w.status == "pending" then pending = pending + 1
+        else closed = closed + 1 end
+      end
+      ok("the closed half of the ledger is capped at append", closed <= 200, closed)
+      -- Which two hundred, not just how many. A trim that evicted whatever
+      -- `pairs` reached first would pass the count and lose the settlements a
+      -- reader is actually asking about.
+      ok("and it keeps the NEWEST closed rows, not the first it walked into",
+         Withdrawals["wtest-closed-250"] ~= nil and Withdrawals["wtest-closed-1"] == nil,
+         tostring(Withdrawals["wtest-closed-250"] ~= nil) .. "/"
+         .. tostring(Withdrawals["wtest-closed-1"] == nil))
+      ok("every pending withdrawal survives the trim, however old",
+         Withdrawals[STALE_PENDING] ~= nil and pending >= 2, pending)
+
+      -- The published key is bounded too, and separately: the map is what the
+      -- process reasons over, this is what every message pays to re-encode.
+      local publishedRaw = STATE.runewithdrawals
+      local published = json.decode(publishedRaw or "[]")
+      local pubPending = 0
+      for _, w in ipairs(published) do
+        if w.status == "pending" then pubPending = pubPending + 1 end
+      end
+      ok("the published ledger is far smaller than the map behind it",
+         #published <= 60, #published)
+      ok("and still carries every unfinished withdrawal, which is what a reader wants",
+         pubPending == pending, pubPending .. " of " .. pending)
+      -- Integers, against the RAW published bytes: decoding turns every number
+      -- into a float, so a float that was stored as one would be laundered by
+      -- the assertions above.
+      ok("the published ledger holds whole numbers",
+         type(publishedRaw) == "string"
+         and string.find(publishedRaw, "\"amount\":%d+[,}]") ~= nil
+         and string.find(publishedRaw, "%.0*[,}]") == nil,
+         publishedRaw and string.sub(publishedRaw, 1, 160))
+
+      -- A restore may not put the unbounded shape back. This is the one door
+      -- that writes in bulk, and an export taken from a process that never
+      -- trimmed carries every row it ever had.
+      local fat = {}
+      for i = 1, 300 do
+        local id = "wload-closed-" .. string.format("%d", i)
+        fat[id] = { id = id, address = WREN, amount = 1,
+                    status = "minted", requestedAt = i, settledAt = i }
+      end
+      fat["wload-pending"] = { id = "wload-pending", address = WREN, amount = 9,
+                               status = "pending", requestedAt = 2, settledAt = 0 }
+      send(OWNER, { Action = "Admin.Load" },
+        json.encode({ players = {}, withdrawals = fat, withdrawSeq = 9000 }))
+      local loadedClosed, loadedPending = 0, 0
+      for _, w in pairs(Withdrawals) do
+        if w.status == "pending" then loadedPending = loadedPending + 1
+        else loadedClosed = loadedClosed + 1 end
+      end
+      ok("a restore cannot resurrect an unbounded ledger", loadedClosed <= 200, loadedClosed)
+      ok("but a restore still takes nothing away: every pending row it carried is here",
+         Withdrawals["wload-pending"] ~= nil and Withdrawals[STALE_PENDING] ~= nil
+         and loadedPending >= 3, loadedPending)
+      -- An id that was evicted must never be handed out again. The sequence is
+      -- taken from the payload before the trim for exactly this reason.
+      ok("the withdrawal sequence survives the trim",
+         math.tointeger(tonumber(WithdrawSeq)) ~= nil and WithdrawSeq >= 9000, WithdrawSeq)
+    end
   end
 
   -- Minting -----------------------------------------------------------------
@@ -1880,13 +2403,13 @@ local function run(base, req)
       Gloves = { style = "None", color = "#6b5a46" },
       Shoes = { style = "Shoes", color = "#5c3a30" },
     }
-    local parked = send(ALICE, { Action = "Sprite.Update" }, json.encode(OUTFIT))
-    ok("the character creator is parked on normal deployments",
-       errOf(parked) ~= nil, json.encode(parked))
-    -- Keep the parked source executable and covered without exposing it in the
-    -- deployed contract configuration.
-    C.CHARACTER_CUSTOMISER_ENABLED = true
+    -- The creator is on for every deployment, with no configuration behind it.
+    -- It was gated once for the economy launch and the gate outlived the
+    -- launch; this asserts a normal deployment now saves rather than refuses,
+    -- so re-introducing a flag fails here instead of in front of a player.
     local r = send(ALICE, { Action = "Sprite.Update" }, json.encode(OUTFIT))
+    ok("the character creator is live on a normal deployment",
+       errOf(r) == nil, json.encode(r))
     ok("a player saves their character recipe",
        r.outfit.Hair.style == "Long" and r.outfit.Shirt.style == "T-shirt",
        json.encode(r.outfit))
@@ -1942,7 +2465,6 @@ local function run(base, req)
     ok("a recovered outfit comes back with the player", back.outfit.Shoes.style == "Shoes",
        json.encode(back.outfit))
     ok("a recovered legacy sprite also comes back", back.spriteTxId == SPRITE, back.spriteTxId)
-    C.CHARACTER_CUSTOMISER_ENABLED = false
   end
 
   -- Daily worship history, the one engagement series the game has ------------
@@ -3114,7 +3636,13 @@ local function run(base, req)
              metricDay[field] == statsNow[field],
              tostring(metricDay[field]) .. " / " .. tostring(statsNow[field]))
         end
-        local factionRows = json.decode(carried.factions)
+        -- Straight from `factionStats()` rather than from the published key.
+        -- The key is only rewritten when the tally moves, and half the callers
+        -- of this helper deliberately sentinel it to prove exactly that -- so
+        -- decoding it here would be reading a probe rather than the world. The
+        -- gate is asserted where it belongs; this compares telemetry against
+        -- the tally itself.
+        local factionRows = factionStats()
         for _, faction in ipairs(factionRows or {}) do
           ok(label .. " matches faction membership for " .. faction.element,
              metricDay.factions
@@ -3201,13 +3729,20 @@ local function run(base, req)
     ok("nor the market", carried.market == "SENTINEL", carried.market)
     ok("nor the player count", carried.users == "SENTINEL", carried.users)
 
-    -- An unknown action is deliberately unclassified, so it takes the safe
-    -- path and republishes every derived domain. A future handler added without
-    -- a classification can be slow for one release, but never stale.
+    -- An unknown action REFUSES, and a refusal changed nothing, so it now
+    -- rebuilds nothing either. This used to assert the opposite -- that an
+    -- unclassified verb takes the blanket path -- but "unclassified" and
+    -- "failed" were being tested with one message that is both, and the blanket
+    -- is for the first of those. `dirtyDomains` checks the outcome first.
     sendOn(ALICE, { Action = "Nonsense.Verb" })
-    ok("an unknown action fails safe by rebuilding aggregates",
-       carried.factions ~= "SENTINEL",
-       carried.factions)
+    ok("a refused action republishes nothing it did not change",
+       carried.factions == "SENTINEL" and carried.market == "SENTINEL",
+       carried.factions .. "/" .. carried.market)
+    -- The blanket for an unclassified verb that SUCCEEDS is unchanged and is
+    -- still what `dirtyDomains` falls back to; it is simply no longer reachable
+    -- through a verb that does not exist. `hotAction` below covers the
+    -- classified path, and the sixteen unclassified handlers are all Economy
+    -- and Pass verbs exercised by `economy_test.lua`.
 
     -- A user-list mutation does not rebuild unrelated domains.
     carried.factions = "SENTINEL"
@@ -3349,8 +3884,22 @@ local function run(base, req)
       local value = sendOn(ECON2, tags, data)
       ok(label .. " succeeds", value and value.error == nil,
          value and value.error)
-      ok(label .. " republishes gameplay aggregates",
-         carried.factions ~= "SENTINEL" and carried.leaderboard ~= "SENTINEL",
+      -- "Republished, or already saying exactly this."
+      --
+      -- The board keys are gated on a fingerprint of the rows rather than on
+      -- the verb (see `leaderboardFingerprint` in game.lua), so a hot action
+      -- that moves nothing the board shows deliberately leaves the key alone.
+      -- Asserting the rewrite would be asserting the waste. What has to hold is
+      -- that the published key still says what the world says, which is what
+      -- this checks: either it was rewritten, or the fingerprint of what would
+      -- be published now is the one that was published last.
+      ok(label .. " leaves the standings telling the truth",
+         carried.leaderboard ~= "SENTINEL"
+           or leaderboardFingerprint(leaderboard(50)) == BoardFingerprint,
+         carried.leaderboard)
+      ok(label .. " leaves the faction tally telling the truth",
+         carried.factions ~= "SENTINEL"
+           or factionFingerprint(factionStats()) == FactionFingerprint,
          carried.factions)
       ok(label .. " republishes telemetry", carried.metrics ~= "SENTINEL",
          carried.metrics)
@@ -3420,6 +3969,122 @@ local function run(base, req)
        carried.battle == "null" and carried.battleid == "null",
        tostring(carried.battle) .. "/" .. tostring(carried.battleid))
 
+    -- THE BOARD IS ENCODED WHEN IT MOVES, AND NOT OTHERWISE.
+    --
+    -- This is the regression guard for `leaderboardFingerprint`. The measured
+    -- claim it protects is that a `Monster.Feed` produces a BYTE-IDENTICAL
+    -- `leaderboard` -- feeding moves energy, `totalTimesFed` and one berry, and
+    -- a standings row publishes none of the three -- so re-encoding 18.7 kB of
+    -- JSON to say nothing was 41 ms of every write on a live `~lua@5.3a`.
+    --
+    -- Both directions are asserted, because either one alone is worthless: a
+    -- gate that never fires is a stale board, and one that always fires is the
+    -- cost it was meant to remove.
+    do
+      sendOn(OWNER, { Action = "Admin.Grant", PlayerId = ECON2,
+                      Item = "fire_berry", Amount = "10" })
+      sendOn(OWNER, { Action = "Admin.SetStats", PlayerId = ECON2 },
+        json.encode({ energy = 10, happiness = 100,
+                      status = { type = "Home", since = T, until_time = T } }))
+
+      -- A real encode first, so the fingerprint on record is this world's.
+      carried.leaderboard = nil
+      sendOn(OWNER, { Action = "Stats" })
+      local encoded = carried.leaderboard
+      ok("the standings are published to begin with",
+         type(encoded) == "string" and string.find(encoded, ECON2, 1, true) ~= nil,
+         type(encoded))
+
+      local skippedBefore = int(BoardEncodesSkipped, 0)
+      local fed = sendOn(ECON2, { Action = "Monster.Feed", Item = "fire_berry" })
+      ok("the feed under test succeeds", fed and fed.error == nil, fed and fed.error)
+      ok("a feed does not re-encode the standings",
+         carried.leaderboard == encoded, "board moved on a feed")
+      ok("and the gate says it skipped one",
+         int(BoardEncodesSkipped, 0) == skippedBefore + 1,
+         tostring(BoardEncodesSkipped) .. " / " .. tostring(skippedBefore))
+      -- The feed really did happen: the faction roster carries `timesFed`, so
+      -- THAT key moves in the same message the standings do not. A gate that
+      -- froze both would pass the assertion above for the wrong reason.
+      ok("but the faction roster, which publishes timesFed, does",
+         factionFingerprint(factionStats()) == FactionFingerprint
+           and carried.factions ~= encoded,
+         carried.factions and string.sub(carried.factions, 1, 60))
+
+      -- A win moves a standings row, so the encode must happen. Asserted
+      -- against the RAW published bytes, not a decoded value: `json` turns
+      -- every number into a float on the way back, so a decoded 9 proves
+      -- nothing about what was stored.
+      local winsBefore = int(Players[ECON2].wins, 0)
+      Players[ECON2].wins = winsBefore + 7
+      local skippedAtWin = int(BoardEncodesSkipped, 0)
+      sendOn(ECON2, { Action = "Monster.Feed", Item = "fire_berry" })
+      ok("a moved ranking re-encodes the standings",
+         carried.leaderboard ~= encoded, "board froze on a changed ranking")
+      ok("and does not count as a skip",
+         int(BoardEncodesSkipped, 0) == skippedAtWin,
+         tostring(BoardEncodesSkipped) .. " / " .. tostring(skippedAtWin))
+      ok("and the new row states the win count as an integer",
+         string.find(carried.leaderboard, '"wins":' .. (winsBefore + 7) .. ',', 1, true) ~= nil
+           or string.find(carried.leaderboard, '"wins":' .. (winsBefore + 7) .. '}', 1, true) ~= nil,
+         string.sub(carried.leaderboard, 1, 200))
+
+      -- Every field the fingerprint reads has to be a field the view
+      -- publishes, or the board can move without the gate noticing. A level is
+      -- the other sort key and the one a player changes deliberately.
+      local levelled = carried.leaderboard
+      local levelBefore = int(Players[ECON2].monster.level, 0)
+      Players[ECON2].monster.level = levelBefore + 3
+      sendOn(ECON2, { Action = "Monster.Feed", Item = "fire_berry" })
+      ok("a moved level re-encodes the standings too",
+         carried.leaderboard ~= levelled, "board froze on a changed level")
+
+      -- The two ~43-character transaction ids that no longer ride along.
+      ok("a standings row publishes no image or sprite transaction id",
+         string.find(carried.leaderboard, '"image"', 1, true) == nil
+           and string.find(carried.leaderboard, '"sprite"', 1, true) == nil,
+         string.sub(carried.leaderboard, 1, 200))
+      ok("but still carries the moves its card draws",
+         string.find(carried.leaderboard, '"moves"', 1, true) ~= nil,
+         string.sub(carried.leaderboard, 1, 200))
+
+      -- The economy is two keys now, and only the flow half is on the hot path.
+      carried.economy = "SENTINEL"
+      carried.economybook = "SENTINEL"
+      sendOn(ECON2, { Action = "Monster.Feed", Item = "fire_berry" })
+      ok("a feed republishes the economy flow it changed",
+         carried.economy ~= "SENTINEL", carried.economy)
+      ok("and leaves the orderbook half alone",
+         carried.economybook == "SENTINEL", carried.economybook)
+
+      -- A pure read rewrites neither, nor the record it just read.
+      carried.economy = "SENTINEL"
+      local recordBefore = carried["player-" .. ECON2]
+      sendOn(ECON2, { Action = "User.Info" })
+      ok("a read rewrites neither economy key",
+         carried.economy == "SENTINEL" and carried.economybook == "SENTINEL",
+         carried.economy .. "/" .. carried.economybook)
+      ok("nor the record it just read",
+         carried["player-" .. ECON2] == recordBefore, "a read rewrote the record")
+      -- Absent is still written, so a wallet nobody has published gets a key.
+      carried["player-" .. ECON2] = nil
+      sendOn(ECON2, { Action = "User.Info" })
+      ok("but an absent record is still published by a read",
+         type(carried["player-" .. ECON2]) == "string",
+         type(carried["player-" .. ECON2]))
+
+      -- PUT THE WORLD BACK. The win and the level above were moved by hand,
+      -- because moving them through a battle would also move a dozen other
+      -- things the incremental telemetry check a few lines below asserts
+      -- against `Stats`. A hand-written score is invisible to the incremental
+      -- caches by construction -- that is what makes it a clean probe of the
+      -- gate and what makes it drift if it is left standing.
+      Players[ECON2].wins = winsBefore
+      Players[ECON2].monster.level = levelBefore
+      rebuildAggregates()
+      rebuildTelemetryTotals()
+    end
+
     -- Compare before any later Admin.Load/AdjustAll full rebuild has a chance
     -- to hide drift introduced by the incremental hot path.
     checkIncrementalTelemetry("incremental hot path")
@@ -3482,6 +4147,11 @@ local function run(base, req)
     end
     ok("the crowd is addressed the way a wallet is", #crowd[1].address == 43,
        #crowd[1].address)
+    -- Cleared, not sentinelled: the board keys are only rewritten when their
+    -- content moves, and the `== nil` half of the publish guard is the
+    -- documented way to demand one regardless. Loading fifty-five members does
+    -- move the tally, but reading it back has to be independent of that.
+    carried.factions = nil
     sendOn(OWNER, { Action = "Admin.Load" }, json.encode({ players = crowd }))
     local tally = json.decode(carried.factions)
     local sky
@@ -3578,8 +4248,15 @@ local function run(base, req)
     -- them both leave the cache exact.
     checkIncrementalTelemetry("post-bulk and incremental path")
 
-    -- The board still carries the whole companion, and none of the scaffolding
-    -- the deferred clone needs in order to pick its fifty.
+    -- The board still carries the companion its card draws, and none of the
+    -- scaffolding the deferred clone needs in order to pick its fifty.
+    --
+    -- Cleared first, for the same reason the faction tally above is: the key is
+    -- rewritten only when the standings move, so demanding a fresh one means
+    -- asking for it through the absent-key guard rather than hoping the last
+    -- message happened to move a ranking.
+    carried.leaderboard = nil
+    sendOn(OWNER, { Action = "Stats" })
     local board = json.decode(carried.leaderboard)
     ok("the leaderboard has rows to check", type(board) == "table" and #board > 0,
        type(board) == "table" and #board or type(board))
@@ -3851,6 +4528,75 @@ local function run(base, req)
        economy and economy.desks.rune.pause.buy ~= nil,
        economy and economy.desks.rune.pause.buy)
 
+    -- Funding the test fleet, including the Gold it cannot be granted -------
+    --
+    -- Gold is not in `C.ITEMS`, so `Admin.Grant` and `Admin.AdjustInventory`
+    -- cannot reach it and `Admin.Economy.ReleaseGold` fills a DESK, not a
+    -- wallet. `Admin.Economy.FundTestBots` is the only path to a player's Gold
+    -- balance, which is why the conservation identity is asserted right after
+    -- it: the top-up comes out of the locked launch allocation, and a top-up
+    -- that minted instead would leave `issued` disagreeing with the accounts.
+    local FUND1 = "FUNDONE" .. string.rep("1", 36)
+    local FUND2 = "FUNDTWO" .. string.rep("2", 36)
+    local intruder = send(ALICE, { Action = "Admin.Economy.FundTestBots" },
+      json.encode({ addresses = { FUND1 }, rune = 100, scroll = 20, gold = 1000 }))
+    ok("only the owner may fund the test fleet",
+       errOf(intruder) == "Not authorised", json.encode(intruder))
+
+    local funded, fundedRes = send(OWNER, { Action = "Admin.Economy.FundTestBots" },
+      json.encode({ addresses = { FUND1, FUND2 }, rune = 100, scroll = 20, gold = 1000 }))
+    ok("the owner funds every named test wallet",
+       funded and funded.funded == 2, json.encode(funded))
+    -- On the RAW text, because decoding turns every number into a float and
+    -- `math.type` on the decoded value would prove nothing.
+    local fundedText = fundedRes.results.output.data
+    ok("the funded Gold is an integer in the reply text",
+       string.find(fundedText, '"gold":1000', 1, true) ~= nil, fundedText)
+
+    local fundedPlayer = send(OWNER, { Action = "User.Info", Address = FUND1 })
+    ok("a funded wallet holds the Rune minimum",
+       fundedPlayer and int(fundedPlayer.inventory.rune, 0) == 100,
+       fundedPlayer and json.encode(fundedPlayer.inventory))
+    ok("and the Scroll minimum", fundedPlayer
+         and int(fundedPlayer.inventory.scroll, 0) == 20,
+       fundedPlayer and json.encode(fundedPlayer.inventory))
+    ok("and the Gold, which no other admin verb can reach",
+       fundedPlayer and int(fundedPlayer.gold, 0) == 1000,
+       fundedPlayer and tostring(fundedPlayer.gold))
+
+    local afterFunding = send(OWNER, { Action = "Economy.View" })
+    ok("funding Gold out of the locked reserve keeps supply conserved",
+       afterFunding and afterFunding.invariants.gold.ok == true,
+       afterFunding and json.encode(afterFunding.invariants.gold))
+
+    -- Topping up is a MINIMUM, not a payment: a second call to a wallet that
+    -- already holds the target must not hand it another thousand.
+    send(OWNER, { Action = "Admin.Economy.FundTestBots" },
+      json.encode({ addresses = { FUND1 }, rune = 100, scroll = 20, gold = 1000 }))
+    local twice = send(OWNER, { Action = "User.Info", Address = FUND1 })
+    ok("funding the same wallet twice tops it up rather than paying it again",
+       twice and int(twice.gold, 0) == 1000, twice and tostring(twice.gold))
+
+    -- And the reserve is a real limit. `syncHoldings` DECLINES a delta the
+    -- locked pool cannot cover instead of failing, so a request past it has to
+    -- be refused here or the ledger silently stops matching the records.
+    local greedy = {}
+    for i = 1, 50 do
+      greedy[i] = "GREEDY" .. string.format("%02d", i) .. string.rep("g", 35)
+    end
+    local refused = send(OWNER, { Action = "Admin.Economy.FundTestBots" },
+      json.encode({ addresses = greedy, rune = 0, scroll = 0, gold = 5000 }))
+    ok("funding past the locked Gold reserve is refused, not silently dropped",
+       errOf(refused) ~= nil and string.find(tostring(errOf(refused)),
+         "Locked Gold reserve", 1, true) ~= nil, json.encode(refused))
+    local untouched = send(OWNER, { Action = "User.Info", Address = greedy[1] })
+    ok("and the refusal left every named wallet at zero Gold",
+       untouched and int(untouched.gold, 0) == 0, untouched and tostring(untouched.gold))
+    local afterRefusal = send(OWNER, { Action = "Economy.View" })
+    ok("a refused funding leaves Gold conserved too",
+       afterRefusal and afterRefusal.invariants.gold.ok == true,
+       afterRefusal and json.encode(afterRefusal.invariants.gold))
+
     local preview = send(OWNER, { Action = "Admin.Economy.Preview" },
       json.encode({ path = "gold.perQualifiedPlayer", value = 1200 }))
     ok("an admin policy preview is non-mutating and shows its delay",
@@ -4001,6 +4747,280 @@ local function run(base, req)
     ok("redeploy import preserves an exact economy", importedEconomy.loaded == 0
        and send(BUYER, { Action = "Economy.View" }).invariants.ok == true,
        json.encode(importedEconomy))
+  end
+
+  -- What a finished fight stops carrying ------------------------------------
+  --
+  -- A live turn entry is four Lua tables: the entry, `statsChanged`, and a
+  -- ten-field snapshot of both combatants. Measured at 76 live tables and
+  -- 47.8 KB per fight, which is most of what a process holding a window of
+  -- retained battles marshals on every single message.
+  --
+  -- The snapshots have exactly one reader -- `BattleScene` animating a round it
+  -- has not played -- and once a fight is over there is at most one such round
+  -- left. `settleBattle` is called directly here rather than fought to a
+  -- finish, because the assertion is about which entries keep what and a real
+  -- fight's length is a dice roll. Neither side names a real player, so the
+  -- payout half returns immediately.
+  do
+    local ended = {
+      id = "compaction-probe", kind = "bot", status = "ended", round = 3,
+      winner = "challenger",
+      turns = {
+        { round = 1, move = "Ember", missed = false, healthDamage = 4,
+          statsChanged = {}, attackerState = { healthPoints = 9 },
+          defenderState = { healthPoints = 5 } },
+        { round = 2, move = "Gust", missed = true, healthDamage = 0,
+          statsChanged = { attack = 1 }, attackerState = { healthPoints = 9 },
+          defenderState = { healthPoints = 5 } },
+        { round = 3, move = "Slam", missed = false, healthDamage = 5,
+          statsChanged = {}, attackerState = { healthPoints = 9 },
+          defenderState = { healthPoints = 0 } },
+        { round = 3, move = "Struggle", missed = false, healthDamage = 0,
+          statsChanged = {}, attackerState = { healthPoints = 0 },
+          defenderState = { healthPoints = 9 } },
+      },
+    }
+    settleBattle(ended, T)
+    ok("settling a fight leaves every round in the log", #ended.turns == 4, #ended.turns)
+    ok("an already-played round keeps its text, so the result screen still reads",
+       ended.turns[1].move == "Ember" and ended.turns[2].missed == true
+       and ended.turns[1].healthDamage == 4,
+       json.encode(ended.turns[1]))
+    ok("but drops the three sub-tables nothing reads once the fight is over",
+       ended.turns[1].attackerState == nil and ended.turns[1].defenderState == nil
+       and ended.turns[1].statsChanged == nil and ended.turns[2].attackerState == nil
+       and ended.turns[2].statsChanged == nil,
+       json.encode(ended.turns[2]))
+    ok("the CLOSING round keeps its snapshots, which the client still has to animate",
+       ended.turns[3].attackerState ~= nil and ended.turns[3].defenderState ~= nil
+       and ended.turns[4].attackerState ~= nil and ended.turns[4].defenderState ~= nil,
+       json.encode(ended.turns[3]))
+    -- Idempotent, like the rest of settling: a forfeit and an attack can both
+    -- reach here for the same fight.
+    settleBattle(ended, T)
+    ok("settling twice does not eat the closing round",
+       ended.turns[4].defenderState ~= nil and #ended.turns == 4, #ended.turns)
+
+    -- A fight that ended in one round has nothing to strip. This is the case a
+    -- naive "drop all but the last entry" would blank.
+    local short = {
+      id = "compaction-probe-short", kind = "bot", status = "ended", round = 1,
+      turns = {
+        { round = 1, move = "Ember", statsChanged = {},
+          attackerState = { healthPoints = 9 }, defenderState = { healthPoints = 0 } },
+      },
+    }
+    settleBattle(short, T)
+    ok("a one-round fight keeps everything it has",
+       #short.turns == 1 and short.turns[1].attackerState ~= nil,
+       json.encode(short.turns[1]))
+  end
+
+  -- Day-keyed retention ------------------------------------------------------
+  --
+  -- `Metrics.daily` is published on every message, so every day of history it
+  -- held was re-encoded into every action forever. `Checkins` is deliberately
+  -- NOT bounded next to it: those 131 days are the recovered engagement series
+  -- from the old Alter and there is no second copy, so a retention window here
+  -- would be a restore taking something away.
+  --
+  -- Last in the file because it moves the clock a day forward.
+  do
+    local day = T // 86400000
+    local ancient = day - 400
+    Metrics.daily = Metrics.daily or {}
+    Metrics.daily[ancient] = { actions = { ["Ancient.Action"] = 1 }, factions = {} }
+    Metrics.daily[day - 30] = { actions = { ["Recent.Action"] = 1 }, factions = {} }
+    Checkins[ancient] = { high = 1, medium = 0, low = 0 }
+    local totalsBefore = Metrics.totals and Metrics.totals["Admin.AdjustAll"] or 0
+
+    -- Roll the day. Retention is swept when a NEW day row is created, which is
+    -- the only moment the answer can change -- so this has to be an action the
+    -- telemetry writer actually counts. A pure read is not one, deliberately.
+    T = T + 86400000
+    local rolled = send(OWNER, { Action = "Admin.AdjustAll", Energy = "50" })
+    ok("the day rolls on an action telemetry counts", errOf(rolled) == nil
+       and Metrics.daily[(T // 86400000)] ~= nil, json.encode(rolled))
+
+    ok("a day older than the window is dropped from telemetry",
+       Metrics.daily[ancient] == nil, json.encode(Metrics.daily[ancient]))
+    ok("a day inside the window is kept", Metrics.daily[day - 30] ~= nil,
+       json.encode(Metrics.daily[day - 30]))
+    ok("the lifetime totals are untouched by the sweep",
+       (Metrics.totals["Admin.AdjustAll"] or 0) > totalsBefore,
+       Metrics.totals["Admin.AdjustAll"])
+    ok("the recovered check-in series is NOT pruned alongside it",
+       Checkins[ancient] ~= nil, json.encode(Checkins[ancient]))
+
+    -- And a restore cannot put the years back by the bulk door.
+    local fatDaily = {}
+    for i = 1, 40 do
+      fatDaily[tostring(day - 100 - i)] = { actions = { ["Old.Action"] = 1 } }
+    end
+    send(OWNER, { Action = "Admin.Load" },
+      json.encode({ players = {}, metrics = { daily = fatDaily } }))
+    local restoredAncient = 0
+    for key in pairs(Metrics.daily) do
+      if (math.tointeger(tonumber(key)) or 0) < (day - 90) then
+        restoredAncient = restoredAncient + 1
+      end
+    end
+    ok("a restore cannot reinstate telemetry older than the window",
+       restoredAncient == 0, restoredAncient)
+  end
+
+  -- A SLOT BOUNDARY, THE WAY THE NODE MAKES ONE ---------------------------
+  --
+  -- Everything above this point runs in ONE Luerl VM. `compute` is called over
+  -- and over, `STATE` is handed straight back in as the same Lua table, and
+  -- `Players` is a global nothing could disturb. That is the happy half of what
+  -- a node does, and until this block it was the only half any suite in this
+  -- repo drove -- which is why a night was spent looking for a contract bug
+  -- with 725 assertions green behind it.
+  --
+  -- A real node crosses the boundary differently, and the difference is the
+  -- whole point:
+  --
+  --   * `base` is DECODED to Erlang and re-encoded, so the next slot gets a
+  --     NEW table. Anything the contract keeps as a reference into `base` and
+  --     expects to find again is gone.
+  --   * the Luerl globals travel separately, in the message's `priv`, which is
+  --     not cached. They can be lost while `base` arrives complete -- and when
+  --     they are, nothing errors.
+  --
+  -- Both halves are modelled below.
+  do
+    -- (1) A NEW BASE EVERY SLOT.
+    --
+    -- `forkState` is the node's decode/encode round trip: same values, new
+    -- table. Nothing the process owns may depend on the identity of `base`.
+    local function crossSlot(body)
+      STATE = forkState()
+      T = T + 1000
+      return computeOn(body)
+    end
+
+    local before = json.decode(STATE["player-" .. ALICE] or "null")
+    ok("a player to carry across the boundary", before ~= nil and before.address == ALICE,
+       STATE["player-" .. ALICE])
+    local runeBefore = before and before.inventory and before.inventory.rune
+    local joinedBefore = before and before.joinedAt
+    local usersBefore = STATE.users
+
+    -- Two boundaries is enough to prove the base is not carried by identity;
+    -- each one forks the whole published map, and this suite runs inside a
+    -- SINGLE request that a node will cut at about three minutes.
+    local res
+    for _ = 1, 2 do res = crossSlot({ Address = ALICE, Action = "User.Info" }) end
+
+    local after = json.decode(res["player-" .. ALICE] or "null")
+    ok("a wallet keeps its Rune across three slot boundaries",
+       after ~= nil and after.inventory and after.inventory.rune == runeBefore,
+       tostring(after and after.inventory and after.inventory.rune) .. " was " .. tostring(runeBefore))
+    ok("a wallet keeps the age it was minted with",
+       after ~= nil and after.joinedAt == joinedBefore,
+       tostring(after and after.joinedAt) .. " was " .. tostring(joinedBefore))
+    -- RAW published text. Decoding through `json` turns every number into a
+    -- float on the way back, so `math.type` on a decoded value proves nothing.
+    ok("the published population is unchanged by a boundary that changed nothing",
+       res.users == usersBefore, tostring(res.users) .. " was " .. tostring(usersBefore))
+    ok("and it is still an integer in the published text",
+       type(res.users) == "string" and res.users:match("^%d+$") ~= nil, res.users)
+
+    -- The rest of this case is gated on `deep`: it forces the aggregate
+    -- encodes twice and the live suite has no room for them. See the note
+    -- on `deep` at the top of `run` -- what it gates is table and encode
+    -- behaviour, which ao-loader exercises as faithfully as Luerl does.
+    if deep then
+      -- (2) THE GLOBALS GO AND THE BASE CARRIES ON.
+      --
+      -- Not every global -- `Players` cannot be rebuilt from anything published,
+      -- and a process that loses it has lost, which is a node problem and not one
+      -- this file can assert away. What it CAN assert is the property the
+      -- contract does own: every DISPOSABLE cache is self-healing, so a slot that
+      -- arrives without them still publishes numbers that agree with the world
+      -- rather than a plausible wrong one.
+      --
+      -- This is not hypothetical for tonight's changes. `BoardFingerprint`,
+      -- `FactionFingerprint` and `BookRevision` are new globals that decide
+      -- whether `leaderboard`, `factions` and `economybook` are re-encoded at
+      -- all -- a global gating a `base` key is exactly a thing that can go
+      -- missing on one side of a boundary and not the other.
+      TelemetryTotals = nil
+      LeaderboardTop = nil
+      FactionRosters = nil
+      BoardFingerprint = nil
+      FactionFingerprint = nil
+      BookRevision = nil
+
+      local counted = 0
+      for _ in pairs(Players) do counted = counted + 1 end
+
+      -- An action that dirties the aggregates, so every gated key is offered the
+      -- chance to be skipped.
+      -- `Admin.SetStats` rather than `Admin.AdjustAll`: both dirty the aggregates,
+      -- but AdjustAll walks every account, and this whole suite runs inside ONE
+      -- request that a node cuts at about three minutes. One assertion is not
+      -- worth the margin.
+      local healed = crossSlot({
+        Address = OWNER, Action = "Admin.SetStats", PlayerId = ALICE,
+        Data = json.encode({ exp = 3 }),
+      })
+
+      ok("a lost population cache recounts rather than publishing a guess",
+         healed.users == string.format("%d", counted),
+         tostring(healed.users) .. " vs " .. counted)
+      ok("a lost board fingerprint re-encodes the leaderboard",
+         type(healed.leaderboard) == "string" and #healed.leaderboard > 2, healed.leaderboard and #healed.leaderboard)
+      ok("a lost faction fingerprint re-encodes the faction tallies",
+         type(healed.factions) == "string" and #healed.factions > 2, healed.factions and #healed.factions)
+      ok("a lost book revision re-encodes the orderbook",
+         type(healed.economybook) == "string" and #healed.economybook > 2, healed.economybook and #healed.economybook)
+
+      -- And the board that came back is the one the world actually implies, not
+      -- whatever the base happened to be carrying. `leaderboardByScan` walks
+      -- `Players` instead of the maintained top-N, so it cannot agree by sharing
+      -- the same cache.
+      -- Addresses in order, which IS the standings claim. The two builders
+      -- publish different SHAPES on purpose -- `leaderboard` uses the compact
+      -- `leaderboardCard` and `leaderboardByScan` carries whole companions for
+      -- the admin paths -- so comparing the encoded strings would only be
+      -- comparing that difference.
+      local function standings(text)
+        local names = {}
+        for address in string.gmatch(tostring(text), '"address":"([^"]+)"') do
+          names[#names + 1] = address
+        end
+        return table.concat(names, ",")
+      end
+      -- The top of the board only. A full fifty-row rescan encodes every
+      -- companion whole and was the single most expensive assertion in the file;
+      -- the ranking claim is settled by the leaders, and a cache that had gone
+      -- stale would not agree about those either.
+      local scanned = standings(encode(leaderboardByScan(5)))
+      local healedTop = standings(healed.leaderboard)
+      ok("the re-encoded board ranks the same world a rescan does",
+         healedTop:sub(1, #scanned) == scanned, healedTop:sub(1, 90) .. " vs " .. scanned)
+
+      -- (3) THE BASE LOSES A DERIVED KEY AND THE GLOBALS DO NOT.
+      --
+      -- The other direction, which is what a fresh spawn looks like to a VM that
+      -- has been running: the fingerprint says "already published" and the key it
+      -- describes is not there. Every gate carries an `== nil` half for this, and
+      -- this is what asserts the half is still there.
+      STATE = forkState()
+      STATE.leaderboard = nil
+      STATE.factions = nil
+      STATE.economybook = nil
+      T = T + 1000
+      local respawned = computeOn({ Address = ALICE, Action = "Faction.List" })
+      ok("a base missing its derived keys gets them back even with a warm cache",
+         type(respawned.leaderboard) == "string" and type(respawned.factions) == "string"
+         and type(respawned.economybook) == "string",
+         tostring(respawned.leaderboard) .. " / " .. tostring(respawned.factions))
+
+    end
   end
 
   out[#out + 1] = ""

@@ -4,8 +4,14 @@ import { pathToFileURL } from 'node:url';
 import { installWalletShim, jwkToAddress } from '../ans104.mjs';
 import { structuredErrorFields } from './error-fields.mjs';
 import { makeBridge } from './bridge.mjs';
+import { useKeepAlive } from '../keepalive.mjs';
 
 if (!parentPort) throw new Error('swarm worker must run in a worker thread');
+
+// Before the client module is imported, so its very first request is warm.
+// `globalThis` is per THREAD, so the parent runner doing this would do nothing
+// for the fifty actors that make every request the soak measures.
+await useKeepAlive();
 
 const jwk = JSON.parse(fs.readFileSync(workerData.walletFile, 'utf8'));
 const address = jwkToAddress(jwk);
@@ -75,6 +81,100 @@ const canPayHuntEntry = (player) => berryIds.every((item) => (
 
 const ids = (record) => Object.keys(record ?? {});
 
+// The character creator ------------------------------------------------------
+//
+// Every actor dresses itself exactly once per run, at a randomly chosen one of
+// its first few ticks. Once, because the point is coverage: `Sprite.Update` is
+// the one player-facing write no other verb reaches, and a run where nobody
+// sent one proves nothing about it. Randomly placed rather than pinned to
+// bootstrap, because a write that only ever lands on a fresh account is a write
+// only ever measured against a cold record -- a real player changes their hair
+// in the middle of everything else, and that is the slot cost worth measuring.
+//
+// It is deliberately NOT gated on the companion being idle, or on the actor not
+// already having an outfit. The contract asks for neither, so a harness that
+// asks for both would be testing a rule the game does not have.
+
+const CHARACTER_ORDER = ['Hair', 'Hat', 'Shirt', 'Pants', 'Gloves', 'Shoes'];
+
+/**
+ * The layer art, read from `src/assets/` — the same folders the browser globs.
+ *
+ * A literal list here would be a second source of truth for the wardrobe, and
+ * the way it fails is silent: the actor saves `style: "Trilby"`, the contract
+ * accepts it (it validates the shape of a name, not its membership), and the
+ * broken avatar only appears when somebody opens that wallet in the client.
+ * Reading the folder cannot drift.
+ */
+function characterCatalogue() {
+  const root = new URL('../../../src/assets/', import.meta.url);
+  const catalogue = {};
+  for (const category of CHARACTER_ORDER) {
+    let names = [];
+    try {
+      names = fs.readdirSync(new URL(`${category}/`, root))
+        .filter((file) => file.toLowerCase().endsWith('.png'))
+        .map((file) => file.slice(0, -4));
+    } catch {
+      names = [];
+    }
+    // `None` is a real option in every category and the only safe fallback: a
+    // wardrobe that came back empty still produces a legal recipe rather than
+    // an actor that cannot save at all.
+    catalogue[category] = names.length ? names : ['None'];
+  }
+  return catalogue;
+}
+
+const CHARACTER_CATALOGUE = characterCatalogue();
+
+/** `hsl` in 0..1 saturation/lightness, out as `#rrggbb`. Mirrors `lib/sprites`. */
+function hsl(h, s, l) {
+  const k = (n) => (n + h / 30) % 12;
+  const a = s * Math.min(l, 1 - l);
+  const f = (n) => l - a * Math.max(-1, Math.min(k(n) - 3, Math.min(9 - k(n), 1)));
+  const hex = (v) => Math.round(v * 255).toString(16).padStart(2, '0');
+  return `#${hex(f(0))}${hex(f(8))}${hex(f(4))}`;
+}
+
+/**
+ * One outfit, from this actor's seeded stream so a replayed run dresses alike.
+ *
+ * The hue spread is the client's: one base hue with the garments placed around
+ * the wheel from it, rather than six independent colours. It matters here only
+ * because a screenshot of a fifty-wallet soak should look like fifty people
+ * and not like fifty test fixtures.
+ */
+function randomOutfit() {
+  const base = random() * 360;
+  const spread = [0, 172, 28, 200, 14, 340];
+  const outfit = {};
+  CHARACTER_ORDER.forEach((category, index) => {
+    const options = CHARACTER_CATALOGUE[category];
+    const wearable = options.filter((name) => name.toLowerCase() !== 'none');
+    const pick = wearable.length && random() < 0.82
+      ? wearable[Math.floor(random() * wearable.length)]
+      : options.find((name) => name.toLowerCase() === 'none') ?? options[0];
+    outfit[category] = {
+      style: pick,
+      color: hsl(
+        (base + spread[index % spread.length]) % 360,
+        0.28 + random() * 0.34,
+        0.30 + random() * 0.26,
+      ),
+    };
+  });
+  return outfit;
+}
+
+// Which tick this actor dresses on, and whether it has. Drawn once per worker,
+// so fifty actors spread their `Sprite.Update` writes over the opening minutes
+// instead of sending fifty of them into the same slot.
+const characterTick = Math.floor(random() * 4);
+let ticks = 0;
+let characterSaved = false;
+let characterAttempts = 0;
+
 /**
  * The market, read unsigned.
  *
@@ -92,9 +192,26 @@ async function market() {
   }
 }
 
+/**
+ * The economy, as one object, out of the two keys it is published in.
+ *
+ * `economy` is the flow half (ledgers, Gold, policy, invariants) and
+ * `economybook` is the orderbook half (`market`, `desks`, `orders`, `fills`) --
+ * split so that feeding a companion stops rebuilding seven price ladders. This
+ * worker reads the book half on nearly every draw, so it wants both; merging
+ * here keeps every call site below reading one view.
+ *
+ * A process from before the split publishes no `economybook`, and the flow key
+ * still carries every field, so the merge is a no-op against one.
+ */
 async function economy() {
   try {
-    return await api.rawReadJSON('economy') ?? null;
+    const [flow, book] = await Promise.all([
+      api.rawReadJSON('economy').catch(() => null),
+      api.rawReadJSON('economybook').catch(() => null),
+    ]);
+    if (!flow) return null;
+    return book ? { ...flow, ...book } : flow;
   } catch {
     return null;
   }
@@ -849,9 +966,30 @@ async function huntTick(player) {
 }
 
 async function tick() {
+  const tickNumber = ticks++;
   let player = await refresh();
   if (!player?.unlocked) return result('blocked.access', player, { blocked: true });
   if (!player.faction || !player.monster) return bootstrap();
+
+  // Before the status branches, not after them: an outfit is saved on the
+  // account and not on the companion, so a companion away on a quest or frozen
+  // in a hunt is no reason to skip the one write that guarantees this verb is
+  // exercised at all. Placing it below would mean a busy actor never dressed.
+  if (!characterSaved && tickNumber >= characterTick && characterAttempts < 3) {
+    // Marked done only once the write came back. A refusal or a dropped
+    // outbox is exactly the failure this is here to catch, so it retries on
+    // the next tick rather than recording coverage it did not get -- and
+    // stops after three so a systematically broken verb does not spend the
+    // whole run re-signing the same message.
+    characterAttempts += 1;
+    const outfit = randomOutfit();
+    player = await api.spriteUpdate(outfit);
+    characterSaved = true;
+    return result('character.save', player, {
+      outfit: CHARACTER_ORDER.map((c) => `${c}:${outfit[c].style}`).join(','),
+    });
+  }
+
   if (player.hunt) return huntTick(player);
 
   const monster = player.monster;

@@ -775,10 +775,13 @@ has published.
 
 ## 10. Not done
 
-- **The open world** (`Reality` submodule) and the **sprite customiser** are
-  parked, as asked. The customiser's source is in `src/_hidden/` with a note on
-  bringing it back; the open world is the untouched submodule. Both need their
-  own port — they talk to legacynet processes.
+- **The open world** (`Reality` submodule) is parked — the untouched
+  submodule, which needs its own port because it talks to legacynet processes.
+  The **character creator is done and on**: `ui/character/` is the shipped
+  editor, `/character` the standalone screen, and `Sprite.Update` accepts the
+  six-pair outfit recipe on every deployment. The legacynet customiser that
+  uploaded a finished sheet to Arweave stays in `src/_hidden/` as history; it
+  is not what the game runs.
 - **Selling access.** The Eternal Pass was sold for legacynet tokens. There is
   no purchase flow any more; access comes from the paid list. A wallet not on it
   gets a screen that says so and offers its address to copy, rather than
@@ -885,9 +888,28 @@ node backend/native/e2e.mjs burner-01             # one player, whole journey
 node backend/native/e2e.mjs --pvp burner-01 burner-02
 npm run recover:verify                            # the 168 recovered players,
                                                   # loaded and read back, free
+npm run test:slots                                # state survives a SLOT
+                                                  # BOUNDARY, on a real process
 npm run probe:heap                                # Luerl tables left per
                                                   # message, free
 ```
+
+`test:slots` is the one test that crosses a slot boundary. Every other suite
+here drives `compute()` over and over inside ONE Lua VM -- `game_test.lua` on a
+live `~lua@5.3a`, the ao-loader runners, `fuzz.mjs` -- so `Players` is a global
+nothing could disturb, and **state that does not survive a slot cannot fail a
+test**. A real node carries the published map through the message cache and the
+Luerl globals through the message's `priv`, which is not cached; ask for a slot
+before anything has driven the head past it and the handler is called with a
+complete `base` and empty globals. Nothing errors: `users` still says fifty,
+every `player-<address>` still holds its funded record, and the next wallet to
+act is minted from nothing. `slot-continuity.mjs` spawns a throwaway process and
+proves it both ways (`--settle=race` fails, the default passes) by reading back
+funding, `joinedAt` and whether an already-sworn wallet is still refused a
+second oath. The fix is in the readers, not the contract: `settleHead` in
+`src/lib/slot-settle.mjs` is the one copy of the policy, used by the browser and
+swarm client and by every deploy and seed tool. See HYPERBEAM.md, "Asking for an
+uncomputed slot re-initialises the Lua VM".
 
 `probe:heap` is the snapshot-size check. HyperBEAM checkpoints this process by
 `term_to_binary`-ing Luerl's whole table store, Luerl runs no collector of its

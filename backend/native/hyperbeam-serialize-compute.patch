@@ -1,0 +1,90 @@
+# Serialize concurrent computes of one process through a single leader.
+#
+# STATUS: buildable, minimal, anchor-checked. NOT yet built/tested from the
+# diagnosing session (node mutation was gated); build + run the reproduction in
+# NODE_REMEDIATION.md before trusting it. One clause of one core file changes.
+#
+# ROOT CAUSE (supersedes the earlier write-once draft)
+#   hb_persistent:find_or_register/4 decides whether a caller LEADS a group's
+#   computation or AWAITS an existing leader. It looks up the leader
+#   (find_execution/2), and if none is found, registers itself and returns
+#   {leader, GroupName}. hb_name:register/2 is ATOMIC -- it is ets:insert_new/2
+#   and returns `ok' for the one winner, `error' for everyone else:
+#
+#       register(Name, Pid) ->
+#           case ets:insert_new(?NAME_TABLE, {Name, Pid}) of
+#               true  -> ok;
+#               false -> error
+#           end.
+#
+#   But find_or_register/4 DISCARDS that return and declares itself leader
+#   unconditionally. So two requests that both pass find_execution/2 before
+#   either registers (the check-then-act window) BOTH become leaders. Two
+#   leaders spawn two dev_process workers that each ensure_loaded their own base
+#   -- one shallow from the live snapshot, one deep from a cold resume -- and
+#   compute the SAME slots, caching each via store_result/6 last-writer-wins.
+#
+# EVIDENCE (awDuGuDGkiXhPvE2T8dVnKg29VLNIh1ArZ9ySJBO1yM, 2026-09-06 01:34,
+#   3.5h AFTER the slot-unwrap patch, zero function_clause in the window):
+#     slot 315 computed 4x; two overlapping computes 2s apart:
+#       01:34:04 slot=315 tgt=315 ex=135ms   (live worker, shallow, leader A)
+#       01:34:06 slot=315 tgt=320 ex=333ms   (cold resume, deep,   leader B)
+#     B's divergent result (base missing the wallet) clobbered A's correct one.
+#     burner-01: gold 1000 -> 0, joinedAt rewritten, seeded reset, forward to head.
+#
+# THE FIX
+#   Honor the atomic register result. Winner leads; everyone else awaits the
+#   winner (dev_process_worker's server loop then computes their target slot
+#   IN ORDER from the one live base, with priv intact). A slot is computed
+#   exactly once, from the canonical predecessor. No divergent second compute
+#   exists to cache, so no write-once guard is needed.
+#
+# WHAT IT GUARANTEES / DOES NOT
+#   Guarantees: under the measured concurrent-leader race, exactly one leader
+#   computes; the rest wait and receive its in-order result. That is the whole
+#   observed corruption path.
+#   Residual: if the winner finishes AND unregisters between the losing
+#   register and the follow-up find_execution (a race within a race), the loser
+#   falls back to {leader} without re-registering. This is safe -- the winner's
+#   result is now cached, so compute/3 serves it and no recompute diverges --
+#   but an upstream-quality version would re-register cleanly. Documented, not
+#   load-bearing for the fix.
+#
+# GENERAL / UPSTREAM-CORRECT. Single-leader-per-group is the entire contract of
+#   find_or_register; ignoring the atomic register result is a latent bug for
+#   ANY concurrent resolver use, not just process compute. Nothing here is
+#   Rune-Realm-specific, no message bytes change, snapshot cadence is untouched.
+
+diff --git a/src/core/resolver/hb_persistent.erl b/src/core/resolver/hb_persistent.erl
+--- a/src/core/resolver/hb_persistent.erl
++++ b/src/core/resolver/hb_persistent.erl
+@@ -120,9 +120,25 @@ find_or_register(GroupName, _Base, _Req, Opts) ->
+                 {ok, Leader} when Leader =:= Self ->
+                     {infinite_recursion, GroupName};
+                 _ ->
+                     ?event({register_resolver, {group, GroupName}}),
+-                    register_groupname(GroupName, Opts),
+-                    {leader, GroupName}
++                    % hb_name:register/2 is atomic (ets:insert_new): exactly one
++                    % racing caller gets `ok'. The rest MUST await the winner,
++                    % not become co-leaders -- two leaders compute the same
++                    % slots from divergent bases and cache them
++                    % last-writer-wins, silently wiping state (measured: a slot
++                    % computed 4x, a deep cold-resume clobbering a correct live
++                    % compute, zeroing a player's funding forward to the head).
++                    case register_groupname(GroupName, Opts) of
++                        ok ->
++                            {leader, GroupName};
++                        error ->
++                            ?event({register_race_lost, {group, GroupName}}),
++                            case find_execution(GroupName, Opts) of
++                                {ok, Leader} when Leader =/= Self ->
++                                    {wait, Leader};
++                                _ ->
++                                    % Winner already finished and unregistered;
++                                    % its result is cached, so leading is safe.
++                                    {leader, GroupName}
++                            end
++                    end
+             end
+     end.

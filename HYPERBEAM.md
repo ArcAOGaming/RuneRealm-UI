@@ -206,6 +206,53 @@ balance may be re-serialized on every checkpoint. If your table is large, look a
 `~trie@1.0` (a radix trie stored as messages) or split state across processes.
 Measure this early — it is the risk most likely to invalidate a migration plan. `[?]`
 
+### Asking for an uncomputed slot re-initialises the Lua VM `[V]`
+
+**Verified 2026-09-05 on hyperbeam.tylerw.ai, eight throwaway processes.** This
+one loses state silently and is worth more than the performance notes below.
+
+A slot carries two things forward and they travel by different routes: the
+published map goes through the **message cache**, the Luerl VM — every global
+your contract keeps its world in — goes through the message's **`priv`**, and
+`priv` is not cached. A `compute&slot=N` asked for before anything has driven
+the head past N is served off a path with no live worker behind it: `dev_lua`
+re-enters `init`, runs the module from the top, and calls your handler with a
+**complete `base` and empty globals**.
+
+Nothing errors. There is no 500, nothing in `journalctl`, and the slot's reply
+is a perfectly ordinary reply. For RuneRealm that meant `users` still reading
+50, every `player-<address>` still holding its funded record, and `Players`
+empty — so the next wallet to act was minted from nothing, its Rune and Gold
+gone and its `joinedAt` rewritten to the moment it acted.
+
+Measured, same node, same minutes, same bootstrap, one fresh process per run:
+
+| how the write is settled | runs | interpreter lost |
+|---|---|---|
+| `compute&slot=N` immediately after the POST | 5 | 5 |
+| `now/at-slot` until it passes N, then `compute&slot=N` | 3 | 0 |
+
+Two contracts were driven through both columns — the RuneRealm module before a
+night of changes and after — and they behaved identically, which is how we know
+this is the read pattern and not the Lua. `now` is what makes the difference: it
+computes to the scheduler head through the live worker, so by the time the slot
+is addressed it is a cache hit.
+
+**So a single-writer deploy or seed script must drive the head first**
+(`awaitComputedSlot` in `backend/native/hbclient.mjs`). The browser client
+deliberately does not: it is one of many readers, `now` is 18–46 s under
+concurrent writers, and the head is behind by construction for a slot that
+client just scheduled. It survives because the readers keep the worker warm.
+
+**One copy of the policy.** RuneRealm has two transports that address a slot —
+the browser and swarm client, and the deploy tooling — and a shape handled in
+one and not the other is what cost the night. `settleHead` in
+`src/lib/slot-settle.mjs` is the only implementation; each side supplies just
+its own head read. `backend/native/slot-continuity.mjs` is the reproduction,
+both ways round, and it asserts on surviving state — funding, `joinedAt`, and
+whether an already-sworn wallet is still refused — rather than on any counter
+the contract had to grow in order to observe a node bug.
+
 ### Luerl never collects, so the snapshot is every table you ever made `[V]`
 
 **Verified 2026-08-29 on a live `~lua@5.3a`.** This is the single biggest thing

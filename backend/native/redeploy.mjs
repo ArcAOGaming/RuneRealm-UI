@@ -31,6 +31,8 @@
  *   --no-hunt               skip the hunt fleet
  *   --hunt-size N           hunt workers to spawn (default 3)
  *   --hunt-node <url>       node for the hunt fleet (default: the deploy node)
+ *   --no-battle-fleet       skip the battle fleet (battles run in the monolith)
+ *   --battle-size N         battle workers to spawn (default 3)
  *   --plan                  print the stages and create nothing
  *
  * This replaces running `deploy.mjs` and `deploy-rune.mjs` by hand, and exists
@@ -48,7 +50,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { spawn } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
-import { sendMessage, jwkToAddress, transportNode } from './hbclient.mjs';
+import { sendMessage, jwkToAddress, transportNode, awaitComputedSlot } from './hbclient.mjs';
 import { listBurners } from './burners.mjs';
 import { PROFILES } from './swarm/profiles.mjs';
 
@@ -175,8 +177,9 @@ if (flag('--plan')) {
     : 'not enrolled'}`);
   console.log(`  live tests   ${liveTestNode} (unsigned; creates no processes)`);
   console.log('  stages       offline/live preflight -> game -> Rune -> bridge -> quote/AMM'
-    + ' -> hunt fleet -> verify -> build');
+    + ' -> hunt + battle fleets -> verify -> build');
   console.log(`  hunt         ${flag('--no-hunt') ? 'skipped' : `${opt('--hunt-size', process.env.HUNT_FLEET_SIZE || '3')} worker(s), wired both ways`}`);
+  console.log(`  battle       ${flag('--no-battle-fleet') ? 'SKIPPED — battles run in the monolith' : `${opt('--battle-size', process.env.BATTLE_FLEET_LUA || '3')} worker(s), sealed into the game`}`);
   console.log(`  site         ${flag('--site')
     ? 'upload after build (ArNS linking remains manual)'
     : 'build only'}`);
@@ -295,6 +298,14 @@ async function sendAndSettle(pid, message, label, { attempts = 60, delayMs = 200
   if (slot === undefined || slot === null) {
     throw new Error(`${label} did not report a compute slot; it cannot be verified`);
   }
+  // Drive the HEAD past this slot before addressing it. Asking for an
+  // uncomputed slot directly is served without the live worker's `priv`, which
+  // re-initialises the Luerl VM and silently empties every global the contract
+  // keeps its world in -- see `awaitComputedSlot`. That is what wiped the
+  // funding of fifty seeded wallets while every one of their `player-<address>`
+  // keys still read as funded.
+  await awaitComputedSlot({ node: REQUEST_NODE, process: pid, slot, attempts, delayMs });
+
   let body = '';
   for (let i = 0; i < attempts; i++) {
     const r = await fetch(
@@ -486,18 +497,36 @@ if (withBots) {
     console.log(`       granting access to ${botRoster.expected} test wallets`);
     await run('burners.mjs', ['unlock', String(botRoster.expected)], { GAME_PROCESS: game });
   }
-  console.log('       funding test-only Rune/Scroll minimums for economic play');
+  /**
+   * What a test wallet arrives holding.
+   *
+   * These are MINIMUMS, topped up rather than paid, and they exist so a fresh
+   * fleet can exercise the parts of the game that cost something on its first
+   * cycle instead of grinding up to them: level-ups and hunt bids need Rune,
+   * the desks and the order book need Gold, and Scroll has no organic faucet
+   * below a tier-3 crate at all (ECONOMY_V2 §7).
+   *
+   * Gold is capped by arithmetic, not taste: it is funded out of the locked
+   * launch allocation, which holds 60,000, so fifty wallets at 1,000 spend
+   * 50,000 of it. Raising this without raising `C.ECONOMY.gold` first is
+   * refused by the handler rather than silently half-applied.
+   */
+  const BOT_FUNDING = { rune: 100, scroll: 20, gold: 1000 };
+  console.log('       funding test-only Rune/Scroll/Gold minimums for economic play');
   await sendAndSettle(game, {
     action: 'Admin.Economy.FundTestBots',
     tags: { Action: 'Admin.Economy.FundTestBots' },
-    data: JSON.stringify({ addresses: botRoster.addresses, rune: 25, scroll: 5 }),
+    data: JSON.stringify({ addresses: botRoster.addresses, ...BOT_FUNDING }),
   }, 'test-bot funding');
   // The handler has run, so the published record is the funded one.
   const fundedSample = JSON.parse(await readKey(game, `player-${botRoster.addresses[0]}`));
-  if (Number(fundedSample?.inventory?.rune ?? 0) < 25
-      || Number(fundedSample?.inventory?.scroll ?? 0) < 5) {
+  if (Number(fundedSample?.inventory?.rune ?? 0) < BOT_FUNDING.rune
+      || Number(fundedSample?.inventory?.scroll ?? 0) < BOT_FUNDING.scroll
+      || Number(fundedSample?.gold ?? 0) < BOT_FUNDING.gold) {
     throw new Error('test-bot economy funding did not publish the configured minimums');
   }
+  console.log(`       ${botRoster.expected} wallets hold >= ${BOT_FUNDING.rune} Rune, `
+    + `${BOT_FUNDING.scroll} Scroll, ${BOT_FUNDING.gold} Gold`);
 }
 
 if (flag('--game-only')) {
@@ -598,7 +627,7 @@ if (flag('--no-market')) {
 // Fresh workers per deploy is the same rule the battle fleet follows: a worker
 // is compiled against one game id and cannot be pointed at another.
 
-rule('6/8  the hunt fleet');
+rule('6/8  the hunt and battle fleets');
 if (flag('--no-hunt')) {
   console.log('skipped by --no-hunt');
 } else {
@@ -620,6 +649,52 @@ if (flag('--no-hunt')) {
   console.log(`  hunt.enabled    = ${huntConfig.enabled}`);
   console.log(`  hunt.workers    = ${huntWorkers.length}`);
   console.log(`  hunt.lead       = ${huntConfig.processId}`);
+}
+
+/*
+  The battle fleet, on the same terms as the hunt fleet.
+
+  It was not here at all, and that is the whole reason this block exists. The
+  hunt fleet had a stage and the battle fleet had two loose scripts nobody
+  called, so a fleet that had been stood up BY HAND on one deployment silently
+  became a monolith deployment on every `deploy:contracts` after it -- with
+  nothing in the output saying so. `now/battlefleet` read `{"enabled":false}`
+  and every bot battle serialised behind the account authority, which is the
+  exact failure the fleet exists to prevent (see the process-shape rules in
+  CLAUDE.md: fan out for session-shaped domains, and a battle is one).
+
+  Default ON, and skipped only by asking for it by name. A capability that has
+  to be remembered is a capability that will be forgotten -- it already was.
+
+  Two steps, in order, because they are two different claims: `deploy-workers`
+  spawns the pool and writes a manifest, and `configure-battle-fleet` seals that
+  manifest into the game. Both are feature-gated behind BATTLE_FLEET_ENABLED,
+  which is set here rather than exported into the shell so that running either
+  script by hand still requires the operator to say it deliberately.
+*/
+if (flag('--no-battle-fleet')) {
+  console.log('battle fleet skipped by --no-battle-fleet — battles run in the monolith');
+} else {
+  const battleManifest = path.join(HERE, 'battle-fleet', 'manifest.local.json');
+  const battleEnv = {
+    BATTLE_FLEET_ENABLED: '1',
+    BATTLE_GAME_PROCESS: game,
+    BATTLE_FLEET_MANIFEST: battleManifest,
+    NODE_URL: NODE,
+    BATTLE_FLEET_LUA: opt('--battle-size', process.env.BATTLE_FLEET_LUA || '3'),
+  };
+  await run('battle-fleet/deploy-workers.mjs', ['--replace'], battleEnv);
+  await run('configure-battle-fleet.mjs', [], battleEnv);
+  // Same rule as the hunt fleet: read it back from the GAME. The deployer's own
+  // report says what it spawned, which is a different claim from what the game
+  // will actually route a battle to.
+  const battleConfig = JSON.parse(await readKey(game, 'battlefleet'));
+  const battleWorkers = Array.isArray(battleConfig.workers) ? battleConfig.workers : [];
+  if (battleConfig.enabled !== true || battleWorkers.length < 1) {
+    throw new Error(`game published battlefleet ${JSON.stringify(battleConfig).slice(0, 160)}`);
+  }
+  console.log(`  battle.enabled  = ${battleConfig.enabled}`);
+  console.log(`  battle.workers  = ${battleWorkers.length}`);
 }
 
 // -- verification -------------------------------------------------------------

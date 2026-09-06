@@ -131,6 +131,52 @@ function gamehunttest(base)
     r.seenEntries and json.encode(r.seenEntries))
   ok("settlement acknowledges Hunt", base.results.outbox and base.results.outbox.acknowledgement ~= nil)
 
+  -- What the replay ledger keeps, and what it deliberately does not ---------
+  --
+  -- `HuntSettlements` exists to recognise a settlement id that has already been
+  -- paid. It used to store the captured companion alongside -- a full second
+  -- copy of something already sitting in `p.collection`, about a kilobyte and a
+  -- dozen live Lua tables per capture, in a map every message marshals. The id
+  -- is enough: the companion can be looked up where it actually lives.
+  do
+    local stored = HuntSettlements[payload.settlementId]
+    ok("the replay ledger records the settlement", stored ~= nil,
+      payload.settlementId)
+    ok("it does NOT keep a second copy of the companion",
+      stored and stored.monster == nil, stored and json.encode(stored))
+    ok("it keeps the id instead, which is how the companion is found again",
+      stored and type(stored.monsterId) == "string" and stored.monsterId ~= ""
+      and (r.collection or {})[stored.monsterId] ~= nil,
+      stored and tostring(stored.monsterId))
+    ok("and enough to answer whose capture it was",
+      stored and stored.playerId == ALICE and stored.runId == runId,
+      stored and stored.playerId)
+
+    -- The whole point of the ledger. A worker that retries -- which is the
+    -- normal shape of a network that does not promise exactly-once -- must be
+    -- acknowledged, not paid a second companion.
+    local before = 0
+    for _ in pairs(r.collection or {}) do before = before + 1 end
+    local replayed = send(nil, {
+      Action = "Hunt.Settle", ["from-process"] = HUNT,
+      ["player-id"] = ALICE, ["run-id"] = runId,
+      ["settlement-id"] = payload.settlementId,
+    }, payload)
+    local after = 0
+    for _ in pairs(replayed.collection or {}) do after = after + 1 end
+    ok("a replayed settlement is acknowledged, not paid again",
+      replayed and replayed.error == nil and after == before,
+      before .. " -> " .. after)
+
+    -- The player's own record still carries the FULL receipt: there is exactly
+    -- one of those per player, and it is what the client reads to show what it
+    -- caught. Only the ever-growing ledger went lean.
+    ok("the player's last capture still carries the companion itself",
+      replayed and replayed.hunt and replayed.hunt.lastCapture
+      and type(replayed.hunt.lastCapture.monster) == "table",
+      replayed and replayed.hunt and json.encode(replayed.hunt.lastCapture))
+  end
+
   r = send(nil, {
     Action = "Hunt.Released", ["from-process"] = HUNT,
     ["player-id"] = ALICE, ["run-id"] = runId,

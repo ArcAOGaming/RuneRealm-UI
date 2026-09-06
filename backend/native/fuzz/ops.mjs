@@ -261,20 +261,53 @@ function shopSellValid(rng, world, actor) {
   };
 }
 
+/**
+ * The cheapest order the book will actually accept, for one item.
+ *
+ * Two rules meet here and neither can be hardcoded past. `minValue` says an
+ * order must be worth at least 10 Gold, and the price band -- the fat-finger
+ * guard -- says a unit price may not stray more than `bandBps` from what the
+ * NPC desk is quoting. A berry's desk ask is around 5, so the band tops out
+ * near 8, and the 10-Gold-and-one-unit order this model used to send became
+ * unplaceable the moment the band shipped: every one of them came back
+ * "Price is above the 8 Gold price band" and the model called the refusal a bug.
+ *
+ * So the size follows the price rather than the price following a constant.
+ * Sit at the top of the band, which is the highest price the book will take and
+ * therefore the one least likely to be crossed by the house before another
+ * actor can trade with it, then buy as many units as it takes to clear the
+ * minimum. Returns null when the process has not published a band yet, because
+ * a guess is exactly what this function exists to stop making.
+ */
+function bandedOrder(world, item, minValue = 10) {
+  const band = world.economy?.markets?.[item]?.band;
+  const high = Number(band?.high ?? 0);
+  const low = Number(band?.low ?? 0);
+  if (!(high > 0) || !(low > 0) || low > high) return null;
+  const price = Math.floor(high);
+  const quantity = Math.max(1, Math.ceil(minValue / price));
+  return { price, quantity };
+}
+
 function goldSellOrderValid(rng, world, actor) {
   const view = world.view(actor);
   if (!view?.unlocked || Number(view.gold ?? 0) < 1 || !world.economy) return null;
-  const item = pick(rng, ['fire_berry', 'water_berry', 'air_berry', 'rock_berry']
-    .filter((id) => itemCount(view, id) > 0));
+  const candidates = ['fire_berry', 'water_berry', 'air_berry', 'rock_berry']
+    .filter((id) => {
+      const order = bandedOrder(world, id);
+      return order !== null && itemCount(view, id) >= order.quantity;
+    });
+  const item = pick(rng, candidates);
   if (!item) return null;
+  const { price, quantity } = bandedOrder(world, item);
   return {
     name: 'economy.order.sell', legal: true, actor,
     tags: { Action: 'Economy.Order.Place', Side: 'sell', Item: item,
-      Price: '10', Quantity: '1' },
+      Price: String(price), Quantity: String(quantity) },
     verify({ before, after }) {
       const problems = [];
-      if (itemCount(before, item) - itemCount(after, item) !== 1) {
-        problems.push('Gold sell order did not move exactly one item into escrow or settlement');
+      if (itemCount(before, item) - itemCount(after, item) !== quantity) {
+        problems.push('Gold sell order did not move exactly its quantity into escrow or settlement');
       }
       if (Number(after.gold ?? 0) < Number(before.gold ?? 0) - 1) {
         problems.push('Gold sell order lost more than its one-Gold creation cost');
@@ -288,10 +321,19 @@ function goldBuyOrderValid(rng, world, actor) {
   const view = world.view(actor);
   const gold = Number(view?.gold ?? 0);
   if (!view?.unlocked || gold < 11 || !world.economy?.orders) return null;
-  const order = pick(rng, world.economy.orders.filter((candidate) =>
-    candidate.side === 'sell' && candidate.account !== actor
+  // A resting order priced outside TODAY'S band cannot be crossed at its own
+  // price: the taker's order carries the price too, and the band is checked on
+  // the way in for both sides. The desk reprices as its stock moves, so an
+  // order that was legal when it was placed can drift out of the band while it
+  // rests -- which is a real state to leave lying in the book, and not one to
+  // predict a fill from.
+  const order = pick(rng, world.economy.orders.filter((candidate) => {
+    const band = world.economy?.markets?.[candidate.item]?.band;
+    return candidate.side === 'sell' && candidate.account !== actor
       && candidate.price * candidate.remaining >= 10
-      && candidate.price * candidate.remaining + 1 <= gold));
+      && candidate.price * candidate.remaining + 1 <= gold
+      && band && candidate.price >= Number(band.low) && candidate.price <= Number(band.high);
+  }));
   if (!order) return null;
   const minimum = Math.max(1, Math.ceil(10 / order.price));
   const quantity = Math.min(order.remaining, minimum);

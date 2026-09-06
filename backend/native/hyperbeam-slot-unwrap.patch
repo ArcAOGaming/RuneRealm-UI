@@ -1,0 +1,87 @@
+diff --git a/src/preloaded/process/dev_process.erl b/src/preloaded/process/dev_process.erl
+index 63a300479..5b11cce2f 100644
+--- a/src/preloaded/process/dev_process.erl
++++ b/src/preloaded/process/dev_process.erl
+@@ -236,15 +236,40 @@ compute(Base, Req, Opts) ->
+     end.
+ 
+ %% @doc Return the slot requested by a `compute' request, or `not_found'.
++%%
++%% A slot reference can arrive HTTP-wrapped as a typed-result map (e.g.
++%% `#{<<"ao-result">> => <<"body">>, <<"body">> => <<"243">>}') rather than as
++%% the bare scalar, because a path segment such as `compute&slot=243' is parsed
++%% into a sub-message. Unwrap it here, at the single point that produces the
++%% value, so every caller receives a scalar and no caller needs an unwrapper of
++%% its own. Callers still coerce with `hb_util:int/1' as before.
++%%
++%% Previously `compute/3' passed the map straight into `hb_util:int/1', raising
++%% a `function_clause' that killed the process worker. The next request then
++%% cold-resumed from the last snapshot: one full re-execution of the preceding
++%% slot in the steady state, and up to `process-snapshot-slots' of replay after
++%% a gap. Measured on this node before the fix: 171 worker deaths in 26 minutes,
++%% an execution factor of 1.99, and read latency of 474ms per replayed slot
++%% (r=0.982) reaching 77 seconds at depth 141. (local patch over upstream edge.)
+ target_slot(Req, Opts) ->
+-    hb_ao:get_first(
+-        [
+-            {{as, <<"message@1.0">>, Req}, <<"compute">>},
+-            {{as, <<"message@1.0">>, Req}, <<"slot">>}
+-        ],
+-        Opts
++    unwrap_slot(
++        hb_ao:get_first(
++            [
++                {{as, <<"message@1.0">>, Req}, <<"compute">>},
++                {{as, <<"message@1.0">>, Req}, <<"slot">>}
++            ],
++            Opts
++        )
+     ).
+ 
++%% @doc Unwrap an HTTP typed-result map to the scalar it carries. Any other
++%% term -- including `not_found', which both callers depend on -- is returned
++%% untouched.
++unwrap_slot(Slot) when is_map(Slot) ->
++    maps:get(maps:get(<<"ao-result">>, Slot, <<"body">>), Slot, Slot);
++unwrap_slot(Slot) ->
++    Slot.
++
+ %% @doc Continually get and apply the next assignment from the scheduler until
+ %% we reach the target slot that the user has requested.
+ compute_to_slot(ProcID, Base, Req, TargetSlot, Opts) ->
+diff --git a/src/preloaded/process/dev_process_worker.erl b/src/preloaded/process/dev_process_worker.erl
+index 322ad9911..4ca4ea672 100644
+--- a/src/preloaded/process/dev_process_worker.erl
++++ b/src/preloaded/process/dev_process_worker.erl
+@@ -48,22 +48,19 @@ compute_cached(ProcID, not_found, Opts) ->
+         _ -> false
+     end;
+ compute_cached(ProcID, RawSlot, Opts) ->
+-    % A slot reference can arrive HTTP-wrapped as a typed-result map
+-    % (e.g. #{<<"ao-result">> => <<"body">>, <<"body">> => <<"243">>}) rather
+-    % than the bare scalar. Unwrap it before coercion, and treat any value that
+-    % still won't coerce as simply "not cached" instead of letting hb_util:int/1
+-    % raise a function_clause -> 500 on an as-yet-uncomputed slot. An uncomputed
+-    % slot is a queue, not a fault. (local patch over upstream edge.)
+-    case (catch dev_process_cache:read(ProcID, slot_scalar(RawSlot), Opts)) of
++    % `dev_process:target_slot/2' has already unwrapped any HTTP-wrapped
++    % typed-result map, so RawSlot is a scalar by the time it reaches here and
++    % this function needs no unwrapper of its own -- the same shape being
++    % handled in one place and not the other IS the defect this patch fixes,
++    % and a second local implementation is how it survived the first attempt.
++    % The `catch' stays as a backstop: a value that still won't coerce means
++    % "not cached", and an uncomputed slot is a queue, not a fault.
++    % (local patch over upstream edge.)
++    case (catch dev_process_cache:read(ProcID, hb_util:int(RawSlot), Opts)) of
+         {ok, _Msg} -> true;
+         _ -> false
+     end.
+ 
+-slot_scalar(S) when is_map(S) ->
+-    hb_util:int(maps:get(maps:get(<<"ao-result">>, S, <<"body">>), S, S));
+-slot_scalar(S) ->
+-    hb_util:int(S).
+-
+ process_to_group_name(Base, Opts) ->
+     Initialized = lib_process:ensure_process_key(Base, Opts),
+     ProcMsg =

@@ -117,7 +117,10 @@ console.log(`observed totalSupply = ${reply.totalSupply ?? supply}`);
 
 // Say whether the desk actually opened, rather than assuming the write implies
 // it. The pause has two independent causes and this clears only one of them.
-const econRes = await fetch(`${node}/${pid}~process@1.0/now/economy`,
+// `economybook`, not `economy`: the desks moved to the orderbook half when the
+// economy view was split in two, so that feeding a companion stops rebuilding
+// every desk quote. The flow half no longer carries `desks` at all.
+const econRes = await fetch(`${node}/${pid}~process@1.0/now/economybook`,
   { headers: { accept: 'text/plain' }, signal: AbortSignal.timeout(60_000) }).catch(() => null);
 if (econRes?.ok) {
   const body = (await econRes.text()).trim();

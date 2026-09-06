@@ -18,7 +18,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { generateWallet, jwkToAddress } from './ans104.mjs';
-import { sendMessage } from './hbclient.mjs';
+import { sendMessage, awaitComputedSlot } from './hbclient.mjs';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.resolve(HERE, '..', '..');
@@ -150,6 +150,12 @@ export async function unlockBurners(addresses) {
   if (slot === undefined || slot === null) {
     throw new Error('Admin.Unlock did not report a compute slot; access was not verified');
   }
+  // Head first, slot second. Addressing an uncomputed slot is served without
+  // the live worker's `priv` and re-initialises the Luerl VM, emptying
+  // `Players` while the published map carries on looking complete. See
+  // `awaitComputedSlot` in hbclient.mjs.
+  await awaitComputedSlot({ node, process: pid, slot, attempts: 40, delayMs: 500 });
+
   let body = '';
   for (let i = 0; slot !== undefined && slot !== null && i < 40; i++) {
     const r = await fetch(

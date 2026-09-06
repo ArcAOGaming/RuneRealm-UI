@@ -122,19 +122,28 @@ const originalSetTimeout = globalThis.setTimeout;
 const originalWallet = globalThis.arweaveWallet;
 try {
   /*
-   * The happy path is ONE request: the compute pull is both the request for
-   * computation and the read of its reply. `at-slot` is a recovery-only signal
-   * and must never be probed first — on an idle process it is stale by
-   * construction, and on a stock node it makes `now` compute, doubling the work
-   * of every write. The `setTimeout` trap below also proves the completed slot
-   * returns without ever waiting for a future player action.
+   * The happy path SETTLES ON THE HEAD, then pulls.
+   *
+   * This asserted the opposite until 2026-09-06: that `at-slot` must never be
+   * probed first, because the compute pull is both the request for computation
+   * and the read of its reply, so probing could only cost a round trip. That
+   * was right about the request count and wrong about what the two requests DO.
+   * A `compute&slot=N` for a slot the head has not reached is served off a path
+   * with no live worker behind it, and `priv` — where the Luerl globals live —
+   * is not cached: `dev_lua` re-runs the module and the handler sees a complete
+   * `base` and an empty `Players`. Nothing errors, and the caller's own account
+   * is minted again from nothing. Five fresh processes, five wipes; see
+   * `src/lib/slot-settle.mjs` for the measurement.
+   *
+   * So: head first, slot second. The head read is bounded to about one round
+   * trip, and the `setTimeout` trap below still holds the invariant that
+   * actually mattered — a completed slot returns without ever waiting on a
+   * later player's action.
    */
   const reads = [];
   globalThis.fetch = async (url) => {
     reads.push(String(url));
-    if (String(url).endsWith('/now/at-slot')) {
-      throw new Error('the happy path must not probe the cached head before pulling its slot');
-    }
+    if (String(url).endsWith('/now/at-slot')) return new Response('7');
     if (String(url).includes('/compute&slot=7/')) {
       return new Response(JSON.stringify({ ok: true, slot: 7 }));
     }
@@ -149,9 +158,13 @@ try {
     }),
     { ok: true, slot: 7 },
   );
-  assert.equal(reads.length, 1, 'a completed slot needs one compute read');
-  assert.match(reads[0], /\/compute&slot=7\/results\/output\/data$/,
-    'the single happy-path request is the slot\'s own compute pull');
+  assert.equal(reads.length, 2,
+    'a completed slot needs one head read and one compute read');
+  assert.match(reads[0], /\/now\/at-slot$/,
+    'the head is settled before the slot is addressed');
+  assert.match(reads[1], /\/compute&slot=7\/results\/output\/data$/,
+    'and only then is the slot\'s own compute pull made');
+  api.resetSettleObservations();
 
   globalThis.setTimeout = originalSetTimeout;
 
@@ -175,8 +188,25 @@ try {
     }),
     { ok: true, slot: 7 },
   );
-  assert.equal(headPolls, 0, 'a pending slot is never probed first');
-  assert.equal(computeRequests, 1, 'a pending slot is pulled immediately exactly once');
+  // A head that never arrives must not become the action's cost. The probe is
+  // bounded to a few reads and then the slot is pulled anyway: a read that
+  // races is still better than an action that never returns.
+  assert.ok(headPolls > 0 && headPolls <= 4,
+    `a pending slot is probed, briefly and boundedly (was ${headPolls})`);
+  assert.equal(computeRequests, 1, 'and is then pulled exactly once');
+
+  // Having learned that this process's head never arrives, the next action does
+  // not pay for the probe again. That is what keeps the settle free on a node
+  // whose worker does not advance the head for these writes — measured at
+  // 1.90 s per action with no settle, 3.23 s probing unconditionally, and
+  // 1.90 s with this. It re-probes periodically, so the answer can change back.
+  const pollsBefore = headPolls;
+  await api.rawReadSlot(7, {
+    process: 'P'.repeat(43), node: 'https://node.test', attempts: 4, delayMs: 0,
+  });
+  assert.equal(headPolls, pollsBefore,
+    'a process whose head never arrives is not probed a second time');
+  api.resetSettleObservations();
 
   computeRequests = 0;
   headPolls = 0;
@@ -190,7 +220,11 @@ try {
     }
     if (target.includes('/compute&slot=7/')) {
       computeRequests += 1;
-      if (!advanced) return new Response('connection lost', { status: 503 });
+      // The settle now means the head has ALREADY advanced by the time the
+      // first pull goes out, so a pull that fails here is a genuinely lost
+      // response rather than an uncomputed slot. That is the case this covers,
+      // and it is the one the recovery path exists for.
+      if (computeRequests === 1) return new Response('connection lost', { status: 503 });
       return new Response(JSON.stringify({ ok: true, recovered: true }));
     }
     throw new Error(`unexpected recovery request: ${target}`);
@@ -203,7 +237,9 @@ try {
   );
   assert.equal(computeRequests, 2,
     'a lost pull response is followed by one cached result read after completion');
-  assert.equal(headPolls, 3, 'recovery polls the cached head until the slot completes');
+  // Three in the settle before the first pull, one more in recovery after that
+  // pull's response was lost.
+  assert.equal(headPolls, 4, 'the settle polls the cached head until the slot completes');
 
   computeRequests = 0;
   headPolls = 0;
@@ -232,10 +268,15 @@ try {
   );
   assert.equal(injectedBusyPulls, 1,
     'the 503 on the compute pull must actually be served, or this tests nothing');
-  assert.equal(injectedUnparsableHeads, 2,
+  assert.equal(injectedUnparsableHeads, headPolls - 1,
     'the unparsable cached head must actually be served on every poll after the first');
   assert.equal(computeRequests, 1, 'recovery never repeats an uncomputed-slot request');
-  assert.equal(headPolls, 3, 'recovery polling remains bounded');
+  // The settle's own bounded probe in front of the pull, then recovery's
+  // bounded polling behind it. Counted as a ceiling rather than an exact
+  // number: what matters is that a head which never becomes usable cannot make
+  // this unbounded, not which of the two loops paid for which read.
+  assert.ok(headPolls > 0 && headPolls <= 8,
+    `head polling remains bounded on both sides of the pull (was ${headPolls})`);
 
   const preReadAbort = new AbortController();
   const preReadReason = new Error('cancel read before it starts');

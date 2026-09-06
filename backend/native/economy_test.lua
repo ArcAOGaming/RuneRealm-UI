@@ -479,7 +479,7 @@ local function run()
       return problem
     end
 
-    local under, at = tradeWith(499), tradeWith(500)
+    local under, at = tradeWith(4999), tradeWith(5000)
     ok("a desk that has sold no passes still allows one 20-hour window's flow",
        under == nil and at == FLOW, tostring(under) .. " / " .. tostring(at))
 
@@ -488,15 +488,16 @@ local function run()
     -- two -- a desk that shuts because the item it trades is being used.
     state.assets.fire_berry.consumed = 400
     state.assets.fire_berry.player = 100
-    local stillUnder, stillAt = tradeWith(499), tradeWith(500)
+    local stillUnder, stillAt = tradeWith(4999), tradeWith(5000)
     ok("and consuming four fifths of the supply does not tighten it",
        stillUnder == nil and stillAt == FLOW,
        tostring(stillUnder) .. " / " .. tostring(stillAt))
 
     -- Two hundred passholders are two hundred berry flows, so the desk widens
-    -- by exactly that: 25 a kind an account, the derivation in `epochFlowLimit`.
+    -- by exactly that: 250 a kind an account, the derivation in `epochFlowLimit`
+    -- against a berry desk whose `global` is 5000 over the 20-account floor.
     state.policy.passes.lifetimePassCount = 200
-    local wideUnder, wideAt = tradeWith(4999), tradeWith(5000)
+    local wideUnder, wideAt = tradeWith(49999), tradeWith(50000)
     ok("while passes widen it, because the players are what the flow is made of",
        wideUnder == nil and wideAt == FLOW,
        tostring(wideUnder) .. " / " .. tostring(wideAt))
@@ -1106,6 +1107,134 @@ local function run()
        budget >= rate * 5000, budget .. " vs " .. (rate * 5000))
     ok("so the ceiling never rations a claim in normal operation",
        budget > rate, budget .. " vs " .. rate)
+  end
+
+  -- Nothing here may grow without a bound the reader agrees with -------------
+  --
+  -- Every message pays for the whole of `EconomyState`, five times over, and
+  -- Luerl's collector is quadratic in the number of live tables on top of that.
+  -- Three maps in here grew forever, each for a different reason, and each of
+  -- them is cheap enough per entry that nothing noticed until the entries were
+  -- counted.
+  do
+    -- A refusal must not be able to mint a permanent key ---------------------
+    --
+    -- `state.rejected` is a histogram nothing removes from and everything
+    -- publishes. Four of the refusals interpolate a live, market-derived price
+    -- into the message, so out-of-band order spam wrote a new permanent key
+    -- every time the band moved -- from an action that is REFUSED, and so costs
+    -- the sender nothing at all.
+    local state, players = world()
+    local market = withHouse(state, "fire_berry")
+    market.bandBps = 100
+
+    -- Three refusals at three different prices, which under the old key were
+    -- three different bands and therefore three permanent keys.
+    for _, price in ipairs({ 90000, 91000, 92000 }) do
+      EconomyEngine.placeOrder(state, players, ALICE, "buy", "fire_berry",
+        price, 1, T, nil)
+    end
+    local bandKeys, bandCount = 0, 0
+    for reason, count in pairs(state.rejected) do
+      if string.find(reason, "Gold price band", 1, true) then
+        bandKeys = bandKeys + 1
+        bandCount = bandCount + count
+      end
+    end
+    ok("three refusals at three prices are ONE rejection key", bandKeys == 1, bandKeys)
+    ok("and all three are still counted under it", bandCount == 3, bandCount)
+    local hasDigits = false
+    for reason in pairs(state.rejected) do
+      if string.find(reason, "%d") then hasDigits = true end
+    end
+    ok("no rejection key carries an interpolated number at all",
+       not hasDigits, tostring(hasDigits))
+    -- Counts are integers. `math.type` is meaningful here because this reads
+    -- the Lua value directly rather than anything that has been through JSON.
+    local anyCount
+    for _, count in pairs(state.rejected) do anyCount = count end
+    ok("a rejection count is an integer", math.type(anyCount) == "integer",
+       math.type(anyCount))
+
+    -- The player is still told the real number -------------------------------
+    --
+    -- The key is a bucket; the message is not. Collapsing one must not blunt
+    -- the other, or a trader is told their price is outside "the # Gold band".
+    local _, problem = EconomyEngine.placeOrder(state, players, ALICE, "buy",
+      "fire_berry", 93000, 1, T, nil)
+    ok("but the refusal shown to the trader still names the real band",
+       type(problem) == "string" and string.find(problem, "%d") ~= nil, problem)
+
+    -- Desk usage rows are dropped when their window rolls --------------------
+    --
+    -- `accountUsage` only ever had a REPLACEMENT rule, so an account that
+    -- traded a desk once and never came back kept a row for the life of the
+    -- process, six desks over. Every reader already checks `window` before
+    -- believing a row, which is what makes deleting a stale one a no-op for
+    -- every answer and a saving on every message.
+    do
+      local usageState, usagePlayers = world()
+      local desk = usageState.desks.fire_berry
+      local window = C.ECONOMY.shop.accountWindow
+      -- Three traders in one window. Selling INTO the desk, which is the
+      -- direction that does not depend on the desk holding stock.
+      for _, who in ipairs({ ALICE, BOB, CAROL }) do
+        local _, why = EconomyEngine.shopTrade(usageState, usagePlayers, {}, {},
+          who, "fire_berry", "sell", 1, T, "usage-" .. who)
+        ok("a desk sale is accepted", why == nil, tostring(why))
+      end
+      local held = 0
+      for _ in pairs(desk.accountUsage) do held = held + 1 end
+      ok("a desk holds a usage row per account that traded it", held == 3, held)
+
+      -- One trader comes back a window later. The other two do not.
+      local later = T + window + 1
+      EconomyEngine.shopTrade(usageState, usagePlayers, {}, {},
+        ALICE, "fire_berry", "sell", 1, later, "usage-later")
+      local kept, names = 0, {}
+      for account, row in pairs(desk.accountUsage) do
+        kept = kept + 1
+        names[#names + 1] = account
+        ok("every surviving usage row belongs to the current window",
+           math.type(row.window) == "integer" and row.window == later // window,
+           tostring(row.window))
+      end
+      ok("rows from a closed window are gone", kept == 1 and names[1] == ALICE,
+         kept .. " " .. tostring(names[1]))
+    end
+
+    -- A trader's fill ring does not outlive them forever ---------------------
+    --
+    -- `index.trades` was capped at 24 fills per account and then kept for the
+    -- life of the process -- and those 24 fill tables are ones `appendBounded`
+    -- had already evicted from `state.fills`, so the 500-row cap on the shared
+    -- list was not capping anything. A bound something else keeps alive is not
+    -- a bound.
+    do
+      local ringState, ringPlayers = world()
+      place(ringState, ringPlayers, ALICE, "sell", "fire_berry", 10, 1, T)
+      place(ringState, ringPlayers, BOB, "buy", "fire_berry", 10, 1, T)
+      local index = ringState.bookIndex
+      ok("a fill gives both sides a ring",
+         index and index.trades[ALICE] ~= nil and index.trades[BOB] ~= nil,
+         index and index.trades[ALICE] and #index.trades[ALICE])
+      ok("and a trader can read their own fills back",
+         EconomyEngine.accountFills(ringState, ALICE) ~= nil,
+         tostring(EconomyEngine.accountFills(ringState, ALICE) ~= nil))
+
+      -- Two months later, two other traders cross. Neither has anything to do
+      -- with the first pair, and the first pair's rings go with the sweep.
+      local muchLater = T + 60 * 24 * 3600 * 1000
+      place(ringState, ringPlayers, CAROL, "sell", "fire_berry", 10, 1, muchLater)
+      place(ringState, ringPlayers, BOB, "buy", "fire_berry", 10, 1, muchLater)
+      ok("a ring nobody has added to in a month is dropped",
+         ringState.bookIndex.trades[ALICE] == nil,
+         tostring(ringState.bookIndex.trades[ALICE] ~= nil))
+      ok("a trader who came back keeps theirs",
+         ringState.bookIndex.trades[BOB] ~= nil
+         and ringState.bookIndex.trades[CAROL] ~= nil,
+         ringState.bookIndex.trades[CAROL] and #ringState.bookIndex.trades[CAROL])
+    end
   end
 
   out[#out + 1] = ""

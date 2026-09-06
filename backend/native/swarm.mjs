@@ -25,6 +25,11 @@ import {
   settledValuesOrThrow,
 } from './swarm/load-control.mjs';
 import { PROFILES, ROLE_DEFINITIONS, pvpPairs } from './swarm/profiles.mjs';
+import { useKeepAlive } from './keepalive.mjs';
+
+// The parent runner reads published state for its own display and for the
+// verifier's samples. Each worker installs its own — see keepalive.mjs.
+await useKeepAlive({ quiet: false });
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.resolve(HERE, '..', '..');
@@ -87,16 +92,38 @@ function unwrapPublished(value) {
   try { return JSON.parse(value.body); } catch { return value; }
 }
 
+/**
+ * Two keys, one audit. `economy` carries the invariants and the Gold ledger;
+ * `economybook` carries the desks, the resting orders and the fill ring, since
+ * the view was split so that ordinary play stops rebuilding the order book.
+ *
+ * The book is fetched best-effort: a process from before the split does not
+ * publish it, and the invariant check -- which is what this audit is for -- is
+ * entirely in the flow half either way.
+ */
+async function readEconomyKey(node, pid, key, timeoutMs) {
+  const response = await fetch(`${node}/${pid}~process@1.0/now/${key}`, {
+    headers: { accept: 'application/json' }, signal: AbortSignal.timeout(timeoutMs),
+  });
+  const text = (await response.text()).trim();
+  // An HTML body at 200 is the node's own landing page and means the key is
+  // absent -- see the published-key rule in CLAUDE.md.
+  if (!response.ok || /^<!DOCTYPE html|^<html/i.test(text)) {
+    return { ok: false, status: response.status };
+  }
+  return { ok: true, value: unwrapPublished(JSON.parse(text)) };
+}
+
 async function readEconomyAudit(node, pid) {
   try {
-    const response = await fetch(`${node}/${pid}~process@1.0/now/economy`, {
-      headers: { accept: 'application/json' }, signal: AbortSignal.timeout(90_000),
-    });
-    const text = (await response.text()).trim();
-    if (!response.ok || /^<!DOCTYPE html|^<html/i.test(text)) {
-      return { ok: false, error: `economy read ${response.status}` };
+    const [flow, book] = await Promise.all([
+      readEconomyKey(node, pid, 'economy', 90_000),
+      readEconomyKey(node, pid, 'economybook', 90_000).catch(() => ({ ok: false })),
+    ]);
+    if (!flow.ok) {
+      return { ok: false, error: `economy read ${flow.status}` };
     }
-    const value = unwrapPublished(JSON.parse(text));
+    const value = book.ok ? { ...flow.value, ...book.value } : flow.value;
     return {
       ok: value?.invariants?.ok === true,
       mode: value?.mode,

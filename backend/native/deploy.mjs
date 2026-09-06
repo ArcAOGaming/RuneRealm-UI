@@ -50,7 +50,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { spawnProcess, sendMessage, jwkToAddress, transportNode } from './hbclient.mjs';
+import { spawnProcess, sendMessage, jwkToAddress, transportNode, awaitComputedSlot } from './hbclient.mjs';
 import { minifyLua } from './lua-minify.mjs';
 import { gameModuleSources } from './game-bundle.mjs';
 
@@ -254,6 +254,12 @@ const outJson = async (what) => {
 const readSlot = async (node, processId, slot, {
   attempts = 60, delayMs = 2000,
 } = {}) => {
+  // The head first, then the slot. An uncomputed slot addressed directly is
+  // served without the live worker's `priv`: `dev_lua` re-runs the module and
+  // the handler sees a full `base` and an empty `Players`. See
+  // `awaitComputedSlot` in hbclient.mjs for the measurement.
+  await awaitComputedSlot({ node, process: processId, slot, attempts, delayMs });
+
   let last = '(no answer)';
   for (let i = 0; i < attempts; i++) {
     try {

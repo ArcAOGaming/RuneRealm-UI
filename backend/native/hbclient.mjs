@@ -9,6 +9,8 @@
 // Node >= 18. Uses only node:crypto.
 
 import crypto from 'node:crypto';
+// One copy of the slot-settle policy, shared with `src/lib/hyperbeam.ts`.
+import { settleHead } from '../../src/lib/slot-settle.mjs';
 
 const CRLF = '\r\n';
 const MAX_HEADER_LENGTH = 4096;
@@ -858,6 +860,71 @@ export async function readState({ node, process: pid, path = 'now' }) {
     value: res.body.toString(),
     headers: res.headers
   };
+}
+
+/**
+ * Wait until the process has actually COMPUTED up to `slot`, and only then let
+ * the caller address that slot.
+ *
+ * ## Why a settle may not simply ask for the slot it wants
+ *
+ * A HyperBEAM slot carries two things forward and they travel separately: the
+ * published map goes through the message cache, and the Luerl VM — every global
+ * the contract keeps its world in — goes through the message's `priv`, which is
+ * NOT cached. A `compute&slot=N` asked for before anything has driven the head
+ * past N is served off a path with no live worker behind it: `dev_lua` re-runs
+ * the module from the top, and the handler is called with a COMPLETE `base` and
+ * an EMPTY set of globals.
+ *
+ * Nothing errors, and that is the whole problem. `users` still reads 50, every
+ * `player-<address>` still holds the record it held, and `Players` is empty —
+ * so the next wallet to act is minted from nothing, its funding is gone and its
+ * `joinedAt` is rewritten to now. Measured on this node, on a throwaway process
+ * per run, driving the same bootstrap eight ways:
+ *
+ *   settle by `compute&slot=N` immediately after the POST   5 runs, 5 wiped
+ *   settle by `now/at-slot`, then address the slot          3 runs, 0 wiped
+ *
+ * — and the two contracts under test (the one before tonight's changes and the
+ * one after) behaved identically in both columns, which is how we know this is
+ * the read pattern and not the Lua.
+ *
+ * `now` is what makes the difference: it computes to the scheduler head through
+ * the live worker, so by the time the slot is addressed it is already computed
+ * and the read is a cache hit. One extra request per deploy message, against a
+ * process that silently starts again from nothing.
+ *
+ * This is for DEPLOY and SEED paths — a single writer that can afford a `now`
+ * read per message. The browser client deliberately does not do this (see
+ * `computedSlot` in `src/lib/hyperbeam.ts`): it is one of many readers, `now`
+ * is 18–46 s under concurrent writers, and the head is behind by construction
+ * for a slot that client just scheduled.
+ */
+export async function awaitComputedSlot({
+  node, process: pid, slot, attempts = 90, delayMs = 1000, maxDelayMs = 4_000,
+  budgetMs = 180_000, fetchImpl = fetch,
+}) {
+  const target = Number(slot);
+  if (!Number.isSafeInteger(target) || target < 0) {
+    throw new Error(`awaitComputedSlot needs a slot number, got ${slot}`);
+  }
+  // The POLICY is `settleHead`, shared with the browser and swarm client in
+  // `src/lib/hyperbeam.ts`. All this supplies is how a Node tool reads a head.
+  return settleHead({
+    slot: target, attempts, delayMs, maxDelayMs, budgetMs,
+    readHead: async () => {
+      const res = await fetchImpl(
+        `${transportNode(node)}/${pid}~process@1.0/now/at-slot`,
+        { headers: { accept: 'text/plain' } },
+      );
+      if (!res.ok) return null;
+      const body = (await res.text()).trim();
+      // An HTML body at status 200 is "key absent", never a value.
+      if (/^<!DOCTYPE html|^<html/i.test(body)) return null;
+      const at = Number(body);
+      return Number.isSafeInteger(at) ? at : null;
+    },
+  });
 }
 
 export { toTabm, tabmToHttp, signatureBase, b64url, sha256, sfStr, sfInnerList, sfDict, hbError, send };

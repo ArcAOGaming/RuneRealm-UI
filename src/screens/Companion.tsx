@@ -75,6 +75,11 @@ const COMPANION_TOUR: TourStep[] = [
     body: 'Stats, moves and meters, drawn on the card itself. Pick it up to look at it, and level it up once it has the experience.',
   },
   {
+    target: '[data-tour="character"]',
+    title: 'Who you are',
+    body: 'Your own trainer, not the companion. Hair, hat, shirt, trousers, gloves and shoes, in any colour you like. It is saved as game data, so a change costs one signature and nothing else — no upload, no fee — and the room draws it from then on.',
+  },
+  {
     target: '[data-tour="worship"]',
     title: 'Daily worship',
     body: 'Claim every day. The crate is where your berries come from, and an unbroken streak makes it better — a second crate from three days, a rare one from ten. Rune drips daily alongside it, and this is the only place in the realm it is ever minted.',
@@ -516,6 +521,7 @@ function CompanionCard({ monster, player }: { monster: Monster; player: Player }
             own, which threw the room away to change a hat. */}
         <button
           type="button"
+          data-tour="character"
           onClick={() => setEditingCharacter(true)}
           className="ml-auto inline-flex h-11 items-center gap-1.5 rounded-[3px] px-2 text-[11px] text-faint transition-colors hover:text-muted lg:h-8"
         >

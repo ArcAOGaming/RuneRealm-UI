@@ -10,7 +10,10 @@
       "Bash(npm run redeploy:*)",
       "Bash(node backend/native/redeploy.mjs:*)",
       "Bash(npm run *)",
-      "Bash(python *)"
+      "Bash(python *)",
+      "Bash(ssh *)",
+      "Bash(echo *)",
+      "SendMessage"
     ],
     "deny": [],
     "ask": []

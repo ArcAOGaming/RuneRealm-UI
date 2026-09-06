@@ -24,7 +24,12 @@ const source = [
   'BattleFleetConfig = nil',
   'BattleFleetAuthority = (function()', read('battle-fleet/authority.lua'), 'end)()',
   read('game.lua'), read('game_test.lua'),
-  'return gametest({}, { body = { gc = "on" } })',
+  // `deep` opts into the assertions that are correct everywhere but too
+  // expensive for the live suite's budget: `npm run test:lua` runs as ONE
+  // request that a node cuts at about three minutes, and the whole suite
+  // already sits at ~183 s of it. ao-loader has no such ceiling, so the
+  // runtime-independent half of the cross-slot block lives here.
+  'return gametest({}, { body = { gc = "on", deep = "on" } })',
 ].join('\n');
 
 const handle = await AoLoader(fs.readFileSync(WASM), {

@@ -336,12 +336,20 @@ charges a new-account fee on the card's own process address — around $0.47, on
 per card, forever — which across a run that trades thousands of companions is
 the entire budget for cards nobody keeps.
 
+Every actor DOES dress itself once per run. `Sprite.Update` is the one
+player-facing write no other verb reaches, and it is placed on a random one of
+an actor's first few ticks rather than at bootstrap, so the outfit lands on a
+warm record the way a real player's does. The wardrobe is read from
+`src/assets/`, the same folders the browser globs, so a bot never saves a style
+name the client cannot draw.
+
 The swarm intentionally does not automate `Monster.Mint`, asset deposits,
 Rune withdrawals, or L1 transfers. Those cross into permanent
 public assets or real-money chain transactions. Add them as separately enabled
 adapters with their own funding and cleanup policy instead of putting them in
-the randomized default action pool. The entire companion asset path is parked;
-the funded worker source is retained, but normal deployments never run it.
+the randomized default action pool. The companion ASSET path is parked; the funded
+worker source is retained, but normal deployments never run it. The character
+creator is not part of that path and is exercised above.
 
 ## Adding a feature
 

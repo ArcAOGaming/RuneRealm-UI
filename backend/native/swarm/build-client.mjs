@@ -22,6 +22,9 @@ export async function buildSwarmClient({ root, pid, node, outDir }) {
     '  declineCapture as huntDeclineCapture, capture as huntCapture,',
     '  retrySettlement as huntRetrySettlement, end as huntEnd }',
     `  from ${JSON.stringify(path.join(root, 'src', 'lib', 'hunt.ts').replace(/\\/g, '/'))};`,
+    // The settle observer's reset, so a test can put the transport back to
+    // "nothing learned yet" between cases. See `src/lib/slot-settle.mjs`.
+    `export { resetSettleObservations } from ${JSON.stringify(path.join(root, 'src', 'lib', 'slot-settle.mjs').replace(/\\/g, '/'))};`,
     'export { send as rawSend, sendMessage as rawSendMessage, readSlot as rawReadSlot,',
     '  readJSON as rawReadJSON, readState as rawReadState, deliverSlot as rawDeliverSlot,',
     '  pendingDeliveries as rawPendingDeliveries,',

@@ -1,0 +1,61 @@
+{
+  "protocol": "runerealm-battle-fleet/1",
+  "enabled": true,
+  "node": "https://hyperbeam.tylerw.ai",
+  "gameProcess": "_cv7LrXDgaDYJic8ZfQ7wQqI8o9x08A0-x6gz81xzVo",
+  "size": 3,
+  "composition": {
+    "lua": 3,
+    "rust": 0
+  },
+  "capacityPerWorker": 32,
+  "maxRetainedPerWorker": 100,
+  "maxPendingPerWorker": 100,
+  "maxTicketTtlPerWorker": 3600000,
+  "maxOutcomesPerWorker": 10000,
+  "maxConfirmationsPerWorker": 10000,
+  "managerMode": "assign-only",
+  "createdAt": "2026-09-02T02:03:17.463Z",
+  "updatedAt": "2026-09-02T02:03:22.618Z",
+  "workers": [
+    {
+      "workerId": "battle-worker-01",
+      "runtime": "lua@5.3a",
+      "operationId": "runerealm-battle-fleet/1:_cv7LrXDgaDYJic8ZfQ7wQqI8o9x08A0-x6gz81xzVo:battle-worker-01:lua@5.3a",
+      "lifecycle": "ready",
+      "statusKey": "fleetstatus",
+      "intentAt": "2026-09-02T02:03:17.468Z",
+      "workerProcessId": "auNXDQ9m_IXazeQV_TdmBgPIm6PLTojoVkAkcCsyefg",
+      "spawnedAt": "2026-09-02T02:03:18.900Z",
+      "initializedSlot": "1",
+      "accepting": true,
+      "verifiedAt": "2026-09-02T02:03:19.814Z"
+    },
+    {
+      "workerId": "battle-worker-02",
+      "runtime": "lua@5.3a",
+      "operationId": "runerealm-battle-fleet/1:_cv7LrXDgaDYJic8ZfQ7wQqI8o9x08A0-x6gz81xzVo:battle-worker-02:lua@5.3a",
+      "lifecycle": "ready",
+      "statusKey": "fleetstatus",
+      "intentAt": "2026-09-02T02:03:19.818Z",
+      "workerProcessId": "vSF5Xhjb3hGY5AqiQzj0UY2I-3NYnK79uK8BVr08pkc",
+      "spawnedAt": "2026-09-02T02:03:20.611Z",
+      "initializedSlot": "1",
+      "accepting": true,
+      "verifiedAt": "2026-09-02T02:03:21.153Z"
+    },
+    {
+      "workerId": "battle-worker-03",
+      "runtime": "lua@5.3a",
+      "operationId": "runerealm-battle-fleet/1:_cv7LrXDgaDYJic8ZfQ7wQqI8o9x08A0-x6gz81xzVo:battle-worker-03:lua@5.3a",
+      "lifecycle": "ready",
+      "statusKey": "fleetstatus",
+      "intentAt": "2026-09-02T02:03:21.156Z",
+      "workerProcessId": "gEsjByPSwL2JAOhs5G2XGypH_aK31cQ1s_0eenl3i2w",
+      "spawnedAt": "2026-09-02T02:03:22.055Z",
+      "initializedSlot": "1",
+      "accepting": true,
+      "verifiedAt": "2026-09-02T02:03:22.618Z"
+    }
+  ]
+}

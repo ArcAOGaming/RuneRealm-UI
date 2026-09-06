@@ -1,9 +1,13 @@
 # Minting — state of play
 
-> **PARKED:** companion mint/export/import, collection deployment, the funded
-> worker, creator, and customiser are disabled and excluded from normal routes
-> and deploys by `ECONOMY_MARKETPLACE_PLAN.md`. This file preserves historical
-> implementation facts only. Do not use it as a release checklist.
+> **PARKED:** companion mint/export/import, collection deployment and the
+> funded worker are disabled and excluded from normal routes and deploys by
+> `ECONOMY_MARKETPLACE_PLAN.md`. This file preserves historical implementation
+> facts only. Do not use it as a release checklist.
+>
+> The **character creator is live** and is not part of this. The sprite
+> uploader described below is the parked thing; the shipped creator stores an
+> outfit recipe on the player record and writes no transaction.
 
 One page for whoever builds the marketplace. Everything below is verified on
 chain unless it says otherwise. Depth is in [HANDOFF.md](HANDOFF.md) §9b.

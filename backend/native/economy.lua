@@ -19,6 +19,15 @@ local BOOK_INDEX_VERSION = 1
 
 local DAY = 24 * 3600 * 1000
 local BPS = 10000
+
+--- How many days back a distinct-day qualification count reaches.
+---
+--- Named because it is now TWO rules that must agree: `qualifyingDays` and
+--- `candidateQualified` read this far back, and `recordPlayerDeltas` deletes
+--- day keys that have fallen out of it. A retention window that outlives its
+--- reader is dead weight; one that is shorter than its reader silently changes
+--- who qualifies. Move them together or not at all.
+local QUALIFYING_DAY_WINDOW = 30
 local ITEM_IDS = {
   "air_berry", "water_berry", "fire_berry", "rock_berry",
   "scroll", "legendary_scroll", "rune",
@@ -220,7 +229,7 @@ local function newDesks()
     { uptoBps = 6000, bid = 48, ask = 90 },
     { uptoBps = 10000, bid = 39, ask = 75 },
   }
-  local berryLimits = { perAction = 100, perAccount = 250, global = 500 }
+  local berryLimits = { perAction = 1000, perAccount = 2500, global = 5000 }
   local scrollLimits = { perAction = 5, perAccount = 10, global = 25 }
   local runeLimits = { perAction = 5, perAccount = 10, global = 25 }
   return {
@@ -687,7 +696,7 @@ local function qualifyingDays(state, address, timestamp)
   local total = 0
   for day in pairs((state.activity[address] or {}).days or {}) do
     local age = currentDay - int(day, currentDay)
-    if age >= 0 and age < 30 then total = total + 1 end
+    if age >= 0 and age < QUALIFYING_DAY_WINDOW then total = total + 1 end
   end
   return total
 end
@@ -831,6 +840,22 @@ function M.recordPlayerDeltas(state, before, players, action, timestamp)
       end
       if qualifying[action] then
         local day = timestamp // DAY
+        if not activity.days[day] then
+          -- A day this account has not been seen on before, which is the only
+          -- moment an older one can have aged out.
+          --
+          -- `candidateQualified` counts distinct days inside a THIRTY-day
+          -- window and ignores everything before it, so a day older than that
+          -- has already stopped being read -- it was simply never deleted. One
+          -- boolean key per address per day, forever, across every account that
+          -- ever played, is a map that only grows and that every message pays
+          -- to marshal. The window is the retention.
+          for held in pairs(activity.days) do
+            if (day - int(held, day)) >= QUALIFYING_DAY_WINDOW then
+              activity.days[held] = nil
+            end
+          end
+        end
         activity.days[day] = true
         if runeDelta < 0 then activity.sinkActions = int(activity.sinkActions, 0) + 1 end
       end
@@ -871,7 +896,9 @@ local function candidateQualified(state, timestamp)
     local days = 0
     for day in pairs(activity.days or {}) do
       if currentDay - int(day, currentDay) >= 0
-         and currentDay - int(day, currentDay) < 30 then days = days + 1 end
+         and currentDay - int(day, currentDay) < QUALIFYING_DAY_WINDOW then
+        days = days + 1
+      end
     end
     if days >= int(policy.requiredDistinctDays, 3)
        and int(activity.sinkActions, 0) >= int(policy.requiredSinkActions, 1) then
@@ -1257,6 +1284,37 @@ function M.syncHoldings(state, players, timestamp, reason)
   return state
 end
 
+--- A monotonic fingerprint of how much this ledger has EVER issued: the sum of
+--- every asset's, Gold's and loot box's lifetime `issued`.
+---
+--- It only ever grows under the guarded verbs -- issuance is one-way, and a
+--- consume grows `consumed` rather than shrinking `issued` -- so it is the
+--- economy's answer to `playercommit`. `game.lua` commits it every slot and,
+--- on a corrupt restore, reads it back: `EconomyState` rides the same `priv`
+--- as `Players`, so if the roster was lost the ledger may have been too. A live
+--- ledger whose issuance is BELOW what the last good slot committed was reset
+--- with the priv -- and it is NOT recoverable from the published state
+--- (`now/economy` is a lossy `flowView`, never the export shape with orders,
+--- escrow and reserves) -- so the heal refuses rather than run a handler over,
+--- and republish, a broken ledger.
+---
+--- Why issuance and not the `player` pools: `assets[item].player` carries a
+--- small standing offset from the live inventory sum (a removed account's
+--- berries stay pooled, escrow moves in and out), so an exact holdings equality
+--- false-positives. Lifetime issuance has no such offset and cannot fall except
+--- by a reset.
+function M.issuedWitness(state)
+  state = M.ensureState(state)
+  local total = int(state.gold.issued, 0)
+  for _, item in ipairs(ITEM_IDS) do
+    total = total + int(state.assets[item].issued, 0)
+  end
+  for rarity = 1, C.MAX_LOOT_RARITY do
+    total = total + int(state.lootboxes[rarity].issued, 0)
+  end
+  return total
+end
+
 local function playerGold(player)
   return math.max(0, int(player and player.gold, 0))
 end
@@ -1635,7 +1693,44 @@ end
 --- above the twenty a caller asks for.
 local ACCOUNT_FILL_RING = 24
 
+--- How long a trader's personal fill ring outlives their last trade.
+local ACCOUNT_FILL_DAYS = 30
+
+--- Forget the rings of traders who have not traded in a month.
+---
+--- The ring was bounded in the wrong dimension. Each one is capped at 24 fills
+--- -- and then kept forever, because unlike `index.accounts` (dropped in
+--- `indexDrop` the moment an account's last order leaves) nothing ever removed
+--- a ring. That is one table per address that has EVER traded, plus up to 24
+--- fill tables each, and those fill tables are the ones `appendBounded` has
+--- already evicted from `state.fills` -- so the 500-row cap on the global list
+--- was not actually capping anything. A bound that something else keeps alive
+--- is not a bound.
+---
+--- Age is the axis rather than "has live orders", which sounds right and is
+--- exactly wrong: a fill is what REMOVES an order, so an account's ring is at
+--- its most interesting in the moment it has nothing resting. Thirty days is
+--- far longer than the 500-fill global ring survives on a busy market, so a
+--- trader keeps their own history well past the point the shared list forgets
+--- it -- which is what this ring is for.
+local function pruneTradeRings(index, day)
+  for account, ring in pairs(index.trades) do
+    local newest = ring[#ring]
+    if type(newest) ~= "table"
+       or (day - (int(newest.filledAt, 0) // DAY)) >= ACCOUNT_FILL_DAYS then
+      index.trades[account] = nil
+    end
+  end
+end
+
 local function indexFill(index, fill)
+  -- Once a day, on the day's first fill. The sweep is O(traders held) and the
+  -- only thing that can change its answer is the date.
+  local day = int(fill.filledAt, 0) // DAY
+  if day > 0 and int(index.tradesSweep, -1) < day then
+    index.tradesSweep = day
+    pruneTradeRings(index, day)
+  end
   for _, account in ipairs({ fill.buyer, fill.seller }) do
     if type(account) == "string" and account ~= "" then
       local ring = index.trades[account]
@@ -1868,9 +1963,39 @@ local function openOrdersFor(state, address, timestamp)
   return held and int(held.open, 0) or 0
 end
 
+--- The counter key for a refusal, with everything that varies taken out.
+---
+--- `state.rejected` is a permanent histogram: nothing removes a key, and the
+--- whole map is deep-copied into the published view on every message. That is
+--- only affordable while the key space is a fixed set of reasons -- and it was
+--- not. Four of the refusals interpolate a live number:
+---
+---   "Price is below the 18 Gold price band"
+---   "Price must be a multiple of 5"
+---
+--- The band is derived from market data and moves as the market moves, so a
+--- player spamming out-of-band limit prices mints a new permanent key every
+--- time the reference price shifts, for free, from an action that is REFUSED.
+--- A refusal costs the sender nothing, which is exactly the wrong shape for
+--- something that writes a key nothing can ever remove.
+---
+--- Digits are the only thing these messages interpolate, so collapsing every
+--- run of them to `#` turns the key space back into the enum it was supposed to
+--- be -- `"Price is below the # Gold price band"` counts them all -- without
+--- touching a single call site or changing one character of what the player is
+--- told, which is the separate `problem` string the caller returns.
+---
+--- The length cap is the backstop for any future reason built from something
+--- that is not a number: a key is at most 96 bytes, whatever it was.
+local function rejectionCode(reason)
+  local code = (string.gsub(tostring(reason or "unknown"), "%d+", "#"))
+  if #code > 96 then code = string.sub(code, 1, 96) end
+  return code
+end
+
 local function recordRejected(state, reason)
-  reason = tostring(reason or "unknown")
-  state.rejected[reason] = int(state.rejected[reason], 0) + 1
+  local code = rejectionCode(reason)
+  state.rejected[code] = int(state.rejected[code], 0) + 1
 end
 
 function M.recordRejected(state, reason)
@@ -2911,15 +3036,49 @@ local function anchoredPrice(desk, base, side)
   return math.max(1, (anchored * sideBps + (BPS // 2)) // BPS)
 end
 
+--- Forget per-account desk usage from a window that has closed.
+---
+--- `accountUsage` holds one row per address per desk, and it only ever had a
+--- REPLACEMENT rule: a row whose window had rolled was overwritten the next
+--- time that same account traded that same desk. An account that traded once
+--- and never came back therefore kept its row for the life of the process, six
+--- desks over, and nothing read it -- `deskHeadroom` deliberately reads the map
+--- raw so that quoting does not create rows, and every reader that matters
+--- checks `window` before believing a row anyway.
+---
+--- So the row is not merely stale, it is inert: the code already treats a row
+--- from a closed window as absent. Deleting it changes no answer and removes an
+--- O(accounts x desks) map from every message's marshalling.
+---
+--- Swept only when a NEW window is entered for this desk, which is at most once
+--- per account-window rather than once per trade.
+local function pruneDeskUsage(desk, window)
+  for account, row in pairs(desk.accountUsage) do
+    if type(row) ~= "table" or int(row.window, -1) ~= window then
+      desk.accountUsage[account] = nil
+    end
+  end
+end
+
 local function usageRows(desk, account, timestamp)
   local window = timestamp // C.ECONOMY.shop.accountWindow
+  -- The desk's own window rolls exactly once per window, whoever trips it, so
+  -- it is already the high-water mark the sweep needs -- no new field, and
+  -- nothing extra in the published desk. Sweeping per STALE ACCOUNT instead
+  -- would walk the whole map on every account's first trade of the window,
+  -- which is O(accounts squared) across it: one leak traded for a worse one.
+  --
+  -- Hoisted above the per-account row deliberately. The sweep drops every row
+  -- that is not from `window`, and the row written below is, so doing it in
+  -- this order means the sweep needs no exception for the caller.
+  if int(desk.globalUsage.window, -1) ~= window then
+    pruneDeskUsage(desk, window)
+    desk.globalUsage = { window = window, buy = 0, sell = 0 }
+  end
   local accountRow = desk.accountUsage[account]
   if not accountRow or int(accountRow.window, -1) ~= window then
     accountRow = { window = window, buy = 0, sell = 0 }
     desk.accountUsage[account] = accountRow
-  end
-  if int(desk.globalUsage.window, -1) ~= window then
-    desk.globalUsage = { window = window, buy = 0, sell = 0 }
   end
   local epoch = timestamp // C.ECONOMY.shop.policyEpoch
   if int(desk.epochUsage.epoch, -1) ~= epoch then
@@ -3525,7 +3684,47 @@ function M.invariants(state, withdrawals, deposits)
   }
 end
 
-function M.publicView(state, withdrawals, deposits, timestamp)
+--- THE ECONOMY IS PUBLISHED AS TWO KEYS, AND THE SPLIT IS A COST DECISION.
+---
+--- `flowView` is the FLOW half: the ledgers, the loot boxes, the Gold totals,
+--- the emission figures, the policy record and the invariants. Every gameplay
+--- verb moves one of those -- eating a berry consumes one berry, and the item
+--- invariant is stated over exactly that -- so it is republished on every one
+--- of the twenty-six verbs in `ECONOMY_DIRTY`.
+---
+--- `bookView` is the ORDERBOOK half: the ladders, the candles, the NPC desks,
+--- the resting orders, the fill ring, the market registry and the rejection
+--- tally. None of it can move unless an order was placed, amended, cancelled,
+--- filled or expired, or a desk was traded against or reconfigured -- and none
+--- of the twenty-six gameplay verbs can do any of that.
+---
+--- `policy` and `invariants` are on the FLOW side even though a trader reads
+--- them, and that is the conservative half of this split rather than an
+--- oversight. Both are moved by ordinary play: a daily claim pays out of
+--- `policy.runeRewards` and re-counts `policy.gold.candidateQualifiedActive`,
+--- and every item that is issued or consumed changes `invariants.assets`.
+--- Putting them on the book side would have meant enumerating every verb that
+--- can reach `state.policy`, and being wrong about one of those publishes a
+--- stale reserve balance rather than costing an encode.
+---
+--- They were published as one 12 kB key, so feeding a companion rebuilt seven
+--- price ladders, seven candle series, every desk quote and a copy of the whole
+--- policy record in order to say that one berry had been eaten. Measured on a
+--- live `~lua@5.3a` at fifty players: 94 ms of a 277 ms `Monster.Feed`, of
+--- which 75.8 ms was this half.
+---
+--- Splitting the KEY rather than caching the TABLE is deliberate. Roughly half
+--- that cost is `encode`, and a cached Lua table still has to be encoded into
+--- the key beside the flow figures; only a key that is not written at all skips
+--- both. Note what this does NOT buy: the published map is the same size, so
+--- the node still loads, encodes, decodes and writes the same bytes five times
+--- per slot (see CLAUDE.md). This is a Luerl CPU saving and nothing else.
+---
+--- `publicView` is still the WHOLE object and is what a signed `Economy.View`,
+--- the admin snapshot and every test read. Only the published keys are split,
+--- and `readEconomy` in `lib/game.ts` fetches both and merges them, so nothing
+--- downstream of it knows the split happened either.
+function M.flowView(state, withdrawals, deposits, timestamp)
   state = M.ensureState(state)
   -- Refresh the derived emission figures before publishing them.
   --
@@ -3546,8 +3745,6 @@ function M.publicView(state, withdrawals, deposits, timestamp)
       (perCapita * int((C.ECONOMY.rune or {}).newcomerFloorBps, 2500)) // BPS
   end
   local assets = {}
-  local markets = {}
-  local candles = {}
   for _, item in ipairs(ITEM_IDS) do
     local row = state.assets[item]
     assets[item] = {
@@ -3557,9 +3754,6 @@ function M.publicView(state, withdrawals, deposits, timestamp)
       rolling30d = rollingAsset(row, timestamp, 30),
       sources = copy(row.sources), sinks = copy(row.sinks),
     }
-    markets[item] = marketStats(state, timestamp, item, withdrawals, deposits)
-    local bars = candleView(state, timestamp, item)
-    if #bars > 0 then candles[item] = bars end
   end
   local boxes = {}
   for rarity = 1, C.MAX_LOOT_RARITY do
@@ -3570,6 +3764,41 @@ function M.publicView(state, withdrawals, deposits, timestamp)
       rolling30d = rollingAsset(row, timestamp, 30),
       sources = copy(row.sources),
     }
+  end
+  local gold = state.gold
+  return {
+    version = state.version, mode = state.mode, generatedAt = timestamp,
+    invariants = M.invariants(state, withdrawals, deposits),
+    gold = {
+      issued = gold.issued, burned = gold.burned,
+      outstanding = outstandingGold(state), authorized = gold.authorized,
+      ceiling = gold.ceiling, player = gold.player, escrow = gold.escrow,
+      shop = gold.shop, locked = gold.locked, target = goldTarget(state),
+      perQualifiedPlayer = state.policy.gold.perQualifiedPlayer,
+      qualifiedActive = state.policy.gold.qualifiedActive,
+      candidateQualifiedActive = state.policy.gold.candidateQualifiedActive,
+      rolling7d = rollingAsset({ daily = gold.daily }, timestamp, 7),
+      rolling30d = rollingAsset({ daily = gold.daily }, timestamp, 30),
+    },
+    assets = assets, lootboxes = boxes,
+    policy = copy(state.policy), passQuote = M.passQuote(state),
+  }
+end
+
+--- The orderbook half. See the note on `publicView` for why it is a key of its
+--- own; everything here moves only when an order or a desk does.
+---
+--- `version`, `mode` and `generatedAt` are repeated on purpose. The two keys
+--- are fetched independently and can be one slot apart, and a reader that
+--- merges them needs to be able to see that rather than infer it.
+function M.bookView(state, withdrawals, deposits, timestamp)
+  state = M.ensureState(state)
+  local markets = {}
+  local candles = {}
+  for _, item in ipairs(ITEM_IDS) do
+    markets[item] = marketStats(state, timestamp, item, withdrawals, deposits)
+    local bars = candleView(state, timestamp, item)
+    if #bars > 0 then candles[item] = bars end
   end
   local desks = {}
   for item, desk in pairs(state.desks) do
@@ -3591,27 +3820,50 @@ function M.publicView(state, withdrawals, deposits, timestamp)
       traded = copy(desk.traded),
     }
   end
-  local gold = state.gold
   return {
     version = state.version, mode = state.mode, generatedAt = timestamp,
-    invariants = M.invariants(state, withdrawals, deposits),
-    gold = {
-      issued = gold.issued, burned = gold.burned,
-      outstanding = outstandingGold(state), authorized = gold.authorized,
-      ceiling = gold.ceiling, player = gold.player, escrow = gold.escrow,
-      shop = gold.shop, locked = gold.locked, target = goldTarget(state),
-      perQualifiedPlayer = state.policy.gold.perQualifiedPlayer,
-      qualifiedActive = state.policy.gold.qualifiedActive,
-      candidateQualifiedActive = state.policy.gold.candidateQualifiedActive,
-      rolling7d = rollingAsset({ daily = gold.daily }, timestamp, 7),
-      rolling30d = rollingAsset({ daily = gold.daily }, timestamp, 30),
-    },
-    markets = copy(state.markets),
-    assets = assets, lootboxes = boxes, orders = orderView(state),
+    markets = copy(state.markets), orders = orderView(state),
     fills = copy(state.fills), market = markets, candles = candles, desks = desks,
     rejected = copy(state.rejected),
-    policy = copy(state.policy), passQuote = M.passQuote(state),
   }
+end
+
+--- A cheap statement of "has anything in `bookView` moved".
+---
+--- Every book carries a revision that `indexAdd`/`indexDrop` bump, and the
+--- index carries one for the fill ring -- so seven integers and a counter say
+--- whether a ladder, a resting order, a candle or a trade has changed since the
+--- last time the key was written. Expiries are in it as well, because
+--- `reconcile` drops an expired order through `indexDrop` like any other.
+---
+--- The publisher gates on this OR on `market` being dirty. The revision alone
+--- would miss a desk that was traded against or reconfigured (a desk has no
+--- revision of its own) and the market registry; `dirty.market` alone would
+--- miss an order that expired on the clock during an unrelated message. Either
+--- one firing costs one encode, and only both being wrong could publish a stale
+--- book.
+function M.bookRevision(state, timestamp)
+  state = M.ensureState(state)
+  local index = bookIndex(state, timestamp)
+  local parts = { int(index.fillsRev, 0), int(index.open, 0) }
+  for _, item in ipairs(ITEM_IDS) do
+    local book = index.books[item]
+    parts[#parts + 1] = book and int(book.rev, 0) or -1
+  end
+  return table.concat(parts, ".")
+end
+
+--- Both halves as one object, which is what every reader outside the published
+--- keys wants. `bookView` last so the shared `version`/`mode`/`generatedAt`
+--- come from the same call that produced the book -- they are equal either way,
+--- and saying which one won is better than leaving it to table iteration.
+function M.publicView(state, withdrawals, deposits, timestamp)
+  state = M.ensureState(state)
+  local view = M.flowView(state, withdrawals, deposits, timestamp)
+  for field, value in pairs(M.bookView(state, withdrawals, deposits, timestamp)) do
+    view[field] = value
+  end
+  return view
 end
 
 pushHistory = function(state, entry)
@@ -3956,9 +4208,24 @@ end
 --- something `rebuildIndex` reconstructs from the orders in the same export.
 --- The rule is the same one `publicView` follows, and it is what allows the
 --- index to exist at all -- see the note on `dev_lua` in CLAUDE.md.
-function M.exportState(state)
+function M.exportState(state, opts)
   local out = copy(M.ensureState(state))
   out.bookIndex = nil
+  -- The self-heal RESTORE export (published every slot the ledger moves) drops
+  -- per-account qualification telemetry. `activity` is O(WALLETS) -- a 200-entry
+  -- `runeFlow` plus a day set per account that ever traded Rune -- and a key
+  -- that grows with the player count makes every action slower for everyone
+  -- (the published-map rule in CLAUDE.md). It is also for a feature that is
+  -- DISABLED, it carries no custody and no invariant, and it rebuilds itself
+  -- from subsequent actions -- so restoring it is worth nothing and publishing
+  -- it every slot is the exact per-wallet tax to avoid. `ensureState` defaults
+  -- it back to `{}` on the way in. `Admin.Export`/`Admin.Load` (no opts) keep
+  -- it, because a migration is a bulk one-off, not a per-slot publication.
+  -- Emptied, not removed: `ensureState` only re-defaults `activity` during the
+  -- one-time V1 migration, so an already-migrated state that came back WITHOUT
+  -- the field would keep it nil and the qualification code would index nil. An
+  -- empty table is O(1), survives the round-trip, and rebuilds from actions.
+  if opts and opts.forRestore then out.activity = {} end
   return out
 end
 

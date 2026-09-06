@@ -30,10 +30,6 @@ local C = {}
 --- ordinary release fail safe.
 C.PUBLIC_ACCESS = false
 
---- Parked with companion asset export/import for the economy launch. Existing
---- recipes remain readable; no normal route may create or modify one.
-C.CHARACTER_CUSTOMISER_ENABLED = false
-
 -- Elements ------------------------------------------------------------------
 
 C.ELEMENTS = { "fire", "water", "air", "rock" }
@@ -347,7 +343,24 @@ C.STARTER_INVENTORY = {
   air_berry = 5, water_berry = 5, fire_berry = 5, rock_berry = 5,
 }
 
-C.STARTER_LOOTBOXES = { [1] = 3 }
+--- Three tier-1 boxes was a satchel that felt like nothing, and the arithmetic
+--- says it WAS nothing: a tier-1 box rolls four rows at 25% each, so it pays
+--- ~1.5 berries and lands on the pity floor of exactly one berry about a third
+--- of the time. Three of them is ~4.6 berries against the ~2.75 a single
+--- action consumes -- under two actions, opened one disappointing box at a
+--- time, as the player's first impression of a reward.
+---
+--- The kick-start is two UNCOMMON boxes and one common. A tier-2 box rolls the
+--- tier-1 rows at 37.5% AND its own four rows at the 95% cap for 5 apiece, so
+--- it pays ~21 berries; the grant is ~43 berries, which funds ~15 actions on
+--- top of the 20 in `STARTER_INVENTORY`.
+---
+--- This is not a faucet and cannot be farmed into one: it is granted ONCE per
+--- account behind `p.seeded`, entry is a paid pass, and a promised pass is
+--- explicitly excluded (see `Faction.Join`). What it buys is the first session
+--- feeling like the game is handing you something, which three one-berry boxes
+--- did not.
+C.STARTER_LOOTBOXES = { [2] = 2, [1] = 1 }
 
 --- The daily claim: the one Rune faucet that is not a reward for playing.
 ---

@@ -35,7 +35,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-import { jwkToAddress, sendMessage } from './hbclient.mjs';
+import { jwkToAddress, sendMessage, awaitComputedSlot } from './hbclient.mjs';
 import { listBurners } from './burners.mjs';
 import { profileFor } from './swarm/profiles.mjs';
 
@@ -51,6 +51,21 @@ const flag = (name, fallback) => {
   return i >= 0 ? argv[i + 1] : fallback;
 };
 const PLAN = has('plan');
+/** The fewest gifted companions any wallet may end up with. 0 keeps the dice. */
+const MIN_EXTRAS = Math.max(0, Math.min(4, Number(flag('min-extras', 0)) || 0));
+/**
+ * Wallets left out because their oath already disagrees with `profiles.mjs`.
+ *
+ * Declared here rather than beside the exclusion that fills it, because the
+ * closing report -- two hundred lines later, and only on the all-green path --
+ * reads it to decide whether "every wallet is sworn" is the whole truth. It was
+ * only ever bound inside that branch's own block, so a run with NOTHING to skip
+ * reached `skipped.length` with no such binding and died of a ReferenceError
+ * after every message had already landed: the seeding succeeded, the
+ * verification passed 50/50, and the script still exited 1. `fleet:prepare` is
+ * an `&&` chain, so that stopped the fleet on a run that had worked.
+ */
+const skipped = [];
 
 /** Deterministic PRNG, so a seeded run is reproducible. */
 function mulberry32(seed) {
@@ -163,7 +178,14 @@ for (const burner of burners) {
 
   // Up to four EXTRA companions on top of the adopted starter, so every wallet
   // ends up holding between one and five.
-  const extras = Math.floor(random() * 5);
+  //
+  // `--min-extras` raises the FLOOR without touching the ceiling, because a
+  // wallet that rolls zero holds one companion, and one companion cannot be
+  // stored, listed, sold or handed to anybody: the roster keeps exactly one and
+  // an actor never stores its last idle creature. Those wallets stay in the run
+  // but drop out of every trading measurement in it. The draw itself is
+  // unchanged so the same `--seed` still names the same factions.
+  const extras = Math.max(MIN_EXTRAS, Math.floor(random() * 5));
   for (let i = 0; i < extras; i += 1) {
     const gift = FACTIONS[Math.floor(random() * FACTIONS.length)];
     // Always the collection. A gift is something you have been given, not
@@ -365,6 +387,7 @@ if (conflicts.length) {
     console.error('\n  --force: seeding them anyway, into the wrong factions.');
   } else {
     const excluded = new Set(conflicts.map(({ arrival }) => arrival.burner.name));
+    for (const name of excluded) skipped.push(name);
     for (let i = arrivals.length - 1; i >= 0; i -= 1) {
       if (excluded.has(arrivals[i].burner.name)) arrivals.splice(i, 1);
     }
@@ -406,30 +429,62 @@ if (PLAN) {
  * at once is how you find out what a node does under a burst when you were
  * trying to find out something else.
  */
-async function sendAll(rows, describe, build, limit = 5) {
+async function sendAll(rows, describe, build, limit = 5, settleEvery = 20) {
   let sent = 0;
   let refused = 0;
   let next = 0;
   let maxSlot = -1;
-  const worker = async () => {
-    while (next < rows.length) {
-      const row = rows[next++];
-      try {
-        const receipt = await sendMessage({ node, process: pid, ...build(row) });
-        // `hbclient` returns the slot as it came off the HTTP header, so it is
-        // a STRING. `Number.isInteger('42')` is false, which silently left the
-        // high-water mark at -1 and skipped the compute pull below entirely.
-        const slot = Number(receipt && (receipt.slot ?? receipt.Slot));
-        if (Number.isInteger(slot) && slot > maxSlot) maxSlot = slot;
-        sent += 1;
-        if (sent % 10 === 0) console.log(`  ${sent}/${rows.length}`);
-      } catch (error) {
-        refused += 1;
-        console.error(`  ${describe(row)}: ${error.message.split('\n')[0]}`);
-      }
+
+  const sendOne = async (row) => {
+    try {
+      const receipt = await sendMessage({ node, process: pid, ...build(row) });
+      // `hbclient` returns the slot as it came off the HTTP header, so it is
+      // a STRING. `Number.isInteger('42')` is false, which silently left the
+      // high-water mark at -1 and skipped the compute pull below entirely.
+      const slot = Number(receipt && (receipt.slot ?? receipt.Slot));
+      if (Number.isInteger(slot) && slot > maxSlot) maxSlot = slot;
+      sent += 1;
+      if (sent % 10 === 0) console.log(`  ${sent}/${rows.length}`);
+    } catch (error) {
+      refused += 1;
+      console.error(`  ${describe(row)}: ${String(error.message).split(/\r?\n/)[0]}`);
     }
   };
-  await Promise.all(Array.from({ length: Math.min(limit, rows.length) }, worker));
+
+  // KEEP THE COMPUTED HEAD CLOSE TO THE SCHEDULED HEAD.
+  //
+  // Scheduling is not computing. These sends put a hundred and ninety slots on
+  // the scheduler and compute none of them, so whatever asks first has to
+  // compute the whole backlog -- and a backlog asked for from a path with no
+  // live worker behind it re-enters `dev_lua:init`: a fresh Luerl VM, a
+  // complete `base`, and an empty `Players`. Nothing errors.
+  //
+  // Measured on the 2026-09-05 seed, before this loop existed: three
+  // interpreter restarts inside one `Admin.CreateMonster` batch, `users`
+  // falling 52 -> 7 -> 4, and 35 of 50 wallets reported unsworn -- not because
+  // their oath was refused but because their record had been minted again from
+  // nothing while the published map still said otherwise.
+  //
+  // So the backlog is never allowed to get large. Every `settleEvery` messages
+  // the head is driven up to what has been scheduled so far, THROUGH the live
+  // worker (`now/at-slot`), before any more are sent. One extra read per chunk.
+  // `stateresets` on the process is the receipt that it worked; see
+  // `awaitComputedSlot` in hbclient.mjs and `slot-continuity.mjs`.
+  const workers = Math.min(limit, rows.length);
+  while (next < rows.length) {
+    // The scheduler serialises the messages regardless, so overlapping the
+    // requests within a chunk does not change what the process sees or the
+    // order it ends up in -- it only stops each send waiting for the previous
+    // one's reply. Bounded, because fifty at once is how you find out what a
+    // node does under a burst when you were trying to find out something else.
+    const stopAt = Math.min(rows.length, next + Math.max(1, settleEvery));
+    await Promise.all(Array.from({ length: workers }, async () => {
+      while (next < stopAt) await sendOne(rows[next++]);
+    }));
+    if (maxSlot >= 0) {
+      await awaitComputedSlot({ node, process: pid, slot: maxSlot, attempts: 90, delayMs: 2_000 });
+    }
+  }
   return { sent, refused, maxSlot };
 }
 
@@ -497,6 +552,10 @@ console.log(`\n${done} grant(s) scheduled, ${failed} could not be sent`);
 const lastSlot = Math.max(oaths.maxSlot ?? -1, grants.maxSlot ?? -1);
 if (lastSlot >= 0) {
   console.log(`\npulling compute to slot ${lastSlot}...`);
+  // `now/at-slot` is what drives the head THROUGH the live worker; addressing
+  // the slot cold re-initialises the Luerl VM and empties `Players` behind an
+  // otherwise complete published map. See `awaitComputedSlot` in hbclient.mjs.
+  await awaitComputedSlot({ node, process: pid, slot: lastSlot, attempts: 60, delayMs: 2_000 });
   for (let attempt = 0; attempt < 40; attempt += 1) {
     const res = await fetch(
       `${node}/${pid}~process@1.0/compute&slot=${lastSlot}/results/output/data`,

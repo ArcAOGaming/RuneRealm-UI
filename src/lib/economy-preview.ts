@@ -35,7 +35,7 @@ const market = (bid?: number, ask?: number): EconomyMarketStats => ({
 });
 const desk = (item: GoldMarketItemId, stock: number, cap: number, reserve: number, bid: number, ask: number): EconomyDesk => ({
   item, stock, stockCap: cap, goldReserve: reserve, anchorBps: 10000,
-  band: 2, bid, ask, limits: { perAction: 100, perAccount: 250, global: 500 },
+  band: 2, bid, ask, limits: { perAction: 1000, perAccount: 2500, global: 5000 },
   enabled: { buy: true, sell: true }, pause: {}, projectedExhaustion: Math.floor(reserve / bid),
   traded: { bought: 122, sold: 76, goldIn: 601, goldOut: 493 },
 });

@@ -44,6 +44,7 @@ import berryWater from '../assets/art/berry-water.png';
 import berryFire from '../assets/art/berry-fire.png';
 import berryRock from '../assets/art/berry-rock.png';
 
+import runeArt from '../assets/art/rune.png';
 import scrollArt from '../assets/art/scroll.png';
 
 const PORTRAITS: Record<Element, string> = {
@@ -70,4 +71,8 @@ export const ITEM_ART: Partial<Record<ItemId, string>> = {
   fire_berry: berryFire,
   rock_berry: berryRock,
   scroll: scrollArt,
+  /* The Rune had no art, so the shop drew it with the UI's Rune glyph — which
+     is an interface icon, not a good, and so it never stacked into crates on
+     the shelf the way every other item does. */
+  rune: runeArt,
 };

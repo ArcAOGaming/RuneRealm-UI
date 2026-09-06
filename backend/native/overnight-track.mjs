@@ -94,11 +94,15 @@ console.log(`events  ${jsonl}\n`);
 
 while (Date.now() < deadline) {
   const at = Date.now();
-  const [gameSlot, users, lb, econ, runeSlot, runeSupply, ammSlot] = await Promise.all([
+  const [gameSlot, users, lb, econ, econBook, runeSlot, runeSupply, ammSlot] = await Promise.all([
     readKey(P.game, 'at-slot'),
     readKey(P.game, 'users'),
     readKey(P.game, 'leaderboard'),
+    // Two keys since the flow/orderbook split, and the number worth tracking is
+    // what the node marshals -- which is still both of them. Summed rather than
+    // reported apart: this is a state-growth signal, not a cost attribution.
     readKey(P.game, 'economy'),
+    readKey(P.game, 'economybook'),
     P.rune ? readKey(P.rune, 'at-slot') : Promise.resolve(null),
     P.rune ? readKey(P.rune, 'totalsupply') : Promise.resolve(null),
     P.amm ? readKey(P.amm, 'at-slot') : Promise.resolve(null),
@@ -118,7 +122,7 @@ while (Date.now() < deadline) {
     readMs: gameSlot.ms,
     leaderboardMs: lb.ms,
     leaderboardBytes: lb.bytes,
-    economyBytes: econ.bytes,
+    economyBytes: (econ.bytes ?? 0) + (econBook.ok ? econBook.bytes ?? 0 : 0),
     runeSlot: runeSlot?.ok ? num(runeSlot.value) : null,
     runeSupply: runeSupply?.ok ? runeSupply.value : null,
     ammSlot: ammSlot?.ok ? num(ammSlot.value) : null,

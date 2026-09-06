@@ -749,6 +749,25 @@ export async function attack(
   }
   if (!route) return attackMonolith(battleId, move, round);
 
+  /*
+    An absent round means the same thing on both paths: "I am not claiming one."
+
+    The monolith reads that as "do not enforce" — `attackMonolith` omits the tag
+    entirely and `Battle.Attack` only checks a round it was actually given. The
+    fleet worker is the opposite: `Round` is MANDATORY there and enforced
+    exactly, so sending a literal `0` for an absent argument was a claim that the
+    battle had not started yet. It matched on the first round and refused every
+    round after it — "That round has already resolved; current round is 1" —
+    which meant a fleet battle could not be played past round one by any caller
+    that did not pass a round. The app and the swarm both do; `e2e.mjs` and the
+    Arena's own force/continue button do not, and neither could have worked.
+
+    So resolve it the way the monolith does, from the state rather than from a
+    constant: the cached worker view is the last thing the worker itself told us
+    the round was, and it is what the caller would have passed had it bothered.
+  */
+  const claimedRound = round ?? fleetPlayers.get(battleId)?.battle?.round ?? 0;
+
   let battle: Battle | null = null;
   try {
     battle = unwrap<Battle>(await send<Reply<Battle>>([
@@ -757,7 +776,7 @@ export async function attack(
       { name: 'Move', value: move },
       { name: 'Ticket', value: route.ticket },
       { name: 'ActionId', value: actionId },
-      { name: 'Round', value: String(round ?? 0) },
+      { name: 'Round', value: String(claimedRound) },
     ], {
       process: route.workerProcessId,
       node: route.node || HB_NODE,
@@ -938,8 +957,46 @@ export const readMarketStats = (opts: ReadOpts = {}) =>
 
 // Gold goods economy --------------------------------------------------------
 
-/** Exact ledgers, Gold order book, finite NPC desks and public policy state. */
-export const readEconomy = (opts: ReadOpts = {}) => readJSON<EconomyView>('economy', opts);
+/**
+ * Exact ledgers, Gold order book, finite NPC desks and public policy state.
+ *
+ * TWO KEYS, ONE OBJECT. The process publishes `economy` (the flow half:
+ * ledgers, loot boxes, Gold, emission policy, invariants) and `economybook`
+ * (the orderbook half: ladders, candles, desks, resting orders, the fill ring,
+ * the market registry). They were one key, and the split is why a `Monster.Feed`
+ * no longer rebuilds seven price ladders and every desk quote in order to say a
+ * berry was eaten — see `EconomyEngine.flowView` in `economy.lua`.
+ *
+ * Merged here rather than exposed, because the split is a publication decision
+ * and nothing above this line should have to know about it: `EconomyView` is
+ * unchanged and every caller keeps reading one object.
+ *
+ * Fetched in parallel and merged flow-first, so the book's `generatedAt` wins.
+ * The two can legitimately be one slot apart — the whole point is that the book
+ * is written less often — and a reader comparing them should see the moment the
+ * ladder it is drawing was actually computed.
+ *
+ * A process deployed before the split publishes `economy` whole and no
+ * `economybook`; the missing half merges nothing and the flow key still carries
+ * every field it always did, which is why the empty book below is applied
+ * UNDER the flow half rather than over it. It only fills in what neither key
+ * supplied — a book key that is briefly unreachable hands back empty ladders
+ * rather than an object missing `orders`, because half this type going
+ * undefined at a caller is a blank trading screen and a stack trace.
+ */
+const EMPTY_BOOK: Pick<EconomyView,
+  'orders' | 'fills' | 'market' | 'desks' | 'rejected'> = {
+  orders: [], fills: [], market: {} as EconomyView['market'], desks: {}, rejected: {},
+};
+
+export const readEconomy = async (opts: ReadOpts = {}): Promise<EconomyView | null> => {
+  const [flow, book] = await Promise.all([
+    readJSON<EconomyView>('economy', opts),
+    readJSON<Partial<EconomyView>>('economybook', opts).catch(() => null),
+  ]);
+  if (!flow) return null;
+  return { ...EMPTY_BOOK, ...flow, ...(book ?? {}) };
+};
 
 /**
  * How an order should behave beyond its price and size.

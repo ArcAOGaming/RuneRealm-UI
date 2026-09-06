@@ -821,11 +821,28 @@ export interface Turn {
   critical?: boolean;
   shieldDamage: number;
   healthDamage: number;
-  statsChanged: Partial<Record<'attack' | 'speed' | 'defense' | 'health', number>>;
   superEffective: boolean;
   notEffective: boolean;
-  attackerState: CombatantState;
-  defenderState: CombatantState;
+  /**
+   * The per-swing detail, present only while it is still worth animating.
+   *
+   * These three are the expensive part of a turn — a `statsChanged` table and
+   * a ten-field snapshot of each combatant, three Lua tables per swing on top
+   * of the entry itself — and the process drops them from every round except
+   * the closing one the moment a fight settles (`compactTurnLog` in
+   * `game.lua`). A finished fight is retained for the result screen, and the
+   * result screen reads the text: `move`, `missed`, `critical`, the two damage
+   * numbers. Only `BattleScene` wants the snapshots, and only for a round it
+   * has not played yet, of which a settled fight has at most one.
+   *
+   * So they are optional here rather than assumed, and every reader treats
+   * their absence as "nothing to correct": `reconcile` returns early, the stat
+   * riders read an empty object. A live fight still carries all three on every
+   * round, which is what the animation actually runs on.
+   */
+  statsChanged?: Partial<Record<'attack' | 'speed' | 'defense' | 'health', number>>;
+  attackerState?: CombatantState;
+  defenderState?: CombatantState;
 }
 
 export interface Battle {
@@ -914,9 +931,24 @@ export interface LeaderboardRow {
   losses: number;
   quests: number;
   /**
-   * The whole companion, moves included, so the standings can draw a card per
-   * trainer without a request per trainer. Optional only because a process
-   * deployed before this existed publishes rows without it.
+   * The companion the standings DRAW, so the board renders from one blob
+   * instead of a request per trainer. Optional only because a process deployed
+   * before this existed publishes rows without it.
+   *
+   * A PROJECTION, not the record. Typed as `Monster` because that is what the
+   * card renderer takes, but the process publishes only the fields the board
+   * shows: `entryNo`, `entryKey`, `name`, `elementType`, `evolutionStage`,
+   * `faction`, `level`, `nextLevelExp` and the compact `moves`. Everything a
+   * stranger's row cannot act on has always been absent — `attack`, `energy`,
+   * `happiness`, `exp`, `background`, `border`, `id` — and `image` and `sprite`
+   * joined them: both are a function of `entryNo`, `portrait()` in `ui/art.ts`
+   * already resolves the art from that, and neither is read off a board row
+   * anywhere here. That was 110 bytes a row in a map the node marshals five
+   * times per message.
+   *
+   * `moves` stays. A move set is rolled per companion rather than per species,
+   * so unlike the two above it cannot be joined back from `catalog` or
+   * `monsterindex`, and `CardPreview` draws all four tiles on these cards.
    */
   monster?: Monster;
 }
