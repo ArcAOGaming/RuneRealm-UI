@@ -3433,9 +3433,20 @@ local function run(base, req)
     ok("and so is the roster entry behind it", okRoster, whyRoster)
 
     -- The same record read the way a wallet reads it: an unsigned GET.
+    --
+    -- The published record does NOT carry the `monster` mirror -- it is the same
+    -- object as `monsters[activeId]`, and publishing both wrote 14% of every
+    -- player byte twice. So the active companion is reached the way the client
+    -- reaches it, by indexing the roster with the published `activeId`.
     local _, res = send(MOVER, { Action = "User.Info" })
     local published = json.decode(res["player-" .. MOVER])
-    local okPub, whyPub = thinMove(published.monster and published.monster.moves, "published")
+    ok("the published record does not carry the `monster` mirror",
+       published.monster == nil and published.activeId ~= nil,
+       published.monster and "mirror present" or tostring(published.activeId))
+    local publishedActive = published.monsters and published.monsters[published.activeId]
+    ok("and `activeId` still names a roster entry to read instead",
+       publishedActive ~= nil, published.activeId)
+    local okPub, whyPub = thinMove(publishedActive and publishedActive.moves, "published")
     ok("and the published per-address record too", okPub, whyPub)
 
     -- A stored companion, which is the shape a collection is drawn from.

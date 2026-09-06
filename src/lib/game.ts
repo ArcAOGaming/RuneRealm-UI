@@ -396,8 +396,27 @@ function rememberFleetRoute(player: Player, route: BattleFleetRoute) {
   fleetPlayers.set(route.battleId, player);
 }
 
-const readAuthorityPlayer = (address: string, opts: ReadOpts = {}) =>
-  readGameJSON<Player>(`player-${address}`, opts);
+/**
+ * Put `monster` back on a published record.
+ *
+ * The contract stopped publishing it: it is the same object as
+ * `monsters[activeId]`, and the encoder wrote it twice — 48,170 bytes across 64
+ * records, 14% of every published player byte, on a map the node marshals five
+ * times per message. `activeId` is published beside it, so the field is a pure
+ * function of what did arrive.
+ *
+ * Restored here, once, at the point the record is parsed, so the ~90 readers of
+ * `player.monster` in this app never learn the difference. A record from a
+ * process deployed before that change already carries it and is left alone.
+ */
+function withActiveCompanion(player: Player | null): Player | null {
+  if (!player || player.monster || !player.activeId) return player;
+  const active = player.monsters?.[player.activeId];
+  return active ? { ...player, monster: active } : player;
+}
+
+const readAuthorityPlayer = async (address: string, opts: ReadOpts = {}) =>
+  withActiveCompanion(await readGameJSON<Player>(`player-${address}`, opts));
 
 async function hydrateFleetPlayer(player: Player, signal?: AbortSignal): Promise<Player> {
   if (!player.battleFleet) {

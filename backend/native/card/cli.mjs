@@ -66,8 +66,14 @@ async function readPlayer(address) {
   const text = (await res.text()).trim();
   if (!text || text === 'null') throw new Error(`${address} has no record`);
   const record = JSON.parse(text);
-  if (!record?.monster) throw new Error(`${address} has no companion`);
-  return { monster: record.monster, inventory: record.inventory ?? {} };
+  // The published record no longer carries `monster`: it was the same object as
+  // `monsters[activeId]` and the encoder wrote it twice, 14% of every published
+  // player byte on a map every message pays for five times. `activeId` is
+  // published beside it, so the active companion is a pure function of what did
+  // arrive. A record from a process deployed before that change still has it.
+  const active = record?.monster ?? record?.monsters?.[record?.activeId];
+  if (!active) throw new Error(`${address} has no companion`);
+  return { monster: active, inventory: record.inventory ?? {} };
 }
 
 const out = flag('out', 'card.png');
