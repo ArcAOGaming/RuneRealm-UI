@@ -1414,7 +1414,12 @@ local function run(base, req)
       -- The RAW published export, captured with the order/fill/escrow present.
       local preEcon = tostring(STATE.economystate)
       local preOrders = string.match(preEcon, '"orders":(%b{})')
-      local preFills = string.match(preEcon, '"fills":(%b[])')
+      -- The ring is read from `economybook`, NOT `economystate`. The restore
+      -- export deliberately drops it: `bookView` already publishes the same
+      -- rows, and 87 KB published twice is charged to every message five times
+      -- over. Reading it from the export here would compare "[]" with "[]" and
+      -- pass while proving nothing.
+      local preFills = string.match(tostring(STATE.economybook), '"fills":(%b[])')
       local preFireEscrow = string.match(preEcon,
         '"fire_berry":{[^}]-"escrow":(%-?%d+)')
       ok("the book carries a resting order before the drop",
@@ -1445,8 +1450,20 @@ local function run(base, req)
       ok("orders reconstruct byte-for-byte through the export round-trip",
          string.match(postEcon, '"orders":(%b{})') == preOrders,
          string.match(postEcon, '"orders":(%b{})'))
-      ok("the fill ring reconstructs byte-for-byte",
-         string.match(postEcon, '"fills":(%b[])') == preFills)
+      -- The ring comes back through `economybook`, and the export must NOT be
+      -- carrying a second copy of it. Both halves are asserted, because the
+      -- saving is only real if the export is empty and the heal is only
+      -- lossless if the ring returns.
+      ok("the restore export does NOT carry a second copy of the fill ring",
+         string.match(postEcon, '"fills":(%b[])') == "[]",
+         string.match(postEcon, '"fills":(%b[])'))
+      ok("the fill ring reconstructs byte-for-byte, from `economybook`",
+         string.match(tostring(STATE.economybook), '"fills":(%b[])') == preFills,
+         preFills and string.sub(preFills, 1, 80))
+      -- The eviction index is derived and is rebuilt on import, never exported.
+      ok("the receipt eviction index is not exported",
+         string.match(postEcon, '"actionReceiptOrder":(%b[])') == "[]",
+         string.match(postEcon, '"actionReceiptOrder":(%b[])'))
       ok("the item escrow survives the heal, in raw bytes",
          string.match(postEcon, '"fire_berry":{[^}]-"escrow":(%-?%d+)') == preFireEscrow,
          preFireEscrow)

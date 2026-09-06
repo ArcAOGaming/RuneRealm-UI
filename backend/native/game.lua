@@ -8154,6 +8154,19 @@ function compute(base, req, opts)
               "absent or undecodable); refusing to run a handler over a broken " ..
               "economy (defense-in-depth against a node snapshot bug)")
           end
+          -- The restore export carries CUSTODY, not history: `fills` and
+          -- `rejected` are dropped from it because `bookView` already publishes
+          -- them, and publishing the same 87 KB ring twice taxes every message
+          -- five times over. Put the ring back from that other key, so a heal
+          -- still never takes anything away. Its absence is not fatal -- the
+          -- ledger, orders, escrow and reserves are all whole without it.
+          local rawBook = base and base.economybook
+          if type(rawBook) == "string" and rawBook ~= "" and rawBook ~= "null" then
+            local okBook, book = pcall(json.decode, rawBook)
+            if okBook and type(book) == "table" then
+              rebuilt = EconomyEngine.restoreHistory(rebuilt, book)
+            end
+          end
           EconomyState = rebuilt
         end
         -- Rebuild the missing accounts from base's own published records. Runs

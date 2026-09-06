@@ -4225,15 +4225,76 @@ function M.exportState(state, opts)
   -- one-time V1 migration, so an already-migrated state that came back WITHOUT
   -- the field would keep it nil and the qualification code would index nil. An
   -- empty table is O(1), survives the round-trip, and rebuilds from actions.
-  if opts and opts.forRestore then out.activity = {} end
+  if opts and opts.forRestore then
+    out.activity = {}
+    -- HISTORY IS NOT CUSTODY, AND IT IS ALREADY PUBLISHED ELSEWHERE.
+    --
+    -- `fills` and `rejected` are copied verbatim into `bookView` -- the
+    -- `economybook` key the trading floor reads -- so carrying them here too
+    -- publishes the same 87 KB twice, and CLAUDE.md's cost model charges the
+    -- WHOLE published map to every message five times over. `orderHistory` is
+    -- closed-order history that nothing reconstructs state from.
+    --
+    -- Dropping them is safe for identity: `fillSeq`/`orderSeq` are stored
+    -- top-level and incremented monotonically, and the one place a sequence is
+    -- re-derived from a list (`highestId(state.fills, "F")`) runs only in the
+    -- `normalisedVersion < 2` migration, which an export at version 5 skips.
+    --
+    -- And it does not take anything away, because the heal restores the ring
+    -- from `economybook` -- see `M.restoreHistory` and the guard in `game.lua`.
+    -- Beyond that ring the node holds every slot, so a computed slot IS the
+    -- history: `compute&slot=N` for a slot the head has reached is a cache hit.
+    out.fills = {}
+    out.orderHistory = {}
+    out.rejected = {}
+    -- A DERIVED INDEX, never exported -- the same rule `bookIndex` follows one
+    -- function above. `actionReceiptOrder` is FIFO eviction order over
+    -- `actionReceipts`, 485 keys of it measured at 30,531 bytes, and every one
+    -- of those keys is already in the map it orders. `importState` rebuilds it.
+    out.actionReceiptOrder = {}
+  end
   return out
+end
+
+--- Put the trade ring back after a heal, from the view that still has it.
+---
+--- The restore export drops `fills`/`rejected` because `bookView` publishes
+--- them; this is the other half of that trade. Called with the decoded
+--- `economybook` when one is available, it is a no-op if the ring is already
+--- populated -- a restore may never take something away, and it may not
+--- overwrite something intact either.
+function M.restoreHistory(state, book)
+  if type(state) ~= "table" or type(book) ~= "table" then return state end
+  if type(book.fills) == "table" and #(state.fills or {}) == 0 then
+    state.fills = copy(book.fills)
+  end
+  if type(book.rejected) == "table" and #(state.rejected or {}) == 0 then
+    state.rejected = copy(book.rejected)
+  end
+  return state
 end
 
 function M.importState(current, incoming)
   if type(incoming) ~= "table" or int(incoming.version, 0) < 1 then
     return current, "Economy export is missing or invalid"
   end
-  return M.ensureState(copy(incoming)), nil
+  local next_ = M.ensureState(copy(incoming))
+  -- Rebuild the eviction order the export deliberately omits. Timestamp order
+  -- is the order `rememberAction` appended in, so the rebuilt index evicts the
+  -- same receipt the original would have. Ties keep a stable key order so two
+  -- nodes restoring the same export agree.
+  if #(next_.actionReceiptOrder or {}) == 0 then
+    local keys = {}
+    for key in pairs(next_.actionReceipts or {}) do keys[#keys + 1] = key end
+    table.sort(keys, function(a, b)
+      local ta = int((next_.actionReceipts[a] or {}).timestamp, 0)
+      local tb = int((next_.actionReceipts[b] or {}).timestamp, 0)
+      if ta ~= tb then return ta < tb end
+      return a < b
+    end)
+    next_.actionReceiptOrder = keys
+  end
+  return next_, nil
 end
 
 M.ITEM_IDS = ITEM_IDS
