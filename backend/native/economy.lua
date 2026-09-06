@@ -4494,7 +4494,13 @@ function M.restoreHistory(state, book)
   if type(book.fills) == "table" and #(state.fills or {}) == 0 then
     state.fills = copy(book.fills)
   end
-  if type(book.rejected) == "table" and #(state.rejected or {}) == 0 then
+  -- `next`, NOT `#`. `rejected` is a histogram keyed by rejection code
+  -- (`state.rejected[code] = count`), and `#` on a string-keyed table is 0
+  -- however full it is -- so the "only if empty" guard never fired and this
+  -- overwrote a populated tally with the book's every single time. A restore
+  -- may never take something away; the list above is a real sequence and keeps
+  -- `#`.
+  if type(book.rejected) == "table" and next(state.rejected or {}) == nil then
     state.rejected = copy(book.rejected)
   end
   return state
