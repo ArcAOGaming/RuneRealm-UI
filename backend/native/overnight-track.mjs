@@ -17,6 +17,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { assertLiveGraph, resolveLiveGraph } from './live-config.mjs';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.resolve(HERE, '..', '..');
@@ -35,10 +36,9 @@ if (!Number.isFinite(everySec) || everySec < 10 || everySec > 3600) {
   throw new Error('--every must be a number of seconds from 10 to 3600');
 }
 
-const state = JSON.parse(
-  fs.readFileSync(path.join(HERE, 'deployment-state.json'), 'utf8'));
-const NODE = process.env.NODE_URL || state.node;
-const P = state.processes;
+const graph = assertLiveGraph(resolveLiveGraph({ root: ROOT }));
+const NODE = graph.node;
+const P = { game: graph.game, rune: graph.rune, quote: graph.quote };
 
 const outDir = path.join(ROOT, '.ladder');
 fs.mkdirSync(outDir, { recursive: true });
@@ -94,7 +94,7 @@ console.log(`events  ${jsonl}\n`);
 
 while (Date.now() < deadline) {
   const at = Date.now();
-  const [gameSlot, users, lb, econ, econBook, runeSlot, runeSupply, ammSlot] = await Promise.all([
+  const [gameSlot, users, lb, econ, econBook, runeSlot, runeSupply] = await Promise.all([
     readKey(P.game, 'at-slot'),
     readKey(P.game, 'users'),
     readKey(P.game, 'leaderboard'),
@@ -105,7 +105,6 @@ while (Date.now() < deadline) {
     readKey(P.game, 'economybook'),
     P.rune ? readKey(P.rune, 'at-slot') : Promise.resolve(null),
     P.rune ? readKey(P.rune, 'totalsupply') : Promise.resolve(null),
-    P.amm ? readKey(P.amm, 'at-slot') : Promise.resolve(null),
   ]);
 
   const slot = gameSlot.ok ? num(gameSlot.value) : null;
@@ -125,7 +124,6 @@ while (Date.now() < deadline) {
     economyBytes: (econ.bytes ?? 0) + (econBook.ok ? econBook.bytes ?? 0 : 0),
     runeSlot: runeSlot?.ok ? num(runeSlot.value) : null,
     runeSupply: runeSupply?.ok ? runeSupply.value : null,
-    ammSlot: ammSlot?.ok ? num(ammSlot.value) : null,
     // A read that stops answering is the signal that matters most overnight.
     healthy: gameSlot.ok && users.ok,
     errors: [gameSlot, users, lb, econ].filter((r) => !r.ok)
@@ -158,7 +156,7 @@ const text = [
   '',
   `node: ${NODE}`,
   `game: ${P.game}`,
-  `rune: ${P.rune}   amm: ${P.amm}   quote: ${P.quote}`,
+  `rune: ${P.rune}   quote: ${P.quote}`,
   '',
   `samples: ${rows.length} (${healthy.length} healthy, ${rows.length - healthy.length} unhealthy)`,
   `window: ${first.t ?? '-'} .. ${last.t ?? '-'}`,

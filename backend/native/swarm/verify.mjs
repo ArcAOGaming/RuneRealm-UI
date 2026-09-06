@@ -34,6 +34,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { livedInCoverage } from './coverage.mjs';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.resolve(HERE, '..', '..', '..');
@@ -95,6 +96,13 @@ function verify(runId) {
   const actions = events.filter((event) => event.type === 'action');
   const errors = events.filter((event) => event.type === 'error');
   const runEnd = [...events].reverse().find((event) => event.type === 'run.end');
+  const coverage = livedInCoverage(actions.map((event) => event.action));
+
+  if (runEnd?.coverageMode === 'lived-in' && !coverage.complete) {
+    finding('critical', 'lived-in-coverage-missing',
+      `${coverage.missing.length} required live paths did not complete`,
+      { missing: coverage.missing });
+  }
 
   if (runEnd?.economy) {
     if (runEnd.economy.ok !== true) {
@@ -270,6 +278,7 @@ function verify(runId) {
     probes: Object.fromEntries([...byProbe].map(([name, seen]) =>
       [name, { attempted: seen.attempted, refused: seen.refused, allowed: seen.allowed.length }])),
     listings: { created: listed.size, settled: settled.size },
+    coverage,
     latency: {
       p50Ms: quantile(durations, 0.5),
       p90Ms: quantile(durations, 0.9),
@@ -309,6 +318,8 @@ for (const runId of chosen) {
   console.log(`${report.actions} actions, ${report.errors} failures `
     + `(${report.racedFailures} of them the expected consequence of concurrency)`);
   console.log(`listings    ${report.listings.created} created, ${report.listings.settled} settled`);
+  console.log(`coverage    ${report.coverage.covered}/${report.coverage.total}`
+    + `${report.coverage.complete ? ' complete' : `; missing ${report.coverage.missing.map((row) => row.id).join(', ')}`}`);
   console.log(`latency     p50 ${report.latency.p50Ms}ms  p90 ${report.latency.p90Ms}ms  `
     + `p99 ${report.latency.p99Ms}ms  max ${report.latency.maxMs}ms`);
   console.log(`under load  median ${report.latency.earlyMedianMs}ms early `

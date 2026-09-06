@@ -5,6 +5,7 @@ import { installWalletShim, jwkToAddress } from '../ans104.mjs';
 import { structuredErrorFields } from './error-fields.mjs';
 import { makeBridge } from './bridge.mjs';
 import { useKeepAlive } from '../keepalive.mjs';
+import { chooseProgressionAction } from './strategy.mjs';
 
 if (!parentPort) throw new Error('swarm worker must run in a worker thread');
 
@@ -67,10 +68,11 @@ function mulberry32(seed) {
 
 const random = mulberry32(hashSeed(`${workerData.seed}:${profile.wallet}`));
 
-// The Rune bridge and the AMM pair, built against the same client and the
+// The Rune bridge, built against the same client and the
 // same wallet as every other verb this actor calls.
 const bridge = makeBridge({ api, address, result, random });
 let lastPlayer = null;
+let decisionReason = null;
 let tradePlan = null;
 
 const berryIds = ['fire_berry', 'water_berry', 'air_berry', 'rock_berry'];
@@ -175,6 +177,19 @@ let ticks = 0;
 let characterSaved = false;
 let characterAttempts = 0;
 
+async function customizeIfDue(player, tickNumber, detail = {}) {
+  if (characterSaved || tickNumber < characterTick || characterAttempts >= 3) return null;
+  characterAttempts += 1;
+  const outfit = randomOutfit();
+  const updated = await api.spriteUpdate(outfit);
+  characterSaved = true;
+  return result('character.save', updated, {
+    ...detail,
+    outfit: CHARACTER_ORDER.map((category) =>
+      `${category}:${outfit[category].style}`).join(','),
+  });
+}
+
 /**
  * The market, read unsigned.
  *
@@ -212,21 +227,6 @@ async function economy() {
     ]);
     if (!flow) return null;
     return book ? { ...flow, ...book } : flow;
-  } catch {
-    return null;
-  }
-}
-
-/**
- * The AMM pair, read unsigned.
- *
- * Null on a deployment with no exchange wired, which is a normal state for a
- * --blank or --no-market deploy rather than a failure.
- */
-async function ammPool() {
-  if (!api.exchangeConfigured()) return null;
-  try {
-    return await api.readAmmPool();
   } catch {
     return null;
   }
@@ -283,18 +283,11 @@ async function refresh() {
 
 function result(action, player = lastPlayer, detail = {}) {
   if (player?.address) lastPlayer = player;
-  return { action, state: summarize(player), ...detail };
-}
-
-function weightedChoice(candidates) {
-  const total = candidates.reduce((sum, candidate) => sum + candidate.weight, 0);
-  if (total <= 0) return null;
-  let roll = random() * total;
-  for (const candidate of candidates) {
-    roll -= candidate.weight;
-    if (roll <= 0) return candidate.name;
-  }
-  return candidates.at(-1)?.name ?? null;
+  return {
+    action, state: summarize(player),
+    ...(decisionReason ? { decision: decisionReason } : {}),
+    ...detail,
+  };
 }
 
 function availableBerry(player) {
@@ -633,6 +626,19 @@ function quoteSize(quote, player, gold) {
 async function economicAction(action, player, view, intel) {
   const choose = (list) => list[Math.floor(random() * list.length)];
 
+  if (action === 'goods_cancel_all') {
+    const updated = await api.cancelGoldOrders();
+    return result('goods.order.cancel-all', updated, {
+      expected: intel.ownOrders.length, strategy: 'batch-withdraw-all',
+    });
+  }
+
+  if (action === 'goods_maintain') {
+    await api.maintainGoldOrders(25);
+    const updated = await refresh();
+    return result('goods.order.maintain', updated, { limit: 25 });
+  }
+
   if (action === 'goods_cancel') {
     /* Leaving is one intent, however many quotes it touches. Three or more
        stale orders in one market is exactly the case batch cancel exists for:
@@ -931,17 +937,23 @@ async function huntTick(player) {
   if (run.status === 'defeated') {
     const spendableRune = Math.max(0,
       (player.inventory?.rune ?? 0) - targetHolding(player, 'rune'));
-    // NO scroll requirement. hunt.lua has no such rule -- this invented one,
-    // and two earlier runs burned 45 hunts and 900 berries for zero captures
-    // because of it. Capture coverage existed at all only because FundTestBots
-    // happened to hand every bot 20 Scroll.
-    const canCapture = spendableRune > 0;
+    // A Scroll IS required now, and this comment used to say the opposite.
+    //
+    // It was right when it was written: `hunt.lua` had no such rule, the swarm
+    // had invented one, and two runs burned 45 hunts and 900 berries for zero
+    // captures because of it. The game has since given the Scroll a job --
+    // `C.HUNT.capture.scrollCost`, the only thing in the game that consumes
+    // one -- so the requirement is real and a bot without a Scroll must DECLINE
+    // rather than attempt, or every capture is a refused settlement.
+    const canCapture = spendableRune > 0 && (player.inventory?.scroll ?? 0) >= 1;
     // Collectors and chaos actors lean into capture; everybody else still
     // takes that branch sometimes, leaving deliberate decline coverage too.
     const tryCapture = canCapture
       && (['collector', 'chaos'].includes(profile.role) ? random() < 0.8 : random() < 0.35);
     if (tryCapture) {
-      const bid = Math.max(1, Math.min(5, spendableRune));
+      // The bid ceiling is 3, not 5. Bidding above it is refused by both the
+      // worker and the game, so a stale 5 here is a run of wasted captures.
+      const bid = Math.max(1, Math.min(3, spendableRune));
       const next = await api.huntCapture(route, bid);
       return result('hunt.capture', player, {
         runId: route.runId, runes: bid, huntStatus: next.status,
@@ -965,30 +977,29 @@ async function huntTick(player) {
   return result(`idle.hunt-${run.status}`, player, { runId: route.runId });
 }
 
-async function tick() {
+async function tick({ prefer } = {}) {
   const tickNumber = ticks++;
   let player = await refresh();
   if (!player?.unlocked) return result('blocked.access', player, { blocked: true });
   if (!player.faction || !player.monster) return bootstrap();
 
+  // Worship is a 20-hour opportunity and seeds the next care/economy loop
+  // with a box. An intelligent player does not gamble it against a market
+  // action, and the handler is account-level so an away companion is no bar.
+  if ((player.dailyReadyAt ?? 0) <= Date.now()) {
+    decisionReason = 'claim-ready-worship';
+    player = await api.claimDaily();
+    return result('daily.claim', player);
+  }
+
   // Before the status branches, not after them: an outfit is saved on the
   // account and not on the companion, so a companion away on a quest or frozen
   // in a hunt is no reason to skip the one write that guarantees this verb is
   // exercised at all. Placing it below would mean a busy actor never dressed.
-  if (!characterSaved && tickNumber >= characterTick && characterAttempts < 3) {
-    // Marked done only once the write came back. A refusal or a dropped
-    // outbox is exactly the failure this is here to catch, so it retries on
-    // the next tick rather than recording coverage it did not get -- and
-    // stops after three so a systematically broken verb does not spend the
-    // whole run re-signing the same message.
-    characterAttempts += 1;
-    const outfit = randomOutfit();
-    player = await api.spriteUpdate(outfit);
-    characterSaved = true;
-    return result('character.save', player, {
-      outfit: CHARACTER_ORDER.map((c) => `${c}:${outfit[c].style}`).join(','),
-    });
-  }
+  // Marked done only once the write came back. A refusal or dropped outbox is
+  // retried, but only three times so a broken verb cannot consume the run.
+  const customized = await customizeIfDue(player, tickNumber);
+  if (customized) return customized;
 
   if (player.hunt) return huntTick(player);
 
@@ -1030,29 +1041,33 @@ async function tick() {
   const rosterMax = player.rosterMax ?? 1;
   const idleInRoster = Object.values(player.monsters ?? {})
     .filter((m) => m.status?.type === 'Home');
-  const [listings, economyView, pool] = await Promise.all([market(), economy(), ammPool()]);
+  const [listings, economyView] = await Promise.all([market(), economy()]);
   const mine = Object.values(listings).filter((entry) => entry.seller === address);
   const affordable = Object.values(listings)
     .filter((entry) => entry.seller !== address && Number(entry.price) <= runes);
   const intelligence = tradeIntelligence(player, economyView);
   const runeReserve = targetHolding(player, 'rune');
 
-  // The bridge and the pair are only reachable on a deployment that actually
-  // has them wired. A blank or --no-market deploy leaves the ids unset, and an
+  // The bridge is only reachable on a deployment that actually has the token
+  // processes wired. A blank or --no-market deploy leaves the ids unset, and an
   // actor should skip those verbs there rather than sign a message at a
   // placeholder process id.
   const exchangeReady = api.exchangeConfigured();
   // The wallet-side TEST-RUNE balance -- what a settled withdrawal produced,
   // and the only thing `deposit` can burn back into the game.
   const tokenBalance = exchangeReady
-    ? Number(await api.readTokenBalance(api.RUNE_PROCESS, address).catch(() => 0)) || 0
+    ? await api.readTokenBalance(api.RUNE_PROCESS, address)
+      .then((value) => Number(value) || 0).catch(() => 0)
     : 0;
 
   add('daily', (player.dailyReadyAt ?? 0) <= Date.now());
   add('loot', (player.lootboxes?.length ?? 0) > 0 && status === 'Home');
   add('feed', !!berry && monster.energy <= 80 && status !== 'Battle');
   add('play', status === 'Home' && !!playBerry && monster.energy >= 10);
-  add('quest', status === 'Home' && runes > runeReserve
+  // Quests are timer-gated, not currency-gated. Economy v2 removed their Rune
+  // cost; retaining the old reserve check here made a zero-Rune player stop
+  // testing a core free loop even though the shipped client could start it.
+  add('quest', status === 'Home'
     && monster.energy >= 25 && monster.happiness >= 25);
   add('bot', status === 'Home' && profile.role !== 'duelist'
     && runes > runeReserve && monster.energy >= 25 && monster.happiness >= 25);
@@ -1093,10 +1108,12 @@ async function tick() {
   add('goods_amend', Boolean(intelligence?.quotes.some((quote) => quote.live && quote.drift >= 1)));
   add('goods_take', Boolean(intelligence?.needs.some(({ plan }) => plan.units > 0)));
   add('goods_cancel', Boolean(intelligence?.ownOrders.length));
+  add('goods_cancel_all', (intelligence?.ownOrders.length ?? 0) >= 2);
+  add('goods_maintain', (economyView?.orders?.length ?? 0) > 0);
   add('shop_trade', Boolean(intelligence?.excess.length || intelligence?.needs.length));
   add('arbitrage', Boolean(tradePlan || intelligence?.arbitrage.length));
 
-  // The Rune bridge and the AMM pair.
+  // The Rune bridge.
   //
   // `withdraw` spends the game balance, so it is held above the same reserve
   // every other Rune sink respects -- an actor that bridged itself broke would
@@ -1105,8 +1122,6 @@ async function tick() {
   // withdrawal produces, so the pair naturally runs in order the first time.
   add('withdraw', runes > runeReserve + 1 && exchangeReady);
   add('deposit', tokenBalance > 0 && exchangeReady);
-  add('liquidity', exchangeReady);
-  add('trade', exchangeReady);
 
   // Deliberately illegal. See `probe` below.
   add('probe', true);
@@ -1122,47 +1137,19 @@ async function tick() {
 
   // Bootstrapping beats sampling.
   //
-  // `trade` needs reserves and `goods_take`/`arbitrage` need a resting order,
-  // so until somebody opens each market NONE of those actions can do anything
-  // -- and the actions that would open them are ordinary weighted candidates
-  // competing with twenty others. Measured over a twelve-minute fifty-wallet
-  // run: one p2p order placed, zero liquidity added, and every one of the four
-  // swap attempts skipped for want of reserves. The pricing was never the
-  // problem; the market simply never got opened.
+  // `goods_take`/`arbitrage` need a resting order, so until somebody opens each
+  // market NONE of those actions can do anything -- and the actions that would
+  // open them are ordinary weighted candidates competing with twenty others.
+  // Measured over a twelve-minute fifty-wallet run: one p2p order placed. The
+  // pricing was never the problem; the market simply never got opened.
   //
   // So an actor that CAN open an empty market does that first, exactly the way
   // a pending level-up and a half-finished arbitrage already jump the queue.
-  // Once the market exists this is inert, because the condition is emptiness.
-  const poolEmpty = exchangeReady && pool?.configured && !pool.paused
-    && (Number(pool.reserveBase ?? 0) <= 0 || Number(pool.reserveQuote ?? 0) <= 0);
-  // Opening the pair is a FLEET bootstrap, not a role preference, so this
-  // deliberately ignores `weights.liquidity`. Thirty-seven of the fifty actors
-  // carry a weight of zero for it -- a sane steady-state choice, and the reason
-  // an empty pool stayed empty: the wallets that bridged were mostly not the
-  // wallets permitted to provide. While there are no reserves at all, anyone
-  // holding spare Rune should be willing to open the market. Once reserves
-  // exist this whole branch is unreachable and the weights govern again.
-  if (poolEmpty) {
-    // The pair is TEST-RUNE against TEST-RELIC, and only ONE of those can be
-    // conjured: the quote token has a public faucet, the base token does not.
-    // TEST-RUNE exists solely as the output of a settled `Rune.Withdraw`, so an
-    // actor holding none can fund the quote side, fund nothing on the base side
-    // and skip -- which is what eleven straight attempts did, every one of them
-    // reporting `base=0 quote=2000000`.
-    //
-    // So bridge first and add liquidity on a later tick, once the mint has
-    // settled. That makes the cycle self-sufficient per wallet instead of
-    // depending on the same actor happening to roll withdraw before liquidity.
-    if (tokenBalance <= 0) {
-      if (runes > runeReserve + 1) {
-        return bridge.withdraw(player, Math.min(2, runes - runeReserve));
-      }
-      return result('amm.liquidity.skipped', player, {
-        reason: 'no TEST-RUNE and no spare game Rune to bridge for it',
-      });
-    }
-    return bridge.liquidity(player);
-  }
+  //
+  // The token pair used to be bootstrapped here too, by funding a pool. There
+  // is no pool: what trades TEST-RUNE against TEST-RELIC is an order book, and
+  // when its process exists it gets opened the same way the internal book does
+  // -- by resting an order on a side that has none.
   // A market with no PLAYER on one side of it.
   //
   // The realm's desk quotes into every ladder now, so `bestAsk` is almost
@@ -1181,7 +1168,16 @@ async function tick() {
       { ...intelligence, quotes: unquoted });
   }
 
-  const action = tradePlan && intelligence ? 'arbitrage' : weightedChoice(candidates);
+  // A lived-in run is coverage-directed without becoming scripted. The parent
+  // gives different actors different missing adapters; a worker honors its
+  // preference only when that action is legal in the state it just read, then
+  // falls back to its normal role weights. Dependencies and races therefore
+  // remain real while rare paths stop being left entirely to luck.
+  const decision = tradePlan && intelligence
+    ? { action: 'arbitrage', reason: 'complete-open-arbitrage' }
+    : chooseProgressionAction({ candidates, player, profile, random, prefer });
+  decisionReason = decision.reason;
+  const action = decision.action;
   const choose = (list) => list[Math.floor(random() * list.length)];
   let detail = {};
 
@@ -1238,7 +1234,8 @@ async function tick() {
     const recipient = choose(workerData.peers);
     player = await api.transferMonster(id, recipient);
     detail = { monsterId: id, recipient };
-  } else if (['goods_make', 'goods_amend', 'goods_take', 'goods_cancel', 'shop_trade', 'arbitrage'].includes(action)) {
+  } else if (['goods_make', 'goods_amend', 'goods_take', 'goods_cancel', 'goods_cancel_all',
+    'goods_maintain', 'shop_trade', 'arbitrage'].includes(action)) {
     return economicAction(action, player, economyView, intelligence);
   } else if (action === 'withdraw') {
     // One at a time. A withdrawal is a queued mint, and the point is to watch
@@ -1246,10 +1243,6 @@ async function tick() {
     return bridge.withdraw(player, Math.min(2, runes - runeReserve));
   } else if (action === 'deposit') {
     return bridge.deposit(player, Math.min(2, tokenBalance));
-  } else if (action === 'liquidity') {
-    return bridge.liquidity(player);
-  } else if (action === 'trade') {
-    return bridge.trade(player);
   } else if (action === 'probe') {
     return probe(player, listings);
   } else {
@@ -1416,12 +1409,22 @@ async function probe(player, listings) {
 }
 
 async function preparePvp() {
+  const tickNumber = ticks++;
   let player = await refresh();
   if (!player?.unlocked) return result('blocked.access', player, { ready: false });
   if (!player.faction || !player.monster) {
     const setup = await bootstrap();
     return { ...setup, ready: false };
   }
+  if ((player.dailyReadyAt ?? 0) <= Date.now()) {
+    decisionReason = 'claim-ready-worship';
+    player = await api.claimDaily();
+    return result('daily.claim', player, { ready: false });
+  }
+  // Duelists are coordinated outside the routine tick loop, so this must live
+  // here too or all ten PvP actors would be the only bots never customized.
+  const customized = await customizeIfDue(player, tickNumber, { ready: false });
+  if (customized) return customized;
   if (player.hunt) {
     await api.huntEnd(player.hunt);
     player = await refresh();
@@ -1444,10 +1447,25 @@ async function preparePvp() {
     return result('pvp.ready', player, { ready: (player.battlesRemaining ?? 0) > 0 });
   }
 
-  if ((player.inventory?.rune ?? 0) < 1 && (player.dailyReadyAt ?? 0) <= Date.now()) {
-    player = await api.claimDaily();
-    return result('daily.claim', player, { ready: false });
+  // PvP actors do not enter the routine dispatcher, so they need the same
+  // spend-XP priority here. Keep one Rune for the arena after paying the level
+  // cost; gaining a level by making the bot unable to fight is not progress.
+  const levelRuneCost = Math.max(1, Math.floor(((monster.level ?? 0) + 4) / 4));
+  if (monster.exp >= monster.nextLevelExp
+      && (player.inventory?.rune ?? 0) - levelRuneCost >= 1) {
+    decisionReason = 'spend-xp-before-next-duel';
+    player = await api.levelUp(profile.statPlan);
+    return result('monster.level-up', player, { ready: false, allocation: profile.statPlan });
   }
+
+  const berryStock = berryIds.reduce((sum, item) =>
+    sum + Number(player.inventory?.[item] ?? 0), 0);
+  if ((player.lootboxes?.length ?? 0) > 0 && berryStock < 8) {
+    decisionReason = 'open-loot-for-care-supplies';
+    player = await api.openLootbox();
+    return result('lootbox.open', player, { ready: false });
+  }
+
   if (monster.energy < 25) {
     const berry = availableBerry(player);
     if (berry) {
@@ -1531,6 +1549,7 @@ parentPort.on('message', (message) => {
   queue = queue.then(async () => {
     const started = Date.now();
     try {
+      decisionReason = null;
       const handler = handlers[message.command];
       if (!handler) throw new Error(`unknown worker command: ${message.command}`);
       const value = await handler(message.payload);

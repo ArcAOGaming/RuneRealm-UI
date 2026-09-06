@@ -13,6 +13,10 @@ import {
 import {
   FACTIONS, PROFILES, ROLE_DEFINITIONS, ROUTINE_ACTIONS, profileFor, pvpPairs,
 } from './profiles.mjs';
+import {
+  LIVED_IN_REQUIREMENTS, assignCoveragePreferences, livedInCoverage,
+  missingCoveragePreferences,
+} from './coverage.mjs';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.resolve(HERE, '..', '..', '..');
@@ -42,6 +46,34 @@ for (const action of ROUTINE_ACTIONS) {
   assert.ok(Object.values(ROLE_DEFINITIONS).some((role) => role.weights[action] > 0),
     `${action} is enabled for at least one fleet role`);
 }
+
+assert.equal(new Set(LIVED_IN_REQUIREMENTS.map((row) => row.id)).size,
+  LIVED_IN_REQUIREMENTS.length, 'lived-in coverage ids are unique');
+for (const requirement of LIVED_IN_REQUIREMENTS.filter((row) => row.prefer)) {
+  assert.ok(ROUTINE_ACTIONS.includes(requirement.prefer),
+    `${requirement.id} directs a real routine adapter`);
+  assert.ok(Object.values(ROLE_DEFINITIONS).some((role) => role.weights[requirement.prefer] > 0),
+    `${requirement.id} can be assigned to at least one role`);
+}
+assert.deepEqual(missingCoveragePreferences(['daily.claim']).includes('daily'), false,
+  'completed outcomes stop being coverage-directed');
+const directed = assignCoveragePreferences(
+  PROFILES.slice(0, 8).map((profile) => ({ profile })), ['daily.claim'],
+);
+assert.ok(directed.size > 0, 'missing coverage is distributed across live actors');
+const completeCoverage = livedInCoverage([
+  'bootstrap', 'daily.claim', 'lootbox.open', 'monster.feed', 'activity.start.play',
+  'activity.start.quest', 'activity.claim.quest', 'monster.level-up', 'character.save',
+  'arena.enter', 'battle.attack.bot', 'pvp.challenge', 'pvp.accept', 'battle.attack.pvp',
+  'hunt.begin', 'hunt.search', 'hunt.attack', 'hunt.capture', 'hunt.end', 'monster.store',
+  'monster.retrieve', 'monster.set-active', 'monster.transfer', 'market.list', 'market.buy',
+  'market.cancel', 'goods.order.bid', 'goods.order.amend', 'goods.order.buy',
+  'goods.order.cancel', 'goods.order.cancel-all', 'goods.order.maintain',
+  'shop.buy', 'shop.sell', 'arbitrage.buy.house', 'rune.withdraw',
+  'rune.deposit',
+  'probe.admin-grant.refused',
+]);
+assert.equal(completeCoverage.complete, true, 'the lived-in receipt recognizes every required path');
 
 const pairs = pvpPairs();
 assert.equal(pairs.length, 5, 'ten duelists should form five pairs');
@@ -102,8 +134,11 @@ assert.ok(/scheduled/.test(seedSource),
 
 const built = await buildSwarmClient({
   root: ROOT,
-  pid: 'A'.repeat(43),
-  node: 'https://example.invalid',
+  graph: {
+    game: 'A'.repeat(43), node: 'https://example.invalid', owner: 'O'.repeat(43),
+    hunt: 'H'.repeat(43), huntNode: 'https://hunt.invalid', rune: 'R'.repeat(43),
+    quote: 'Q'.repeat(43), marketNode: 'https://market.invalid',
+  },
   outDir: path.join(ROOT, '.swarm', 'test-generated'),
 });
 const api = await import(pathToFileURL(built.file).href + `?test=${Date.now()}`);
@@ -116,6 +151,10 @@ for (const verb of ['login', 'joinFaction', 'adopt', 'feed', 'startPlay', 'start
   'acceptChallenge', 'attack', 'battleInfo']) {
   assert.equal(typeof api[verb], 'function', `the bundled client exports ${verb}`);
 }
+assert.equal(api.RUNE_PROCESS, 'R'.repeat(43), 'the bundled client receives this graph\'s Rune id');
+assert.equal(api.QUOTE_PROCESS, 'Q'.repeat(43), 'the bundled client receives this graph\'s quote id');
+assert.equal(api.MARKET_NODE, 'https://market.invalid',
+  'the bundled client receives this graph\'s market node');
 
 const originalFetch = globalThis.fetch;
 const originalSetTimeout = globalThis.setTimeout;

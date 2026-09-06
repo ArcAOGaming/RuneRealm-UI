@@ -2,14 +2,19 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
 import * as esbuild from 'esbuild';
+import { viteEnvForGraph } from '../live-config.mjs';
 
 /**
  * Bundle the exact game client used by the React app for Node worker threads.
  * The worker supplies an Arweave wallet shim; no game verb is reimplemented.
  */
-export async function buildSwarmClient({ root, pid, node, outDir }) {
+export async function buildSwarmClient({ root, graph, pid, node, outDir }) {
   fs.mkdirSync(outDir, { recursive: true });
   const outfile = path.join(outDir, 'client.mjs');
+  // Keep pid/node for callers outside the swarm tests, but always inject the
+  // WHOLE graph. Overriding only the game used to leave Hunt and the exchange
+  // on whatever ids happened to be baked into the source tree.
+  const selected = graph ?? { game: pid, node };
   // The swarm calls the shipped verbs, and it also has to send messages the
   // shipped verbs will not build. `listMonster` clamps its price to a legal
   // one, which is correct for the app and useless for a probe asserting that a
@@ -34,17 +39,14 @@ export async function buildSwarmClient({ root, pid, node, outDir }) {
     '  setTransportObserver,',
     '  AmbiguousWriteError, AcceptedWriteError, OutboxDeliveryError }',
     `  from ${JSON.stringify(path.join(root, 'src', 'lib', 'hyperbeam.ts').replace(/\\/g, '/'))};`,
-    // The Rune bridge and the AMM. These live in `marketplace.ts` because they
-    // address the TOKEN processes rather than the game, and leaving them out of
-    // this bundle is why the swarm has never touched either: the withdraw half
-    // of the bridge was only ever exercised by hand, and the pair had no bot
-    // able to fund it, price it or trade against it. Same rule as everything
-    // else here -- the app's own verbs, not a reimplementation.
-    'export { AMM_PROCESS, RUNE_PROCESS, QUOTE_PROCESS, MARKET_NODE, exchangeConfigured,',
-    '  readPool as readAmmPool, readSwaps as readAmmSwaps, readDeposit as readAmmDeposit,',
-    '  readTokenInfo, readTokenBalance, claimQuoteFaucet, depositRuneToGame, depositToken,',
-    '  swap as ammSwap, refundDeposit as ammRefundDeposit, addLiquidity as ammAddLiquidity,',
-    '  removeLiquidity as ammRemoveLiquidity, parseUnits, formatUnits, quoteFromPool }',
+    // The Rune bridge and the token pair. These live in `marketplace.ts`
+    // because they address the TOKEN processes rather than the game, and
+    // leaving them out of this bundle is why the swarm never touched the
+    // bridge: its withdraw half was only ever exercised by hand. Same rule as
+    // everything else here -- the app's own verbs, not a reimplementation.
+    'export { RUNE_PROCESS, QUOTE_PROCESS, MARKET_NODE, exchangeConfigured,',
+    '  readTokenInfo, readTokenBalance, claimQuoteFaucet, depositRuneToGame,',
+    '  parseUnits, formatUnits }',
     `  from ${JSON.stringify(path.join(root, 'src', 'lib', 'marketplace.ts').replace(/\\/g, '/'))};`,
   ].join('\n');
   await esbuild.build({
@@ -64,10 +66,7 @@ export async function buildSwarmClient({ root, pid, node, outDir }) {
       // wallet.ts intentionally detects `window`. A worker is browser-shaped
       // through installWalletShim(), so point that lookup at the worker global.
       window: 'globalThis',
-      'import.meta.env': JSON.stringify({
-        VITE_GAME_PROCESS: pid,
-        VITE_HB_NODE: node,
-      }),
+      'import.meta.env': JSON.stringify(viteEnvForGraph(selected)),
     },
     logLevel: 'warning',
   });

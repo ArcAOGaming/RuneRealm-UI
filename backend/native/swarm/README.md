@@ -16,14 +16,16 @@ and their global start rate, and coordinates five fixed targeted-PvP pairs.
 After every redeploy, because a new process means new empty accounts:
 
 ```bash
-HB_WALLET=path/to/process-owner.json npm run fleet:check     # reads only
-HB_WALLET=path/to/process-owner.json npm run fleet:prepare   # wallets, unlock, seed
+HB_WALLET=path/to/process-owner.json npm run fleet:check     # graph + seed plan, reads only
+HB_WALLET=path/to/process-owner.json npm run fleet:prepare   # access, funds, companions
 ```
 
-`fleet:prepare` is the three steps in the one order that works: generate the
-wallets, unlock them on the process, then seed. Running them by hand is fine —
-`swarm:wallets`, `swarm:unlock`, `seed:monsters` — but seeding a locked wallet
-is refused for every account and reports nothing, so the order is not optional.
+`fleet:prepare` is the five steps in the one order that works: generate the
+wallets, verify the complete live graph, unlock them, apply the testing-only
+Rune/Scroll/Gold minimums, then swear/adopt and seed companions. Running them by
+hand is fine — `swarm:wallets`, `swarm:config`, `swarm:unlock`, `swarm:fund`,
+`seed:monsters:lived-in` — but seeding a locked wallet is refused for every
+account and reports nothing, so the order is not optional.
 
 The order matters and the last step is not undoable.
 
@@ -87,6 +89,9 @@ npm run swarm -- --live --cycles 10
 # A longer soak with deterministic random decisions.
 npm run swarm -- --live --duration 2h --seed 20260828
 
+# Full-world acceptance: one hour and every major path must land.
+npm run swarm:lived-in
+
 # Bring only the first eight actors online while developing the harness.
 npm run swarm -- --live --limit 8 --cycles 5
 
@@ -117,6 +122,36 @@ it is a **command-start** limit, not an exact signed-write counter. Most gamepla
 commands issue one write. Bootstrap is the exception: for an uninitialized
 wallet, one bootstrap command can sequentially issue login, faction choice and
 adoption writes. The run prints `start rate` to make that distinction visible.
+
+`--coverage lived-in` changes selection and acceptance, not contract rules.
+The parent assigns different missing adapters to different actors each cycle;
+each worker honors its preference only when that action is legal in the fresh
+state it just read, otherwise it follows its normal role weights. The final
+summary contains a requirement-by-requirement coverage receipt and exits
+non-zero if any path is missing. It also requires and live-verifies the whole
+game/Hunt/battle-fleet/Rune/quote graph before the first bot write.
+
+All live tools resolve that graph through `backend/native/live-config.mjs`.
+Explicit CLI overrides win, then environment aliases, then matching deployment
+receipts. A Hunt, exchange, or battle receipt naming another game or node is
+excluded instead of being silently combined. `npm run swarm:config` prints the
+source of every id and checks the links published by the contracts themselves.
+
+The actors are stochastic, but they are not aimless. Each role supplies a long-
+term bias and the shared strategy adjusts it from live state: a ready worship is
+claimed before discretionary work; critical energy or happiness is restored;
+boxes are opened when supplies are thin; quests, arena fights, and hunts gain
+weight when they advance the current companion; stronger stored companions are
+promoted; and market actors preserve the resources their gameplay role needs.
+Most turns are a progression-weighted lottery and 12% use the original role
+weights as exploration, so identical states can branch without bots knowingly
+making self-defeating choices. Every event records the decision reason.
+
+Coverage also persists across runs in `.swarm/eventual-coverage.json`. It stores
+only successful action names and counts, never wallet keys. A later lived-in run
+puts paths never seen in the campaign ahead of paths already proven, while its
+own fresh-run 42-path gate still applies. The summary reports both numbers, so
+"eventually" is a durable receipt rather than a claim based on probabilities.
 
 `--mode stress` (or the `--stress` shorthand) is the explicit overload mode. It
 defaults to one in-flight request per selected wallet and no arrival-rate limit,
@@ -323,9 +358,15 @@ scheduling are free on the configured node; the wallet supplies identity and a
 signature, not payment. New accounts receive starter berries when they join.
 Rune is not a per-wallet starter or daily faucet: a contract deploy with bots
 uses the owner-only, testing-mode `Admin.Economy.FundTestBots` batch to establish
-a 25 Rune / 5 Scroll minimum for these exact throwaway addresses. That action
-is unavailable after economy activation and every unit appears in the issuance
-ledger.
+a 100 Rune / 20 Scroll / 1,000 Gold minimum for these exact throwaway addresses.
+That action is unavailable after economy activation and every unit appears in
+the issuance ledger.
+
+`swarm:fund` exposes that same owner-only testing action for an already deployed
+test graph. It tops up rather than stacks balances, caps Rune/Scroll/Gold at the
+contract's test rails, and cannot run after activation. Gold moves out of the
+conserved locked launch reserve; this is not an NFT mint and creates no paid or
+permanent Arweave asset.
 
 Companion trading needs no funding either, and that is the point of settling
 sales inside the game process in in-game runes: a listing, a purchase and a
@@ -343,13 +384,15 @@ warm record the way a real player's does. The wardrobe is read from
 `src/assets/`, the same folders the browser globs, so a bot never saves a style
 name the client cannot draw.
 
-The swarm intentionally does not automate `Monster.Mint`, asset deposits,
-Rune withdrawals, or L1 transfers. Those cross into permanent
-public assets or real-money chain transactions. Add them as separately enabled
-adapters with their own funding and cleanup policy instead of putting them in
-the randomized default action pool. The companion ASSET path is parked; the funded
-worker source is retained, but normal deployments never run it. The character
-creator is not part of that path and is exercised above.
+The swarm does automate both directions of the Rune bridge. It intentionally
+does not automate `Monster.Mint`, companion-asset deposits, or direct L1
+transfers. Those create or move permanent public assets with real-money chain
+costs and the companion asset path is parked. Pass recovery and promise claims
+change account identity; bond/unbond is unavailable while its policy is paused
+and carries a long lock when enabled. Those actions, plus owner administration,
+remain explicit scenario/setup operations instead of randomized gameplay. They
+are classified omissions, not actions the coverage report quietly calls done.
+The character creator is not part of the asset path and is exercised above.
 
 ## Adding a feature
 

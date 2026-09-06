@@ -15,7 +15,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { ensureBurners, listBurners, liveProcess } from './burners.mjs';
+import { ensureBurners, listBurners } from './burners.mjs';
 import { Actor } from './swarm/actor.mjs';
 import { buildSwarmClient } from './swarm/build-client.mjs';
 import { failureEventFields } from './swarm/error-fields.mjs';
@@ -25,7 +25,14 @@ import {
   settledValuesOrThrow,
 } from './swarm/load-control.mjs';
 import { PROFILES, ROLE_DEFINITIONS, pvpPairs } from './swarm/profiles.mjs';
+import {
+  EXPLICIT_ONLY_ACTIONS, assignCoveragePreferences, livedInCoverage,
+  loadCoverageLedger, updateCoverageLedger,
+} from './swarm/coverage.mjs';
 import { useKeepAlive } from './keepalive.mjs';
+import {
+  assertLiveGraph, publicLiveGraph, resolveLiveGraph, verifyLiveGraph,
+} from './live-config.mjs';
 
 // The parent runner reads published state for its own display and for the
 // verifier's samples. Each worker installs its own — see keepalive.mjs.
@@ -71,6 +78,39 @@ function durationMs(value) {
   if (!match) throw new Error('--duration must look like 30s, 15m, or 2h');
   const unit = { ms: 1, s: 1_000, m: 60_000, h: 3_600_000 }[match[2]];
   return Number(match[1]) * unit;
+}
+
+function configuredGraph({ requireComplete = false } = {}) {
+  const graph = resolveLiveGraph({
+    root: ROOT,
+    overrides: {
+      game: option('pid', undefined),
+      node: option('node', undefined),
+      hunt: option('hunt-pid', undefined),
+      huntNode: option('hunt-node', undefined),
+      rune: option('rune-pid', undefined),
+      quote: option('quote-pid', undefined),
+      marketNode: option('market-node', undefined),
+    },
+  });
+  return assertLiveGraph(graph, {
+    requireHunt: requireComplete,
+    requireExchange: requireComplete,
+    requireBattleFleet: requireComplete,
+  });
+}
+
+function printGraph(graph) {
+  console.log('Rune Realm live-test graph\n');
+  console.table([
+    ['game', graph.game, graph.node, graph.provenance.game],
+    ['hunt', graph.hunt || '(not configured)', graph.huntNode || '-', graph.provenance.hunt],
+    ['Rune', graph.rune || '(not configured)', graph.marketNode || '-', graph.provenance.rune],
+    ['quote', graph.quote || '(not configured)', graph.marketNode || '-', graph.provenance.quote],
+  ].map(([part, process, node, source]) => ({ part, process, node, source })));
+  console.log(`hunt workers    ${graph.huntWorkers.length}`);
+  console.log(`battle workers  ${graph.battleWorkers.length}`);
+  for (const warning of graph.warnings) console.warn(`warning: ${warning}`);
 }
 
 /**
@@ -354,16 +394,35 @@ async function runLive() {
   const addresses = profiles.map((profile) => burners.get(profile.wallet).address);
   if (new Set(addresses).size !== addresses.length) throw new Error('Burner addresses are not unique');
 
-  const configured = liveProcess();
-  const pid = option('pid', configured.pid);
-  const node = option('node', configured.node);
+  // `lived-in` is the complete-world profile: it must never silently turn into
+  // a game-only soak because one receipt or baked id is stale.
+  const coverageMode = option('coverage', 'observe');
+  if (!['observe', 'lived-in'].includes(coverageMode)) {
+    throw new Error('--coverage must be observe or lived-in');
+  }
+  const graph = configuredGraph({ requireComplete: coverageMode === 'lived-in' });
+  const pid = graph.game;
+  const node = graph.node;
+  const graphAudit = coverageMode === 'lived-in'
+    ? await verifyLiveGraph(graph, {
+      requireHunt: true, requireExchange: true, requireBattleFleet: true,
+    })
+    : null;
+  if (graphAudit && !graphAudit.ok) {
+    throw new Error(`Live graph preflight failed:\n- ${graphAudit.errors.join('\n- ')}`);
+  }
   const runId = new Date().toISOString().replace(/[:.]/g, '-');
   const runDir = path.join(OUT_DIR, 'runs', runId);
+  const coverageLedgerFile = path.join(OUT_DIR, 'eventual-coverage.json');
+  const priorCoverageLedger = loadCoverageLedger(coverageLedgerFile);
+  const historicalActions = Object.keys(priorCoverageLedger.actions ?? {});
+  const priorEventualCoverage = livedInCoverage(historicalActions);
   fs.mkdirSync(runDir, { recursive: true });
   const eventsFile = path.join(runDir, 'events.jsonl');
   const stream = fs.createWriteStream(eventsFile, { flags: 'a' });
   const record = (event) => stream.write(JSON.stringify({ at: new Date().toISOString(), ...event }) + '\n');
-  const client = await buildSwarmClient({ root: ROOT, pid, node, outDir: path.join(OUT_DIR, 'generated') });
+  const client = await buildSwarmClient({ root: ROOT, graph,
+    outDir: path.join(OUT_DIR, 'generated') });
   const actors = profiles.map((profile) => new Actor({
     profile,
     burner: burners.get(profile.wallet),
@@ -377,6 +436,7 @@ async function runLive() {
   }));
   const byWallet = new Map(actors.map((actor) => [actor.profile.wallet, actor]));
   const timings = new Map();
+  const successfulActions = [];
   // Every signed write's phase split, successes and failures alike, in the
   // order the transport reported them.
   const transportSamples = [];
@@ -419,6 +479,7 @@ async function runLive() {
 
   const observe = (actor, phase, outcome) => {
     actionCount++;
+    successfulActions.push(outcome.action);
     if (Array.isArray(outcome.transport)) transportSamples.push(...outcome.transport);
     const duration = outcome.durationMs ?? 0;
     successfulResponseDurations.push(duration);
@@ -556,17 +617,22 @@ async function runLive() {
   // A timed soak measures actual play. First-time onboarding can take several
   // minutes for fifty wallets on a serial compute queue, so start the requested
   // duration only after every actor has successfully bootstrapped.
-  record({ type: 'run.start', runId, pid, node, seed, mode, concurrency,
+  record({ type: 'run.start', runId, pid, node, graph: publicLiveGraph(graph),
+    seed, mode, concurrency, coverageMode,
     actionsPerSecond, burst,
     cycles: runFor === null ? cycles : null, durationMs: runFor, wallets: manifestRows(profiles) });
   console.log(`Rune Realm swarm ${runId}`);
   console.log(`process     ${pid}`);
   console.log(`node        ${node}`);
+  console.log(`hunt        ${graph.hunt || 'not configured'} (${graph.huntWorkers.length} workers)`);
+  console.log(`exchange    ${graph.rune && graph.quote ? `${graph.rune} / ${graph.quote}` : 'not configured'}`);
+  console.log(`battle      ${graph.battleWorkers.length} worker(s)`);
   console.log(`actors      ${actors.length} (${pairs.length} fixed PvP pairs)`);
   console.log(`mode        ${mode}`);
   console.log(`concurrency ${concurrency}`);
   console.log(`start rate  ${actionsPerSecond === null ? 'unlimited' : `${actionsPerSecond} worker command(s)/s, burst ${burst}`}`);
   console.log(`seed        ${seed}`);
+  console.log(`eventual    ${priorEventualCoverage.covered}/${priorEventualCoverage.total} paths seen before this run`);
   console.log(`events      ${eventsFile}\n`);
 
   // A long run that reports only at the end is not observable while it matters.
@@ -584,7 +650,10 @@ async function runLive() {
     }
     const stats = transportStats(window);
     printTransport(stats, `[${new Date().toISOString()}] last ${window.length} signed writes`);
-    record({ type: 'transport.progress', elapsedMs: Date.now() - startedAt, ...stats });
+    const coverage = livedInCoverage(successfulActions);
+    console.log(`coverage     ${coverage.covered}/${coverage.total}`
+      + `${coverage.missing.length ? ` (${coverage.missing.length} still missing)` : ' complete'}`);
+    record({ type: 'transport.progress', elapsedMs: Date.now() - startedAt, coverage, ...stats });
   };
   const reportTimer = reportEvery === null ? null : setInterval(reportTransport, reportEvery);
   reportTimer?.unref?.();
@@ -644,8 +713,13 @@ async function runLive() {
     for (let cycle = 1; !stopping && cycle <= cycleLimit
       && (deadline === null || Date.now() < deadline); cycle++) {
       console.log(`\n--- cycle ${cycle} ---`);
+      const preferences = coverageMode === 'lived-in'
+        ? assignCoveragePreferences(routineActors, successfulActions, { historicalActions })
+        : new Map();
       const batches = [mapLimit(routineActors, routineActors.length, (actor) =>
-        invokeGameplay(actor, `cycle.${cycle}`, 'tick'), canDispatchGameplay)];
+        invokeGameplay(actor, `cycle.${cycle}`, 'tick',
+          preferences.has(actor.profile.wallet)
+            ? { prefer: preferences.get(actor.profile.wallet) } : undefined), canDispatchGameplay)];
       if (pairs.length && canDispatchGameplay()) batches.push(
         mapLimit(pairs, pairs.length, (pair) => advancePair(pair, cycle), canDispatchGameplay),
       );
@@ -719,13 +793,26 @@ async function runLive() {
     failures.push({ wallet: 'system', callSign: 'Economy audit', phase: 'final',
       error: economyAudit.error ?? 'published economy invariant failed' });
   }
+  const coverage = livedInCoverage(successfulActions);
+  const coverageLedger = updateCoverageLedger(coverageLedgerFile, {
+    runId, actions: successfulActions,
+  });
+  const eventualCoverage = livedInCoverage(Object.keys(coverageLedger.actions));
+  if (coverageMode === 'lived-in' && !coverage.complete) {
+    failures.push({ wallet: 'system', callSign: 'Coverage gate', phase: 'final',
+      error: `lived-in coverage missed ${coverage.missing.length}: `
+        + coverage.missing.map((row) => row.id).join(', ') });
+  }
   const summary = {
     runId,
     pid,
     node,
+    graph: publicLiveGraph(graph),
+    graphAudit,
     seed,
     walletCount: actors.length,
     mode,
+    coverageMode,
     concurrency,
     actionsPerSecond,
     burst,
@@ -742,6 +829,10 @@ async function runLive() {
       failureLatencyMs: timingStats(failedResponseDurations),
     },
     actions: Object.fromEntries([...timings].map(([action, values]) => [action, timingStats(values)])),
+    coverage,
+    eventualCoverage,
+    coverageLedgerFile,
+    explicitOnlyActions: EXPLICIT_ONLY_ACTIONS,
     transport: transportStats(transportSamples),
     failures,
     economy: economyAudit,
@@ -753,6 +844,9 @@ async function runLive() {
   console.log(`\n${actionCount} actions, ${failures.length} errors`
     + `${tolerated ? ` (${tolerated} tolerated, run continued)` : ''}`
     + `, ${Math.round(summary.elapsedMs / 1000)}s`);
+  console.log(`coverage    ${coverage.covered}/${coverage.total}`
+    + `${coverage.complete ? ' complete' : `; missing ${coverage.missing.map((row) => row.id).join(', ')}`}`);
+  console.log(`eventual    ${eventualCoverage.covered}/${eventualCoverage.total} across ${coverageLedger.runs} run(s)`);
   if (summary.transport.writes) printTransport(summary.transport, 'Signed write, by phase');
   console.log(`summary     ${summaryFile}`);
   if (interrupted) process.exitCode = 130;
@@ -769,9 +863,20 @@ if (command === 'wallets') {
   console.log('No live process was changed and no wallet was funded.');
 } else if (command === 'plan' || command === 'profiles') {
   printPlan();
+} else if (command === 'config' || command === 'doctor') {
+  const graph = configuredGraph({ requireComplete: flag('complete') });
+  printGraph(graph);
+  if (flag('online')) {
+    const audit = await verifyLiveGraph(graph, {
+      requireHunt: flag('complete'), requireExchange: flag('complete'),
+      requireBattleFleet: flag('complete'),
+    });
+    console.table(audit.checks);
+    if (!audit.ok) throw new Error(`Live graph verification failed:\n- ${audit.errors.join('\n- ')}`);
+  }
 } else if (command === 'run') {
   await runLive();
 } else {
-  console.error('usage: swarm.mjs [plan | wallets | run --live --mode soak|stress] [options]');
+  console.error('usage: swarm.mjs [plan | config | wallets | run --live --mode soak|stress] [options]');
   process.exitCode = 1;
 }
