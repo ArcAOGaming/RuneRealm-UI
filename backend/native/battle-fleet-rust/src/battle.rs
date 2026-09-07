@@ -1,5 +1,5 @@
 use serde::{Deserialize, Serialize};
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 
 pub const ROUND_CAP: u32 = 50;
 const BASE_HIT_CHANCE: f64 = 0.70;
@@ -12,13 +12,30 @@ const VARIANCE: f64 = 0.15;
 /// and the game process resolve an identical round from an identical seed.
 const CRITICAL_CHANCE: f64 = 0.09;
 const CRITICAL_MULTIPLIER: f64 = 1.6;
-const HP_PER_HEALTH: i64 = 12;
-const SHIELD_PER_DEFENSE: i64 = 4;
-const HEAL_PER_POINT: f64 = 0.04;
+const HP_PER_HEALTH: i64 = 32;
+const SHIELD_PER_DEFENSE: i64 = 6;
+const HEAL_PER_POINT: f64 = 0.03;
+/// The damage floor measured from the fighter's own stat budget, and the ten
+/// points every companion starts on that it is measured FROM.
+const ATTACK_PER_STAT_POINT: f64 = 0.1;
+const ATTACK_BUDGET_BASELINE: i64 = 10;
+/// How far speed may move the hit chance, as a share of the gap between the two
+/// fighters rather than as a count of stat points. Zero here would restore the
+/// saturating curve, whose clamps are both reached at a gap of four points.
+const SPEED_SWING: f64 = 0.45;
+/// What one point of a move's attack/speed/defense rider is worth, as a share
+/// of a quarter of the fighter's whole stat budget -- not of the stat it moves.
+const RIDER_PER_POINT: f64 = 0.045;
+/// How far riders may move one stat in total, in those same yardsticks.
+const RIDER_CAP_SHARE: f64 = 1.0;
+/// How many turns an NPC spends on a move that neither hits nor heals.
+const NPC_SETUP_TURNS: i64 = 2;
+/// How many moves a companion carries. Mirrors `C.MOVE_SLOTS`.
+const MOVE_SLOTS: usize = 3;
 /// Share of its cap a shield recovers at the end of a round in which its owner
 /// took no damage. Mirrors `shieldRegenShare` in battle.lua.
-const SHIELD_REGEN_SHARE: f64 = 0.20;
-const MOVE_USES: i64 = 3;
+const SHIELD_REGEN_SHARE: f64 = 0.08;
+const MOVE_USES: i64 = 1;
 const STRUGGLE_DAMAGE: i64 = 2;
 
 #[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]
@@ -60,6 +77,11 @@ pub struct Move {
     pub health: i64,
     #[serde(skip)]
     struggle: bool,
+    /// Rally or Mend: no slot, one charge, spent on the fighter rather than
+    /// decremented on a stored move. Skipped in the wire form because it is a
+    /// property of the ACTION rather than of the published move.
+    #[serde(skip)]
+    free: bool,
 }
 
 #[derive(Clone, Debug, Serialize, PartialEq)]
@@ -88,6 +110,16 @@ pub struct Combatant {
     pub base_attack: i64,
     pub base_defense: i64,
     pub base_speed: i64,
+    /// The four stats summed and frozen before the fight moves any of them.
+    /// Both the damage floor and every rider are sized against it.
+    pub stat_budget: i64,
+    /// Which free actions this fighter has spent. Rally and Mend are not moves
+    /// and are not in `moves`; see `free_action`.
+    #[serde(default)]
+    pub free_used: BTreeSet<String>,
+    /// Turns already spent on a move that neither hits nor heals.
+    #[serde(default)]
+    pub setups_used: i64,
 }
 
 #[derive(Clone, Debug, Serialize, PartialEq)]
@@ -205,54 +237,55 @@ fn move_value(
         defense,
         health,
         struggle: false,
+        free: false,
     }
 }
 
 #[allow(clippy::too_many_lines)]
 pub fn move_def(name: &str) -> Option<Move> {
     let values = match name {
-        "Firenado" => ("fire", 1, 2, 5, 0, 2, -1, 0),
-        "Campfire" => ("fire", 2, 3, 0, 2, -1, 3, 3),
-        "Inferno" => ("fire", 2, 1, 6, 3, -1, -2, 0),
-        "Flame Shield" => ("fire", 3, 2, 2, -1, 0, 4, 2),
-        "Scorching Ash" => ("fire", 3, 2, 3, 1, 1, -2, 1),
-        "Phoenix Burst" => ("fire", 3, 1, 4, 0, 2, 0, -2),
-        "Tidal Wave" => ("water", 1, 2, 4, 2, 1, -1, 0),
-        "Whirlpool" => ("water", 2, 3, 2, 0, 3, 2, -2),
-        "Ice Spear" => ("water", 2, 1, 6, 2, 2, -1, 0),
-        "Ocean Mist" => ("water", 3, 2, 0, 0, 2, 4, 2),
-        "Frostbite" => ("water", 3, 2, 3, -1, 1, 2, 0),
-        "Deep Current" => ("water", 3, 1, 3, 1, 3, -1, -1),
-        "Tornado" => ("air", 1, 2, 4, 1, 4, -1, 0),
-        "Wind Slash" => ("air", 2, 3, 2, 2, 3, -1, 0),
-        "Storm Cloud" => ("air", 2, 1, 5, 2, 2, -1, 0),
-        "Breeze" => ("air", 3, 2, 0, -1, 4, 2, 2),
-        "Lightning Bolt" => ("air", 3, 2, 4, 2, -1, 0, -2),
-        "Gale Force" => ("air", 3, 1, 3, 0, 5, -2, 0),
-        "Boulder Crush" => ("rock", 1, 2, 5, 3, -2, 2, 0),
-        "Stone Wall" => ("rock", 2, 3, 0, -1, -2, 6, 2),
-        "Rock Slide" => ("rock", 2, 1, 7, 2, -1, -2, 0),
-        "Earth Shield" => ("rock", 3, 2, 2, 0, -1, 5, 2),
-        "Seismic Slam" => ("rock", 3, 2, 4, 3, 0, -1, -1),
-        "Granite Barrier" => ("rock", 3, 1, 1, 0, -2, 6, 3),
-        "Power Up" => ("boost", 1, 2, 0, 5, 2, -2, 0),
-        "Iron Skin" => ("boost", 2, 2, 0, -1, 0, 5, 2),
-        "Swift Wind" => ("boost", 2, 2, 0, 2, 5, -1, -1),
-        "Battle Cry" => ("boost", 3, 2, 0, 4, 3, -2, -1),
-        "Warrior's Resolve" => ("boost", 3, 2, 0, 3, 2, 0, -2),
-        "Adrenaline Surge" => ("boost", 3, 1, 0, 6, -1, 0, -3),
-        "Heal" => ("heal", 1, 2, 0, -1, 0, 0, 6),
-        "Regenerate" => ("heal", 2, 3, 0, -2, 0, 2, 5),
-        "Life Surge" => ("heal", 2, 1, 0, 1, 0, 0, 8),
-        "Recovery" => ("heal", 3, 2, 0, 0, 2, 0, 5),
-        "Vital Essence" => ("heal", 3, 2, 0, 0, -2, 4, 7),
-        "Healing Winds" => ("heal", 3, 1, 0, 1, 3, 0, 4),
-        "Body Slam" => ("normal", 1, 2, 5, 3, 0, 1, 0),
-        "Quick Jab" => ("normal", 2, 3, 3, 2, 4, -1, 0),
-        "Heavy Strike" => ("normal", 2, 1, 6, 4, -2, 2, 0),
-        "Guard Break" => ("normal", 3, 2, 4, 2, -1, -2, 1),
-        "Frenzy Blows" => ("normal", 3, 2, 2, 3, 2, -1, -1),
-        "Momentum Shift" => ("normal", 3, 1, 0, 0, 5, -3, 3),
+        "Firenado" => ("fire", 1, 3, 7, 2, 2, -1, 0),
+        "Inferno" => ("fire", 2, 2, 8, 2, -1, -2, 0),
+        "Scorching Ash" => ("fire", 2, 4, 4, 2, 1, -1, 0),
+        "Phoenix Burst" => ("fire", 3, 2, 5, 2, 1, 0, -2),
+        "Flame Shield" => ("fire", 3, 3, 4, -1, 0, 3, 0),
+        "Campfire" => ("fire", 3, 3, 3, 2, -1, 1, 1),
+        "Tidal Wave" => ("water", 1, 3, 7, 2, 1, 0, 0),
+        "Ice Spear" => ("water", 2, 2, 8, 2, -1, -2, 0),
+        "Whirlpool" => ("water", 2, 4, 4, 0, 2, 0, 0),
+        "Frostbite" => ("water", 3, 2, 5, 0, 1, 0, 0),
+        "Deep Current" => ("water", 3, 3, 4, 1, 2, -1, 0),
+        "Ocean Mist" => ("water", 3, 3, 3, 0, 1, 2, 0),
+        "Tornado" => ("air", 1, 3, 7, 1, 2, 0, 0),
+        "Storm Cloud" => ("air", 2, 2, 8, 2, 0, -3, 0),
+        "Wind Slash" => ("air", 2, 4, 4, 1, 2, -1, 0),
+        "Lightning Bolt" => ("air", 3, 2, 5, 2, 1, -2, 0),
+        "Gale Force" => ("air", 3, 3, 4, 0, 3, -1, 0),
+        "Breeze" => ("air", 3, 3, 3, 0, 3, 0, 0),
+        "Boulder Crush" => ("rock", 1, 3, 7, 3, 0, 0, 0),
+        "Rock Slide" => ("rock", 2, 2, 8, 2, -1, -2, 0),
+        "Seismic Slam" => ("rock", 2, 4, 4, 3, 0, 0, 0),
+        "Stone Barrier" => ("rock", 3, 2, 5, 1, -1, 0, 0),
+        "Earth Shield" => ("rock", 3, 3, 4, 0, -1, 3, 0),
+        "Stone Wall" => ("rock", 3, 3, 3, 0, 0, 4, 1),
+        "Body Slam" => ("normal", 1, 3, 7, 3, 0, 0, 0),
+        "Heavy Strike" => ("normal", 2, 2, 8, 2, -1, -2, 0),
+        "Quick Jab" => ("normal", 2, 4, 4, 1, 1, 0, 0),
+        "Guard Break" => ("normal", 3, 2, 5, 2, 0, -1, 0),
+        "Frenzy Blows" => ("normal", 3, 3, 4, 2, 0, 0, 0),
+        "Momentum Shift" => ("normal", 3, 3, 3, 0, 2, 0, 1),
+        "Power Up" => ("boost", 1, 3, 2, 4, 2, 2, 0),
+        "Battle Cry" => ("boost", 2, 3, 2, 3, 3, 0, 0),
+        "Iron Skin" => ("boost", 2, 3, 2, 0, 1, 6, 2),
+        "Swift Wind" => ("boost", 3, 3, 2, 1, 4, 0, 0),
+        "Iron Will" => ("boost", 3, 3, 2, 2, 2, 1, 0),
+        "Adrenal Rush" => ("boost", 3, 3, 2, 3, 1, 0, 0),
+        "Life Surge" => ("heal", 1, 3, 0, 1, 1, 0, 7),
+        "Regenerate" => ("heal", 2, 3, 0, 0, 1, 1, 6),
+        "Recovery" => ("heal", 2, 3, 0, 0, 1, 0, 6),
+        "Heal" => ("heal", 3, 3, 0, 0, 0, 0, 6),
+        "Vital Essence" => ("heal", 3, 3, 0, 0, -1, 1, 6),
+        "Healing Winds" => ("heal", 3, 3, 0, 1, 2, 0, 5),
         _ => return None,
     };
     Some(move_value(
@@ -289,34 +322,30 @@ pub fn move_names(kind: &str) -> Vec<&'static str> {
         "rock" => vec![
             "Boulder Crush",
             "Earth Shield",
-            "Granite Barrier",
+            "Stone Barrier",
             "Rock Slide",
             "Seismic Slam",
             "Stone Wall",
         ],
-        "boost" => vec![
-            "Adrenaline Surge",
+        "neutral" => vec![
+            "Adrenal Rush",
             "Battle Cry",
-            "Iron Skin",
-            "Power Up",
-            "Swift Wind",
-            "Warrior's Resolve",
-        ],
-        "heal" => vec![
-            "Heal",
-            "Healing Winds",
-            "Life Surge",
-            "Recovery",
-            "Regenerate",
-            "Vital Essence",
-        ],
-        "normal" => vec![
             "Body Slam",
             "Frenzy Blows",
             "Guard Break",
+            "Heal",
+            "Healing Winds",
             "Heavy Strike",
+            "Iron Skin",
+            "Life Surge",
             "Momentum Shift",
+            "Power Up",
             "Quick Jab",
+            "Recovery",
+            "Regenerate",
+            "Swift Wind",
+            "Vital Essence",
+            "Iron Will",
         ],
         _ => Vec::new(),
     }
@@ -328,7 +357,7 @@ pub fn validate_monster(monster: &Monster) -> Result<(), String> {
     }
     if !matches!(
         monster.element_type.as_str(),
-        "fire" | "water" | "air" | "rock" | "boost" | "heal" | "normal"
+        "fire" | "water" | "air" | "rock" | "neutral" | "normal"
     ) {
         return Err("monster.elementType is invalid".into());
     }
@@ -388,6 +417,9 @@ fn combatant(monster: &Monster, side: &str, address: &str) -> Combatant {
         base_attack: monster.attack,
         base_defense: monster.defense,
         base_speed: monster.speed,
+        stat_budget: monster.attack + monster.defense + monster.speed + monster.health,
+        free_used: BTreeSet::new(),
+        setups_used: 0,
     }
 }
 
@@ -436,46 +468,115 @@ fn choose(items: &[&'static str], rng: &mut Rng) -> &'static str {
     items[(rng.range(0, items.len() as i64 - 1)) as usize]
 }
 
-fn roll_moves(element: &str, rng: &mut Rng) -> BTreeMap<String, StoredMove> {
-    let elemental = move_names(element);
-    let mut selected = Vec::new();
-    let first = choose(&elemental, rng);
-    selected.push(first);
-    if rng.range(1, 100) <= 25 {
-        let remaining: Vec<_> = elemental
-            .into_iter()
-            .filter(|name| *name != first)
-            .collect();
-        selected.push(choose(&remaining, rng));
-        let mut support = vec!["boost", "heal", "normal"];
-        for _ in 0..2 {
-            let index = rng.range(0, support.len() as i64 - 1) as usize;
-            let kind = support.remove(index);
-            selected.push(choose(&move_names(kind), rng));
-        }
-    } else {
-        for kind in ["boost", "heal", "normal"] {
-            selected.push(choose(&move_names(kind), rng));
+/// The draw weight of each rarity tier, mirroring `C.MOVE_RARITY_WEIGHT`.
+/// Rarity 1 is the RARE tier, so the weights run the other way from the number.
+fn rarity_weight(rarity: i64) -> i64 {
+    match rarity {
+        1 => 1,
+        2 => 4,
+        _ => 10,
+    }
+}
+
+/// How often a drawn slot comes from the element pool rather than the neutral
+/// one, as a percentage. Mirrors `C.MOVE_ELEMENT_BIAS`.
+const ELEMENT_BIAS: i64 = 40;
+
+/// One name drawn from a pool, weighted by rarity and excluding what is already
+/// held. Mirrors `Battle.drawMove`.
+fn draw_move(
+    pool: &str,
+    exclude: &[&'static str],
+    damaging_only: bool,
+    rng: &mut Rng,
+) -> Option<&'static str> {
+    let mut names: Vec<&'static str> = move_names(pool)
+        .into_iter()
+        .filter(|name| !exclude.contains(name))
+        .filter(|name| {
+            !damaging_only || move_def(name).is_some_and(|value| value.damage > 0)
+        })
+        .collect();
+    names.sort_unstable();
+    if names.is_empty() {
+        return None;
+    }
+    let total: i64 = names
+        .iter()
+        .map(|name| rarity_weight(move_def(name).map_or(3, |value| value.rarity)))
+        .sum();
+    let roll = rng.range(1, total);
+    let mut cursor = 0;
+    for name in &names {
+        cursor += rarity_weight(move_def(name).map_or(3, |value| value.rarity));
+        if roll <= cursor {
+            return Some(name);
         }
     }
+    names.last().copied()
+}
+
+/// Three moves: a signature, then two drawn from the element pool or the merged
+/// neutral one, weighted by rarity. Mirrors `Battle.rollMoves`.
+///
+/// ONE DIVERGENCE, and it is deliberate. In Lua the signature slot is the
+/// species' own `basicMove`, read from the ninety-three-entry monster index.
+/// This worker has no index and is never handed one -- the game sends it a
+/// ticket carrying the player's roster, and the only monster it rolls for
+/// itself is the bot opponent. So the signature here is the element pool's
+/// rarity-1 move, which is the same slot filled by the same kind of move.
+///
+/// A player's roster is NOT rolled here and never has been, so nothing a player
+/// owns can differ between the two runtimes.
+fn roll_moves(element: &str, rng: &mut Rng) -> BTreeMap<String, StoredMove> {
+    let pool = if move_names(element).is_empty() {
+        "neutral"
+    } else {
+        element
+    };
+    let mut selected: Vec<&'static str> = Vec::new();
+
+    let signature = move_names(pool)
+        .into_iter()
+        .filter(|name| move_def(name).is_some_and(|value| value.damage > 0))
+        .min_by_key(|name| (move_def(name).map_or(3, |value| value.rarity), *name));
+    if let Some(name) = signature {
+        selected.push(name);
+    }
+
+    let mut guard = 0;
+    while selected.len() < MOVE_SLOTS && guard < 100 {
+        guard += 1;
+        let from = if pool != "neutral" && rng.range(1, 100) <= ELEMENT_BIAS {
+            pool
+        } else {
+            "neutral"
+        };
+        if let Some(name) = draw_move(from, &selected, false, rng) {
+            selected.push(name);
+        }
+    }
+
+    // The signature always hits, so this cannot fire for a companion built from
+    // a real element. It is here for anything built from a pool that has none.
     if !selected
         .iter()
         .any(|name| move_def(name).is_some_and(|value| value.damage > 0))
     {
-        let mut hitters: Vec<_> = move_names(element)
-            .into_iter()
-            .chain(move_names("normal"))
-            .filter(|name| move_def(name).is_some_and(|value| value.damage > 0))
-            .collect();
-        hitters.sort_unstable();
-        let replacement = choose(&hitters, rng);
-        let worst = selected
-            .iter()
-            .enumerate()
-            .max_by_key(|(_, name)| move_def(name).map_or(0, |value| value.rarity))
-            .map_or(0, |(index, _)| index);
-        selected[worst] = replacement;
+        if let Some(replacement) = draw_move(pool, &selected, true, rng) {
+            let worst = selected
+                .iter()
+                .enumerate()
+                .max_by_key(|(_, name)| move_def(name).map_or(0, |value| value.rarity))
+                .map_or(0, |(index, _)| index);
+            if selected.is_empty() {
+                selected.push(replacement);
+            } else {
+                selected[worst] = replacement;
+            }
+        }
     }
+
     selected
         .into_iter()
         .filter_map(|name| {
@@ -565,7 +666,42 @@ fn has_moves_left(monster: &Combatant) -> bool {
     monster.moves.values().any(|value| value.count > 0)
 }
 
+/// The two actions every companion has and none carries, mirroring
+/// `C.FREE_ACTIONS` in constants.lua.
+///
+/// Rally and Mend cost no move slot and are usable once each per battle. They
+/// are deliberately absent from `move_def`, which is what stops one being
+/// smuggled into a stored roster: `validate_monster` rejects any name the move
+/// table does not know.
+pub fn free_action(name: &str) -> Option<Move> {
+    let values = match name {
+        "Rally" => ("boost", 0, 2, 5, 4, 0, -2),
+        "Mend" => ("heal", 0, 0, 0, -3, 4, 6),
+        _ => return None,
+    };
+    let mut value = move_value(
+        name, values.0, 0, i64::MAX, values.1, values.2, values.3, values.4, values.5,
+    );
+    value.free = true;
+    Some(value)
+}
+
+/// Both of them, in the order Lua sorts them, so the two runtimes offer an NPC
+/// the same choices in the same order and a shared seed produces a shared
+/// fight.
+const FREE_ACTIONS: [&str; 2] = ["Mend", "Rally"];
+
 pub fn select_move(monster: &Combatant, name: &str) -> Result<Move, String> {
+    // Checked before the struggle rule and before the roster, so a free action
+    // is usable whether or not the roster still has uses in it. A companion
+    // that has spent every move may still Mend.
+    if let Some(value) = free_action(name) {
+        return if monster.free_used.contains(name) {
+            Err(format!("'{name}' is already spent this battle"))
+        } else {
+            Ok(value)
+        };
+    }
     if matches!(name, "struggle" | "Struggle") {
         return if has_moves_left(monster) {
             Err("Cannot struggle while other moves remain".into())
@@ -583,18 +719,57 @@ pub fn select_move(monster: &Combatant, name: &str) -> Result<Move, String> {
     Ok(value.clone())
 }
 
+/// What a move is FOR, from its own numbers, mirroring `Battle.chooseNpcMove`.
+///
+/// The roster is filtered BEFORE it is picked from. Offering every move with a
+/// use left and then picking uniformly means a three-slot roster holding two
+/// support moves spends two turns in three not attacking, which is what put
+/// every boost move in the game at 9-34% when the catalog was measured.
 fn choose_npc_move(npc: &Combatant, opponent: &Combatant, rng: &mut Rng) -> Move {
-    let available: Vec<_> = npc
+    let hurt = npc.health_points as f64 <= npc.max_health_points as f64 * 0.35;
+    let finishing = opponent.health_points as f64 <= opponent.max_health_points as f64 * 0.25;
+    let setups_left = (NPC_SETUP_TURNS - npc.setups_used).max(0);
+
+    let wanted = |value: &Move| {
+        if value.damage > 0 {
+            true
+        } else if value.health > 0 {
+            hurt && !finishing
+        } else {
+            setups_left > 0 && !hurt && !finishing
+        }
+    };
+
+    let mut available: Vec<Move> = npc
         .moves
         .values()
-        .filter(|value| value.count > 0)
+        .filter(|value| value.count > 0 && wanted(value))
         .cloned()
         .collect();
+    for name in FREE_ACTIONS {
+        if npc.free_used.contains(name) {
+            continue;
+        }
+        if let Some(value) = free_action(name) {
+            if wanted(&value) {
+                available.push(value);
+            }
+        }
+    }
+    if available.is_empty() {
+        // Nothing worth doing, but a spent-looking roster may still hold a buff
+        // this turn does not want. Swing with it rather than struggling.
+        available = npc
+            .moves
+            .values()
+            .filter(|value| value.count > 0)
+            .cloned()
+            .collect();
+    }
     if available.is_empty() {
         return struggle();
     }
-    let hurt = npc.health_points as f64 <= npc.max_health_points as f64 * 0.35;
-    let finishing = opponent.health_points as f64 <= opponent.max_health_points as f64 * 0.25;
+
     let preferred: Vec<_> = available
         .iter()
         .filter(|value| (finishing && value.damage > 0) || (hurt && !finishing && value.health > 0))
@@ -631,17 +806,75 @@ pub fn effectiveness(move_type: &str, defender: &str) -> f64 {
     }
 }
 
+/// The gap as a SHARE of the two speeds together, mirroring `hitChance` in
+/// battle.lua.
+///
+/// The old curve added `diff * 0.08` upward and `diff * 0.10` down, clamped at
+/// +0.25 and -0.40 -- and both clamps are reached at a gap of four points, so
+/// speed was a switch rather than a stat and one `+5 speed` rider pinned the
+/// user at the ceiling and the opponent at the floor. A share has no saturation
+/// point, which is what let the move catalog be priced on damage again.
 pub fn hit_chance(attacker_speed: i64, defender_speed: i64) -> f64 {
-    let diff = attacker_speed.max(0) - defender_speed.max(0);
-    let modifier = if diff > 0 {
-        (diff as f64 * 0.08).min(0.25)
+    let a = attacker_speed.max(0);
+    let d = defender_speed.max(0);
+    let total = a + d;
+    let modifier = if total > 0 {
+        ((a - d) as f64 / total as f64) * SPEED_SWING
     } else {
-        (diff as f64 * 0.10).max(-0.40)
+        0.0
     };
     (BASE_HIT_CHANCE + modifier).clamp(MIN_HIT_CHANCE, MAX_HIT_CHANCE)
 }
 
+/// One stat's worth of the fighter's whole budget: the yardstick a rider is
+/// measured against. See `riderYardstick` in battle.lua for why it is the
+/// budget rather than the stat being moved.
+fn rider_yardstick(fighter: &Combatant) -> i64 {
+    (fighter.stat_budget / 4).max(1)
+}
+
+/// One rider point in stat points, rounded away from zero so a printed rider is
+/// never a no-op.
+fn rider_points(points: i64, yardstick: i64) -> i64 {
+    if points == 0 {
+        return 0;
+    }
+    let size = ((points.abs() as f64) * RIDER_PER_POINT * yardstick as f64 + 0.5)
+        .floor()
+        .max(1.0) as i64;
+    if points > 0 {
+        size
+    } else {
+        -size
+    }
+}
+
+/// Apply one rider, clamped to `RIDER_CAP_SHARE` yardsticks either side of what
+/// the fighter entered the fight with. Returns the delta actually applied.
+fn apply_rider(current: i64, base: i64, yardstick: i64, points: i64) -> i64 {
+    let delta = rider_points(points, yardstick);
+    if delta == 0 {
+        return 0;
+    }
+    let room = (yardstick as f64 * RIDER_CAP_SHARE).floor() as i64;
+    let ceiling = base + room;
+    let floor = (base - room).max(0);
+    (current + delta).clamp(floor, ceiling) - current
+}
+
+/// The constant a move's power is multiplied against before the attack stat.
+fn attack_floor(attacker: &Combatant) -> f64 {
+    let grown = (attacker.stat_budget - ATTACK_BUDGET_BASELINE).max(0);
+    ATTACK_BASE as f64 + ATTACK_PER_STAT_POINT * grown as f64
+}
+
 fn use_move(attacker: &mut Combatant, selected: &Move) {
+    if selected.free {
+        // Spent on the FIGHTER, not decremented on a stored move: there is no
+        // stored move to decrement.
+        attacker.free_used.insert(selected.name.clone());
+        return;
+    }
     if !selected.struggle {
         if let Some(value) = attacker.moves.get_mut(&selected.name) {
             value.count = (value.count - 1).max(0);
@@ -651,21 +884,25 @@ fn use_move(attacker: &mut Combatant, selected: &Move) {
 
 fn act(attacker: &mut Combatant, defender: &mut Combatant, selected: &Move, rng: &mut Rng) -> Turn {
     use_move(attacker, selected);
-    let mut missed = false;
     let mut critical = false;
     let mut shield_damage = 0;
     let mut health_damage = 0;
     let mut super_effective = false;
     let mut not_effective = false;
     let mut stats_changed = BTreeMap::new();
-    if selected.damage > 0
-        && rng.range(1, 100) as f64 > hit_chance(attacker.speed, defender.speed) * 100.0
+    // A miss is a blow that did not connect, not the fighter failing to act:
+    // the stat riders still apply. Every boost in the pool deals two damage
+    // now, which made all of them missable, and a Power Up that whiffs and
+    // grants nothing is a wasted turn decided by a roll the player cannot see.
+    // Mirrors the miss roll in battle.lua.
+    let missed = selected.damage > 0
+        && rng.range(1, 100) as f64 > hit_chance(attacker.speed, defender.speed) * 100.0;
     {
-        missed = true;
-    } else {
-        if selected.damage > 0 {
+        if selected.damage > 0 && !missed {
             let multiplier = effectiveness(&selected.kind, &defender.element_type);
-            let raw = selected.damage * (ATTACK_BASE + attacker.attack.max(0));
+            let raw = ((selected.damage as f64)
+                * (attack_floor(attacker) + attacker.attack.max(0) as f64))
+                .floor() as i64;
             let swing = 1.0 + ((rng.range(0, 200) - 100) as f64 / 100.0) * VARIANCE;
             // Drawn immediately after the swing, as in Lua, so the two runtimes
             // stay in step on the RNG stream as well as on the arithmetic.
@@ -686,21 +923,50 @@ fn act(attacker: &mut Combatant, defender: &mut Combatant, selected: &Move, rng:
             super_effective = multiplier > 1.0;
             not_effective = multiplier < 1.0;
         }
+        // Riders are a share of a quarter of the fighter's budget, capped at one
+        // yardstick from where it started, and the turn log reports the delta
+        // ACTUALLY applied -- a move that hit the ceiling has to be able to say
+        // so, or the client draws a buff that did not happen.
+        let yardstick = rider_yardstick(attacker);
         if selected.attack != 0 {
-            attacker.attack = (attacker.attack + selected.attack).max(0);
-            stats_changed.insert("attack".into(), selected.attack);
+            let delta = apply_rider(
+                attacker.attack,
+                attacker.base_attack,
+                yardstick,
+                selected.attack,
+            );
+            if delta != 0 {
+                attacker.attack += delta;
+                stats_changed.insert("attack".into(), delta);
+            }
         }
         if selected.speed != 0 {
-            attacker.speed = (attacker.speed + selected.speed).max(0);
-            stats_changed.insert("speed".into(), selected.speed);
+            let delta = apply_rider(
+                attacker.speed,
+                attacker.base_speed,
+                yardstick,
+                selected.speed,
+            );
+            if delta != 0 {
+                attacker.speed += delta;
+                stats_changed.insert("speed".into(), delta);
+            }
         }
         if selected.defense != 0 {
-            attacker.defense = (attacker.defense + selected.defense).max(0);
-            attacker.max_shield = attacker
-                .max_shield
-                .max(attacker.defense * SHIELD_PER_DEFENSE);
-            attacker.shield = (attacker.shield + selected.defense * SHIELD_PER_DEFENSE).max(0);
-            stats_changed.insert("defense".into(), selected.defense);
+            let delta = apply_rider(
+                attacker.defense,
+                attacker.base_defense,
+                yardstick,
+                selected.defense,
+            );
+            if delta != 0 {
+                attacker.defense += delta;
+                attacker.max_shield = attacker
+                    .max_shield
+                    .max(attacker.defense * SHIELD_PER_DEFENSE);
+                attacker.shield = (attacker.shield + delta * SHIELD_PER_DEFENSE).max(0);
+                stats_changed.insert("defense".into(), delta);
+            }
         }
         if selected.health != 0 {
             let delta =
@@ -855,24 +1121,42 @@ mod tests {
             speed: 2,
             health: 4,
             moves: BTreeMap::from([
-                ("Firenado".into(), StoredMove { count: 2 }),
-                ("Heal".into(), StoredMove { count: 2 }),
+                ("Firenado".into(), StoredMove { count: 3 }),
+                ("Heal".into(), StoredMove { count: 3 }),
             ]),
         }
     }
 
     #[test]
     fn all_lua_moves_are_ported() {
-        let total: usize = ["fire", "water", "air", "rock", "boost", "heal", "normal"]
+        // FIVE pools, not seven: `normal`, `boost` and `heal` merged into one
+        // `neutral` pool, and a move keeps its own `type` inside it. So a pool
+        // name is no longer a move's kind, and only the elements can be checked
+        // that way.
+        let total: usize = ["fire", "water", "air", "rock", "neutral"]
             .iter()
             .map(|kind| move_names(kind).len())
             .sum();
         assert_eq!(total, 42);
-        for kind in ["fire", "water", "air", "rock", "boost", "heal", "normal"] {
+        for kind in ["fire", "water", "air", "rock"] {
             for name in move_names(kind) {
                 assert_eq!(move_def(name).unwrap().kind, kind);
+                // Every element move deals damage. A zero-damage one is a third
+                // of a three-slot roster spent on something that cannot win.
+                assert!(move_def(name).unwrap().damage > 0, "{name} deals no damage");
             }
         }
+        for name in move_names("neutral") {
+            let kind = move_def(name).unwrap().kind;
+            assert!(matches!(kind.as_str(), "normal" | "boost" | "heal"), "{name}: {kind}");
+        }
+        // Rally and Mend are free actions, not draftable moves. If either ever
+        // resolves through `move_def` it can be written into a stored roster
+        // and used every round.
+        assert!(move_def("Rally").is_none());
+        assert!(move_def("Mend").is_none());
+        assert!(free_action("Rally").is_some());
+        assert!(free_action("Mend").is_some());
     }
 
     #[test]
@@ -880,8 +1164,27 @@ mod tests {
         assert_eq!(effectiveness("fire", "air"), 2.0);
         assert_eq!(effectiveness("fire", "water"), 0.5);
         assert_eq!(effectiveness("boost", "water"), 1.0);
-        assert_eq!(hit_chance(20, 1), 0.95);
-        assert_eq!(hit_chance(1, 20), 0.30);
+        // The share-based curve, not the old saturating one. Both of that
+        // curve's clamps were reached at a gap of four points, so 20 against 1
+        // and 5 against 1 were the same number; they are not any more.
+        // Inside the clamps, so the curve itself is what is being checked:
+        // 10 against 5 is a third of the speed in the fight, times the swing.
+        assert!((hit_chance(10, 5) - (BASE_HIT_CHANCE + (5.0 / 15.0) * SPEED_SWING)).abs() < 1e-9);
+        assert!((hit_chance(5, 10) - (BASE_HIT_CHANCE - (5.0 / 15.0) * SPEED_SWING)).abs() < 1e-9);
+        assert_eq!(hit_chance(7, 7), BASE_HIT_CHANCE);
+        // And no saturation point where the fighters actually live. The old
+        // curve reached BOTH clamps at a gap of four stat points, so every
+        // point of speed past the fourth bought nothing at any level; the
+        // share-based one only clamps when one side has almost all the speed in
+        // the fight, which at real stat totals it never does. A level-10
+        // companion carries 20-60 speed, so that is where this is checked --
+        // 5-against-1 still clamps, and at those numbers so does everything.
+        assert!(hit_chance(60, 20) > hit_chance(30, 20));
+        assert!(hit_chance(20, 60) < hit_chance(20, 30));
+        assert!(hit_chance(60, 20) < MAX_HIT_CHANCE);
+        // The clamps still hold at the extremes.
+        assert!(hit_chance(1000, 1) <= MAX_HIT_CHANCE);
+        assert!(hit_chance(1, 1000) >= MIN_HIT_CHANCE);
     }
 
     #[test]

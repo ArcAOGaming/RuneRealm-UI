@@ -215,6 +215,12 @@ async function seedArena(game) {
   await game.call('TEST_GAME', wallet(OWNER, {
     Action: 'Admin.Grant', PlayerId: ALICE, Item: 'rune', Amount: '5',
   }));
+  // And Gold, because the arena is staked per battle now (`C.ARENA`): a purse
+  // that cannot cover one fight is refused at the door. Funded out of the
+  // locked launch allocation through the audited owner path, so the
+  // conservation identity still holds. Zeroes leave every other asset alone.
+  await game.call('TEST_GAME', wallet(OWNER, { Action: 'Admin.Economy.FundTestBots' },
+    JSON.stringify({ addresses: [ALICE], gold: 5000, rune: 0, scroll: 0, berries: 0, boxes: 0 })));
   const begun = await game.call('TEST_GAME', wallet(ALICE, { Action: 'Battle.Begin' }));
   assert.equal(begun.output.battlesRemaining, 4);
   return begun.output;

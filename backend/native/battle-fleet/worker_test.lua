@@ -1095,6 +1095,25 @@ function battle_fleet_test()
   ok("newer ended battles remain readable", BattleFleetState.battles["battle-2"] ~= nil
     and BattleFleetState.battles["battle-3"] ~= nil)
 
+  -- Re-enter with the published map but no Luerl `priv`, matching the live
+  -- concurrent-slot failure that used to turn Battle.Info into "not found".
+  BattleFleetState.battles = {}
+  BattleFleetState.tickets = {}
+  BattleFleetState.reservations = {}
+  BattleFleetState.settlements = {}
+  BattleFleetState.cancellations = {}
+  BattleFleetState.assignments = {}
+  BattleFleetState.endedOrder = {}
+  BattleFleetState.highWaterTimestamp = 0
+  OperationalStateReady = false
+  restoreOperationalState(base)
+  local coldBattle = drive({ Action = "Battle.Info", BattleId = "battle-2" })
+  ok("a cold worker restores a retained authoritative battle",
+    coldBattle and coldBattle.id == "battle-2" and coldBattle.error == nil,
+    coldBattle and coldBattle.error)
+  ok("a cold worker does not resurrect a pruned battle",
+    BattleFleetState.battles["battle-1"] == nil)
+
   out[#out + 1] = "TRACE " .. table.concat(trace, "|")
   out[#out + 1] = string.format("%d passed, %d failed", passed, failed)
   return table.concat(out, "\n")

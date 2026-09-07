@@ -93,6 +93,75 @@ local function int(value, fallback)
   return narrowed
 end
 
+-- The returned map and the Luerl VM snapshot travel through different
+-- HyperBEAM cache paths.  Under concurrent computes a slot may retain every
+-- published `battle-*` key while entering this module with an empty
+-- BattleFleetState.  The public battle view deliberately omits reservation,
+-- assignment, replay, attack and settlement internals, so it is not an
+-- authoritative restore source.  Publish a bounded full record for every
+-- retained battle and rebuild the indexes once, only on a cold module entry.
+local OperationalStateReady = false
+
+local function decodedTable(value)
+  if type(value) == "table" then return value end
+  if type(value) ~= "string" or value == "" or value == "null" then return nil end
+  local ok, decoded = pcall(json.decode, value)
+  if not ok or type(decoded) ~= "table" then return nil end
+  return decoded
+end
+
+local function restoreOperationalState(base)
+  if OperationalStateReady then return end
+  OperationalStateReady = true
+  if type(base) ~= "table" then return end
+
+  local meta = decodedTable(base.fleetops)
+  if meta then
+    State.highWaterTimestamp = math.max(State.highWaterTimestamp,
+      int(meta.highWaterTimestamp, 0))
+    State.draining = meta.draining == true
+  end
+  -- Warm snapshots remain the authority.  This path only repairs a missing
+  -- `priv`, never overwrites live globals from the public map.
+  if next(State.battles) ~= nil then return end
+
+  State.battles = {}
+  State.tickets = {}
+  State.reservations = {}
+  State.settlements = {}
+  State.cancellations = {}
+  State.assignments = {}
+  State.endedOrder = {}
+  for key, value in pairs(base) do
+    if type(key) == "string" and string.sub(key, 1, 10) == "battle-op-" then
+      local record = decodedTable(value)
+      local battleId = record and record.battle and record.battle.id
+      if type(battleId) == "string" and type(record.ticket) == "string"
+         and type(record.reservationId) == "string"
+         and type(record.assignmentId) == "string" then
+        State.battles[battleId] = record
+        State.tickets[record.ticket] = battleId
+        State.reservations[record.reservationId] = battleId
+        State.assignments[record.assignmentId] = battleId
+        if record.settlement and type(record.settlement.id) == "string" then
+          State.settlements[record.settlement.id] = battleId
+        end
+        if record.cancellation and type(record.cancellation.id) == "string" then
+          State.cancellations[record.cancellation.id] = battleId
+        end
+      end
+    end
+  end
+  if meta and type(meta.endedOrder) == "table" then
+    for _, battleId in ipairs(meta.endedOrder) do
+      local record = State.battles[battleId]
+      if record and (record.settlement or record.cancellation) then
+        State.endedOrder[#State.endedOrder + 1] = battleId
+      end
+    end
+  end
+end
+
 local function field(t, wanted)
   if type(t) ~= "table" then return nil end
   local exact = t[wanted]
@@ -420,6 +489,7 @@ end
 
 local function publishBattle(base, record)
   base["battle-" .. record.battle.id] = encode(recordView(record))
+  base["battle-op-" .. record.battle.id] = encode(record)
 end
 
 local function rememberAck(id, kind)
@@ -448,6 +518,10 @@ local function removeRecord(base, battleId)
   end
   State.battles[battleId] = nil
   base["battle-" .. battleId] = nil
+  -- A missing assignment does not reliably erase a key already cached by the
+  -- previous slot.  Publish an explicit tombstone so a later cold restore can
+  -- never resurrect a pruned authoritative record.
+  base["battle-op-" .. battleId] = "null"
 end
 
 local function pruneEnded(base)
@@ -1496,6 +1570,7 @@ end
 
 function compute(base, req, opts)
   base = type(base) == "table" and base or {}
+  restoreOperationalState(base)
   resolveOwner(base)
   local msg = messageOf(req)
   local action = tostring(field(msg, "action") or "Fleet.Status"):lower()
@@ -1512,6 +1587,11 @@ function compute(base, req, opts)
     local ok, handled = pcall(handler, base, msg, timestamp)
     result = ok and handled or fail(base, tostring(handled))
   end
+  result.fleetops = encode({
+    highWaterTimestamp = State.highWaterTimestamp,
+    draining = State.draining == true,
+    endedOrder = State.endedOrder,
+  })
   -- This process replaces aos compute, so collect transient battle views and
   -- encoder buffers before HyperBEAM snapshots the Luerl VM for this slot.
   collectgarbage("collect")

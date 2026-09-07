@@ -38,6 +38,7 @@ import { installWalletShim, jwkToAddress } from './ans104.mjs';
 import { sendMessage } from './hbclient.mjs';
 import { buildSwarmClient } from './swarm/build-client.mjs';
 import { listBurners } from './burners.mjs';
+import { assertLiveGraph, resolveLiveGraph } from './live-config.mjs';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.resolve(HERE, '..', '..');
@@ -47,12 +48,8 @@ const flag = (name, fallback) => {
   return i >= 0 ? argv[i + 1] : fallback;
 };
 
-const live = fs.existsSync(path.join(ROOT, 'live-process.txt'))
-  ? fs.readFileSync(path.join(ROOT, 'live-process.txt'), 'utf8').trim().split(/\r?\n/)
-  : [];
-const pid = process.env.GAME_PROCESS || live[0];
-const node = (process.env.NODE_URL || live[1] || '').replace(/\/$/, '');
-if (!/^[A-Za-z0-9_-]{43}$/.test(pid || '')) throw new Error('set GAME_PROCESS or write live-process.txt');
+const graph = assertLiveGraph(resolveLiveGraph({ root: ROOT }), { requireBattleFleet: true });
+const { game: pid, node } = graph;
 
 const ownerJwk = JSON.parse(fs.readFileSync(
   process.env.HB_WALLET || path.join(ROOT, 'arweave-wallet-DA9qhP25.json'), 'utf8'));
@@ -73,7 +70,7 @@ const admin = (action, tags, data) => sendMessage({
 
 installWalletShim(JSON.parse(fs.readFileSync(burner.file, 'utf8')));
 const { url } = await buildSwarmClient({
-  root: ROOT, pid, node, outDir: path.join(ROOT, '.verify', 'battle'),
+  root: ROOT, graph, outDir: path.join(ROOT, '.verify', 'battle'),
 });
 const api = await import(`${url}?run=${Date.now()}`);
 
