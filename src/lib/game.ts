@@ -25,7 +25,7 @@ import {
   AdminPlayerSummary, AdminSnapshot, Battle, BattleFleetConfig, BattleFleetRoute, BerryItemId,
   MonsterIndexEntry, MonsterIndexLifecycle, MonsterIndexView, Catalog, CharacterOutfit, EconomyPolicyChange, EconomyView, Element, Faction,
   GoldMarketItemId, GoldOrderSide, GoldOrderStp, GoldOrderTif,
-  ArenaTiers, GameError, GameStats, ItemId, LeaderboardRow, Listing, Move, OpenChallenge, Player,
+  ArenaTiers, GameError, ItemId, LeaderboardRow, Listing, Move, OpenChallenge, Player,
   PlayerFill, PlayerOpenOrder,
   RegistryAsset, Reply, RuneWithdrawal, Sale,
 } from './types';
@@ -668,11 +668,31 @@ export async function readPlayerCount(): Promise<number> {
  */
 export const login = () => write<Player>({ Action: 'User.Login' });
 
-export const stats = () => write<GameStats>({ Action: 'Stats' });
+/*
+ * `stats()` and `listFactions()` used to live here, and both were signed
+ * messages that returned state the process had already published.
+ *
+ * A read is charged exactly what a write is. `dev_lua` loads, encodes, decodes
+ * and writes the WHOLE published map five times per message whatever that
+ * message did, so a pure read costs a full authority slot -- `Battle.Info`
+ * measured 598 ms of `execution_ms` on the live node to hand back a table that
+ * was already on the wire. CLAUDE.md's rule is the blunt version: never spend a
+ * slot on a read.
+ *
+ * Both already had free readers and neither export had a caller left:
+ * `readMetrics()` (`/now/metrics`) carries the population, companion, Rune,
+ * lootbox, win/loss/quest and active-battle counters, and `readFactions()`
+ * (`/now/factions`) carries the faction tallies. They are deleted rather than
+ * deprecated because an export that costs a slot is an export somebody
+ * eventually calls in a poll.
+ *
+ * `Stats` and `Faction.List` remain on the PROCESS. `Stats` still answers the
+ * three things a published key cannot without walking every account -- `items`,
+ * `offerings` and the process `owner` -- and the admin screen signs for those
+ * through `Admin.Snapshot`. Nothing on a player's path does.
+ */
 
 // Factions ------------------------------------------------------------------
-
-export const listFactions = () => write<Faction[]>({ Action: 'Faction.List' });
 
 export const joinFaction = (faction: string) =>
   write<Player>({ Action: 'Faction.Join', Faction: faction });
@@ -992,13 +1012,27 @@ export async function attack(
 }
 
 /**
- * Signed variant, kept for the case where a caller needs the value as of *now*
- * rather than as of the last message. The lobby uses `readChallenges` instead,
- * because a poll should never prompt the wallet.
+ * A battle by id, as a signed message. THE LAST RESORT, not the way to read a
+ * fight.
+ *
+ * A read is charged exactly what a write is: `dev_lua` loads, encodes, decodes
+ * and writes the whole published map five times per message whatever the
+ * message did, so this measured 598 ms of `execution_ms` on the live node to
+ * return a table the process had already published. Production's own slot log
+ * showed what that costs when it sits inside a loop — 2,877 `Battle.Info`
+ * against 2,891 `Battle.Attack` on the authority, one wasted slot per round of
+ * every PvP fight.
+ *
+ * The battle a caller is IN rides on their own account record: `playerView`
+ * attaches it whenever `activeBattleId` still points at a live fight, and
+ * `compute` republishes the PvP opponent too, so both sides see a round land
+ * from `/now/player-<address>` for free. `readPlayer().battle` is the answer.
+ * Fleet fights publish `battle-<id>` on their worker, read by `readFleetBattle`.
+ *
+ * This survives for the one case neither of those covers: an account that names
+ * a battle id but carries no battle table. Anything that calls it in a loop is
+ * a bug.
  */
-export const listChallenges = () =>
-  write<OpenChallenge[]>({ Action: 'Battle.OpenChallenges' });
-
 export const battleInfo = (battleId: string) =>
   write<Battle>({ Action: 'Battle.Info', BattleId: battleId });
 

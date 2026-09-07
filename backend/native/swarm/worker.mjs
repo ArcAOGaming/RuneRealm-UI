@@ -6,6 +6,7 @@ import { structuredErrorFields } from './error-fields.mjs';
 import { makeBridge } from './bridge.mjs';
 import { useKeepAlive } from '../keepalive.mjs';
 import { chooseProgressionAction } from './strategy.mjs';
+import { resolveArenaBattle } from './arena-read.mjs';
 
 if (!parentPort) throw new Error('swarm worker must run in a worker thread');
 
@@ -2357,9 +2358,19 @@ async function pvpMove(battleId) {
       outcome: `battle-cleared-before-${phase}`,
     });
   };
-  let battle;
-  try { battle = await api.battleInfo(battleId); }
-  catch (error) { return reconcileTerminal(error, 'read'); }
+  // The battle is ALREADY in the record `refresh()` just read. See
+  // `resolveArenaBattle` for why that matters and what the three answers mean:
+  // this used to send `Battle.Info` as a signed message for the same table, and
+  // a read costs a whole authority slot.
+  const resolved = resolveArenaBattle(before, battleId);
+  let battle = resolved.battle;
+  if (resolved.terminal) {
+    return reconcileTerminal(new Error('Battle not found'), 'read');
+  }
+  if (resolved.needsMessage) {
+    try { battle = await api.battleInfo(battleId); }
+    catch (error) { return reconcileTerminal(error, 'read'); }
+  }
   if (battle.status === 'ended') {
     const player = await refresh();
     const receipt = arenaSettlement(before, player, battleId);
