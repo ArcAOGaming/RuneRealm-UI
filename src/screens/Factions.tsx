@@ -112,6 +112,25 @@ export default function Factions() {
     return out;
   }, [factions, mine]);
 
+  /*
+   * Fetch the reveal while the player is still reading the oath.
+   *
+   * Confirming used to be followed by two spinners on two flat grounds: the
+   * lazy chunk downloading, then every card plate loading inside it. Both are
+   * knowable before the chain is asked anything — the faction fixes the
+   * element, and the element fixes the plates — so both happen here, against
+   * a dialog the player is looking at rather than a grey screen they are
+   * waiting on. Failures are ignored on purpose: this is a warm-up, and the
+   * real load will report anything that is genuinely wrong.
+   */
+  useEffect(() => {
+    if (!confirming) return;
+    void import('../ui/CompanionAcquisition');
+    void import('../lib/card/browser')
+      .then((m) => m.preloadCard(confirming.element))
+      .catch(() => {});
+  }, [confirming]);
+
   const join = async (faction: Faction) => {
     // Straight to the full-screen veil: the dialog has done its job the moment
     // the oath is confirmed, and leaving it up is what produced the half-dim.
@@ -248,7 +267,10 @@ export default function Factions() {
         </Suspense>
       )}
 
-      <section id="ranks" className="scroll-mt-24 border-t border-rune/12 pt-12">
+      <section
+        id="ranks"
+        className="full-bleed scroll-mt-24 border-t border-rune/12 px-4 pt-12 sm:px-6 lg:px-7"
+      >
         <Ranks embedded />
       </section>
     </div>

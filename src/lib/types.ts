@@ -652,6 +652,14 @@ export interface Player {
   battlesRemaining: number;
   /** Applies to battle copies for this arena session; permanent stats never move. */
   arenaBoost?: ArenaBoost;
+  /**
+   * What the last settled battle paid. See {@link ArenaReceipt}.
+   *
+   * On the RECORD rather than on a reply because the loser of a PvP fight is
+   * settled by their opponent's message and never gets a reply of their own;
+   * they read this on their next refresh.
+   */
+  arenaLast?: ArenaReceipt;
   wins: number;
   losses: number;
   sessionWins?: number;
@@ -1159,9 +1167,48 @@ export interface MonsterIndexView {
  */
 export type MonsterIndexCatalog = MonsterIndexView & { entries: MonsterIndexEntry[] };
 
+/**
+ * What a verb costs and what it pays, from `C.ACTIVITIES` in constants.lua.
+ *
+ * Typed rather than left as `unknown` because these are the numbers the arena
+ * and the companion screen PRINT, and a screen that hardcodes a price the
+ * process has since moved says something the process disagrees with — the
+ * same class of bug the `levelUp` block above exists to have fixed. Every
+ * field is optional: an older deployment published fewer of them, and a screen
+ * must fall back rather than render `undefined`.
+ */
+export interface Activities extends Record<string, unknown> {
+  battle?: {
+    energyCost?: number;
+    happinessCost?: number;
+    /**
+     * Gold per WIN, and the whole of what the arena pays.
+     *
+     * A win used to award a loot box; v2 moved the arena onto the same 20-hour
+     * Gold allowance the quest draws on, because a bot battle has no
+     * counterparty and an item reward there is minted from nothing. A win pays
+     * this and nothing else — no box, no items, and the same amount at every
+     * difficulty.
+     */
+    winGold?: number;
+    /** The Rune entry fee, which v2 removed. Present only on an older process. */
+    cost?: { item: ItemId; amount: number };
+  };
+  quest?: {
+    duration?: number;
+    energyCost?: number;
+    happinessCost?: number;
+    expGain?: number;
+    /** Gold per completed quest, out of the same allowance the arena draws on. */
+    goldReward?: number;
+  };
+  play?: { duration?: number; energyCost?: number; happinessGain?: number };
+  feed?: { energyGain?: number };
+}
+
 export interface Catalog {
   items: Record<string, { id: ItemId; name: string; section: string; element?: Element }>;
-  activities: Record<string, unknown>;
+  activities: Activities;
   /** Absent on deployments from before Hunt shipped. */
   hunt?: HuntTuning;
   elements: Element[];
@@ -1221,6 +1268,69 @@ export interface Catalog {
    * pools — so this is the only way a client learns they exist.
    */
   freeActions?: Record<string, Omit<Move, 'name'> & { name?: string }>;
+  /**
+   * What a battle stakes and what a win draws out of the pot.
+   *
+   * Constants, so they live here and not on {@link ArenaTiers} — repeating the
+   * drain on four pot rows would rewrite it on every settle for nothing. The
+   * client joins the two: `arenatiers` says what is IN each pot, this says what
+   * a win takes OUT of it.
+   *
+   * Absent on a deployment from before the arena was staked, and the screens
+   * fall back to describing a free arena rather than quoting a price the
+   * process will not charge.
+   */
+  arena?: {
+    /** Gold per BATTLE, the same in every tier. */
+    stake: number;
+    /** `floor(pot * drainNum / drainDen)`. A rational so the payout stays integer. */
+    drainNum: number;
+    drainDen: number;
+    /** What a purse must hold to enter the arena at all: one battle's stake. */
+    minEntry: number;
+    battlesPerSession: number;
+    /**
+     * The four pots, and the DIFFICULTY each label was chosen with — so the
+     * lobby sends the number the process buckets rather than a name it made up.
+     */
+    tiers: Array<{ key: string; label: string; difficulty: number; below: number }>;
+  };
+}
+
+/**
+ * The arena's pots, from `/now/arenatiers`. Three integers a tier and nothing
+ * derived.
+ *
+ * The payout, the break-even win rate and the observed win rate are all worked
+ * out in the browser — see {@link arenaTierMath}. The process deliberately does
+ * not publish them: a derived value read a slot late is a number that was never
+ * true, where a pot read a slot late is simply the pot, one slot ago.
+ */
+export type ArenaTiers = Record<string, { pot: number; wins: number; attempts: number }>;
+
+/**
+ * What a settled battle actually paid, as the process saw it.
+ *
+ * The one thing about a settlement that is NOT derivable from published state a
+ * moment later: `pot` is the pot as it stood at settle, and the lobby was
+ * quoting a payout off a pot that has since moved. Without this the result
+ * screen shows what the player was promised rather than what they were paid.
+ *
+ * `base` is the capped 20-hour allowance half and `paid` is the pot half. Both
+ * can legitimately be zero — the allowance is shared with quests and a pot only
+ * holds what players staked.
+ */
+export interface ArenaReceipt {
+  /** The tier key, or `'pvp'` for a duel. */
+  tier: string;
+  stake: number;
+  /** The pot BEFORE this settle drew from it. */
+  pot: number;
+  /** Drawn from the pot. */
+  paid: number;
+  /** Paid by the capped gameplay allowance. */
+  base: number;
+  won: boolean;
 }
 
 /**

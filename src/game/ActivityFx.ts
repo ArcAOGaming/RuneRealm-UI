@@ -43,7 +43,7 @@ type RewardVisual = {
 type Visual = TransitionVisual | RewardVisual;
 
 type RewardEntry = {
-  type: 'happiness' | 'exp' | 'lootbox' | 'return';
+  type: 'happiness' | 'exp' | 'lootbox' | 'gold' | 'return';
   label: string;
   detail: string;
 };
@@ -378,7 +378,7 @@ export class ActivityFx {
 
   private rewardEntries(receipt: ActivityReceipt): RewardEntry[] {
     const entries: RewardEntry[] = [];
-    const { happiness, exp, lootbox } = receipt.rewards;
+    const { happiness, exp, lootbox, gold, goldReason } = receipt.rewards;
     if (typeof happiness === 'number' && happiness > 0) {
       entries.push({ type: 'happiness', label: `+${happiness} HAPPINESS`, detail: 'BOND RESTORED' });
     }
@@ -388,6 +388,14 @@ export class ActivityFx {
     if (typeof lootbox === 'number' && lootbox > 0) {
       const tier = LOOTBOX_TIER[lootbox] ?? `Tier ${lootbox}`;
       entries.push({ type: 'lootbox', label: `${tier.toUpperCase()} BOX`, detail: `TIER ${lootbox} LOOT` });
+    }
+    /* What a quest pays now. Zero is a real answer -- the 20-hour Gold
+       allowance is shared by every verb that pays it -- so say WHY rather than
+       showing a claim that appears to have paid nothing at all. */
+    if (typeof gold === 'number' && gold > 0) {
+      entries.push({ type: 'gold', label: `+${gold} GOLD`, detail: 'PAID FOR THE WORK' });
+    } else if (goldReason) {
+      entries.push({ type: 'gold', label: 'NO GOLD', detail: goldReason.toUpperCase() });
     }
     if (!entries.length) {
       entries.push({ type: 'return', label: 'HOME SAFE', detail: `${receipt.kind.toUpperCase()} COMPLETE` });
@@ -399,7 +407,8 @@ export class ActivityFx {
     const group = new THREE.Group();
     const object = entry.type === 'happiness' ? this.makeHeart()
       : entry.type === 'lootbox' ? this.makeChest()
-        : this.makeCrystal(entry.type === 'return');
+        : entry.type === 'gold' ? this.makeCoin()
+          : this.makeCrystal(entry.type === 'return');
     object.position.y = 0.13;
     group.add(object);
 
@@ -476,6 +485,38 @@ export class ActivityFx {
     );
     crystal.scale.y = 1.25;
     group.add(crystal);
+    return group;
+  }
+
+  /**
+   * A coin, for the Gold a quest pays.
+   *
+   * Flat, edge-on and slowly turning rather than a stack: one coin reads as a
+   * denomination at this size where a pile reads as a smudge, and the reward
+   * row already carries the number.
+   */
+  private makeCoin() {
+    const group = new THREE.Group();
+    const face = new THREE.MeshStandardMaterial({
+      color: 0xd9b45a,
+      emissive: 0x6a4d16,
+      emissiveIntensity: 0.35,
+      metalness: 0.85,
+      roughness: 0.24,
+    });
+    const coin = new THREE.Mesh(new THREE.CylinderGeometry(0.19, 0.19, 0.045, 18), face);
+    coin.rotation.x = Math.PI / 2;
+    coin.rotation.z = 0.2;
+    group.add(coin);
+    const rim = new THREE.Mesh(
+      new THREE.TorusGeometry(0.19, 0.018, 8, 20),
+      new THREE.MeshStandardMaterial({
+        color: 0xf2d489, emissive: 0x8a6a20, emissiveIntensity: 0.4,
+        metalness: 0.9, roughness: 0.18,
+      }),
+    );
+    rim.rotation.z = 0.2;
+    group.add(rim);
     return group;
   }
 

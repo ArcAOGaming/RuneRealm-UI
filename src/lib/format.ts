@@ -1,4 +1,6 @@
-import { Affinity, BattleStat, BerryItemId, Element, ItemId, Move, Tuning } from './types';
+import {
+  Affinity, ArenaTiers, BattleStat, BerryItemId, Catalog, Element, ItemId, Move, Tuning,
+} from './types';
 
 /** "a Rockpup", but "an Airbud" and "an air companion". */
 export const article = (word: string) =>
@@ -20,6 +22,150 @@ export function countdown(ms: number): string {
 
 export const pct = (value: number, max: number) =>
   max <= 0 ? 0 : Math.max(0, Math.min(100, (value / max) * 100));
+
+/**
+ * A whole number with thousands separators.
+ *
+ * Gold is counted in whole units everywhere — the process narrows every one of
+ * them through `int()` on the way in — so this never shows a fraction, and a
+ * five-figure purse still reads as a number rather than as a run of digits.
+ */
+export const formatInteger = (value: number) =>
+  new Intl.NumberFormat('en-US', { maximumFractionDigits: 0 }).format(value);
+
+/**
+ * What an arena session costs and what it pays, read from the process.
+ *
+ * Every number here was a literal in `screens/Arena.tsx` — 25 energy, 25
+ * happiness, a loot box on a win — and two of the three had already drifted
+ * from the deployed process by the time anyone looked. They come out of
+ * `catalog.activities.battle` and `catalog.arena` now, which are
+ * `C.ACTIVITIES.battle` and `C.ARENA` published verbatim, so moving a cost in
+ * constants.lua moves the sentence on the screen.
+ *
+ * The fallbacks exist only so a client that has not yet loaded the catalog
+ * renders a plausible screen rather than `NaN`; the gate itself is always the
+ * process's, never this. `staked` is false on a deployment from before the
+ * arena charged, and the screens describe a free arena rather than quoting a
+ * price nobody will take.
+ */
+export const SESSION_BATTLES = 4;
+
+/**
+ * The four difficulties, for a process that publishes no `catalog.arena`.
+ *
+ * A deployment from before the arena was staked has no tier table, and without
+ * this the lobby renders an EMPTY difficulty picker and sends 1.0 for every
+ * fight. These are the same four values that screen has always sent; they are a
+ * fallback for an older process, never a second source of truth for a current
+ * one — `catalog.arena.tiers` wins whenever it exists.
+ */
+const FALLBACK_TIERS = [
+  { key: 'easy', label: 'Easy', difficulty: 0.75, below: 0.9 },
+  { key: 'even', label: 'Even', difficulty: 1, below: 1.2 },
+  { key: 'hard', label: 'Hard', difficulty: 1.4, below: 1.7 },
+  { key: 'brutal', label: 'Brutal', difficulty: 2, below: 99 },
+];
+
+export function arenaTerms(catalog: Catalog | null | undefined) {
+  const battle = catalog?.activities?.battle;
+  const arena = catalog?.arena;
+  const winGold = Math.max(0, Math.round(battle?.winGold ?? 5));
+  const battles = Math.max(1, Math.round(arena?.battlesPerSession ?? SESSION_BATTLES));
+  const stake = Math.max(0, Math.round(arena?.stake ?? 0));
+  return {
+    energyCost: Math.max(0, Math.round(battle?.energyCost ?? 25)),
+    happinessCost: Math.max(0, Math.round(battle?.happinessCost ?? 25)),
+    /**
+     * The BASE layer: what the capped 20-hour allowance pays for a win.
+     *
+     * This is the only thing in the arena that issues Gold, it is shared with
+     * quests, and it can legitimately pay nothing once the day's allowance is
+     * spent. Everything else a win pays is redistribution out of a pot.
+     */
+    winGold,
+    battles,
+    /** Gold per BATTLE, into the tier's pot. 0 means this deployment is free. */
+    stake,
+    staked: stake > 0,
+    /** What a purse must hold to get through the door: one battle's stake. */
+    minEntry: Math.max(0, Math.round(arena?.minEntry ?? 0)),
+    /** A whole session's stakes, if every battle is used. */
+    sessionStake: stake * battles,
+    drainNum: Math.max(1, Math.round(arena?.drainNum ?? 1)),
+    drainDen: Math.max(1, Math.round(arena?.drainDen ?? 3)),
+    tiers: arena?.tiers?.length ? arena.tiers : FALLBACK_TIERS,
+    /**
+     * The Rune entry fee, if this deployment still charges one. v2 removed it:
+     * Rune buys advancement now, never the right to play. Absent means free.
+     */
+    runeCost: battle?.cost,
+  };
+}
+
+export type ArenaTerms = ReturnType<typeof arenaTerms>;
+
+/**
+ * Everything a player needs to judge one tier, derived from four published
+ * integers.
+ *
+ * This is ARENA_STAKES.md §8 in one function, and the separation it describes
+ * is the whole point:
+ *
+ *  - `payout` and `breakEven` are facts about the POT, and the pot is what
+ *    actually pays. Neither can be pushed by a player: a pot cannot hand out
+ *    Gold nobody staked, so fattening it means funding it yourself.
+ *  - `winRate` is a DISPLAY statistic and nothing reads it but this screen. A
+ *    player who dumps games to drag it down gains nothing, because the payout
+ *    still comes only from what is in the pot. It must stay that way.
+ *
+ * `edge` is the gap between the two, and it is the signal worth showing:
+ * break-even converges on the tier's own win rate at equilibrium, so a positive
+ * gap means the pot is currently fat — a run of losses fed it and the next win
+ * takes a third of a bigger number. That makes timing a decision a player can
+ * see rather than one they cannot.
+ *
+ * Never derive an "expected value" from this. EV depends on the player's own
+ * win rate, which is exactly what the design refuses to assume about them.
+ */
+export function arenaTierMath(
+  terms: ArenaTerms,
+  row: { pot: number; wins: number; attempts: number } | undefined,
+) {
+  const pot = Math.max(0, Math.round(row?.pot ?? 0));
+  const wins = Math.max(0, Math.round(row?.wins ?? 0));
+  const attempts = Math.max(0, Math.round(row?.attempts ?? 0));
+  // The stake goes in BEFORE the draw, so a win on an empty pot still takes a
+  // third of its own stake back. Quoting the pot as it stands would understate
+  // every payout by exactly that much.
+  const pool = pot + terms.stake;
+  const payout = Math.floor((pool * terms.drainNum) / terms.drainDen);
+  // Undefined rather than Infinity when a tier pays nothing yet: there is no
+  // win rate that breaks even on a zero payout, and a screen must say "no data"
+  // rather than print a number.
+  const breakEven = payout > 0 && terms.stake > 0 ? terms.stake / payout : undefined;
+  // A handful of battles is not a rate. Below this the tier has been played too
+  // little to say anything, and pretending otherwise is the misinformed-player
+  // failure this statistic exists to avoid.
+  const winRate = attempts >= 10 ? wins / attempts : undefined;
+  const edge = winRate !== undefined && breakEven !== undefined
+    ? winRate - breakEven : undefined;
+  return { pot, wins, attempts, payout, breakEven, winRate, edge };
+}
+
+export type ArenaTierMath = ReturnType<typeof arenaTierMath>;
+
+/** One tier, joined: its constants, its pot, and everything derived from both. */
+export function arenaTierRows(terms: ArenaTerms, tiers: ArenaTiers | null | undefined) {
+  return terms.tiers.map((tier) => ({
+    ...tier,
+    ...arenaTierMath(terms, tiers?.[tier.key]),
+  }));
+}
+
+/** "38%", and "—" for a rate nothing has been measured for yet. */
+export const ratePct = (value: number | undefined) =>
+  value === undefined ? '—' : `${Math.round(Math.max(0, Math.min(1, value)) * 100)}%`;
 
 export const ELEMENT_LABEL: Record<Affinity, string> = {
   fire: 'Fire', water: 'Water', air: 'Air', rock: 'Rock', normal: 'Untyped',
@@ -84,6 +230,35 @@ export type Fighter = {
  */
 export const moveDamage = (move: Move, fighter: Fighter, tuning: Tuning) =>
   Math.max(1, Math.floor(move.damage * (attackFloor(fighter, tuning) + fighter.attack)));
+
+/**
+ * What a printed rider is actually worth to this fighter, in stat points.
+ *
+ * A move's `+5 speed` is not five points and has not been since riders were
+ * scaled: the engine multiplies it by `riderPerPoint` against a quarter of the
+ * fighter's whole stat budget, rounded away from zero. Mirrors `riderPoints`
+ * in battle.lua, and MUST keep mirroring it — this is the number the player
+ * watches move on their own stat line, and the whole reason riders stopped
+ * being flat is that a flat one meant two different things at level 0 and
+ * level 20.
+ *
+ * Measured against the BUDGET rather than the stat being moved, which is what
+ * makes a buff worth the same to a build that dumped that stat as to one that
+ * bought it.
+ *
+ * Falls back to the printed number when the process publishes no
+ * `riderPerPoint`, which is what a deployment from before the change does.
+ */
+export const riderPoints = (points: number, fighter: Fighter, tuning: Tuning) => {
+  if (points === 0) return 0;
+  const share = tuning.riderPerPoint;
+  if (!share) return points;
+  const budget = fighter.statBudget
+    ?? (fighter.attack + fighter.defense + fighter.speed + fighter.health);
+  const yardstick = Math.max(1, Math.floor(budget / 4));
+  const size = Math.max(1, Math.floor(Math.abs(points) * share * yardstick + 0.5));
+  return points > 0 ? size : -size;
+};
 
 /** Max HP for a health stat, from the engine's own constant. */
 export const maxHealth = (health: number, tuning: Tuning) =>

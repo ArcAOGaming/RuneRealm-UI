@@ -19,9 +19,9 @@
  * Uppercase only. Lowercase input is folded up, and anything unmapped becomes a
  * space rather than an exception — a move name is not worth a failed mint.
  *
- * There are two faces, both 7 rows tall: `wide` at 5 columns, which is the
- * card's typeface, and `slim` at 3, which exists so the move panel can trade
- * grid width for point size. See `SLIM` below.
+ * There are three faces: `wide`, 5 columns by 7 rows, which is the card's
+ * typeface; `slim` at 3 by 7, which trades grid width for point size; and
+ * `book` at 6 by 9, which is the one that looks like writing. See each.
  */
 
 /** Each glyph is 7 rows of 5 bits, MSB (bit 4) leftmost. */
@@ -145,10 +145,143 @@ export const TRACKING = 1;
  * caller asks otherwise; every function below takes one and defaults to it, so
  * nothing that does not care about faces has to know they exist.
  */
-export const FACES = {
-  wide: { glyphs: G, width: GLYPH_W, tracking: TRACKING },
-  slim: { glyphs: SLIM, width: 3, tracking: TRACKING },
+/**
+ * The third face: 6 columns by NINE rows, written out as pictures.
+ *
+ * The other two are hex because they are 7 rows of 5 bits and a hex digit is
+ * legible at that size. This one is not: 9 rows of 6, and the whole reason it
+ * exists is the shape of the letters, which nobody can review as `0x3e`.
+ * The rows are parsed once at load.
+ *
+ * Why nine rows. A card's move name has a fixed width — seventeen characters
+ * of "WARRIOR'S RESOLVE" inside a row that is 447 across — so the SIZE of the
+ * type is set by arithmetic and the only thing a face can change is how much
+ * letter it fits in it. At 5x7 a letter drawn to fill the height is a third
+ * narrower than it is tall, which is why it read as squashed. Six by nine is
+ * 0.667, near enough the proportion of real capitals, and the extra rows are
+ * what let an S have a spine and an R have a leg.
+ *
+ * Strokes are two units. One unit at this size is a hairline against the
+ * card's own artwork, and the counters stay open at two.
+ *
+ * The cell is SEVEN wide and almost every letter inks six of it. The seventh
+ * column exists for M and W alone: two stems of two units with an apex
+ * between them does not fit in six, and drawn there they come out as a solid
+ * block with a notch. Because the face is spaced proportionally, that column
+ * costs nothing on the other forty-two glyphs.
+ */
+const BOOK_ROWS = {
+  A: '.####..|##..##.|##..##.|##..##.|######.|##..##.|##..##.|##..##.|##..##.',
+  B: '#####..|##..##.|##..##.|##..##.|#####..|##..##.|##..##.|##..##.|#####..',
+  C: '.####..|##..##.|##.....|##.....|##.....|##.....|##.....|##..##.|.####..',
+  D: '#####..|##..##.|##..##.|##..##.|##..##.|##..##.|##..##.|##..##.|#####..',
+  E: '######.|##.....|##.....|##.....|#####..|##.....|##.....|##.....|######.',
+  F: '######.|##.....|##.....|##.....|#####..|##.....|##.....|##.....|##.....',
+  G: '.####..|##..##.|##.....|##.....|##.###.|##..##.|##..##.|##..##.|.####..',
+  H: '##..##.|##..##.|##..##.|##..##.|######.|##..##.|##..##.|##..##.|##..##.',
+  I: '######.|..##...|..##...|..##...|..##...|..##...|..##...|..##...|######.',
+  J: '..####.|....##.|....##.|....##.|....##.|....##.|##..##.|##..##.|.####..',
+  K: '##..##.|##.##..|####...|###....|###....|####...|##.##..|##..##.|##..##.',
+  L: '##.....|##.....|##.....|##.....|##.....|##.....|##.....|##.....|######.',
+  M: '##..##.|######.|######.|##..##.|##..##.|##..##.|##..##.|##..##.|##..##.',
+  N: '##..##.|###.##.|###.##.|##.###.|##.###.|##..##.|##..##.|##..##.|##..##.',
+  O: '.####..|##..##.|##..##.|##..##.|##..##.|##..##.|##..##.|##..##.|.####..',
+  P: '#####..|##..##.|##..##.|##..##.|#####..|##.....|##.....|##.....|##.....',
+  Q: '.####..|##..##.|##..##.|##..##.|##..##.|##..##.|##.###.|##..##.|.#####.',
+  R: '#####..|##..##.|##..##.|##..##.|#####..|####...|##.##..|##..##.|##..##.',
+  S: '.#####.|##.....|##.....|##.....|.####..|....##.|....##.|....##.|#####..',
+  T: '######.|..##...|..##...|..##...|..##...|..##...|..##...|..##...|..##...',
+  U: '##..##.|##..##.|##..##.|##..##.|##..##.|##..##.|##..##.|##..##.|.####..',
+  V: '##..##.|##..##.|##..##.|##..##.|##..##.|##..##.|.####..|.####..|..##...',
+  W: '##...##|##...##|##...##|##...##|##.#.##|##.#.##|##.#.##|##.#.##|#######',
+  X: '##..##.|##..##.|.####..|.####..|..##...|.####..|.####..|##..##.|##..##.',
+  Y: '##..##.|##..##.|.####..|.####..|..##...|..##...|..##...|..##...|..##...',
+  Z: '######.|....##.|....##.|...##..|..##...|.##....|##.....|##.....|######.',
+  0: '.####..|##..##.|##..##.|##.###.|######.|###.##.|##..##.|##..##.|.####..',
+  1: '..##...|.###...|..##...|..##...|..##...|..##...|..##...|..##...|######.',
+  2: '.####..|##..##.|....##.|....##.|...##..|..##...|.##....|##.....|######.',
+  3: '.####..|##..##.|....##.|...##..|..###..|....##.|....##.|##..##.|.####..',
+  4: '...##..|..###..|.####..|##.##..|##.##..|######.|...##..|...##..|...##..',
+  5: '######.|##.....|##.....|#####..|....##.|....##.|....##.|##..##.|.####..',
+  6: '..###..|.##....|##.....|##.....|#####..|##..##.|##..##.|##..##.|.####..',
+  7: '######.|....##.|....##.|...##..|...##..|..##...|..##...|.##....|.##....',
+  8: '.####..|##..##.|##..##.|##..##.|.####..|##..##.|##..##.|##..##.|.####..',
+  9: '.####..|##..##.|##..##.|##..##.|.#####.|....##.|....##.|...##..|.###...',
+  ' ': '.......|.......|.......|.......|.......|.......|.......|.......|.......',
+  '-': '.......|.......|.......|.......|######.|.......|.......|.......|.......',
+  "'": '..##...|..##...|..##...|.......|.......|.......|.......|.......|.......',
+  '.': '.......|.......|.......|.......|.......|.......|.......|..##...|..##...',
+  '+': '.......|.......|..##...|..##...|######.|..##...|..##...|.......|.......',
+  '/': '....##.|....##.|...##..|...##..|..##...|.##....|.##....|##.....|##.....',
+  ':': '.......|..##...|..##...|.......|.......|..##...|..##...|.......|.......',
+  '!': '..##...|..##...|..##...|..##...|..##...|..##...|.......|..##...|..##...',
 };
+
+const parseFace = (rows, width, height) => Object.fromEntries(
+  Object.entries(rows).map(([ch, art]) => {
+    const lines = art.split('|');
+    if (lines.length !== height) throw new Error(`font: ${ch} has ${lines.length} rows`);
+    return [ch, lines.map((line) => {
+      if (line.length !== width) throw new Error(`font: ${ch} row is ${line.length} wide`);
+      return [...line].reduce((bits, c) => (bits << 1) | (c === '#' ? 1 : 0), 0);
+    })];
+  }),
+);
+
+export const FACES = {
+  wide: { glyphs: G, width: GLYPH_W, height: GLYPH_H, tracking: TRACKING },
+  slim: { glyphs: SLIM, width: 3, height: GLYPH_H, tracking: TRACKING },
+  book: {
+    glyphs: parseFace(BOOK_ROWS, 7, 9), width: 7, height: 9, tracking: TRACKING,
+    proportional: true, blank: 2,
+  },
+};
+
+/**
+ * Per-glyph ink widths, for a face that is spaced like writing rather than
+ * like a table.
+ *
+ * A monospaced grid gives an apostrophe the same room as a W, so the gaps
+ * around it swallow the letters either side and the line reads scrunched no
+ * matter how much tracking is added — and tracking is exactly what a card
+ * cannot afford, because the row's width is fixed by its longest name. This
+ * measures what each glyph actually inks and advances by that instead, which
+ * hands back the empty columns to the gaps. On "WARRIOR'S RESOLVE" it is 24
+ * pixels, which is the difference between 3 of air between letters and 4.
+ *
+ * Blank glyphs have no ink to measure, so a space takes `blank` columns. Two,
+ * not three: with 5 pixels of tracking either side a word break is already 18
+ * against 5 between letters, which is the proportion a reader wants, and the
+ * four pixels it gives back are four the longest name on a card does not
+ * have.
+ */
+const METRICS = new WeakMap();
+
+function metrics(face) {
+  let m = METRICS.get(face);
+  if (m) return m;
+  m = new Map();
+  for (const [ch, rows] of Object.entries(face.glyphs)) {
+    let left = face.width, right = -1;
+    for (const bits of rows) {
+      for (let c = 0; c < face.width; c++) {
+        if (!(bits & (1 << (face.width - 1 - c)))) continue;
+        if (c < left) left = c;
+        if (c > right) right = c;
+      }
+    }
+    m.set(ch, right < 0
+      ? { left: 0, width: face.blank ?? face.width }
+      : { left, width: right - left + 1 });
+  }
+  METRICS.set(face, m);
+  return m;
+}
+
+/** What one glyph occupies, and where its ink starts inside its cell. */
+const cell = (face, ch) => (face.proportional
+  ? metrics(face).get(ch) ?? metrics(face).get(' ')
+  : { left: 0, width: face.width });
 
 const glyph = (face, ch) => face.glyphs[ch] ?? face.glyphs[' '];
 const pitch = (face) => face.width + face.tracking;
@@ -179,19 +312,19 @@ const size = (scale) => (typeof scale === 'number'
   : { x: scale.x, y: scale.y ?? scale.x, bold: scale.bold ?? 0, track: scale.track ?? null });
 
 /** Width of `text` in device pixels at `scale`. Trailing tracking is trimmed. */
-const advance = (face, s) => (s.track === null
-  ? pitch(face) * s.x
-  : face.width * s.x + s.track);
+const gapOf = (face, s) => (s.track === null ? face.tracking * s.x : s.track);
+const advance = (face, s, ch) => cell(face, ch).width * s.x + gapOf(face, s);
 
 export function measure(text, scale, face = FACES.wide) {
-  const n = String(text).length;
-  if (!n) return 0;
+  const chars = String(text).toUpperCase();
+  if (!chars.length) return 0;
   const s = size(scale);
-  const gap = s.track === null ? face.tracking * s.x : s.track;
-  return n * advance(face, s) - gap + s.bold;
+  let w = 0;
+  for (const ch of chars) w += advance(face, s, ch);
+  return w - gapOf(face, s) + s.bold;
 }
 
-export const lineHeight = (scale) => GLYPH_H * size(scale).y;
+export const lineHeight = (scale, face = FACES.wide) => face.height * size(scale).y;
 
 /**
  * Break `text` into at most `maxLines` lines that each fit `width` device
@@ -229,10 +362,15 @@ export function glyphRects(text, x, y, scale, face = FACES.wide) {
   const chars = String(text).toUpperCase();
   const w = face.width;
   const s = size(scale);
+  let pen = x;
   for (let i = 0; i < chars.length; i++) {
     const rows = glyph(face, chars[i]);
-    const gx = x + i * advance(face, s);
-    for (let r = 0; r < GLYPH_H; r++) {
+    const box = cell(face, chars[i]);
+    // The pen sits where the INK starts, not where the cell does, so a narrow
+    // glyph does not carry its empty columns along with it.
+    const gx = pen - box.left * s.x;
+    pen += advance(face, s, chars[i]);
+    for (let r = 0; r < face.height; r++) {
       const bits = rows[r];
       let c = 0;
       while (c < w) {

@@ -21,8 +21,8 @@ import { Badge, Panel, SectionTitle, Skeleton, cx } from '../ui/primitives';
 import { ELEMENT_ICON, Sword, Trophy } from '../ui/icons';
 import { ELEMENT_LABEL, shortAddress } from '../lib/format';
 import { Sigil } from '../ui/Sigil';
-import { Element, LeaderboardRow, Player } from '../lib/types';
-import { MonsterCard } from '../ui/MonsterCard';
+import { Element, LeaderboardRow } from '../lib/types';
+import { CardPreview } from '../ui/CardPreview';
 
 type Sort = 'level' | 'wins' | 'quests';
 
@@ -39,29 +39,6 @@ const MEDAL: Record<number, { name: string; hex: string }> = {
   2: { name: 'Silver', hex: '#b9c2cc' },
   3: { name: 'Bronze', hex: '#c9793f' },
 };
-
-/**
- * A board row, shaped as the partial player the card wants.
- *
- * Deliberately NOT given an inventory: a leaderboard row knows a companion and
- * a win/loss record and nothing about anybody's satchel, and the card hides the
- * fields it is not given rather than printing a zero for them.
- */
-const asPlayer = (r: LeaderboardRow): Player => ({
-  address: r.address,
-  unlocked: true,
-  faction: r.faction,
-  monster: r.monster,
-  inventory: {},
-  gold: 0,
-  lootboxes: [],
-  battlesRemaining: 0,
-  wins: r.wins,
-  losses: r.losses,
-  questsCompleted: r.quests,
-  joinedAt: 0,
-  dailyReadyAt: 0,
-});
 
 export default function Ranks({ embedded = false }: { embedded?: boolean }) {
   const { leaderboard, factions, address } = useGame();
@@ -157,7 +134,7 @@ export default function Ranks({ embedded = false }: { embedded?: boolean }) {
               through the shape of the page — but a full-width card holding one
               small companion card and a six-line record was mostly empty
               space. First place is still marked, by its medal and its glow. */}
-          <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
+          <div className="grid grid-cols-[19rem] justify-center gap-4 md:grid-cols-[repeat(2,19rem)] md:justify-between lg:grid-cols-[repeat(3,19rem)]">
             {podium.map((r, i) => (
               <RankCard key={r.address} row={r} rank={i + 1} you={r.address === address} />
             ))}
@@ -170,9 +147,14 @@ export default function Ranks({ embedded = false }: { embedded?: boolean }) {
               }>
                 The field
               </SectionTitle>
-              <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
+              <div className="grid grid-cols-[repeat(auto-fill,19rem)] justify-center gap-4 md:justify-between">
                 {rest.map((r, i) => (
-                  <RankCard key={r.address} row={r} rank={i + 4} you={r.address === address} />
+                  <RankCard
+                    key={r.address}
+                    row={r}
+                    rank={i + 4}
+                    you={r.address === address}
+                  />
                 ))}
               </div>
             </>
@@ -184,7 +166,9 @@ export default function Ranks({ embedded = false }: { embedded?: boolean }) {
 }
 
 /** One trainer: the standing, then the companion that earned it. */
-function RankCard({ row, rank, you }: { row: LeaderboardRow; rank: number; you: boolean }) {
+function RankCard({
+  row, rank, you, className,
+}: { row: LeaderboardRow; rank: number; you: boolean; className?: string }) {
   const medal = MEDAL[rank];
   const Icon = ELEMENT_ICON[row.element];
 
@@ -192,7 +176,7 @@ function RankCard({ row, rank, you }: { row: LeaderboardRow; rank: number; you: 
     <Panel
       data-element={row.element}
       glow={rank === 1}
-      className={cx('relative overflow-hidden p-5', you && 'ring-1 ring-element/40')}
+      className={cx('relative overflow-hidden p-5', you && 'ring-1 ring-element/40', className)}
       style={medal ? { borderColor: `${medal.hex}55` } : undefined}
     >
       {medal && (
@@ -227,20 +211,20 @@ function RankCard({ row, rank, you }: { row: LeaderboardRow; rank: number; you: 
           </div>
           <div className="font-mono text-[11px] text-faint">{shortAddress(row.address, 6)}</div>
         </div>
-        {/* Their own row, full width. Sharing a line with the name worked at
-            one card per row and does not at three: the tallies held their size
-            and the name gave way, so the board showed "R." and "F." where the
-            trainers' names should be. */}
-        <div className="flex w-full items-center justify-between gap-3 text-[11px] text-faint">
+        {/* One facts strip, once. The old generic companion summary repeated
+            the record, faction and address immediately below this row. Care
+            and quest totals are not part of the at-a-glance standing. */}
+        <div className="grid w-full grid-cols-3 gap-3 border-t border-rune/12 pt-3 text-[11px] text-faint">
           <Tally label="Level" value={row.level} />
           <Tally label="Wins" value={row.wins} tone="text-good" />
           <Tally label="Losses" value={row.losses} />
-          <Tally label="Quests" value={row.quests} />
         </div>
       </div>
 
       {row.monster ? (
-        <MonsterCard player={asPlayer(row)} bare />
+        <div className="relative flex justify-center">
+          <CardPreview monster={row.monster} className="w-[min(16.5rem,100%)]" />
+        </div>
       ) : (
         // A process deployed before the board carried companions. Say so rather
         // than rendering an empty card and letting it read as a broken one.

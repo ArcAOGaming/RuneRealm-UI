@@ -1817,6 +1817,85 @@ pre,
 .market-pair-list { right: auto; width: 23rem; max-width: calc(100vw - 2rem); }
 .market-pair-option { min-height: 2.6rem; gap: .5rem; }
 
+/*
+ * Custody, on the strip.
+ *
+ * The same trigger shape as the pair next to it, because they are the same
+ * kind of control in the same bar: one chooses the market, one moves what you
+ * trade in it. Anything that looks like a third kind of button between two
+ * that match is the thing the eye stops on.
+ */
+.market-custody-trigger {
+  display: inline-flex;
+  min-height: 2.05rem;
+  align-items: center;
+  gap: .4rem;
+  padding: .3rem .6rem;
+  border: 1px solid rgb(var(--edge));
+  border-radius: 3px;
+  background: rgb(var(--void) / .45);
+  color: rgb(var(--ink));
+  font-size: 11px;
+  letter-spacing: .02em;
+  transition: border-color .14s ease, background .14s ease, color .14s ease;
+}
+.market-custody-trigger:hover {
+  border-color: rgb(var(--arcane) / .5);
+  background: rgb(var(--raised) / .6);
+}
+.market-custody-trigger[aria-expanded="true"] {
+  border-color: rgb(var(--arcane) / .62);
+  background: rgb(var(--arcane) / .1);
+}
+.market-custody-trigger svg:first-child { color: rgb(var(--arcane)); }
+
+.market-custody-list { right: auto; left: 0; width: 21.5rem; max-width: calc(100vw - 2rem); }
+
+/* One row per asset the pair is made of: name on the left, what the venue is
+   holding for you on the right, and the selected one carries the accent. */
+.market-custody-asset {
+  display: flex;
+  min-height: 2.3rem;
+  align-items: center;
+  gap: .5rem;
+  padding: .35rem .6rem;
+  border: 1px solid rgb(var(--edge) / .8);
+  border-radius: 3px;
+  background: rgb(var(--void) / .3);
+  color: rgb(var(--faint));
+  font-size: 11px;
+  text-align: left;
+  transition: border-color .14s ease, background .14s ease, color .14s ease;
+}
+.market-custody-asset:hover { color: rgb(var(--ink)); border-color: rgb(var(--arcane) / .4); }
+.market-custody-asset[data-selected="true"] {
+  border-color: rgb(var(--arcane) / .6);
+  background: rgb(var(--arcane) / .12);
+  color: rgb(var(--ink));
+}
+.market-custody-asset b { color: rgb(var(--ink)); font-weight: 500; }
+
+/* Outside the venue, then inside it, with the boundary drawn between them. */
+.market-custody-split {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  gap: .3rem;
+  font-family: 'JetBrains Mono', ui-monospace, monospace;
+  font-size: 11px;
+}
+.market-custody-split svg { flex: none; color: rgb(var(--faint)); }
+.market-custody-split b { min-width: 2rem; text-align: right; }
+.market-custody-split b:last-of-type { text-align: left; }
+
+.market-custody-hint {
+  color: rgb(var(--faint));
+  font-family: 'JetBrains Mono', ui-monospace, monospace;
+  font-size: 9px;
+  letter-spacing: .02em;
+  text-transform: none;
+}
+
 
 .market-venue-trigger,
 .market-venue-option {
@@ -3058,7 +3137,7 @@ pre,
 .acquisition-card-space {
   position: absolute;
   width: min(24rem, 41dvh, calc(100vw - 2.5rem));
-  aspect-ratio: 648 / 1065;
+  aspect-ratio: 693 / 968;
 }
 
 .acquisition-card-layers { opacity: 0; }
@@ -3119,9 +3198,24 @@ pre,
       rotate(calc(0deg - var(--layer-rotation))) scale(.72);
     filter: blur(0) drop-shadow(0 18px 32px rgb(var(--element) / .2));
   }
-  78% {
+  /* Square to the stack. Whatever angle the plate flew in at is spent by
+     here — the last third is a lamination, and sheets of one card do not
+     rotate against each other. */
+  66% {
     opacity: 1;
-    transform: translate3d(-2vw, 1.5vh, 30px) rotate(18deg) scale(.9);
+    transform: translate3d(0, var(--layer-lift, -1vh), 0) scale(var(--layer-swell, 1));
+    filter: drop-shadow(0 18px 30px rgb(0 0 0 / .4));
+  }
+  /* Hanging, a beat before it drops. */
+  82% {
+    opacity: 1;
+    transform: translate3d(0, calc(var(--layer-lift, -1vh) * .82), 0)
+      scale(calc(1 + (var(--layer-swell, 1) - 1) * .82));
+  }
+  /* Impact, and the give that sells it. */
+  93% {
+    opacity: 1;
+    transform: translate3d(0, .18vh, 0) scale(.994);
   }
   100% {
     opacity: 1;

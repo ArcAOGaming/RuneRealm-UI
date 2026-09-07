@@ -337,16 +337,39 @@ export function CompanionAcquisition({
   );
 }
 
+/**
+ * How each layer sits over the stack in the moment before it seats.
+ *
+ * The first attempt canted them — alternating angles fanning out, resolving to
+ * zero all at once. It read as wrong, and the reason is that the layers are
+ * not separate cards: they are one card's plates. Sheets being laminated do
+ * not rotate against each other, so any relative angle at the end looks like
+ * a mistake rather than a flourish, however the angles are distributed.
+ *
+ * What they DO is come down. Each plate hovers a little above the stack and a
+ * little larger — nearer the eye — and drops onto it, the front plates from
+ * higher up because they have further to fall. With the 55ms stagger already
+ * on the animation that lands them one after another, back to front, which is
+ * the order they were painted in.
+ */
+const STACK = (index: number) => ({
+  lift: -(1.1 + index * 0.55),
+  swell: 1 + index * 0.014,
+});
+
 function AssemblyCanvas({
   layer, index,
 }: { layer: CardAssemblyLayer; index: number }) {
   const orbit = ORBITS[index % ORBITS.length];
+  const stack = STACK(index);
   const style: Vars = {
     '--layer-x0': orbit.x0,
     '--layer-y0': orbit.y0,
     '--layer-x1': orbit.x1,
     '--layer-y1': orbit.y1,
     '--layer-rotation': orbit.r,
+    '--layer-lift': `${stack.lift.toFixed(2)}vh`,
+    '--layer-swell': stack.swell.toFixed(3),
     '--layer-delay': `${index * 55}ms`,
     zIndex: index + 1,
   };

@@ -7,19 +7,22 @@
  * and every action is a single signature rather than a token transfer waiting
  * on a Credit-Notice.
  */
-import { lazy, Suspense, useEffect, useLayoutEffect, useRef, useState } from 'react';
+import { lazy, Suspense, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { Link, Navigate, useNavigate } from 'react-router-dom';
 import { useGame } from '../state/gameContext';
 import { projectFeed, projectPlay } from '../state/optimistic';
 import * as api from '../lib/game';
 import {
-  ActivityReceipt, BerryItemId, ItemId, levelUpCost, Monster, Player,
+  ActivityReceipt, BerryItemId, ItemId, levelUpCost, Monster, Move, Player,
 } from '../lib/types';
+import { monsterIndexEntry } from '../lib/monster-index';
+import { MoveButton } from '../ui/BattleMoves';
 import {
   Bar, Button, Panel, SectionTitle, Skeleton, Spinner, cx,
 } from '../ui/primitives';
 import {
-  Arrow, Berry, Bolt, Clock, Gift, GLYPH_PATH, Heart, Map, Rune, Shield, Sparkle, Sword, Users,
+  Arrow, Berry, Bolt, Clock, Gift, GLYPH_PATH, Heart, Map, Rune, Shield, Sparkle, Sword,
+  Trophy, Users,
 } from '../ui/icons';
 import {
   BERRY_FOR, countdown, ELEMENT_LABEL, ITEM_NAME,
@@ -67,12 +70,17 @@ const COMPANION_TOUR: TourStep[] = [
   {
     target: '[data-tour="activities"]',
     title: 'What you can ask of it',
-    body: 'Feed it its berry, play with it, send it on a quest, or take it hunting for a wild companion to bring back.',
+    body: 'Feed it its berry, play with it, send it on a quest, take it hunting for a wild companion to bring back, or send it to the arena. A finished quest pays Gold, and so does every win; the berries themselves come from the daily crate, not from playing more.',
   },
   {
     target: '[data-tour="card"]',
     title: 'Its card',
-    body: 'Stats, moves and meters, drawn on the card itself. Pick it up to look at it, and level it up once it has the experience.',
+    body: 'Stats, meters, and the three moves this one knows — drawn on the card itself. The rarest sits at the top; its species’ own move is always in there somewhere. Pick it up to look at it, and level it up once it has the experience: every fifth level it is offered a new move to learn.',
+  },
+  {
+    target: '[data-tour="move-offer"]',
+    title: 'A new move',
+    body: 'Every fifth level your companion is offered one move. Take it in place of one of the two you can give up, or turn it down — either way the choice is final. Its own species move is the third, and that one is never on the table. The level is already yours, so this can wait as long as you like — but it is gone the next time you level up, whichever level that is.',
   },
   {
     target: '[data-tour="character"]',
@@ -82,7 +90,7 @@ const COMPANION_TOUR: TourStep[] = [
   {
     target: '[data-tour="worship"]',
     title: 'Daily worship',
-    body: 'Claim every day. The crate is where your berries come from, and an unbroken streak makes it better — a second crate from three days, a rare one from ten. Rune drips daily alongside it, and this is the only place in the realm it is ever minted.',
+    body: 'Claim every day. The crate is where all your berries come from — about a day’s play in one — and an unbroken streak makes it better: a second crate from three days, and from ten a rare one carrying a Scroll. Rune drips daily alongside it, and this is the only place in the realm it is ever minted.',
   },
   {
     target: '[data-tour-to="/arena"]',
@@ -255,10 +263,13 @@ function Adopt() {
           Your {faction?.monsterName ?? 'companion'} is waiting
         </h1>
         <p className="mx-auto mt-2 max-w-sm text-sm leading-relaxed text-muted">
-          It arrives at level zero with four moves rolled from the{' '}
-          {faction ? ELEMENT_LABEL[faction.element].toLowerCase() : ''} pool and a
-          random spread of ten stat points. Adopting also hands you three loot
-          boxes.
+          It arrives at level zero knowing its own species move, plus two more
+          drawn from the{' '}
+          {faction ? ELEMENT_LABEL[faction.element].toLowerCase() : ''} pool and
+          the neutral one — rarer moves are rarer draws. On top of those, every
+          companion in the realm can Rally and Mend once a battle for free.
+          Adopting also hands you a random spread of ten stat points and three
+          loot boxes.
         </p>
         <p className="mx-auto mt-2 max-w-sm text-[12px] leading-relaxed text-faint">
           This is the one companion the realm gives you. Every other one is
@@ -547,6 +558,13 @@ function CompanionCard({ monster, player }: { monster: Monster; player: Player }
         <span>Losses <b className="font-mono text-muted">{player.losses}</b></span>
       </div>
 
+      {/* The relearn offer. Rendered inline under the card rather than as a
+          dialog on purpose: it interrupts nothing, it can be ignored for as
+          long as the player likes, and a modal would say the opposite. */}
+      {monster.pendingMove && (
+        <MoveOffer monster={monster} offered={monster.pendingMove} />
+      )}
+
       {allocating && (
         <LevelUpDialog monster={monster} onClose={() => setAllocating(false)} />
       )}
@@ -604,6 +622,14 @@ function useActivityRunes(element: string, states: RuneState[]) {
             'M6.2 12.8h11.6V15H6.2Z',
             'M10.6 15h2.8v4.4h-2.8Z',
             'M9.2 19.4h5.6v2.2H9.2Z',
+          ],
+          // The arena's cup. One token per card, and `layout` silently skips a
+          // slot it has no token for — so a fifth card without a fifth glyph
+          // carves nothing while `carved` has already taken the flat icon away.
+          [
+            'M7 3.6h10v4.8L14.2 13H9.8L7 8.4Z',
+            'M7 5.6H4.2v2.2L7 10.4M17 5.6h2.8v2.2L17 10.4',
+            'M12 13v3.8M8.8 20.4l.8-3.6h4.8l.8 3.6Z',
           ],
         ],
       });
@@ -682,8 +708,12 @@ function useActivityRunes(element: string, states: RuneState[]) {
 const HUNT_BERRY_IDS: BerryItemId[] = [
   'fire_berry', 'water_berry', 'air_berry', 'rock_berry',
 ];
+/* Only used before the catalog arrives; `C.HUNT.entry.berries` is the truth.
+   The offering dropped from five of each to two when the capture started
+   costing a Scroll, and a stale copy here quotes a price the process does not
+   charge. */
 const FALLBACK_HUNT_BERRIES: Record<BerryItemId, number> = {
-  fire_berry: 5, water_berry: 5, air_berry: 5, rock_berry: 5,
+  fire_berry: 2, water_berry: 2, air_berry: 2, rock_berry: 2,
 };
 
 function Activities({
@@ -722,7 +752,7 @@ function Activities({
   const huntConfigured = HUNT_PROCESS.length === 43;
   const huntBerryCosts = catalog?.hunt?.entry?.berries ?? FALLBACK_HUNT_BERRIES;
   const huntShort = HUNT_BERRY_IDS.filter((item) => (
-    (player!.inventory[item] ?? 0) < (huntBerryCosts[item] ?? 5)
+    (player!.inventory[item] ?? 0) < (huntBerryCosts[item] ?? FALLBACK_HUNT_BERRIES[item])
   ));
   const canPayHunt = huntShort.length === 0;
 
@@ -736,6 +766,7 @@ function Activities({
     away || monster.energy < 10 || berries < 1,
     away || monster.energy < 25 || monster.happiness < 25,
     away || !huntConfigured || !canPayHunt,
+    away || monster.energy < 25 || monster.happiness < 25,
   ];
   /*
     The rune animation runs on the SIGNATURE, not the click.
@@ -757,6 +788,9 @@ function Activities({
     writePhase('play') === 'settling',
     writePhase('quest') === 'settling',
     writePhase('hunt') === 'settling',
+    // Battle is a link, not a write. Nothing is signed from this card, so its
+    // stone never casts — it only lights up on hover like the others.
+    false,
   ];
 
   const beginHunt = async () => {
@@ -917,9 +951,9 @@ function Activities({
           title="Hunt"
           costs={HUNT_BERRY_IDS.map((item) => ({
             icon: <ItemIcon id={item} />,
-            value: `−${huntBerryCosts[item] ?? 5}`,
+            value: `−${huntBerryCosts[item] ?? FALLBACK_HUNT_BERRIES[item]}`,
             title: ITEM_NAME[item],
-            short: (player!.inventory[item] ?? 0) < (huntBerryCosts[item] ?? 5),
+            short: (player!.inventory[item] ?? 0) < (huntBerryCosts[item] ?? FALLBACK_HUNT_BERRIES[item]),
           }))}
           gains={[
             {
@@ -938,6 +972,44 @@ function Activities({
           busy={isPending('hunt')}
           disabled={busy || away || !huntConfigured || !canPayHunt}
           onClick={() => setHuntGateOpen(true)}
+        />
+
+        {/*
+          The arena, from here.
+
+          It is the one thing you can ask of a companion that lives on another
+          screen, and it was reachable only from the nav — so the panel that
+          answers "what can I do with this creature" was quietly missing a
+          quarter of the answer. This card signs nothing: it states what the
+          arena will charge and takes you there, and the arena asks again.
+
+          Full width because it is the odd one out of five, and because it is
+          the only card here that leaves the page.
+        */}
+        <ActivityCard
+          className="sm:col-span-2"
+          icon={<Trophy className="h-4 w-4" />}
+          slot={(el) => { slots.current[4] = el; }}
+          carved={live}
+          onHover={(on) => setHovered(on ? 4 : null)}
+          title="Battle"
+          costs={[
+            { icon: energy, value: '−25', title: 'Energy', short: monster.energy < 25 },
+            { icon: happy, value: '−25', title: 'Happiness', short: monster.happiness < 25 },
+          ]}
+          gains={[
+            { icon: <Sword className="h-3.5 w-3.5 shrink-0" />, value: '×4', title: 'Battles in a session' },
+            { icon: <Trophy className="h-3.5 w-3.5 shrink-0" />, value: 'Gold', title: 'Gold for every win' },
+          ]}
+          reason={
+            away ? null
+              : monster.energy < 25 ? 'Not enough energy'
+                : monster.happiness < 25 ? 'Not happy enough' : null
+          }
+          away={away}
+          action="Enter the arena"
+          disabled={busy || away || monster.energy < 25 || monster.happiness < 25}
+          onClick={() => navigate('/arena')}
         />
         </div>
       </div>
@@ -967,8 +1039,14 @@ function HuntEntryDialog({
   onConfirm: () => void;
 }) {
   const canPay = HUNT_BERRY_IDS.every((item) => (
-    (inventory[item] ?? 0) >= (costs[item] ?? 5)
+    (inventory[item] ?? 0) >= (costs[item] ?? FALLBACK_HUNT_BERRIES[item])
   ));
+  /* Every number on this dialog is summed from the published costs, never
+     typed. The offering was five of each and read "Twenty berries"; it is two
+     of each now, and a sentence that had the total written into it would still
+     be saying twenty. */
+  const total = HUNT_BERRY_IDS.reduce(
+    (sum, item) => sum + (costs[item] ?? FALLBACK_HUNT_BERRIES[item]), 0);
   return (
     <Dialog
       title="Open the Wild Verge"
@@ -983,17 +1061,18 @@ function HuntEntryDialog({
         </Suspense>
         <div className="pointer-events-none absolute inset-x-0 bottom-0 bg-gradient-to-t from-void via-void/80 to-transparent pb-3 pt-9 text-center">
           <p className="eyebrow text-element">Four elements · one passage</p>
-          <p className="mt-1 text-sm text-muted">Twenty berries wake the gate.</p>
+          <p className="mt-1 text-sm text-muted">{total} berries wake the gate.</p>
         </div>
       </div>
       <div className="p-6">
         <p className="text-sm leading-relaxed text-muted">
           The offering is paid once when the hunt opens. Searching, fighting and returning are
-          included; a defeated wild companion may then be bound with a 1–5 Rune bid.
+          included; a defeated wild companion may then be bound with a Scroll and a 1–3 Rune
+          bid, both spent whether the binding holds or breaks.
         </p>
         <div className="mt-5 grid grid-cols-2 gap-2 sm:grid-cols-4">
           {HUNT_BERRY_IDS.map((item) => {
-            const need = costs[item] ?? 5;
+            const need = costs[item] ?? FALLBACK_HUNT_BERRIES[item];
             const held = inventory[item] ?? 0;
             const enough = held >= need;
             return (
@@ -1022,7 +1101,7 @@ function HuntEntryDialog({
           <div className="flex gap-2">
             <Button variant="quiet" disabled={busy} onClick={onClose}>Keep the berries</Button>
             <Button variant="primary" busy={busy} disabled={!canPay || busy} onClick={onConfirm}>
-              Offer 20 · enter
+              Offer {total} · enter
             </Button>
           </div>
         </div>
@@ -1058,10 +1137,11 @@ function Chip({ icon, value, title, tone }: Tally & { tone: string }) {
 }
 
 function ActivityCard({
-  icon, slot, carved, onHover,
+  icon, slot, carved, onHover, className,
   title, costs, gains, reason, away, action, busy, disabled, onClick,
 }: {
   icon: React.ReactNode;
+  className?: string;
   /** The box the turning token stands in — see `useActivityRunes`. */
   slot?: (el: HTMLElement | null) => void;
   /** True once a token is actually rendering there, so the flat icon steps aside. */
@@ -1097,6 +1177,7 @@ function ActivityCard({
         // Ends, not centre: the three cards carry different numbers of
         // tallies, and centring each one's own content put three names at
         // three heights on one line of the page.
+        className,
         'group flex min-h-0 flex-col justify-between gap-2.5 text-left',
         'rounded-[3px] border border-edge/60 bg-void/25 px-3 py-3',
         'transition-[border-color,background-color,opacity]',
@@ -1256,6 +1337,154 @@ const FALLBACK_MAX_PER_STAT = 5;
  * process enforces exactly that, so the dialog does too rather than letting
  * someone submit an allocation that will be refused.
  */
+/**
+ * The move a companion has been offered, and the two it could give up for it.
+ *
+ * This is the only moment the rarity system is visible. A roster is drawn once
+ * at adoption, out of sight; a relearn level is where a one-in-twenty roll is
+ * something a player watches land, so the offer is shown with everything a
+ * decision needs on it rather than as a name and a yes/no.
+ *
+ * Three cells, all `MoveButton`, all showing the same damage estimate and the
+ * same rider values the fight itself will — one component so the numbers cannot
+ * disagree with the numbers on the battle screen.
+ *
+ * TWO slots, not three. The species' own move cannot be given up: it is what
+ * makes a species mean something, it drives the signature attack animation, and
+ * it is the guarantee that every companion has a move that deals damage. So the
+ * choice is which of two to let go, and the third is shown locked rather than
+ * hidden — "you cannot trade this away" is a rule worth seeing.
+ *
+ * Nothing here blocks anything. The level-up that produced the offer committed
+ * by itself, so a player who closes this and never comes back is holding an
+ * unopened envelope, not an unfinished level.
+ */
+function MoveOffer({ monster, offered }: { monster: Monster; offered: string }) {
+  const { tuning, catalog, run, isPending, busy } = useGame();
+  const [replacing, setReplacing] = useState<string | null>(null);
+
+  const definition = useMemo(() => {
+    for (const pool of Object.values(catalog?.movePools ?? {})) {
+      const found = (pool as Record<string, Omit<Move, 'name'>>)[offered];
+      if (found) return { ...found, name: offered } as Move;
+    }
+    return null;
+  }, [catalog, offered]);
+
+  // Which of the roster this offer is allowed to displace. Mirrors
+  // `Battle.swappableMoves`: everything except the species' own move, which the
+  // index names and the process refuses to replace.
+  const signature = useMemo(() => {
+    const entry = monsterIndexEntry(monster.entryNo);
+    return entry?.moves?.basic ?? entry?.basicMove ?? null;
+  }, [monster.entryNo]);
+
+  const rows = useMemo(
+    () => Object.entries(monster.moves ?? {})
+      .sort(([a, x], [b, y]) => (x.rarity ?? 3) - (y.rarity ?? 3) || a.localeCompare(b)),
+    [monster.moves],
+  );
+
+  // A move the catalog cannot describe is still answerable — the process is the
+  // authority on what was offered, and a client that has not loaded a catalog
+  // must not strand a player in front of a prompt it will not draw.
+  if (!definition) {
+    return (
+      <Panel className="mt-3 border-element/40 p-3" glow>
+        <div className="eyebrow text-element">A new move</div>
+        <p className="mt-1 text-sm text-ink">
+          {monster.name} can learn <b>{offered}</b>.
+        </p>
+        <Button
+          className="mt-3" size="sm" variant="quiet"
+          busy={isPending('decline-move')} disabled={busy}
+          onClick={() => run('decline-move', () => api.learnMove(offered),
+            `${monster.name} passed on ${offered}.`)}
+        >
+          Not this time
+        </Button>
+      </Panel>
+    );
+  }
+
+  return (
+    <Panel data-tour="move-offer" className="mt-3 border-element/40 p-3" glow>
+      <div className="flex items-baseline justify-between gap-2">
+        <div className="eyebrow text-element">{monster.name} can learn a new move</div>
+        <span className="text-[10px] text-faint">gone at the next level-up</span>
+      </div>
+
+      <div className="mt-2">
+        <MoveButton
+          name={offered} move={definition}
+          fighter={monster} tuning={tuning}
+          busy={false} disabled readOnly
+          onClick={() => {}}
+        />
+      </div>
+
+      <p className="mt-3 text-[11px] leading-relaxed text-muted">
+        {replacing
+          ? <>Give up <b className="text-ink">{replacing}</b> for it?</>
+          : 'Pick the move it should replace, or keep the roster as it is.'}
+        {' '}Nothing is on a clock — but levelling up again gives the offer up.
+      </p>
+
+      <div className="mt-2 grid gap-1.5">
+        {rows.map(([name, move]) => {
+          const locked = name === signature;
+          return (
+            <button
+              key={name}
+              type="button"
+              className={cx(
+                'rounded-[3px] text-left transition-opacity',
+                locked && 'cursor-default opacity-45',
+                !locked && replacing === name && 'ring-1 ring-element',
+              )}
+              disabled={locked || busy}
+              title={locked
+                ? `${name} is ${monster.name}'s own move and cannot be given up`
+                : undefined}
+              onClick={() => !locked && setReplacing(replacing === name ? null : name)}
+            >
+              <MoveButton
+                name={name} move={move}
+                fighter={monster} tuning={tuning}
+                busy={false} disabled readOnly
+                onClick={() => {}}
+              />
+            </button>
+          );
+        })}
+      </div>
+
+      <div className="mt-3 flex flex-wrap items-center gap-2">
+        <Button
+          size="sm" variant="primary"
+          disabled={!replacing || busy}
+          busy={isPending('learn-move')}
+          onClick={() => replacing && run(
+            'learn-move', () => api.learnMove(offered, replacing),
+            `${monster.name} learned ${offered}.`,
+          )}
+        >
+          {replacing ? `Learn ${offered}` : 'Pick a move to replace'}
+        </Button>
+        <Button
+          size="sm" variant="quiet"
+          disabled={busy}
+          busy={isPending('decline-move')}
+          onClick={() => run('decline-move', () => api.learnMove(offered),
+            `${monster.name} passed on ${offered}.`)}
+        >
+          Not this time
+        </Button>
+      </div>
+    </Panel>
+  );
+}
+
 function LevelUpDialog({ monster, onClose }: { monster: Monster; onClose: () => void }) {
   const { run, isPending, catalog } = useGame();
   const TOTAL_POINTS = catalog?.levelUp?.points ?? FALLBACK_TOTAL_POINTS;
@@ -1298,8 +1527,19 @@ function LevelUpDialog({ monster, onClose }: { monster: Monster; onClose: () => 
       element={monster.elementType}
     >
       <p className="mt-1.5 text-sm text-muted">
-          Spend all ten points. At most five into any one stat.
+          Spend all {TOTAL_POINTS} points. At most {MAX_PER_STAT} into any one stat.
         </p>
+
+        {/* The deadline, in front of the action that enforces it.
+            An unanswered move offer expires on the next level-up, which is a
+            fair rule and a trap if the player is only told afterwards. This is
+            the one door it can happen behind. */}
+        {monster.pendingMove && (
+          <p className="mt-3 rounded-[3px] border border-warn/40 bg-warn/[.05] p-2.5 text-[12px] leading-relaxed text-warn">
+            Levelling up now gives up the offer of <b>{monster.pendingMove}</b>.
+            Answer it first if you want it — it will not come back.
+          </p>
+        )}
 
         <div className="mt-5 space-y-2.5">
           {rows.map(({ key, label, icon, current }) => (

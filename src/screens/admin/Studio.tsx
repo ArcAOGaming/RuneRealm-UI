@@ -116,13 +116,17 @@ const DEFAULT_CARD: MonsterDraft = {
 };
 
 function monsterFrom(draft: MonsterDraft, choices: string[], moves: StudioMove[]): Monster {
-  // Match the live roller's usual four-pool shape: an elemental signature,
-  // then boost, heal and neutral. A custom selection replaces only that slot;
-  // leaving the other selectors on "automatic" still produces four moves.
-  const fallback = [draft.element, 'boost', 'heal', 'normal']
-    .map((pool) => moves.find((move) => move.pool === pool))
+  // Match the live roller's shape: three slots, the first elemental (the engine
+  // guarantees the species' own move there) and the other two from the merged
+  // neutral pool. A custom selection replaces only that slot; leaving the other
+  // selectors on "automatic" still produces three moves.
+  //
+  // The preview does NOT draw Rally and Mend. They are free to every companion
+  // and belong to none, so they are not part of what a card previews.
+  const fallback = [draft.element, 'neutral', 'neutral']
+    .map((pool, slot) => moves.filter((move) => move.pool === pool)[slot === 2 ? 1 : 0])
     .filter(Boolean) as StudioMove[];
-  const selected = [0, 1, 2, 3]
+  const selected = [0, 1, 2]
     .map((slot) => moves.find((move) => move.name === choices[slot]) ?? fallback[slot])
     .filter(Boolean) as StudioMove[];
   const art = { fire: 'Fire', water: 'Water', air: 'Air', rock: 'Earth' }[draft.element];
@@ -447,7 +451,7 @@ function CardLab({ moves, jobs }: { moves: StudioMove[]; jobs: StudioJob[] }) {
           <div>
             <div className="mb-2 text-[11px] uppercase tracking-wide text-faint">Move slots · {moves.length} definitions</div>
             <div className="grid gap-2 sm:grid-cols-2">
-              {[0, 1, 2, 3].map((slot) => <select key={slot} className={inputClass} value={selectedMoves[slot] ?? ''} onChange={(event) => setSelectedMoves((current) => { const next = [...current]; next[slot] = event.target.value; return next; })}><option value="">automatic slot {slot + 1}</option>{moves.map((move) => <option key={`${slot}-${move.name}`} value={move.name}>{move.name} · {move.type} · r{move.rarity}</option>)}</select>)}
+              {[0, 1, 2].map((slot) => <select key={slot} className={inputClass} value={selectedMoves[slot] ?? ''} onChange={(event) => setSelectedMoves((current) => { const next = [...current]; next[slot] = event.target.value; return next; })}><option value="">automatic slot {slot + 1}</option>{moves.map((move) => <option key={`${slot}-${move.name}`} value={move.name}>{move.name} · {move.type} · r{move.rarity}</option>)}</select>)}
             </div>
           </div>
           <div>
