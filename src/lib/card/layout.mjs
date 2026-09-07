@@ -147,11 +147,11 @@ const STAT_SCALES = [7, 6, 5, 4];
 /**
  * Three rows, each a badge then a name, reading left to right.
  *
- * Three, not four, because a companion is dropping to three moves — the fourth
- * is becoming a random one drawn per battle, which by definition cannot be
- * printed on a permanent card. `orderedMoves` slices to `SLOTS.length`, so a
- * record that still carries four shows the first three rather than overflowing
- * the box.
+ * Three, not four, because a companion carries three moves. What replaced the
+ * fourth slot is Rally and Mend — free to every companion, once each per
+ * battle, carried by none — and a card prints what this creature IS, not what
+ * everything can do. `orderedMoves` slices to `SLOTS.length`, so a record from
+ * before the change shows the first three rather than overflowing the box.
  *
  * This replaced a 2x2 grid, and the reason was width. Two columns split the
  * 549-wide interior in half, so a name had ~180 and the longest words in the
@@ -190,10 +190,10 @@ const ROW_H = 78;
 const SLOTS = [0, 1, 2].map((row) => {
   const top = 693 + row * ROW_H;
   return {
-    iconX: 77,
+    iconX: 82,
     iconY: top + Math.round((ROW_H - BADGE_H) / 2),
     textX: 168,
-    textW: 447,
+    textW: 452,
     align: 'left',
     cy: top + Math.round(ROW_H / 2),
   };
@@ -285,7 +285,7 @@ const plate = (asset, dx = INSET) => ({ op: 'image', asset, dx, dy: 0 });
 function text(ops, string, { x, y, scale, color, align = 'center', shadow = true, face = FACES.wide }) {
   const width = measure(string, scale, face);
   const left = align === 'center' ? Math.round(x - width / 2) : x;
-  const top = Math.round(y - lineHeight(scale) / 2);
+  const top = Math.round(y - lineHeight(scale, face) / 2);
   // One font pixel down-right, on whichever axis the scale gives — a stretched
   // face would otherwise cast a shadow that does not match its own grid.
   const dx = typeof scale === 'number' ? scale : scale.x;
@@ -297,20 +297,40 @@ function text(ops, string, { x, y, scale, color, align = 'center', shadow = true
 }
 
 /**
- * The four moves, in the order the card shows them.
+ * The three moves, in the order the card shows them: RAREST FIRST.
  *
- * Element moves take the signature row because that is what the art calls that
- * row. `rollMoves` sorts its candidate names before drawing so a seed
- * reproduces a roll; sorting here too means one monster always produces one
- * card, which matters when the card is about to be signed.
+ * The top row is the thing worth looking at. A roster's rarity-1 move is about
+ * a one-in-twenty draw, and burying it under an alphabetically earlier common
+ * meant the one fact that makes a card worth keeping was wherever the alphabet
+ * put it. Rarity leads; element leads within a tier, because the art calls the
+ * top row the signature row; the name breaks the remaining ties.
+ *
+ * The engine has no slot ORDER — a roster is a map keyed by name — so this is
+ * purely how it is read, and nothing downstream of it changes.
+ *
+ * Deterministic, and it has to be: `rollMoves` sorts its candidate names before
+ * drawing so a seed reproduces a roll, and sorting here means one monster
+ * always produces one card, which matters when the card is about to be signed.
+ * Every term in the comparison is a fact about the move rather than about the
+ * fighter, so it cannot move between the preview and the mint.
+ *
+ * A move with no `rarity` sorts as the common tier. That is the compact stored
+ * form, `{ count }` and nothing else, which is what a record carries before
+ * `hydrateMoves` joins it against `catalog.movePools` — on that path every move
+ * ties and the order falls back to what it was before, element then name.
  */
 export function orderedMoves(monster) {
   const entries = Object.entries(monster?.moves ?? {}).map(([name, move]) => ({
     name: move?.name ?? name,
     type: move?.type ?? 'normal',
+    rarity: Number.isFinite(move?.rarity) ? move.rarity : 3,
   }));
-  const rank = (m) => (ELEMENTS.has(m.type) ? 0 : 1);
-  entries.sort((a, b) => rank(a) - rank(b) || a.name.localeCompare(b.name));
+  const element = (m) => (ELEMENTS.has(m.type) ? 0 : 1);
+  entries.sort((a, b) => (
+    a.rarity - b.rarity
+    || element(a) - element(b)
+    || a.name.localeCompare(b.name)
+  ));
   return entries.slice(0, SLOTS.length);
 }
 
@@ -343,7 +363,31 @@ export function orderedMoves(monster) {
  *            third taller and visibly bolder in the room 15x21 already had.
  *   huge     the end of that road: 5 rows and two pixels of weight, 17x35,
  *            ten of them 179 of the 180. Nothing larger FITS.
- *   row      what the move box takes: 21x42 with SIX pixels between the
+ *   book     what the move box takes, and the only one on a 6x9 grid: 30x45
+ *            letters with 4 between them. The longest name in the pools is
+ *            now "LIGHTNING BOLT" at 452 of the row's 452, tied with
+ *            "MOMENTUM SHIFT".
+ *
+ *            It is this size because three moves were renamed for it. One
+ *            name out of forty-two used to set the type size for all of them
+ *            — "WARRIOR'S RESOLVE" filled the row to the pixel while the
+ *            median name used half of it — so Iron Will, Adrenal Rush and
+ *            Stone Barrier bought every card a quarter more type. If a new
+ *            move is ever longer than LIGHTNING BOLT, this is what it costs. It is also the only face spaced PROPORTIONALLY —
+ *            each glyph advances by the width it inks, so an apostrophe stops
+ *            reserving as much room as a W. That is worth 24 pixels on the
+ *            longest name, which is the whole difference between 3 of air
+ *            between letters and 4. Every other entry here is the 5x7 face stretched to
+ *            fill a height it was not drawn for, which is why they read as
+ *            squashed — 20 wide by 42 tall is a ratio of 0.48 against real
+ *            capitals' 0.7. This one is 0.667 because its grid is, and the
+ *            nine rows are what let an S have a spine.
+ *
+ *            It cannot be made larger. Seventeen characters have to fit 457
+ *            pixels, so a letter gets 26 of them including its gap, full
+ *            stop; the next size up needs 570. Bigger type means shorter
+ *            names or a bigger card, not a different font.
+ *   row      the previous best: 21x42 with SIX pixels between the
  *            letters, which is where the row's width went. Five-column
  *            letters were tried and reverted: at 25 across they only fit with
  *            2 pixels of air and read as one continuous word. Four columns
@@ -373,11 +417,12 @@ const MOVE_FACES = {
   huge: { face: FACES.wide, scale: { x: 3, y: 5, bold: 2 } },
   wider: { face: FACES.wide, scale: { x: 4, y: 5, bold: 1 } },
   row: { face: FACES.wide, scale: { x: 4, y: 6, bold: 1, track: 6 } },
+  book: { face: FACES.book, scale: { x: 5, y: 5, track: 4 } },
   narrow: { face: FACES.wide, scale: { x: 4, y: 7, bold: 2 } },
   light: { face: FACES.wide, scale: { x: 5, y: 7, bold: 0, track: 1 } },
   slim: { face: FACES.slim, scale: 4 },
 };
-const MOVE_FACE = MOVE_FACES.row;
+const MOVE_FACE = MOVE_FACES.book;
 const MOVE_SCALE = MOVE_FACE.scale;
 
 function moveNameLines(name, width) {
@@ -676,8 +721,9 @@ export function cardPlan(monster, opts = {}) {
     const scale = MOVE_SCALE;
     const lines = moveNameLines(move.name, slot.textW);
     const gap = typeof scale === 'number' ? scale : scale.x;
-    const block = lines.length * lineHeight(scale) + (lines.length - 1) * gap;
-    let y = slot.cy - block / 2 + lineHeight(scale) / 2;
+    const face = MOVE_FACE.face;
+    const block = lines.length * lineHeight(scale, face) + (lines.length - 1) * gap;
+    let y = slot.cy - block / 2 + lineHeight(scale, face) / 2;
     for (const line of lines) {
       // `textX` is the edge the name is anchored to: the left one in a column
       // that reads outward from the frame, the right one in a mirrored column

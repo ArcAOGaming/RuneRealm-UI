@@ -720,9 +720,22 @@ export class BattleScene extends Phaser.Scene {
     return new Promise((resolve) => {
       if (reducedMotion() || this.dead) { resolve(); return; }
 
+      /*
+        Which of the two attack animations this swing gets.
+
+        The species' own `advancedMove`, as before — and now ALSO any move from
+        the rare tier, whichever pool it came from. A rarity-1 move is about a
+        one-in-twenty draw and it should look like one: the whole point of
+        making rarity mean something in the roll is undone if the rare move a
+        player chased plays the same four frames as a common.
+
+        `moveRarity` rides on the turn already, so this costs no lookup and
+        cannot disagree with the engine about which move was used. Tier 0 is
+        Struggle and the free actions, which are nobody's signature.
+      */
       const entry = monsterIndexEntry(a.entryNo);
       const advancedMove = entry?.moves?.advanced ?? entry?.advancedMove;
-      const useAdvanced = turn.move === advancedMove;
+      const useAdvanced = turn.move === advancedMove || turn.moveRarity === 1;
       const motion = useAdvanced ? 'attack.advanced' : 'attack.basic';
       const ownAttack = a.rig.clip(motion);
       const fx = ownAttack

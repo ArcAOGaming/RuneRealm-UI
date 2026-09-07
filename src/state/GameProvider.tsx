@@ -35,7 +35,7 @@ import {
   GAME_PROCESS, HB_NODE, type WritePhase,
 } from '../lib/hyperbeam';
 import { type WalletConnection, type WalletProviderId } from '../lib/wallet';
-import { MonsterIndexView, Catalog, Faction, LeaderboardRow, OpenChallenge, Player, Tuning } from '../lib/types';
+import { ArenaTiers, MonsterIndexView, Catalog, Faction, LeaderboardRow, OpenChallenge, Player, Tuning } from '../lib/types';
 import { useToast } from '../ui/toastContext';
 import { WalletDialog } from '../ui/WalletDialog';
 
@@ -57,9 +57,21 @@ const ACCESS_EVERY = 10;
  * before the network settles shows plausible numbers rather than zeroes. These
  * must never be the source of truth — see `Tuning` in types.ts for why.
  */
+/**
+ * The engine's constants, for the moments the catalog has not arrived.
+ *
+ * These MIRROR `Battle.TUNING` in battle.lua and have to keep mirroring it.
+ * Three of them were stale against the deployed process before the move
+ * rebuild -- `hpPerHealth` 12 against 24, `shieldPerDefense` 4 against 6,
+ * `shieldRegenShare` 0.2 against 0.08 -- which meant a client that lost the
+ * catalog drew every health bar at half size and every damage estimate wrong.
+ */
 const FALLBACK_TUNING: Tuning = {
-  attackBase: 1, variance: 0.15, hpPerHealth: 12, shieldPerDefense: 4,
-  healPerPoint: 0.04, shieldRegenShare: 0.2, moveUses: 3, struggleDamage: 2,
+  attackBase: 1, attackPerLevel: 0, attackPerStatPoint: 0.1,
+  attackBudgetBaseline: 10,
+  variance: 0.15, hpPerHealth: 32, shieldPerDefense: 6,
+  healPerPoint: 0.03, shieldRegenShare: 0.08, moveUses: 1, struggleDamage: 2,
+  riderPerPoint: 0.045, riderCapShare: 1.0, npcSetupTurns: 2,
   baseHitChance: 0.7, minHitChance: 0.3, maxHitChance: 0.95,
   criticalChance: 0.09, criticalMultiplier: 1.6,
 };
@@ -99,6 +111,7 @@ export function GameProvider({ children }: { children: React.ReactNode }) {
   const [catalog, setCatalog] = useState<Catalog | null>(null);
   const [monsterIndex, setMonsterIndex] = useState<MonsterIndexView | null>(null);
   const [challenges, setChallenges] = useState<OpenChallenge[] | null>(null);
+  const [arenaTiers, setArenaTiers] = useState<ArenaTiers | null>(null);
   const [publicAccess, setPublicAccess] = useState(false);
   // A set, not a single slot: two writes in flight used to cross wires, the
   // second clearing the first button's spinner and the first's cleanup clearing
@@ -404,15 +417,17 @@ export function GameProvider({ children }: { children: React.ReactNode }) {
       if (access) setPublicAccess(access.publicAccess === true);
       if (f) { have.factions = true; setFactions(f); }
 
-      const [b, l, ch] = await Promise.all([
+      const [b, l, ch, pots] = await Promise.all([
         have.monsterIndex ? null : api.readMonsterIndex({ fresh }).catch(() => null),
         api.readLeaderboard({ signal }).catch(() => null),
         api.readChallenges({ signal }).catch(() => null),
+        api.readArenaTiers({ signal }).catch(() => null),
       ]);
       if (signal.aborted) return true;
       if (b) { have.monsterIndex = true; setMonsterIndex(b); }
       if (l) setLeaderboard(l);
       if (ch) setChallenges(ch);
+      if (pots) setArenaTiers(pots);
       return have.catalog && have.factions && have.monsterIndex;
     };
 
@@ -454,6 +469,8 @@ export function GameProvider({ children }: { children: React.ReactNode }) {
     if (l) setLeaderboard(l);
     const ch = await api.readChallenges({ signal }).catch(() => null);
     if (ch) setChallenges(ch);
+    const pots = await api.readArenaTiers({ signal }).catch(() => null);
+    if (pots) setArenaTiers(pots);
 
     let access: { publicAccess: boolean } | null = null;
     if (++pollTick.current % ACCESS_EVERY === 0) {
@@ -487,7 +504,7 @@ export function GameProvider({ children }: { children: React.ReactNode }) {
 
     // Nothing readable at all is a node that is not answering. Throwing is how
     // the poll is told to back off rather than keep asking on the same beat.
-    if (!f && !l && !ch && !access && !constants) throw new Error('published state unavailable');
+    if (!f && !l && !ch && !pots && !access && !constants) throw new Error('published state unavailable');
   }, {
     intervalMs: FACTION_POLL_MS,
     paused: () => pendingRef.current > 0,
@@ -496,6 +513,15 @@ export function GameProvider({ children }: { children: React.ReactNode }) {
   const refreshChallenges = useCallback(async (signal?: AbortSignal) => {
     const open = await api.readChallenges({ signal }).catch(() => null);
     if (open) setChallenges(open);
+  }, []);
+
+  /**
+   * The pots, on demand. Free and unsigned, so the lobby re-reads them after
+   * every settle rather than showing a payout that has already been drawn.
+   */
+  const refreshArenaTiers = useCallback(async (signal?: AbortSignal) => {
+    const pots = await api.readArenaTiers({ signal }).catch(() => null);
+    if (pots) setArenaTiers(pots);
   }, []);
 
   const run = useCallback(async function run<T extends Player>(
@@ -599,6 +625,7 @@ export function GameProvider({ children }: { children: React.ReactNode }) {
     factions, leaderboard, catalog, monsterIndex,
     tuning: catalog?.tuning ?? FALLBACK_TUNING,
     challenges, refreshChallenges,
+    arenaTiers, refreshArenaTiers,
     busy: pending.size > 0, isPending, writePhase, run,
     processId: GAME_PROCESS, node: HB_NODE,
   }), [
@@ -606,6 +633,7 @@ export function GameProvider({ children }: { children: React.ReactNode }) {
     walletProvider, walletProviderName, publicAccess,
     player, loadingPlayer, loginError, refresh,
     factions, leaderboard, catalog, monsterIndex, challenges, refreshChallenges,
+    arenaTiers, refreshArenaTiers,
     pending, isPending, writePhase, run,
   ]);
 

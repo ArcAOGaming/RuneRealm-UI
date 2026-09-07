@@ -31,7 +31,13 @@ type Showcase = {
   name: string;
   level: number;
   stats: [number, number, number, number];
-  moves: [string, string, string, string];
+  /**
+   * Three, and the first is the species' own `basicMove` from the monster
+   * index — that slot is guaranteed by `Battle.rollMoves`, so a showcase card
+   * whose first move is not the species signature is showing a companion the
+   * game cannot issue.
+   */
+  moves: [string, string, string];
 };
 
 const SHOWCASE: Showcase[] = [
@@ -41,7 +47,7 @@ const SHOWCASE: Showcase[] = [
     name: 'Airbud',
     level: 12,
     stats: [25, 18, 31, 68],
-    moves: ['Tornado', 'Breeze', 'Battle Cry', 'Regenerate'],
+    moves: ['Wind Slash', 'Tornado', 'Regenerate'],
   },
   {
     element: 'water',
@@ -49,7 +55,7 @@ const SHOWCASE: Showcase[] = [
     name: 'WaterDoge',
     level: 9,
     stats: [22, 27, 20, 76],
-    moves: ['Tidal Wave', 'Ocean Mist', 'Iron Skin', 'Heal'],
+    moves: ['Whirlpool', 'Tidal Wave', 'Iron Skin'],
   },
   {
     element: 'fire',
@@ -57,7 +63,7 @@ const SHOWCASE: Showcase[] = [
     name: 'FireFox',
     level: 16,
     stats: [34, 19, 28, 71],
-    moves: ['Firenado', 'Flame Shield', 'Power Up', 'Recovery'],
+    moves: ['Scorching Ash', 'Firenado', 'Recovery'],
   },
   {
     element: 'rock',
@@ -65,7 +71,7 @@ const SHOWCASE: Showcase[] = [
     name: 'Rockpup',
     level: 14,
     stats: [29, 35, 16, 88],
-    moves: ['Boulder Crush', 'Stone Wall', 'Swift Wind', 'Life Surge'],
+    moves: ['Boulder Crush', 'Earth Shield', 'Life Surge'],
   },
 ];
 
@@ -213,7 +219,7 @@ function CompanionShowcase() {
             <h2 className="landing-title mt-5">Choose one. Raise it. Make it yours.</h2>
           </div>
           <p className="max-w-lg text-base leading-7 text-muted lg:justify-self-end lg:text-right">
-            Train, battle, unlock moves, and mint its card.
+            Raise it, battle, relearn its moves as it levels, and mint its card.
           </p>
         </ScrollReveal>
 

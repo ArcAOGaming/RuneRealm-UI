@@ -25,7 +25,7 @@ import {
   AdminPlayerSummary, AdminSnapshot, Battle, BattleFleetConfig, BattleFleetRoute, BerryItemId,
   MonsterIndexEntry, MonsterIndexLifecycle, MonsterIndexView, Catalog, CharacterOutfit, EconomyPolicyChange, EconomyView, Element, Faction,
   GoldMarketItemId, GoldOrderSide, GoldOrderStp, GoldOrderTif,
-  GameError, GameStats, ItemId, LeaderboardRow, Listing, Move, OpenChallenge, Player,
+  ArenaTiers, GameError, GameStats, ItemId, LeaderboardRow, Listing, Move, OpenChallenge, Player,
   PlayerFill, PlayerOpenOrder,
   RegistryAsset, Reply, RuneWithdrawal, Sale,
 } from './types';
@@ -562,8 +562,61 @@ async function waitForFleetBattle(
  * `fresh` discards a cached answer and refetches. It is how a MISS is retried,
  * and only a caller that is not on an action's critical path may pass it.
  */
+/**
+ * Where a pinned catalog is fetched from.
+ *
+ * arweave.net is the default because it is the fastest to READ once it has the
+ * item — 16 ms p50 against 184 ms for `/now/catalog` off the game node, measured
+ * 2026-09-06. It is also the slowest to INDEX a fresh upload (4.7 minutes), but
+ * that is the deploy's problem, not the client's: `catalog-ref.mjs` will not
+ * return an id until a gateway has served it, so by the time a process exists
+ * quoting one, it is readable.
+ */
+const ARWEAVE_GATEWAY: string =
+  (import.meta as any).env?.VITE_ARWEAVE_GATEWAY || 'https://arweave.net';
+
+/**
+ * The catalog, from wherever this process keeps it.
+ *
+ * A process deployed with a pinned catalog publishes `catalogref` — 43 bytes,
+ * an Arweave id — instead of ~6.9 KB of `catalog`, because a `~lua@5.3a` slot
+ * pays for the whole published map five times over on every message whatever
+ * that message did. Older processes publish `catalog` inline and are read
+ * exactly as before, so this works against both without a flag.
+ *
+ * A FAILED FETCH IS LOUD, and that is a deliberate difference from the other
+ * constants here. `readConstant` swallows errors to null because "no monster
+ * index" legitimately means "no admin overrides". "No catalog" does not: it
+ * carries `tuning`, the combat numbers the client refuses to hardcode after
+ * the ones on screen drifted from the ones the engine used (see the note above
+ * the `levelUp` block in `game.lua`). Silently resolving null there puts wrong
+ * numbers in front of the player with nothing to indicate it, so the failure is
+ * logged with the id that could not be read. The null still propagates — an
+ * unreadable catalog must not break an action the player is waiting on — but it
+ * no longer does so invisibly.
+ */
 export const readCatalog = (opts: ReadOpts & { fresh?: boolean } = {}) =>
-  readConstant(catalogCache, opts, () => readJSON<Catalog>('catalog', where(opts)));
+  readConstant(catalogCache, opts, async () => {
+    const ref = await readState('catalogref', where(opts)).catch(() => null);
+    const id = ref?.trim();
+    // The node answers a key it does not have with its own HTML landing page at
+    // status 200, so "looks like an Arweave id" is the test, not "not empty".
+    if (!id || !/^[A-Za-z0-9_-]{43}$/.test(id)) {
+      return readJSON<Catalog>('catalog', where(opts));
+    }
+    try {
+      const res = await fetch(`${ARWEAVE_GATEWAY}/${id}`, { redirect: 'follow' });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      return (await res.json()) as Catalog;
+    } catch (err) {
+      console.error(
+        `[runerealm] catalog ${id} could not be read from ${ARWEAVE_GATEWAY}; `
+        + 'combat numbers on screen may be missing rather than wrong-but-plausible.',
+        err,
+      );
+      return null;
+    }
+  });
 
 /**
  * Numbered creature forms and their authoritative gameplay availability.
@@ -581,6 +634,19 @@ export const readMonsterIndex = (opts: ReadOpts & { fresh?: boolean } = {}) =>
 /** Open PvP challenges. Published, so the lobby's refresh costs nothing. */
 export const readChallenges = (opts: ReadOpts = {}) =>
   readJSON<OpenChallenge[]>('challenges', opts);
+
+/**
+ * The arena's pots: three integers a tier.
+ *
+ * NOT a constant, so it is not cached — a pot moves on nearly every battle
+ * anybody fights, and the lobby quotes a payout off it. Read like the
+ * leaderboard: published, unsigned, free, and polled.
+ *
+ * Absent on a deployment from before the arena was staked, which reads as null
+ * here and makes the lobby describe a free arena rather than an empty one.
+ */
+export const readArenaTiers = (opts: ReadOpts = {}) =>
+  readJSON<ArenaTiers>('arenatiers', opts);
 
 export async function readPlayerCount(): Promise<number> {
   const users = await readState('users');
@@ -708,6 +774,10 @@ export const beginHunt = (monsterId: string) =>
     requiredOutbox: true,
   });
 
+/** Re-deliver the game authority's fixed acknowledgement for a paid capture. */
+export const retryHuntAcknowledgement = () =>
+  write<Player>({ Action: 'Hunt.RetryAck' }, undefined, { requiredOutbox: true });
+
 // Arena ---------------------------------------------------------------------
 
 /** Pay the Rune, take the four battles. */
@@ -742,11 +812,39 @@ export async function startBotBattle(difficulty = 1): Promise<Player> {
     return write<Player>({ Action: 'Battle.Start', Difficulty: String(difficulty) });
   }
 
-  const authorityPlayer = await write<Player>({
+  const startId = fleetActionId('start');
+  const request = {
     Action: 'Battle.Start',
     Difficulty: String(difficulty),
-    StartId: fleetActionId('start'),
-  }, undefined, { requiredOutbox: true });
+    StartId: startId,
+  };
+  let authorityPlayer: Player;
+  try {
+    authorityPlayer = await write<Player>(request, undefined, { requiredOutbox: true });
+  } catch (error) {
+    if (!(error instanceof OutboxDeliveryError)) throw error;
+    const address = await activeAddress();
+    const accepted = address ? await readAuthorityPlayer(address).catch(() => null) : null;
+    const acceptedRoute = accepted && validateFleetRoute(accepted, config);
+    if (!accepted || !acceptedRoute) throw error;
+    rememberFleetRoute(accepted, acceptedRoute);
+    try {
+      const battle = await waitForFleetBattle(acceptedRoute, accepted.address, 12);
+      const rendered = { ...accepted, battle };
+      fleetPlayers.set(acceptedRoute.battleId, rendered);
+      return rendered;
+    } catch {
+      // The authority stored `StartId` with the reservation. Re-sending that
+      // exact id is the contract's idempotent recovery path: no second session
+      // credit is spent and the same Battle.Open is emitted again.
+      try {
+        authorityPlayer = await write<Player>(request, undefined, { requiredOutbox: true });
+      } catch (retryError) {
+        if (!(retryError instanceof OutboxDeliveryError)) throw retryError;
+        authorityPlayer = accepted;
+      }
+    }
+  }
   const route = validateFleetRoute(authorityPlayer, config);
   if (!route) throw new GameError('Fleet-enabled Battle.Start returned an invalid worker route.');
   rememberFleetRoute(authorityPlayer, route);
@@ -1130,6 +1228,13 @@ export const cancelGoldOrders = (
 
 export const maintainGoldOrders = (limit = 25) =>
   write<Player>({ Action: 'Economy.Order.Maintain', Limit: String(Math.max(1, Math.floor(limit))) });
+
+/** Move an in-game asset into the separately deployed internal order book. */
+export const sendToVenue = (asset: GoldMarketItemId | 'gold', quantity: number) =>
+  write<Player>({
+    Action: 'Venue.Send', Asset: asset,
+    Quantity: String(Math.max(1, Math.floor(quantity))),
+  }, undefined, { requiredOutbox: true });
 
 // A trader's own orders and own fills ---------------------------------------
 //

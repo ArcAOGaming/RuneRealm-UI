@@ -127,6 +127,20 @@ export const RUNE_PATH = 'M12 2.6v18.8M12 7.4 6.6 11.6M12 7.4l5.4 4.2M7.8 16.4h8
 export const Rune = (p: P) => (
   <svg {...base(p)}><path d={RUNE_PATH} /></svg>
 );
+/**
+ * Gold. A struck coin, not a circle.
+ *
+ * Gold had no mark at all: the marketplace prints the word beside a number and
+ * the arena had nothing to hang a payout on. It is chamfered on the same 45s as
+ * the panels — an octagon, with the realm's stave cut into its face — so it
+ * reads as a minted thing next to the Rune rather than as a bullet point.
+ */
+export const Coin = (p: P) => (
+  <svg {...base(p)}>
+    <path d="M8.6 2.8h6.8L21.2 8.6v6.8l-5.8 5.8H8.6L2.8 15.4V8.6Z" />
+    <path d="M12 7.2v9.6M12 9.8 9.4 11.8M12 9.8l2.6 2" />
+  </svg>
+);
 /** Two assets crossing through a cut exchange gate. */
 export const Exchange = (p: P) => (
   <svg {...base(p)}>

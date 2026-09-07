@@ -21,12 +21,12 @@
  * shared by construction.
  */
 import { useEffect, useMemo, useRef } from 'react';
-import { Combatant, Move, Tuning, Turn } from '../lib/types';
+import { Affinity, Combatant, Move, Tuning, Turn } from '../lib/types';
 import { Button, Panel, Spinner, cx } from './primitives';
 import {
   Droplet, Flame, Heart, Mountain, Shield, Sword, Wind,
 } from './icons';
-import { attackFloor, matchup, moveDamage } from '../lib/format';
+import { Fighter, attackFloor, matchup, moveDamage, riderPoints } from '../lib/format';
 import { MoveBadge, hasMoveBadge } from './MoveBadge';
 import { MoveTiles } from './MoveTiles';
 
@@ -38,7 +38,7 @@ import { MoveTiles } from './MoveTiles';
  * hand you pick from under pressure. `boost`, `heal` and `normal` are not
  * elements and get their own three.
  */
-const MOVE_LOOK: Record<
+export const MOVE_LOOK: Record<
   string,
   { Icon: (p: { className?: string }) => JSX.Element; tint: string; ring: string }
 > = {
@@ -74,9 +74,16 @@ const STAT_WORD = {
  * what they are, on a screen with no height to spare — and which side is which
  * is already obvious from which one you can press.
  *
- * Neither column scrolls. Four moves is the whole roster, so eight cells fit
+ * Neither column scrolls. A roster is three moves, so three cells a side fit
  * the band by construction; an inner scrollbar here only ever meant something
  * was mis-sized.
+ *
+ * THIS GRID IS THE ROSTER AND ONLY THE ROSTER. Rally and Mend used to sit in a
+ * second row underneath, which put what every companion in the realm can do in
+ * the same object as what THIS one happens to have rolled — five cells that
+ * looked alike, two of which were free and carried once. They are studs on the
+ * arena floor now, beside each fighter's own health and shield; see `FreeStuds`
+ * in `ui/BattleStageImpl.tsx`.
  */
 export function MoveChooser({
   me, them, disabled, busy, tuning, isPending, onMove, footer,
@@ -96,23 +103,36 @@ export function MoveChooser({
   /** Anything that belongs under the two rosters, such as a PvP wait notice. */
   footer?: React.ReactNode;
 }) {
+  /**
+   * Rarest first, matching the card.
+   *
+   * Both orders are stable for the whole fight -- a roster does not change
+   * mid-battle and neither term of the comparison does either -- so this costs
+   * nothing in muscle memory and buys the same reading the card gives: the cell
+   * you look at first is the move worth looking at first. `byRarity` is shared
+   * so the two sides cannot drift.
+   */
+  const byRarity = ([aName, a]: [string, Move], [bName, b]: [string, Move]) =>
+    (a.rarity ?? 3) - (b.rarity ?? 3) || aName.localeCompare(bName);
   const mine = useMemo(
-    () => Object.entries(me.moves ?? {}).sort(([a], [b]) => a.localeCompare(b)),
+    () => Object.entries(me.moves ?? {}).sort(byRarity),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
     [me.moves],
   );
   const theirs = useMemo(
-    () => Object.entries(them.moves ?? {}).sort(([a], [b]) => a.localeCompare(b)),
+    () => Object.entries(them.moves ?? {}).sort(byRarity),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
     [them.moves],
   );
   const anyLeft = mine.some(([, m]) => (m.count ?? 0) > 0);
 
   return (
-    <Panel className="battle-moves min-h-0 p-2">
+    <Panel className="battle-moves min-h-0 p-2" data-tour="battle-moves">
       {/* One lit field behind both rosters — see gfx/moveTiles.ts. The buttons
           are real buttons on top of it; the objects are only ever underneath. */}
       <MoveTiles className="grid min-h-0 grid-cols-1 items-stretch gap-x-3 gap-y-2 sm:grid-cols-2">
-      {anyLeft ? (
-        <div className="grid min-h-0 grid-cols-2 gap-1.5">
+      <div className="grid min-h-0 gap-1.5">
+        <div className="grid min-h-0 grid-cols-3 gap-1.5">
           {mine.map(([name, move]) => (
             <MoveButton
               key={name} name={name} move={move}
@@ -124,34 +144,44 @@ export function MoveChooser({
             />
           ))}
         </div>
-      ) : (
-        <div className="flex items-center gap-3">
-          <p className="text-[11px] leading-tight text-muted">
-            Every move is spent. All that is left is to struggle.
-          </p>
+        {/* Rally and Mend are NOT here any more — they are studs on the arena
+            floor, under each fighter's own readout (see `FreeStuds` in
+            BattleStageImpl). They were five cells that looked alike, two of
+            which were free, carried once per battle and belonged to every
+            companion in the realm rather than to this one; nothing about that
+            was legible from a grid position. On the plate they sit beside the
+            health and the shield they spend, on the fighter they belong to, and
+            the opponent's pair is readable at a glance for the same reason
+            their roster is.
+
+            Struggle stays, because it IS a roster fact: it is the move you have
+            when the three above are spent, and it is legal at no other time. */}
+        {!anyLeft && (
           <Button
-            size="sm" variant="danger"
+            className="w-full" size="sm" variant="danger"
             disabled={disabled || busy}
             busy={isPending('struggle')}
             onClick={() => onMove('struggle')}
           >
-            Struggle
+            Every move is spent — struggle
           </Button>
-        </div>
-      )}
+        )}
+      </div>
 
       {/* Theirs. Dimmed as a set and not focusable, so "you cannot press these"
           is carried by how they look rather than by a caption. */}
-      <div className="grid min-h-0 grid-cols-2 gap-1.5 border-l border-edge/40 pl-3 opacity-55">
-        {theirs.map(([name, move]) => (
-          <MoveButton
-            key={name} name={name} move={move}
-            fighter={them} tuning={tuning}
-            against={me.elementType}
-            busy={false} disabled readOnly
-            onClick={() => {}}
-          />
-        ))}
+      <div className="grid min-h-0 gap-1.5 border-l border-edge/40 pl-3 opacity-55">
+        <div className="grid min-h-0 grid-cols-3 gap-1.5">
+          {theirs.map(([name, move]) => (
+            <MoveButton
+              key={name} name={name} move={move}
+              fighter={them} tuning={tuning}
+              against={me.elementType}
+              busy={false} disabled readOnly
+              onClick={() => {}}
+            />
+          ))}
+        </div>
       </div>
 
         {footer && <div className="col-span-full flex justify-end">{footer}</div>}
@@ -160,43 +190,53 @@ export function MoveChooser({
   );
 }
 
-function MoveButton({
-  name, move, fighter, tuning, against, busy, disabled, readOnly, onClick,
-}: {
-  // The whole fighter, not its attack stat: the engine sizes a damage floor
-  // against all four of its stats — see `attackFloor` in lib/format.ts.
-  name: string; move: Move; fighter: Combatant; tuning: Tuning;
-  against: Combatant['elementType'];
-  busy: boolean; disabled: boolean; readOnly?: boolean; onClick: () => void;
+/**
+ * One move, with everything a decision needs on it.
+ *
+ * Exported because the battle grid is not the only place a move has to be read
+ * carefully: the relearn offer on the companion screen is a choice between
+ * three of these, and it has to show the same damage estimate and the same
+ * rider values the fight will. Two components would be two sets of numbers, and
+ * the numbers are the entire point.
+ *
+ * `fighter` is the loose `Fighter` rather than a `Combatant` for that reason —
+ * a companion sitting at home has no health points or shield, and the two
+ * things this reads it for (the damage estimate and the rider scale) are sized
+ * against its four stats, which it does have.
+ */
+/**
+ * What the numbers on a move actually DO, spelled out.
+ *
+ * Exported and shared, because a move is now read in three places — the grid,
+ * the relearn offer, and the free-action studs on the arena floor — and the
+ * numbers are the entire point. Two implementations would be two sets of them.
+ *
+ * Every rider on every move in the game applies to whoever USED it — there is
+ * no move anywhere that debuffs an opponent — and two of the four do something
+ * other than what their name suggests:
+ *
+ *  - `defense` also moves your SHIELD, by `shieldPerDefense` points per point,
+ *    immediately. So `-2 def` is not two of anything coming off your health; it
+ *    is eight points of shield gone now.
+ *  - `health` is a percentage of YOUR OWN pool, not a flat number — four
+ *    percent of max HP per point. A cost can bring you to one HP and never
+ *    below it.
+ *
+ * None of that fits on a control you read under pressure, so the control keeps
+ * the short forms and the sentence lives here, on hover.
+ */
+export function moveExplain({ move, fighter, tuning, against, free }: {
+  move: Move; fighter: Fighter; tuning: Tuning;
+  against?: Affinity | null; free?: boolean;
 }) {
   const spent = (move.count ?? 0) <= 0;
   const match = matchup(move.type, against);
-  const look = MOVE_LOOK[move.type] ?? MOVE_LOOK.normal;
-  const { Icon } = look;
-  const riders = (['attack', 'defense', 'speed', 'health'] as const)
-    .map((k) => [k, move[k]] as const)
-    .filter(([, v]) => v !== 0);
   const hit = move.damage > 0 ? moveDamage(move, fighter, tuning) : 0;
-
-  /**
-   * What the numbers on this cell actually DO, spelled out.
-   *
-   * Every rider on every move in the game applies to whoever USED it — there is
-   * no move anywhere that debuffs an opponent — and two of the four do
-   * something other than what their name suggests:
-   *
-   *  - `defense` also moves your SHIELD, by `shieldPerDefense` points per
-   *    point, immediately. So `-2 def` is not two of anything coming off your
-   *    health; it is eight points of shield gone now.
-   *  - `health` is a percentage of YOUR OWN pool, not a flat number — four
-   *    percent of max HP per point. A cost can bring you to one HP and never
-   *    below it.
-   *
-   * None of that fits on a cell you read under pressure, so the cell keeps the
-   * short forms and the sentence lives here, on hover.
-   */
+  const riders = (['attack', 'defense', 'speed', 'health'] as const)
+    .map((k) => [k, k === 'health' ? move[k] : riderPoints(move[k], fighter, tuning)] as const)
+    .filter(([, v]) => v !== 0);
   const healPct = (v: number) => Math.abs(Math.round(v * tuning.healPerPoint * 100));
-  const explain = [
+  return [
     move.damage > 0
       ? `${move.damage} power x (${Math.floor(attackFloor(fighter, tuning))} + ${fighter.attack} attack) = about ${hit} damage, before type and luck`
       : null,
@@ -214,8 +254,49 @@ function MoveButton({
       return `${sign}${v} ${STAT_WORD[k]} to you, for the rest of the fight`;
     }),
     match ? match.label : null,
-    `${move.count ?? 0} uses left`,
+    free
+      ? (spent
+        ? 'Free action — already spent this battle'
+        : 'Free action — once per battle, and it costs no move slot')
+      : `${move.count ?? 0} uses left`,
   ].filter(Boolean).join('\n');
+}
+
+export function MoveButton({
+  name, move, fighter, tuning, against, busy, disabled, readOnly, free, onClick,
+}: {
+  // The whole fighter, not its attack stat: the engine sizes a damage floor
+  // against all four of its stats — see `attackFloor` in lib/format.ts.
+  name: string; move: Move; fighter: Fighter; tuning: Tuning;
+  against?: Affinity | null;
+  busy: boolean; disabled: boolean; readOnly?: boolean;
+  /** Rally or Mend: no slot, one charge, and the badge says so instead of a count. */
+  free?: boolean;
+  onClick: () => void;
+}) {
+  const spent = (move.count ?? 0) <= 0;
+  const match = matchup(move.type, against);
+  const look = MOVE_LOOK[move.type] ?? MOVE_LOOK.normal;
+  const { Icon } = look;
+  /**
+   * Riders, in the points this fighter will actually get.
+   *
+   * A move's printed `+5 speed` is NOT five points and has not been since
+   * riders were scaled: the engine multiplies it against a quarter of the
+   * fighter's stat budget. Printing the raw number here would put a figure on
+   * screen that the player then watches their own stat line disagree with —
+   * exactly the class of bug `moveDamage` exists to have fixed, when this cell
+   * printed `damage * 5` against an engine multiplying by the attack stat.
+   *
+   * `health` is left alone: it is not a stat rider at all, it is a share of the
+   * user's own HP pool, and the hover text below converts it.
+   */
+  const riders = (['attack', 'defense', 'speed', 'health'] as const)
+    .map((k) => [k, k === 'health' ? move[k] : riderPoints(move[k], fighter, tuning)] as const)
+    .filter(([, v]) => v !== 0);
+  const hit = move.damage > 0 ? moveDamage(move, fighter, tuning) : 0;
+
+  const explain = moveExplain({ move, fighter, tuning, against, free });
 
   return (
     <button
@@ -282,7 +363,9 @@ function MoveButton({
           'rounded-[2px] bg-black/70 px-1 py-px font-mono text-[10px]',
           'font-semibold leading-none text-white/90 tabular-nums',
         )}>
-          {busy ? <Spinner className="h-3 w-3" /> : `x${move.count ?? 0}`}
+          {busy
+            ? <Spinner className="h-3 w-3" />
+            : free ? (spent ? 'used' : 'free') : `x${move.count ?? 0}`}
         </span>
         {/* `matchup` returns null when neutral, so having a value IS the news.
             Its own label is a sentence — too long for a cell this size. */}
@@ -343,7 +426,7 @@ export function RoundLog({
   }, [rounds.length]);
 
   return (
-    <Panel className="battle-timeline flex min-h-0 flex-col overflow-hidden p-1.5">
+    <Panel className="battle-timeline flex min-h-0 flex-col overflow-hidden p-1.5" data-tour="battle-log">
       <div className="mb-1 flex shrink-0 items-baseline justify-between gap-2 px-0.5">
         <span className="eyebrow leading-none">Rounds, in order</span>
         <span className="text-[9px] leading-none text-faint">

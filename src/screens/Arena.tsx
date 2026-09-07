@@ -32,10 +32,12 @@ import {
   Button, Panel, SectionTitle, Skeleton, Spinner, cx,
 } from '../ui/primitives';
 import {
-  Refresh, Sword, Trophy, Users, X,
+  Coin, Refresh, Sword, Trophy, Users, X,
 } from '../ui/icons';
 import {
-  BATTLE_BERRIES, countdown, ITEM_NAME, shortAddress,
+  arenaTerms, arenaTierRows, countdown, formatInteger, ratePct,
+  BATTLE_BERRIES, ITEM_NAME, shortAddress,
+  type ArenaTerms,
 } from '../lib/format';
 import { BattleStage } from '../ui/BattleStage';
 // The move grid and the round log are shared with Hunt, which fights the exact
@@ -83,9 +85,19 @@ export default function Arena() {
  */
 const ENTRANCE_TOUR: TourStep[] = [
   {
+    target: '[data-tour="arena-purse"]',
+    title: 'The arena is played for Gold',
+    body: 'Every battle stakes Gold into a pot, and winning is what draws from it. You need at least one battle’s stake to get through the door — a quest pays 15 Gold and costs the same energy and happiness, which is the way back if you are short.',
+  },
+  {
     target: '[data-tour="arena-cost"]',
-    title: 'What it costs',
-    body: 'A session is four battles and entering is free. What it costs your companion is 25 energy and 25 happiness — and happiness only comes back from a 15-minute play.',
+    title: 'What a session costs',
+    body: 'Entering is four battles and takes no Gold at all — 25 energy and 25 happiness, and happiness only comes back from a 15-minute play. The Gold is charged per battle, so leaving after one costs you nothing you were never charged.',
+  },
+  {
+    target: '[data-tour="arena-pays"]',
+    title: 'What a win pays',
+    body: 'Two halves. A fixed reward out of one 20-hour allowance shared with quests — which can pay nothing once the day’s is spent — and a share of the pot your stake went into. The pot half is other players’ stakes, so the arena hands back exactly what was put in.',
   },
   {
     target: '[data-tour="arena-berries"]',
@@ -103,39 +115,61 @@ const LOBBY_TOUR: TourStep[] = [
   {
     target: '[data-tour="arena-session"]',
     title: 'Your session',
-    body: 'Battles left, and this session’s record. Leaving forfeits whatever is left of it — the energy and happiness are not refunded.',
+    body: 'Battles left, this session’s record, and your purse. Leaving forfeits whatever is left of the session — the energy and happiness are not refunded, but no Gold is taken for a battle you did not fight.',
   },
   {
-    target: '[data-tour="arena-trainer"]',
-    title: 'Fight a trainer',
-    body: 'An opponent built to match your level, from a random faction. A harder one gets a bigger stat budget and is worth more.',
+    target: '[data-tour="arena-tiers"]',
+    title: 'Four pots, one per difficulty',
+    body: 'Every tier stakes the same Gold; what differs is the pot. A win draws a third of the pot it staked into, so a tier people have been LOSING pays more — the losses fed it. Nothing about your own record changes what a win pays.',
+  },
+  {
+    target: '[data-tour="arena-breakeven"]',
+    title: 'Break even, and whether a tier is worth it',
+    body: 'Break-even is the win rate at which the pot pays back what you stake. Beside it is how often this tier is actually being won. When the second number is above the first, the tier is good value right now — and both move as people play it.',
   },
   {
     target: '[data-tour="arena-open"]',
     title: 'Or another player',
-    body: 'Post a challenge and wait, or take one that is already open. Both sides spend a battle from their own session.',
+    body: 'A duel is one pot of exactly two stakes and the winner takes all of it, no rake. Both stakes are held from the moment the challenge is accepted; withdrawing one nobody took returns yours whole.',
   },
 ];
 
 function Entrance() {
   useTourSteps('arena-entrance', ENTRANCE_TOUR);
-  const { player, run, isPending } = useGame();
+  const { player, catalog, arenaTiers, run, isPending } = useGame();
   const [berry, setBerry] = useState<BerryItemId | undefined>();
   const monster = player!.monster!;
   const busy = monster.status.type !== 'Home';
   const selectedBerry = BATTLE_BERRIES.find((entry) => entry.id === berry);
   const selectedCount = berry ? (player!.inventory[berry] ?? 0) : 0;
 
-  // No Rune check. Entering is free in v2 — what gates a session is energy and
-  // happiness, and happiness only comes back from a 15-minute Play. See
-  // ECONOMY_V2.md §6.
+  // Every cost and every payout on this screen, from the process. Nothing here
+  // is a literal any more: two of the three that were had already drifted from
+  // the deployed contract by the time anyone checked.
+  const terms = arenaTerms(catalog);
+  const gold = player!.gold ?? 0;
+
+  // The Gold gate is the PROCESS's — `Battle.Begin` refuses a purse that cannot
+  // cover one battle. This mirrors it so the button is honest, and it must keep
+  // mirroring it: a client-side gate that is stricter blocks a fight the
+  // process would have allowed, and a looser one signs a message that fails.
   const blocked =
     busy ? `Your companion is ${monster.status.type === 'Play' ? 'playing' : 'on a quest'}.`
-      : monster.energy < 25 ? 'Not enough energy — feed your companion.'
-        : monster.happiness < 25 ? 'Not happy enough — send it out to play.'
-          : selectedBerry && selectedCount < selectedBerry.cost
-            ? `You need ${selectedBerry.cost} ${ITEM_NAME[selectedBerry.id]}.`
-            : null;
+      : monster.energy < terms.energyCost ? 'Not enough energy — feed your companion.'
+        : monster.happiness < terms.happinessCost ? 'Not happy enough — send it out to play.'
+          : terms.staked && gold < terms.minEntry
+            ? `You need ${terms.minEntry} Gold to enter — a battle stakes ${terms.stake}. A quest pays 15 and costs the same energy and happiness.`
+            : selectedBerry && selectedCount < selectedBerry.cost
+              ? `You need ${selectedBerry.cost} ${ITEM_NAME[selectedBerry.id]}.`
+              : null;
+
+  // What the four pots would pay a win right now, so the entrance can name a
+  // real range rather than a promise. The pot moves between reading this and
+  // settling, which is exactly why the result screen shows the pot AT settle.
+  const rows = arenaTierRows(terms, arenaTiers);
+  const payouts = rows.map((row) => row.payout).filter((n) => n > 0);
+  const bestPayout = payouts.length ? Math.max(...payouts) : 0;
+  const leanPayout = payouts.length ? Math.min(...payouts) : 0;
 
   return (
     /* `my-auto` centres it in the fitted viewport. The arena owns the whole
@@ -149,13 +183,90 @@ function Entrance() {
         <Sword className="mx-auto h-9 w-9 text-element" />
         <h1 className="mt-4 text-xl font-semibold">Enter the arena</h1>
         <p className="mx-auto mt-2 max-w-sm text-sm leading-relaxed text-muted">
-          A session is four battles, and entering costs no Rune. Fight a
-          trainer, or challenge another player.
+          {terms.staked
+            ? <>A session is {terms.battles} battles and each one stakes{' '}
+              {terms.stake} Gold. Win and you draw from the pot it went into.</>
+            : <>A session is {terms.battles} battles, and entering costs no Rune.
+              Fight a trainer, or challenge another player.</>}
         </p>
 
-        <div data-tour="arena-cost" className="mx-auto mt-5 grid max-w-xs grid-cols-2 gap-3 text-left">
-          <Cost label="Energy" have={monster.energy} need={25} />
-          <Cost label="Happiness" have={monster.happiness} need={25} />
+        {/* The purse first, because it is now the thing that decides whether
+            you are getting in at all. */}
+        {terms.staked && (
+          <div
+            data-tour="arena-purse"
+            className={cx(
+              'mx-auto mt-5 flex max-w-sm items-center justify-between gap-4 rounded-[3px] border px-4 py-3 text-left',
+              gold >= terms.minEntry ? 'border-edge/70 bg-void/25' : 'border-bad/40 bg-bad/5',
+            )}
+          >
+            <div className="flex items-center gap-2.5">
+              <Coin className={cx('h-6 w-6 shrink-0', gold >= terms.minEntry ? 'text-rune' : 'text-bad')} />
+              <div>
+                <div className="eyebrow">Your purse</div>
+                <div className={cx(
+                  'font-mono text-lg leading-tight tabular-nums',
+                  gold >= terms.minEntry ? 'text-ink' : 'text-bad',
+                )}>
+                  {formatInteger(gold)}
+                </div>
+              </div>
+            </div>
+            <div className="text-right text-[11px] leading-relaxed text-faint">
+              {terms.stake} a battle
+              <br />
+              {gold >= terms.sessionStake
+                ? `${terms.battles} covered`
+                : `${Math.floor(gold / Math.max(1, terms.stake))} covered`}
+            </div>
+          </div>
+        )}
+
+        <div data-tour="arena-cost" className="mx-auto mt-4 grid max-w-sm grid-cols-2 gap-3 text-left">
+          <Cost label="Energy" have={monster.energy} need={terms.energyCost} />
+          <Cost label="Happiness" have={monster.happiness} need={terms.happinessCost} />
+        </div>
+
+        {/* What a session actually pays, as a ledger rather than a sentence.
+            Two of these lines are the two economic layers and they are kept
+            visibly apart on purpose: the top one is the only thing that ISSUES
+            Gold and it is capped, and the bottom one is other players' stakes
+            being handed back. Reading them as one number is how "the arena
+            pays" became a faucet every previous time. */}
+        <div data-tour="arena-pays" className="mt-6 border-t border-rune/12 pt-5 text-left">
+          <SectionTitle right={<span className="text-[11px] text-faint">per battle</span>}>
+            What it pays
+          </SectionTitle>
+          <dl className="-mt-1 divide-y divide-edge/40 text-[13px]">
+            <Line
+              term="A win"
+              value={terms.staked
+                ? <><span className="text-good">+{terms.winGold}</span> Gold, plus a share of the pot</>
+                : <><span className="text-good">+{terms.winGold}</span> Gold</>}
+              note="+2 experience"
+            />
+            <Line
+              term="A loss"
+              value={terms.staked
+                ? <span className="text-muted">Your stake stays in the pot</span>
+                : <span className="text-muted">Nothing</span>}
+              note="+1 experience"
+            />
+            {terms.staked && (
+              <Line
+                term="The pot right now"
+                value={bestPayout > 0
+                  ? <><span className="text-good">{leanPayout}–{bestPayout}</span> Gold, depending on the tier</>
+                  : <span className="text-faint">Empty — the first stakes fill it</span>}
+                note={`a win draws ${terms.drainNum}/${terms.drainDen} of it`}
+              />
+            )}
+          </dl>
+          <p className="mt-2.5 text-[11px] leading-relaxed text-faint">
+            The fixed half comes out of one 20-hour allowance shared with quests,
+            so it pays nothing once the day’s is spent.
+            {terms.staked && ' The pot half is other players’ stakes — the arena hands back exactly what was put into it, and never more.'}
+          </p>
         </div>
 
         <div data-tour="arena-berries" className="mt-6 border-t border-rune/12 pt-5 text-left">
@@ -163,7 +274,7 @@ function Entrance() {
             Berry maxing
           </SectionTitle>
           <p className="-mt-1 text-[12px] leading-relaxed text-faint">
-            Eat three matching berries now for a strong +5 stat boost across all four fights.
+            Eat three matching berries now for a strong +5 stat boost across all {terms.battles} fights.
             Your companion's permanent build never changes.
           </p>
           <div className="mt-3 grid grid-cols-2 gap-2 sm:grid-cols-5">
@@ -215,7 +326,27 @@ function Entrance() {
         >
           Enter the arena{selectedBerry ? ` + ${selectedBerry.cost}× ${ITEM_NAME[selectedBerry.id]}` : ''}
         </Button>
+        {terms.staked && !blocked && (
+          <p className="mt-2 text-[11px] text-faint">
+            Entering takes no Gold. The {terms.stake} is charged when a battle starts.
+          </p>
+        )}
       </Panel>
+    </div>
+  );
+}
+
+/** One row of the payout ledger: what it is, what it pays, and the aside. */
+function Line({ term, value, note }: {
+  term: string; value: React.ReactNode; note?: string;
+}) {
+  return (
+    <div className="flex items-baseline justify-between gap-3 py-1.5">
+      <dt className="shrink-0 text-muted">{term}</dt>
+      <dd className="min-w-0 text-right">
+        <span className="tabular-nums">{value}</span>
+        {note && <span className="ml-2 text-[11px] text-faint">{note}</span>}
+      </dd>
     </div>
   );
 }
@@ -236,8 +367,15 @@ function Cost({ label, have, need }: { label: string; have: number; need: number
 
 function Lobby() {
   useTourSteps('arena-lobby', LOBBY_TOUR);
-  const { player, run, isPending, busy, address, challenges, refreshChallenges } = useGame();
-  const [difficulty, setDifficulty] = useState(1);
+  const {
+    player, catalog, arenaTiers, refreshArenaTiers,
+    run, isPending, busy, address, challenges, refreshChallenges,
+  } = useGame();
+  const terms = arenaTerms(catalog);
+  const rows = arenaTierRows(terms, arenaTiers);
+  // The tier is chosen by KEY and the difficulty is sent from the row, so the
+  // client never invents a number the process would bucket somewhere else.
+  const [tierKey, setTierKey] = useState(() => rows[1]?.key ?? rows[0]?.key ?? 'even');
   const [refreshing, setRefreshing] = useState(false);
 
   // Free and unsigned, but not free of a CONNECTION: a bare interval issued a
@@ -245,13 +383,23 @@ function Lobby() {
   // on a slow node those stack up on the screen a player is about to click a
   // battle button on. One at a time, next one scheduled from the end of the
   // last, and nothing at all while a write is in flight.
-  usePoll((signal) => refreshChallenges(signal), {
+  //
+  // The pots ride along with it. They move on every battle anybody in the realm
+  // fights, and this screen quotes a payout off them — a stale pot misprices
+  // exactly the decision the player is here to make.
+  usePoll(async (signal) => {
+    await refreshChallenges(signal);
+    await refreshArenaTiers(signal);
+  }, {
     intervalMs: 10_000, maxIntervalMs: 60_000, leading: true,
     paused: () => busy,
   });
 
   const open = (challenges ?? []).filter((c) => c.challenger !== address);
   const remaining = player!.battlesRemaining;
+  const gold = player!.gold ?? 0;
+  const chosen = rows.find((row) => row.key === tierKey) ?? rows[0];
+  const canAfford = !terms.staked || gold >= terms.stake;
 
   return (
     <div className="animate-rise space-y-4">
@@ -271,55 +419,87 @@ function Lobby() {
               </p>
             )}
           </div>
-          <Button
-            variant="quiet" busy={isPending('leave')}
-            onClick={() => run('leave', api.leaveArena)}
-          >
-            Leave the arena
-          </Button>
+          <div className="flex items-center gap-4">
+            {terms.staked && (
+              <div className="text-right">
+                <div className="eyebrow">Purse</div>
+                <div className={cx(
+                  'flex items-center justify-end gap-1.5 font-mono text-base leading-tight tabular-nums',
+                  canAfford ? 'text-ink' : 'text-bad',
+                )}>
+                  <Coin className={cx('h-4 w-4', canAfford ? 'text-rune' : 'text-bad')} />
+                  {formatInteger(gold)}
+                </div>
+                <div className="text-[11px] text-faint">{terms.stake} a battle</div>
+              </div>
+            )}
+            <Button
+              variant="quiet" busy={isPending('leave')}
+              onClick={() => run('leave', api.leaveArena)}
+            >
+              Leave the arena
+            </Button>
+          </div>
         </div>
       </Panel>
 
       <div className="arena-lobby-grid grid gap-4 lg:grid-cols-2">
-        <Panel data-tour="arena-trainer" className="p-5">
-          <SectionTitle>Fight a trainer</SectionTitle>
+        <Panel data-tour="arena-tiers" className="p-5">
+          <SectionTitle right={terms.staked
+            ? <span className="text-[11px] text-faint">{terms.stake} Gold a battle</span>
+            : undefined}>
+            Fight a trainer
+          </SectionTitle>
           <p className="text-[13px] leading-relaxed text-muted">
-            An opponent is generated to match your level, from a random faction.
-            Harder opponents get a bigger stat budget.
+            {terms.staked
+              ? <>An opponent built to match your level. Every tier stakes the same;
+                what differs is the pot, and a win draws {terms.drainNum}/{terms.drainDen} of
+                whichever one it staked into.</>
+              : <>An opponent is generated to match your level, from a random faction.
+                Harder opponents get a bigger stat budget.</>}
           </p>
 
-          <div className="mt-4 flex gap-2">
-            {[
-              { value: 0.75, label: 'Easy' },
-              { value: 1, label: 'Even' },
-              { value: 1.4, label: 'Hard' },
-              { value: 2, label: 'Brutal' },
-            ].map((d) => (
-              <button
-                key={d.value}
-                onClick={() => setDifficulty(d.value)}
-                aria-pressed={difficulty === d.value}
-                className={cx(
-                  'difficulty-button min-h-11 flex-1 rounded-[3px] border px-2 py-2 text-[13px] transition-colors lg:min-h-0',
-                  difficulty === d.value
-                    ? 'border-element/60 bg-element/10 text-element'
-                    : 'border-edge/70 text-muted hover:text-ink',
-                )}
-              >
-                {d.label}
-              </button>
-            ))}
-          </div>
+          {terms.staked ? (
+            <TierTable rows={rows} value={tierKey} onPick={setTierKey} terms={terms} />
+          ) : (
+            <div className="mt-4 flex gap-2">
+              {rows.map((row) => (
+                <button
+                  key={row.key}
+                  onClick={() => setTierKey(row.key)}
+                  aria-pressed={tierKey === row.key}
+                  className={cx(
+                    'difficulty-button min-h-11 flex-1 rounded-[3px] border px-2 py-2 text-[13px] transition-colors lg:min-h-0',
+                    tierKey === row.key
+                      ? 'border-element/60 bg-element/10 text-element'
+                      : 'border-edge/70 text-muted hover:text-ink',
+                  )}
+                >
+                  {row.label}
+                </button>
+              ))}
+            </div>
+          )}
 
           <Button
             className="mt-4 w-full" variant="primary" size="lg"
-            disabled={remaining <= 0 || busy}
+            disabled={remaining <= 0 || busy || !canAfford}
             busy={isPending('bot')}
-            onClick={() => run('bot', () => api.startBotBattle(difficulty))}
+            onClick={() => run('bot', () => api.startBotBattle(chosen?.difficulty ?? 1))}
             icon={<Sword className="h-4 w-4" />}
           >
-            {remaining <= 0 ? 'No battles left' : 'Begin'}
+            {remaining <= 0 ? 'No battles left'
+              : !canAfford ? `Need ${terms.stake} Gold`
+                : terms.staked
+                  ? `Stake ${terms.stake} on ${chosen?.label ?? 'Even'}`
+                  : 'Begin'}
           </Button>
+          {terms.staked && chosen && canAfford && remaining > 0 && (
+            <p className="mt-2 text-center text-[11px] text-faint">
+              A win here pays {chosen.payout} Gold from the pot, plus the {terms.winGold}
+              {' '}reward. A loss leaves your stake in it.
+            </p>
+          )}
         </Panel>
 
         <Panel data-tour="arena-open" className="p-5">
@@ -328,7 +508,7 @@ function Lobby() {
               size="sm" variant="quiet" busy={refreshing}
               onClick={async () => {
                 setRefreshing(true);
-                await refreshChallenges();
+                await Promise.all([refreshChallenges(), refreshArenaTiers()]);
                 setRefreshing(false);
               }}
               icon={<Refresh className="h-3.5 w-3.5" />}
@@ -336,18 +516,27 @@ function Lobby() {
               Refresh
             </Button>
           }>
-            Challenge a trainer
+            Challenge a player
           </SectionTitle>
+
+          {terms.staked && (
+            <p className="-mt-1 mb-3 text-[12px] leading-relaxed text-faint">
+              A duel is one pot of exactly two stakes — {terms.stake} each — and the
+              winner takes all {terms.stake * 2}, no rake. Yours is held from the
+              moment you post; withdrawing a challenge nobody took returns it whole.
+            </p>
+          )}
 
           <Button
             className="w-full" variant="ghost"
-            disabled={remaining <= 0 || busy}
+            disabled={remaining <= 0 || busy || !canAfford}
             busy={isPending('challenge')}
             onClick={() => run('challenge', () => api.challenge('OPEN'),
               'Challenge posted. Waiting for a taker.')}
             icon={<Users className="h-4 w-4" />}
           >
-            Post an open challenge
+            {!canAfford ? `Need ${terms.stake} Gold`
+              : terms.staked ? `Post a challenge · ${terms.stake} Gold` : 'Post an open challenge'}
           </Button>
 
           <div className="mt-4">
@@ -376,11 +565,11 @@ function Lobby() {
                     </div>
                     <Button
                       size="sm" variant="primary"
-                      disabled={remaining <= 0 || busy}
+                      disabled={remaining <= 0 || busy || !canAfford}
                       busy={isPending(`accept:${c.id}`)}
                       onClick={() => run(`accept:${c.id}`, () => api.acceptChallenge(c.id))}
                     >
-                      Accept
+                      {terms.staked ? `Take · ${terms.stake}` : 'Accept'}
                     </Button>
                   </div>
                 ))}
@@ -389,6 +578,106 @@ function Lobby() {
           </div>
         </Panel>
       </div>
+    </div>
+  );
+}
+
+/**
+ * The four pots, as the thing you pick a fight out of.
+ *
+ * This replaced a row of four difficulty buttons, and the reason it is a table
+ * rather than four prettier buttons is that a tier is no longer a preference —
+ * it is a price, and the four numbers on each row are what makes it one.
+ *
+ * All four are DERIVED here from what the process published (`pot`, `wins`,
+ * `attempts`) and none of them is published as a number. See the note on
+ * `arenaTierMath`: a derived value read a slot late is a figure nobody could
+ * have been paid, and a payout the contract advertised is a promise the design
+ * deliberately does not make.
+ *
+ * The last column is the one worth reading and the one most easily
+ * misunderstood, so it says both halves rather than a verdict: **break even**
+ * is the win rate at which the pot returns your stake, and **players win** is
+ * how often the tier is actually being won. At equilibrium the two converge, so
+ * the GAP between them is the signal — a tier people have been losing has a
+ * fat pot, a low break-even, and is worth attacking right now.
+ *
+ * Nothing here feeds a payout. A player who dumps games to drag "players win"
+ * down gains nothing, because a win still draws from what is in the pot and a
+ * pot only holds what somebody staked.
+ */
+function TierTable({ rows, value, onPick, terms }: {
+  rows: ReturnType<typeof arenaTierRows>;
+  value: string;
+  onPick: (key: string) => void;
+  terms: ArenaTerms;
+}) {
+  return (
+    <div data-tour="arena-breakeven" className="mt-4 overflow-x-auto">
+      <table className="w-full min-w-[19rem] border-collapse text-[12px]">
+        <thead>
+          <tr className="text-faint">
+            <th className="pb-1.5 text-left font-normal">Tier</th>
+            <th className="pb-1.5 text-right font-normal">Pot</th>
+            <th className="pb-1.5 text-right font-normal">A win pays</th>
+            <th className="pb-1.5 text-right font-normal">Break even</th>
+            <th className="pb-1.5 text-right font-normal">Players win</th>
+          </tr>
+        </thead>
+        <tbody>
+          {rows.map((row) => {
+            const selected = row.key === value;
+            // Positive edge means the tier is currently being won MORE often
+            // than the pot needs to pay its stake back — the pot is fat. It is
+            // a fact about right now, not a prediction about this player.
+            const good = row.edge !== undefined && row.edge > 0;
+            return (
+              <tr
+                key={row.key}
+                onClick={() => onPick(row.key)}
+                aria-selected={selected}
+                className={cx(
+                  'cursor-pointer border-t border-edge/40 transition-colors',
+                  selected ? 'bg-element/10 text-element' : 'text-muted hover:text-ink',
+                )}
+              >
+                <td className="py-2 pr-2">
+                  <button
+                    type="button"
+                    aria-pressed={selected}
+                    onClick={(event) => { event.stopPropagation(); onPick(row.key); }}
+                    className="text-left text-[13px]"
+                  >
+                    {row.label}
+                  </button>
+                </td>
+                <td className="py-2 pl-2 text-right font-mono tabular-nums">
+                  {formatInteger(row.pot)}
+                </td>
+                <td className={cx('py-2 pl-2 text-right font-mono tabular-nums',
+                  row.payout > terms.stake && 'text-good')}>
+                  {formatInteger(row.payout)}
+                </td>
+                <td className="py-2 pl-2 text-right font-mono tabular-nums">
+                  {ratePct(row.breakEven)}
+                </td>
+                <td className={cx('py-2 pl-2 text-right font-mono tabular-nums',
+                  row.winRate === undefined ? 'text-faint' : good ? 'text-good' : 'text-warn')}>
+                  {ratePct(row.winRate)}
+                  {row.attempts > 0 && row.winRate === undefined && (
+                    <span className="ml-1 text-[9px] uppercase text-faint">new</span>
+                  )}
+                </td>
+              </tr>
+            );
+          })}
+        </tbody>
+      </table>
+      <p className="mt-2 text-[11px] leading-relaxed text-faint">
+        Break even is the win rate at which the pot returns your {terms.stake}.
+        When more players are winning a tier than that, its pot is fat and the
+        tier is worth attacking. Your own record never changes what a win pays.
+      </p>
     </div>
   );
 }
@@ -487,10 +776,41 @@ function AwaitingChallenger() {
   );
 }
 
+/**
+ * The fight itself, which teaches two rules nothing else on the screen states.
+ *
+ * A companion carries THREE moves, and every companion in the realm can Rally
+ * and Mend once a battle without spending a slot on either. Neither of those is
+ * discoverable from the grid: five cells that look alike do not say which two
+ * are free, and a player who never presses them simply plays a worse game.
+ *
+ * It lives here rather than in `LOBBY_TOUR` because a step whose target is
+ * missing is silently dropped, and the move grid does not exist until a fight
+ * does — a lobby step pointing at it would never once have been shown.
+ */
+const BATTLE_TOUR: TourStep[] = [
+  {
+    target: '[data-tour="battle-moves"]',
+    title: 'Your three moves',
+    body: 'What this companion rolled, each with a limited number of uses. When all three are spent you can still struggle, and a button appears here saying so.',
+  },
+  {
+    target: '[data-tour="battle-free"]',
+    title: 'And two every companion has',
+    body: 'Rally and Mend, on your readout rather than in the grid, because they are charges rather than moves: once each per battle, no move slot, and every companion in the realm carries both. Rally buys attack and speed with health; Mend buys health and shield with speed. The dot is the charge — your opponent’s pair is drawn the same way on their side, so you can see whether they still have a heal in hand before you commit.',
+  },
+  {
+    target: '[data-tour="battle-log"]',
+    title: 'What just happened',
+    body: 'Every swing, in order: what landed, what missed, and which buffs are still running. A move’s stat riders last the rest of the fight, so a Rally in round one is still working in round eight.',
+  },
+];
+
 // The fight -----------------------------------------------------------------
 
 function BattleView() {
-  const { player, address, tuning, refresh, run, isPending, busy } = useGame();
+  const { player, address, tuning, catalog, refresh, run, isPending, busy } = useGame();
+  useTourSteps('arena-battle', BATTLE_TOUR);
 
   // Local, seeded from the player record. A PvP poll can advance this without a
   // signed round trip; every action of your own replaces it wholesale.
@@ -570,6 +890,20 @@ function BattleView() {
       >
         <BattleStage
           battle={battle} me={me} them={them} fill
+          // Rally and Mend, on the floor under each fighter's readout rather
+          // than in the move grid. They are not in `movePools` -- deliberately,
+          // so one cannot be smuggled into a stored roster -- so the catalog is
+          // the only way the client knows they exist.
+          free={catalog?.freeActions ? {
+            actions: catalog.freeActions,
+            tuning,
+            disabled: waiting || over,
+            busy,
+            isPending: (name) => isPending(`attack:${name}`),
+            onMove: (name) => { void run(
+              `attack:${name}`, () => api.attack(battle.id, name, battle.round),
+            ); },
+          } : undefined}
           onSettled={onSettled} onImpact={onImpact}
           className="min-h-0 flex-1 border-0"
         />
@@ -693,11 +1027,39 @@ function usePvpWatch(
 }
 
 
+/**
+ * What actually happened, from the process rather than from the lobby.
+ *
+ * The lobby quoted a payout off a pot that has since moved — every fight
+ * anybody in the realm settled in between changed it — so a result screen that
+ * repeated the advertised number would show a figure this player could not have
+ * been paid. `player.arenaLast` is the process's own receipt: the pot AS IT
+ * STOOD at settle, what was drawn from it, and what the capped allowance added.
+ * It is the one number about a settlement that is not derivable from published
+ * state a moment later, which is why the contract carries it at all.
+ *
+ * Both halves can honestly be zero. The allowance is shared with quests and
+ * runs out; a pot only ever holds what players staked. Saying so is the point —
+ * a silent "+0" reads as a broken faucet, which is exactly how the daily
+ * worship looked for months.
+ */
 function Outcome({
   won, battle, className,
 }: { won: boolean; battle: Battle; className?: string }) {
-  const { player, run, isPending, busy } = useGame();
+  const { player, catalog, run, isPending, busy } = useGame();
+  const terms = arenaTerms(catalog);
   const remaining = player!.battlesRemaining;
+  const receipt = player!.arenaLast;
+  const gold = player!.gold ?? 0;
+
+  // Only trust a receipt that belongs to THIS fight. It is overwritten on every
+  // settle, so a stale one from the previous battle would otherwise be printed
+  // against this result — and the reply that ends a fight lands before the
+  // refresh that carries the receipt, so "not here yet" is a real state.
+  const fresh = receipt && receipt.won === won ? receipt : undefined;
+  const drew = fresh ? Math.max(0, fresh.paid) : 0;
+  const base = fresh ? Math.max(0, fresh.base) : 0;
+  const total = drew + base;
 
   return (
     <Panel className={cx(
@@ -707,28 +1069,61 @@ function Outcome({
       {won ? <Trophy className="h-8 w-8 shrink-0 text-good" />
            : <X className="h-8 w-8 shrink-0 text-muted" />}
       <div className="min-w-0 text-left">
-      <h2 className="text-xl font-semibold">
-        {won ? 'Victory' : 'Defeated'}
-      </h2>
-      <p className="mt-0.5 text-[13px] text-muted">
-        {won
-          ? `${battle.round} rounds. +2 experience and a loot box.`
-          : `${battle.round} rounds. +1 experience for the trouble.`}
-      </p>
+        <h2 className="text-xl font-semibold">
+          {won ? 'Victory' : 'Defeated'}
+        </h2>
+        <p className="mt-0.5 text-[13px] text-muted">
+          {battle.round} rounds. {won ? '+2 experience.' : '+1 experience for the trouble.'}
+        </p>
 
+        {/* The money, spelled out in its two layers because they come from two
+            different places and only one of them issues anything. */}
+        {fresh ? (
+          <p className="mt-1 flex flex-wrap items-baseline gap-x-2 gap-y-0.5 text-[12px]">
+            {total > 0 ? (
+              <span className="flex items-baseline gap-1 font-mono tabular-nums text-good">
+                <Coin className="h-3.5 w-3.5 translate-y-0.5 text-rune" />
+                +{total} Gold
+              </span>
+            ) : (
+              <span className="font-mono text-muted">+0 Gold</span>
+            )}
+            <span className="text-faint">
+              {won
+                ? drew > 0
+                  ? `${drew} from the ${tierLabel(terms, fresh.tier)} pot, which held ${fresh.pot}`
+                  : `the ${tierLabel(terms, fresh.tier)} pot was empty`
+                : `your ${fresh.stake} stays in the ${tierLabel(terms, fresh.tier)} pot`}
+              {won && base === 0 && ' · the 20-hour reward allowance is spent'}
+              {won && base > 0 && ` · ${base} from the reward allowance`}
+            </span>
+          </p>
+        ) : (
+          <p className="mt-1 text-[12px] text-faint">Settling the stake…</p>
+        )}
+        {terms.staked && (
+          <p className="mt-0.5 font-mono text-[11px] tabular-nums text-faint">
+            Purse {formatInteger(gold)}
+          </p>
+        )}
       </div>
 
       <div className="flex shrink-0 flex-wrap items-center justify-center gap-2">
         {remaining > 0 ? (
           <Button
-            variant="primary" busy={isPending('bot')} disabled={busy}
+            variant="primary" busy={isPending('bot')}
+            disabled={busy || (terms.staked && gold < terms.stake)}
             onClick={() => run('bot', () => api.startBotBattle(1))}
             icon={<Sword className="h-4 w-4" />}
           >
-            Next battle ({remaining} left)
+            {terms.staked && gold < terms.stake
+              ? `Need ${terms.stake} Gold`
+              : `Next battle (${remaining} left)`}
           </Button>
         ) : (
-          <p className="text-[13px] text-faint">Session over. Spend another Rune to keep going.</p>
+          <p className="text-[13px] text-faint">
+            Session over. Feed and play your companion to enter again.
+          </p>
         )}
         <Button variant="quiet" busy={isPending('leave')} disabled={busy}
                 onClick={() => run('leave', api.leaveArena)}>
@@ -743,4 +1138,15 @@ function Outcome({
       </div>
     </Panel>
   );
+}
+
+/**
+ * The tier's own name, joined from the catalog rather than title-cased here.
+ *
+ * `'pvp'` is not a tier and has no row: a duel's pot is the two stakes and
+ * nothing else, so it is named for what it is.
+ */
+function tierLabel(terms: ArenaTerms, key: string) {
+  if (key === 'pvp') return 'duel';
+  return terms.tiers.find((tier) => tier.key === key)?.label ?? key;
 }

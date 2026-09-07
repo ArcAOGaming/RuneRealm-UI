@@ -20,8 +20,10 @@
  */
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { pct } from '../lib/format';
-import { Battle, Combatant, Turn } from '../lib/types';
-import { cx } from './primitives';
+import { Battle, Combatant, Move, Turn } from '../lib/types';
+import { cx, Spinner } from './primitives';
+import { MOVE_LOOK, moveExplain } from './BattleMoves';
+import type { FreeActions } from './BattleStage';
 import { mountGame, Mounted } from '../game/boot';
 import { BattleScene, HudFrame, Side, Vitals } from '../game/BattleScene';
 import { arenaFor, arenaUrl } from '../game/assets';
@@ -60,13 +62,15 @@ const side = (c: Combatant) => ({
 type Box = { left: number; top: number; width: number; height: number };
 
 export default function BattleStageImpl({
-  battle, me, them, className, fill, bare, onSettled, onImpact,
+  battle, me, them, className, fill, bare, free, onSettled, onImpact,
 }: {
   battle: Battle; me: Combatant; them: Combatant; className?: string;
   /** Take height from the flex parent rather than the 16:9 aspect ratio. */
   fill?: boolean;
   /** Scene only — no corner plates. For the companion screen's glance at it. */
   bare?: boolean;
+  /** Rally and Mend, as studs under each readout. See `FreeStuds`. */
+  free?: FreeActions;
   /** Fires once the last round has finished PLAYING, not when it resolved. */
   onSettled?: () => void;
   /** Fires the instant a blow connects, for the page's own reaction to it. */
@@ -317,8 +321,18 @@ export default function BattleStageImpl({
           ? { left: box.left, top: box.top, width: box.width, height: box.height }
           : { inset: 0 }}
       >
-        {!bare && <Plate at="left" c={me} v={vits[me.side]} you />}
-        {!bare && <Plate at="right" c={them} v={vits[them.side]} />}
+        {!bare && (
+          <Corner at="left">
+            <Plate c={me} v={vits[me.side]} you />
+            {free && <FreeStuds free={free} c={me} against={them.elementType} mine />}
+          </Corner>
+        )}
+        {!bare && (
+          <Corner at="right">
+            <Plate c={them} v={vits[them.side]} />
+            {free && <FreeStuds free={free} c={them} against={me.elementType} />}
+          </Corner>
+        )}
 
         {[me, them].map((c) => (
           <div
@@ -337,6 +351,132 @@ export default function BattleStageImpl({
 }
 
 /**
+ * One corner of the arena: the readout, and whatever hangs off it.
+ *
+ * The plate used to position itself. It cannot any more, because the free-action
+ * studs have to sit directly under it and the plate's height is not fixed — a
+ * fighter with no shield is a row shorter. Stacking them inside one positioned
+ * column is the only arrangement where the studs stay attached to the readout
+ * they belong to at every size.
+ *
+ * `pointer-events-none` is on the OVERLAY, so anything pressable in here has to
+ * take it back. The studs do; nothing else in the column does, which keeps the
+ * art underneath clickable everywhere else.
+ */
+function Corner({ at, children }: { at: 'left' | 'right'; children: React.ReactNode }) {
+  return (
+    <div
+      className={cx(
+        'absolute top-1.5 flex w-[38%] max-w-[196px] flex-col gap-1',
+        at === 'left' ? 'left-1.5' : 'right-1.5',
+      )}
+    >
+      {children}
+    </div>
+  );
+}
+
+/**
+ * Rally and Mend, as two charges struck on the arena floor.
+ *
+ * They used to be two cells in the move grid, in a row under the roster. That
+ * was wrong in a way no amount of styling fixed: a grid of five look-alike
+ * cells says these are five things of one kind, and they are not. Three of them
+ * are what THIS companion rolled, with uses that count down; two are what every
+ * companion in the realm can do, once each, costing no slot. A player who never
+ * pressed them simply played a worse game, and nothing on screen said why.
+ *
+ * So they are not moves on a card any more, they are CHARGES on the fighter —
+ * drawn beside the health and the shield they spend, on the plate belonging to
+ * whoever holds them, lit while they are available and struck through once they
+ * are gone. That also puts the opponent's pair where it is actually useful:
+ * whether they still have a Mend in hand is the single most valuable thing to
+ * know before committing a round, and now it is read in the same glance as
+ * their health rather than across the screen in a dimmed grid.
+ *
+ * The hover text is `moveExplain`, shared with the grid, so the numbers here
+ * are the numbers the engine will use and there is no second copy to drift.
+ */
+function FreeStuds({ free, c, against, mine }: {
+  free: FreeActions;
+  c: Combatant;
+  against?: Combatant['elementType'];
+  /** Only your own are pressable. Theirs are information. */
+  mine?: boolean;
+}) {
+  // Sorted, so the pair is always in the same order on both plates.
+  // `Object.entries` is insertion order and the process is free to change it;
+  // a player reaching for Mend under pressure needs it to be where it was.
+  const actions = Object.entries(free.actions).sort(([a], [b]) => a.localeCompare(b));
+  if (actions.length === 0) return null;
+
+  return (
+    <div
+      // Only YOUR pair is a tour target: the walkthrough teaches a control, and
+      // theirs is a readout. A step pointing at a target that is not on screen
+      // is silently dropped, so two would be one step that never fires.
+      data-tour={mine ? 'battle-free' : undefined}
+      className={cx('grid gap-1', actions.length > 1 ? 'grid-cols-2' : 'grid-cols-1')}
+    >
+      {actions.map(([name, def]) => {
+        const spent = !!c.freeUsed?.[name];
+        const move = { ...def, name, count: spent ? 0 : 1 } as Move;
+        const look = MOVE_LOOK[def.type] ?? MOVE_LOOK.normal;
+        const { Icon } = look;
+        const pending = mine ? free.isPending(name) : false;
+        const pressable = !!mine && !spent && !free.disabled && !free.busy;
+        return (
+          <button
+            key={name}
+            type="button"
+            disabled={!pressable}
+            tabIndex={mine ? undefined : -1}
+            aria-disabled={!mine || undefined}
+            aria-label={mine
+              ? `${name}, free action, ${spent ? 'already used' : 'ready'}`
+              : `Opponent's ${name}, ${spent ? 'already used' : 'still available'}`}
+            title={moveExplain({ move, fighter: c, tuning: free.tuning, against, free: true })}
+            onClick={mine ? () => free.onMove(name) : undefined}
+            className={cx(
+              'flex items-center gap-1 rounded-[3px] px-1.5 py-1 leading-none',
+              'backdrop-blur-[2px] transition-[opacity,transform] duration-150',
+              'shadow-[0_1px_0_rgb(255_255_255/.08)_inset,0_-1px_0_rgb(0_0_0/.5)_inset,0_2px_8px_rgb(0_0_0/.4)]',
+              'ring-1 ring-inset',
+              mine && 'pointer-events-auto',
+              spent
+                ? 'bg-void/45 ring-black/40 opacity-45'
+                : `${look.ring} bg-void/55 ring-rune/25`,
+              pressable && 'hover:brightness-125 active:translate-y-px',
+              !mine && 'opacity-70',
+            )}
+          >
+            {pending
+              ? <Spinner className="h-3 w-3 shrink-0" />
+              : <Icon className={cx('h-3 w-3 shrink-0', spent ? 'text-faint' : look.tint)} />}
+            <span className={cx(
+              'min-w-0 flex-1 truncate text-left text-[10px] font-medium',
+              spent && 'line-through decoration-1',
+            )}>
+              {name}
+            </span>
+            {/* The charge itself. Filled is one use in hand, hollow is spent —
+                the same mark on both plates, so "have they still got it?" is
+                one shape rather than a sentence. */}
+            <span
+              className={cx(
+                'h-1.5 w-1.5 shrink-0 rounded-full',
+                spent ? 'bg-transparent ring-1 ring-ink/30' : 'bg-current',
+                !spent && look.tint,
+              )}
+            />
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
+/**
  * The corner readout: who, how hurt, and how far their stats have drifted.
  *
  * Embossed ON the arena — a translucent slab with a light top edge and a dark
@@ -350,8 +490,8 @@ export default function BattleStageImpl({
  * here is invented, and a single letter was not enough to say so.
  */
 function Plate({
-  at, c, v, you,
-}: { at: 'left' | 'right'; c: Combatant; v: Vitals | null; you?: boolean }) {
+  c, v, you,
+}: { c: Combatant; v: Vitals | null; you?: boolean }) {
   // Fall back to the record until the scene has reported once, so the panel is
   // never blank on the first frame of a fight.
   const cur = v ?? {
@@ -365,13 +505,12 @@ function Plate({
   return (
     <div
       className={cx(
-        'absolute top-1.5 w-[38%] max-w-[196px] overflow-hidden rounded-[3px]',
+        'overflow-hidden rounded-[3px]',
         'bg-void/55 px-2 py-1.5 backdrop-blur-[2px]',
         // The emboss: a lit top edge, a dark base, and a shadow that lifts the
         // slab off the art underneath it.
         'shadow-[0_1px_0_rgb(255_255_255/.10)_inset,0_-1px_0_rgb(0_0_0/.55)_inset,0_2px_10px_rgb(0_0_0/.45)]',
         'ring-1 ring-inset ring-rune/20',
-        at === 'left' ? 'left-1.5' : 'right-1.5',
       )}
     >
       <div className="flex items-baseline justify-between gap-2">

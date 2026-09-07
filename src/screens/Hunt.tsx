@@ -28,15 +28,20 @@ const CompanionAcquisition = lazy(() => import('../ui/CompanionAcquisition'));
 // actually cornered, not when the entry chunk does.
 const RuneField = lazy(() => import('../ui/RuneField'));
 
+/* Only reached before the catalog loads. It must MATCH `C.HUNT` in
+   constants.lua: the process publishes the real curve and this is what the
+   slider draws in the gap, so a stale copy quotes odds the worker will not
+   roll. */
 const FALLBACK_HUNT: HuntTuning = {
   protocol: 'runerealm-hunt/1', levelRange: 5, searchCooldown: 3000,
   entry: {
-    berries: { fire_berry: 5, water_berry: 5, air_berry: 5, rock_berry: 5 },
+    berries: { fire_berry: 2, water_berry: 2, air_berry: 2, rock_berry: 2 },
   },
   capture: {
-    minRuneBid: 1, maxRuneBid: 5,
-    minChance: 5, maxChance: 95, baseChance: 15,
-    runeScale: 120, runeHalf: 5, levelStep: 3,
+    scrollCost: 1,
+    minRuneBid: 1, maxRuneBid: 3,
+    minChance: 5, maxChance: 95, baseChance: 8,
+    runeScale: 220, runeHalf: 7, levelStep: 3,
   },
 };
 
@@ -74,7 +79,7 @@ const HUNT_TOUR: TourStep[] = [
   {
     target: '[data-tour="hunt-bid"]',
     title: 'Binding costs whether it works',
-    body: 'One to five Rune, thrown once. Every Rune committed is consumed even if the binding breaks, and level advantage still matters at five.',
+    body: 'A Scroll and one to three Rune, thrown once. Both are consumed even if the binding breaks. One Rune binds about a third of the time and three about three quarters — never certainly — and level advantage moves it either way.',
   },
   {
     target: '[data-tour="hunt-leave"]',
@@ -230,6 +235,23 @@ export default function Hunt() {
       setOutcome(null);
     }
   }, [run?.status, run?.encounter, run?.runId, run?.encounterCount]);
+
+  /*
+   * Fetch the reveal during the encounter, not after the capture.
+   *
+   * Same trade as the oath in Factions: the chunk and the card plates are the
+   * whole wait between a capture landing and the animation starting, and both
+   * are knowable as soon as there is something standing in front of you. A
+   * warm-up, so failures are ignored — the real load reports them.
+   */
+  useEffect(() => {
+    const element = run?.encounter?.elementType;
+    if (!element) return;
+    void import('../ui/CompanionAcquisition');
+    void import('../lib/card/browser')
+      .then((m) => m.preloadCard(element))
+      .catch(() => {});
+  }, [run?.encounter?.elementType]);
 
   // The first time the worker says the trail is live, it opens rather than
   // appears. Once per run: a poll that answers `roaming` fifty times is not
@@ -461,7 +483,7 @@ function HuntBattle({
   onRun: (run: HuntRun) => void;
   onSettled: () => void;
 }) {
-  const { tuning } = useGame();
+  const { tuning, catalog } = useGame();
   const toast = useToast();
   const [attacking, setAttacking] = useState<string | null>(null);
   const battle = run.battle!;
@@ -500,6 +522,16 @@ function HuntBattle({
       >
         <BattleStage
           battle={battle} me={me} them={them} fill
+          // Same fight, same free pair, same place: hunt runs the same
+          // `battle.lua` and mounts the same stage.
+          free={catalog?.freeActions ? {
+            actions: catalog.freeActions,
+            tuning,
+            disabled: over,
+            busy: attacking !== null,
+            isPending: (name) => attacking === name,
+            onMove: (name) => { void attack(name); },
+          } : undefined}
           onSettled={onSettled} onImpact={onImpact}
           className="min-h-0 flex-1 border-0"
         />
@@ -528,8 +560,8 @@ function HuntBattle({
  * and the only thing on screen that was actually about Rune was the number
  * printed on a button.
  *
- * It is one ceremony now, and the field behind it IS the bid. Pick three and
- * three runes are turning around the creature; pick five and there are five.
+ * It is one ceremony now, and the field behind it IS the bid. Pick one and one
+ * rune is turning around the creature; pick three and there are three.
  * Signing tightens the ring and sets them pulsing — which is the honest picture
  * of that moment, because the Rune is spent from the signature onward whatever
  * the roll says. The settlement landing throws them into the creature, and what
@@ -572,7 +604,15 @@ export function CaptureCeremony({
 
   const chance = useMemo(() => captureChance(hunter.level, wild.level, runes, tuning),
     [hunter.level, runes, tuning, wild.level]);
-  const canCapture = held >= tuning.capture.minRuneBid;
+  /* Binding costs BOTH, and both are spent whether it holds or breaks. A UI
+     that only checked the Rune would let the player sign a settlement the
+     process refuses — and the worker retries a refused settlement, so it fails
+     repeatedly rather than once. */
+  const ticket = tuning.capture.scrollCost ?? 0;
+  const scrolls = player!.inventory.scroll ?? 0;
+  const hasRune = held >= tuning.capture.minRuneBid;
+  const hasTicket = scrolls >= ticket;
+  const canCapture = hasRune && hasTicket;
   const bids = Array.from(
     { length: tuning.capture.maxRuneBid - tuning.capture.minRuneBid + 1 },
     (_, index) => tuning.capture.minRuneBid + index,
@@ -651,7 +691,8 @@ export function CaptureCeremony({
               <legend className="text-[11px] uppercase tracking-[.16em] text-faint">
                 Runes to throw
               </legend>
-              <div className="mt-2 grid grid-cols-5 gap-1.5">
+              <div className={cx('mt-2 grid gap-1.5',
+                bids.length <= 3 ? 'grid-cols-3' : 'grid-cols-5')}>
                 {bids.map((bid) => {
                   const available = held >= bid;
                   const selected = runes === bid;
@@ -682,9 +723,26 @@ export function CaptureCeremony({
                 })}
               </div>
               <p className="mt-2 text-[11px] leading-relaxed text-faint">
-                Every Rune committed is consumed whether the binding holds or breaks.
-                {' '}<b className="font-mono text-muted">{held}</b> held.
+                {ticket > 0 && (
+                  <>
+                    Binding spends {ticket === 1 ? 'a Scroll' : `${ticket} Scrolls`} as well
+                    as the Rune.{' '}
+                  </>
+                )}
+                Both are consumed whether the binding holds or breaks.
+                {' '}<b className="font-mono text-muted">{held}</b> Rune
+                {ticket > 0 && (
+                  <>, <b className={cx('font-mono', hasTicket ? 'text-muted' : 'text-warn')}>
+                    {scrolls}
+                  </b>{' '}Scroll{scrolls === 1 ? '' : 's'}</>
+                )}{' '}held.
               </p>
+              {ticket > 0 && !hasTicket && (
+                <p className="mt-1.5 text-[11px] leading-relaxed text-warn">
+                  No Scroll, no binding. Buy one at the realm&rsquo;s desk or from another
+                  player, or let this one go.
+                </p>
+              )}
             </fieldset>
 
             <div className="flex items-center justify-center gap-4 sm:justify-end">

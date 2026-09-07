@@ -145,6 +145,28 @@ function paint(
 }
 
 /**
+ * Warm the plates a card of this element will need, before anybody asks for it.
+ *
+ * `drawCardAssembly` cannot start until every plate has loaded — about 650KB
+ * of PNG — and it is called at the worst possible moment, right after a chain
+ * write returns, when the player is already staring at a spinner. Called while
+ * the oath dialog is still open it costs nothing anybody sees, and the images
+ * land in the same cache `image()` reads, so the real draw finds them there.
+ *
+ * The move badges are not preloaded: which three a companion rolls is not
+ * known until it exists, and the forty plates they could come from are far
+ * more than this is worth. The five full-card plates are the weight.
+ */
+export async function preloadCard(
+  elementType: Monster['elementType'], opts?: BrowserCardOptions,
+): Promise<void> {
+  const { ops } = cardPlan({ elementType, level: 1, moves: {} }, { ...opts, extended: false });
+  await Promise.all(assetsFor(ops).map(
+    (asset) => image(asset, opts?.assetUrls?.[asset]).catch(() => null),
+  ));
+}
+
+/**
  * Draw `monster` onto `canvas`, which is resized to the card.
  *
  * Every plate is awaited before the first is drawn. Painting as they arrive

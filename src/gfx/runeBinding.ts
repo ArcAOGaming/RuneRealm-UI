@@ -2,7 +2,7 @@
  * The binding — the rune field a defeated wild creature stands in.
  *
  * This is the one place in the game where the number on a button IS the thing
- * on screen. A capture bid is one to five Rune, every one of them consumed
+ * on screen. A capture bid is one to three Rune, every one of them consumed
  * whether the binding holds or breaks, and the old screen said so in a
  * sentence beside five radio buttons. Here the bid is the field: choose three
  * and three carved runes are turning around the creature, choose five and

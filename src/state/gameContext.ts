@@ -15,7 +15,8 @@
  */
 import { createContext, useContext } from 'react';
 import {
-  Catalog, Faction, LeaderboardRow, MonsterIndexView, OpenChallenge, Player, Tuning,
+  ArenaTiers, Catalog, Faction, LeaderboardRow, MonsterIndexView, OpenChallenge,
+  Player, Tuning,
 } from '../lib/types';
 import { type WalletProviderId } from '../lib/wallet';
 import { type WritePhase } from '../lib/hyperbeam';
@@ -55,6 +56,16 @@ export type Ctx = {
   /** Open PvP challenges, from published state. Free to refresh. */
   challenges: OpenChallenge[] | null;
   refreshChallenges: (signal?: AbortSignal) => Promise<void>;
+  /**
+   * The arena's pots, from published state. Free, and polled with everything
+   * else — the lobby quotes a payout off these, so a stale one misprices a
+   * decision the player is about to make.
+   *
+   * Null means either "not read yet" or "this process predates arena stakes";
+   * `arenaTerms(catalog).staked` tells the two apart.
+   */
+  arenaTiers: ArenaTiers | null;
+  refreshArenaTiers: (signal?: AbortSignal) => Promise<void>;
 
   /** True while any write is in flight. */
   busy: boolean;
