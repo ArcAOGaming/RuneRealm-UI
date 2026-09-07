@@ -485,6 +485,27 @@ local function pruneTradeRings(index, day)
   end
 end
 
+--- Which side took, across BOTH shapes of the record.
+---
+--- A redeploy carries `state.fills` over verbatim and `rebuildIndex` reseeds
+--- the per-account rings from it, so for up to 500 fills and 30 days after a
+--- deploy this walks rows written before `takerSide` existed. Those rows still
+--- carry the old `taker` address, and reading it is exact rather than
+--- self-healing -- without this the digest would name the wrong maker on every
+--- one of them, and a player's own history would say `maker` on trades they
+--- took.
+---
+--- Delete it once no deployed process can still be holding a pre-`takerSide`
+--- fill. That is one 30-day ring plus one 500-fill history after the deploy,
+--- and nothing breaks if it outlives that; it just stops being reached.
+local function takerSideOf(fill)
+  if fill.takerSide == "buy" or fill.takerSide == "sell" then return fill.takerSide end
+  if type(fill.taker) == "string" and fill.taker ~= "" then
+    return fill.taker == fill.buyer and "buy" or "sell"
+  end
+  return nil
+end
+
 local function indexFill(index, fill)
   -- Once a day, on the day's first fill. The sweep is O(traders held) and the
   -- only thing that can change its answer is the date.
@@ -658,7 +679,7 @@ local function fillDigest(state, timestamp)
       row.prices7[#row.prices7 + 1] = price
       row.volume7 = row.volume7 + int(fill.quantity, 0)
       -- Derived rather than stored; see the note on the fill record.
-      local buyerTook = fill.takerSide == "buy"
+      local buyerTook = takerSideOf(fill) == "buy"
       row.takers[buyerTook and fill.buyer or fill.seller] = true
       row.makers[buyerTook and fill.seller or fill.buyer] = true
     end

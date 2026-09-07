@@ -968,7 +968,10 @@ local function ownRecentFills(address)
       gross = int(f.price, 0) * int(f.quantity, 0),
       fee = int(f.fee, 0),
       filledAt = int(f.filledAt, 0),
-      role = f.takerSide == side and "taker" or "maker",
+      -- `f.taker` is the pre-compaction spelling. A redeploy carries the old
+      -- fills over, so both are read for one 30-day ring after a deploy.
+      role = (f.takerSide or (f.taker ~= nil and f.taker == f.buyer and "buy" or nil))
+        == side and "taker" or "maker",
     }
   end
   return rows
@@ -9213,7 +9216,33 @@ function compute(base, req, opts)
   -- `tuning` is in the catalog so the client never has to hardcode a combat
   -- constant. It was doing exactly that, and the numbers on screen had drifted
   -- from the numbers the engine used.
-  if result.catalog == nil then
+  --
+  -- WRITTEN ONCE IS STILL PAID FOR EVERY SLOT. Gating the re-encode saves the
+  -- Lua work and nothing else: `dev_lua` loads, encodes, decodes and writes the
+  -- WHOLE published map five times per message regardless of which keys the
+  -- handler touched, so these 6,913 bytes of unchanging tables were charged
+  -- against every action forever. Only deleting bytes makes a slot faster --
+  -- see the published-state rule in CLAUDE.md.
+  --
+  -- So a deploy may PIN the catalog to Arweave instead. `catalog-ref.mjs`
+  -- uploads exactly the bytes this block would have published and waits until a
+  -- gateway serves them back, then `gameModuleSources` injects the id as
+  -- `C.CATALOG_REF` and this publishes that instead: 6,913 bytes become 43, and
+  -- the client's read of it goes from 184 ms off this node to 16 ms off
+  -- arweave.net. Both measured 2026-09-06.
+  --
+  -- The id is published as a plain STRING and must stay one. A cache LINK would
+  -- be materialised by `hb_cache:ensure_all_loaded` on the way into every slot
+  -- -- that call exists precisely to defeat lazy `{link, ...}` values -- which
+  -- would put the whole catalog back in the map AND add a gateway fetch to it.
+  --
+  -- With no ref injected this behaves exactly as it always has, which is what
+  -- every test suite and local runner relies on.
+  if C.CATALOG_REF then
+    if result.catalogref == nil then
+      result.catalogref = C.CATALOG_REF
+    end
+  elseif result.catalog == nil then
     result.catalog = encode({
       items = C.ITEMS,
       activities = C.ACTIVITIES,
