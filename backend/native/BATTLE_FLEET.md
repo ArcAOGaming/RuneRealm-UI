@@ -509,6 +509,54 @@ battle migration. There is no production state to carry. The cutover procedure
 is intentionally: fresh game/account authority, fresh worker pool, test data,
 then enable the client flag.
 
+## Live measurement, 2026-09-08 — and the handshake that was never delivered
+
+Read the table in `PROCESS_SHAPE_AUDIT.md` §1 for the numbers; the operational
+part belongs here.
+
+The fleet works. On `hyperbeam.tylerw.ai` (BOX B, `176.9.219.106`), game
+`2xESlFS9AwACNgQQviiyp9krhhbr-d1gBLkVEkjMxow` with three sealed `lua@5.3a`
+workers, every arena `Battle.Attack` runs on a worker and **none has ever run on
+the authority**. A worker slot costs 31 ms mean against the authority's 157 ms,
+because its published map is 1.85 MB against 4.83 MB.
+
+What did not work: **hops 4-6 — the ack, the receipt and the release — had zero
+computed slots on any worker.** The reward reached the ledger and the fight
+ended on screen; every final then sat unacknowledged forever. Because an
+unacknowledged final is never pruned and admission stops at `maxPending`, each
+worker was ~100 finished battles from refusing every new `Battle.Open`, with
+nothing published that anybody was reading.
+
+The cascade is the cause. `dev_push` only recurses while a caller holds the push
+request open, and the client stops after the leg it needs. The repair costs
+nothing and needs no signature:
+
+```bash
+# the slot that PRODUCED the stuck message -- the worker's terminal
+# Battle.Attack/Battle.Cancel slot, or the authority's Battle.Fleet.Settle slot
+curl -s "$NODE/$PID~process@1.0/push&slot=$SLOT"
+```
+
+One call completed the whole remaining chain each time: measured 1.9 s and
+10.5 s for two stuck settlements and 2.8-57.8 s for eight stuck cancellations.
+The owner-signed `npm run reconcile:battle-fleet -- --apply` is the fallback for
+when the producing slot number is unknown; it costs one extra authority slot per
+stuck final.
+
+**`npm run verify:battle-fleet` now gates on this.** It used to print PASS the
+moment the account's win counter moved — the exact point where the stall began.
+It now polls the authority's `battlefleetops` until that reservation's tombstone
+reads `deliveryConfirmed:true`, then checks every sealed worker's `fleetstatus`
+for drained `pendingFinals` and remaining admission headroom, and fails loudly
+otherwise. The verdict logic is pure in `battle-fleet/delivery-health.mjs` and
+pinned by `battle-fleet/delivery-health.test.mjs` against fixtures copied
+verbatim from what the live node served — key spellings included, and including
+the rule that an absent key comes back as HTML at status 200.
+
+Nothing in the running deployment delivers hops 4-6 automatically. Until
+something does, treat `npm run verify:battle-fleet` as a required check after
+any fleet traffic, and watch `pendingFinals` per worker.
+
 ## Deployment and test gate
 
 Local verification:

@@ -27,6 +27,20 @@
  * the same shape as the hunt settlement bug — see verify-hunt-settlement.mjs —
  * and the same reason an offline suite would not have found it.
  *
+ * And for a while this script checked only the FIRST of those four hops. It
+ * declared PASS the moment the account's win counter moved, which is precisely
+ * where the 2026-09-08 production stall began: the reward landed, and the
+ * `Fleet.Settlement.Ack` -> `Battle.Fleet.FinalAcked` -> `Fleet.FinalAcked.Release`
+ * chain behind it was never delivered on a single battle the live fleet ever
+ * ran. Unacknowledged finals are never pruned and admission stops at
+ * `pendingLimit`, so each worker was on course to refuse every new battle after
+ * 100 fights — invisibly, with this script still printing PASS.
+ *
+ * So step 4 below is a gate now: the authority's tombstone must reach
+ * `deliveryConfirmed`, and the worker must drain its pending finals. See
+ * `battle-fleet/delivery-health.mjs` for what the numbers mean and how a stall
+ * is repaired.
+ *
  * Burner, never the owner wallet: entering the arena spends Rune and swearing a
  * faction is once per account forever.
  */
@@ -39,6 +53,9 @@ import { sendMessage } from './hbclient.mjs';
 import { buildSwarmClient } from './swarm/build-client.mjs';
 import { listBurners } from './burners.mjs';
 import { assertLiveGraph, resolveLiveGraph } from './live-config.mjs';
+import {
+  decodePublished, deliveryHealth, finalConfirmed, recoveryHint,
+} from './battle-fleet/delivery-health.mjs';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.resolve(HERE, '..', '..');
@@ -90,11 +107,19 @@ async function settle(predicate, label, timeoutMs = 90_000) {
 
 // -- is the fleet even on? ----------------------------------------------------
 
+/**
+ * Read a published key. An absent key is answered by this node with its own
+ * HTML landing page AT STATUS 200, so `r.ok` proves nothing — `decodePublished`
+ * is the only thing that separates "no such key" from a real value.
+ */
+const published = async (process_, key) => decodePublished(
+  await fetch(`${node}/${process_}~process@1.0/now/${key}`, {
+    headers: { accept: 'text/plain' },
+  }).then((r) => (r.ok ? r.text() : '')).catch(() => ''),
+);
+
 step('fleet config');
-const raw = await fetch(`${node}/${pid}~process@1.0/now/battlefleet`, {
-  headers: { accept: 'text/plain' },
-}).then((r) => (r.ok ? r.text() : '')).catch(() => '');
-const fleet = raw && !raw.trimStart().startsWith('<') ? JSON.parse(raw) : null;
+const fleet = await published(pid, 'battlefleet');
 if (!fleet?.enabled) throw new Error('the game publishes no enabled battle fleet; nothing to verify');
 const sealed = new Set((fleet.workers ?? []).map((w) => w.workerProcessId));
 done(`${sealed.size} worker(s), enabled`);
@@ -183,5 +208,69 @@ step('route released');
 const clear = await settle((record) => !record.activeBattleId, 'the battle lock to clear', 120_000);
 done(`battlesRemaining ${clear.battlesRemaining}`);
 
+// -- 4. the confirmation handshake closes ------------------------------------
+//
+// The three hops after the reward. The player is gone by now and nothing on
+// screen changes either way, which is why this was missed: an unacknowledged
+// final is retained on the worker FOREVER and counts against `pendingLimit`.
+// Nothing else in the repo reads these numbers.
+
+async function pollConfirmed(timeoutMs = 180_000) {
+  const deadline = Date.now() + timeoutMs;
+  let ops = null;
+  while (Date.now() < deadline) {
+    ops = await published(pid, 'battlefleetops');
+    if (finalConfirmed(ops, route.reservationId).confirmed) return { ops, confirmed: true };
+    await new Promise((r) => { setTimeout(r, 2000); });
+  }
+  return { ops, confirmed: false };
+}
+
+step('final acknowledged');
+const { ops, confirmed } = await pollConfirmed();
+if (!ops) throw new Error('the game publishes no `battlefleetops`; the authority ledger is unreadable');
+if (!confirmed) {
+  const seen = finalConfirmed(ops, route.reservationId);
+  throw new Error(
+    `reservation ${route.reservationId} settled but its worker receipt never came back `
+    + `(found=${seen.found}, deliveryConfirmed=${seen.confirmed}). The `
+    + 'Fleet.Settlement.Ack -> Battle.Fleet.FinalAcked -> Fleet.FinalAcked.Release chain '
+    + 'was not delivered. Push the slot that produced the stuck message: '
+    + `GET ${node}/<pid>~process@1.0/push&slot=<slot>`,
+  );
+}
+done(`${route.reservationId} deliveryConfirmed`);
+
+// -- 5. no worker is walking into its admission wall -------------------------
+
+step('fleet delivery health');
+const statuses = (await Promise.all(
+  (fleet.workers ?? []).map((w) => published(w.workerProcessId, 'fleetstatus')),
+)).filter(Boolean);
+if (statuses.length !== (fleet.workers ?? []).length) {
+  throw new Error('at least one sealed worker did not answer `fleetstatus`');
+}
+const health = deliveryHealth({ ops, workers: statuses });
+for (const w of health.workers) {
+  console.log(`\n  ${w.workerId.padEnd(18)} pendingFinals ${String(w.pendingFinals).padStart(3)}`
+    + ` / ${w.pendingLimit}   headroom ${w.headroom}   accepting ${w.accepting}`);
+}
+if (health.verdict !== 'ok') {
+  console.log(`\n  ${health.unconfirmed.length} unconfirmed final(s):`,
+    health.unconfirmed.map((f) => `${f.reservationId}:${f.kind}`).join(', ') || '(none)');
+  console.log('  recovery:', JSON.stringify(recoveryHint(health), null, 2));
+}
+if (health.verdict === 'jammed') {
+  throw new Error(`fleet workers are at their admission wall: ${health.jammed.join(', ')}`);
+}
+if (health.verdict !== 'ok') {
+  throw new Error(
+    `the fleet has ${health.unconfirmed.length} terminal(s) no worker has confirmed. `
+    + 'They are never pruned and each one permanently costs a pending slot.',
+  );
+}
+done('all terminals confirmed, every worker drained');
+
 console.log('\nPASS — the authority assigned a sealed worker, the worker ran the');
-console.log('fight, and the settlement reached the game ledger.');
+console.log('fight, the settlement reached the game ledger, and the confirmation');
+console.log('handshake closed on both sides.');

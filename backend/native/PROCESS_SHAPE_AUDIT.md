@@ -65,6 +65,110 @@ the monolith paid for every `player-<address>` key, which is O(wallets ever
 seen). On a worker with bounded state it pays almost nothing. That is the same
 reason hunt does not degrade with the player count and the arena did.
 
+### 2026-09-08: measured on the live fleet, and hops 4-6 were never delivered
+
+Node `hyperbeam.tylerw.ai` = **BOX B, 176.9.219.106** (i9-9900K, 8c/16t),
+container `hyperbeam-prod`, game
+`2xESlFS9AwACNgQQviiyp9krhhbr-d1gBLkVEkjMxow`, workers `JEQiNb0y…`,
+`ay8fImI6…`, `HL1StM5U…`. Numbers are HyperBEAM's own `computed_slot` log over
+the whole container lifetime, read at load average 9.82 / 13.68 / 8.01.
+
+**`Battle.Attack` is already off the authority.** Not one `Battle.Attack` slot
+has ever been computed by the game process on this deployment. All 92 of them
+ran on the three workers:
+
+| where | n | mean | p50 | p90 | max | published map |
+|---|---:|---:|---:|---:|---:|---:|
+| `Battle.Attack`, on workers | 92 | 37 ms | 28 ms | 70 ms | 100 ms | — |
+| every worker action | 269 | 31 ms | 25 ms | 60 ms | 100 ms | 1.85 MB peak |
+| every authority action | 2409 | 157 ms | 64 ms | 445 ms | 4372 ms | **4.83 MB** |
+
+So a slot on a worker is **6.4x cheaper at p90** than a slot on the authority,
+and the reason is the published map, exactly as the rule says: 1.85 MB against
+4.83 MB, marshalled five times per slot whatever the handler did.
+
+**But it is not a latency win, and the round trip says so.** Sign a mutation
+and read the handler's own reply back, interleaved A/B/B/A, two independent
+runs:
+
+| run | load avg | authority p50 | worker p50 | ratio |
+|---|---|---:|---:|---:|
+| 1, n=8 per arm | 15.04 | 2096 ms | 1862 ms | 1.13x |
+| 2, n=6 per arm | 7.21 | 2388 ms | 1934 ms | 1.23x |
+
+~230-450 ms out of a ~2 s round trip. **Under the 3x believability floor.** The
+125 ms of execution the move saves is real and it is ~10% of what the player
+waits through; the rest is transport. The fleet remains what BATTLE_FLEET.md
+already called it — insurance against serialisation, not a latency win.
+
+**The defect: hops 4, 5 and 6 had never run.** `Fleet.Settlement.Ack`,
+`Fleet.Cancellation.Ack`, `Battle.Fleet.FinalAcked` and
+`Fleet.FinalAcked.Release` had **zero** computed slots across all three
+workers. Every authority tombstone read `deliveryConfirmed:false`; every worker
+held every final it had ever produced. Since "unacknowledged settlements and
+cancellations are never pruned" and admission stops at `pendingLimit`, each
+worker would have refused every new `Battle.Open` after 100 finished
+battles — silently.
+
+The cause is transport, not protocol. HyperBEAM's `dev_push` cascade
+(`push_result_message` -> `push_downstream`, `dev_push.erl:302`) runs only while
+somebody holds the push request open, and the client stops after the leg it
+needs. An unsigned `GET /<pid>~process@1.0/push&slot=N` on the slot that
+PRODUCED the stuck message completes the entire remaining chain, with no
+signature and no owner wallet. Measured, repairing production: 1.9 s and 10.5 s
+for two stuck settlements, 2.8-57.8 s for eight stuck cancellations (n=10). All
+three workers now read `pendingFinals: 0`.
+
+It went unnoticed because `verify-battle-fleet.mjs` declared PASS at hop 3 — the
+account's win counter moving — which is exactly where the stall began. It now
+gates on hops 4-6 (`battle-fleet/delivery-health.mjs`,
+`delivery-health.test.mjs`).
+
+**Open, and a decision for the owner:** nothing in the running deployment
+delivers hops 4-6. The options are a second client push after a settlement is
+observed (+1 authority slot per battle, deduped), an operator sweep
+(`npm run reconcile:battle-fleet -- --apply`, owner-signed, +1 authority slot
+per stuck final), or riding ack and release on the next message to that worker —
+which the section above already lists as "still worth doing later, and cheap",
+and which would close this by removing hops 4-6 rather than delivering them.
+
+### PvP is still on the authority, and moving it is a protocol change
+
+`Battle.Attack` in `game.lua:5509` now serves exactly two callers: PvP, and the
+monolith fallback for a game with no sealed manifest. PvP fits the fan-out rule
+BETTER than a bot battle does — a round is two client actions, so a five-round
+fight is ten, which is the band where ~320 ms of critical-path hops amortises
+fine — but the fleet cannot take it as it stands. `runerealm-battle-fleet/1` is
+one-sided end to end: `Battle.Open` carries one `playerId` and one `monster` and
+the worker builds the NPC itself; `Battle.Attack` authenticates the single
+reserved participant; `Battle.Fleet.Settle` names one player, one reservation
+and one reward plan.
+
+The extension that reuses the most: **two reservations, one worker battle, two
+settlements.** The authority reserves both sides in the one `Battle.Accept`
+action it already has (both stakes are already escrowed there), routes both to
+the same worker under a shared `battleId`, and the worker emits one
+`Battle.Fleet.Settle` per reservation in the exact existing shape — so
+`authority.lua`'s dedupe, ack, FinalAcked and release machinery is untouched,
+just run twice. What genuinely changes is the worker: two-participant open,
+either-participant attack auth, simultaneous move commitment with the
+`pvpMoveDeadline` force, and a cancel that forfeits the leaver and wins the
+other. Plus the fault matrix in `worker_test.lua` doubled.
+
+That is multi-day work and it is not started. Do it in this order, and do not
+start until hops 4-6 are delivered by something other than a person, because
+PvP doubles the number of finals the handshake has to carry:
+
+1. `Battle.Open` v2 payload (two participants, no NPC construction) + worker
+   validation + `worker_test.lua` coverage, with the bot path byte-identical.
+2. Two-sided attack auth and pending-move resolution on the worker.
+3. Paired reservation in `Battle.Accept`; two settle emissions; authority
+   applies each one through the existing single-player path.
+4. Cancel/forfeit disposition per side.
+5. Client: direct PvP attacks at the worker, opponent's move read from the
+   worker's published `battle-<id>`.
+6. `verify-battle-fleet.mjs` PvP mode, gating hops 4-6 for BOTH reservations.
+
 ## 2. The default fleet is half Rust
 
 **Rule:** "Keep `battle-fleet-rust/` as a working second implementation and do
