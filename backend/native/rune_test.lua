@@ -603,6 +603,33 @@ local function run(base, req)
        errOf(r5) ~= nil, json.encode(r5))
   end
 
+  -- Cached published state must recover a token slot whose Luerl globals were
+  -- lost. Include every per-reference mint receipt exactly as the live returned
+  -- map accumulates them across slots.
+  do
+    local cached = {
+      balances = encode(balancesView()), tokeninfo = encode(infoView()),
+      totalsupply = asString(TotalSupply), minter = Minter,
+      transferseq = asString(TransferSeq), burnseq = asString(BurnSeq),
+    }
+    local receiptCount = 0
+    for reference, amount in pairs(MintReceipts) do
+      receiptCount = receiptCount + 1
+      cached["mint-receipt-" .. reference] = asString(amount)
+    end
+    cached.mintreceiptcount = asString(receiptCount)
+    local expectedSupply, expectedAlice = TotalSupply, Balances[ALICE]
+    local expectedTransfer, expectedBurn = TransferSeq, BurnSeq
+    Balances, TotalSupply, Minted, Burned = {}, 0, 0, 0
+    TransferSeq, BurnSeq, MintReceipts, Minter = 0, 0, {}, ""
+    restoreTokenState(cached)
+    ok("a cold slot restores Rune balances, counters, minter and mint receipts",
+       TotalSupply == expectedSupply and Balances[ALICE] == expectedAlice
+         and TransferSeq == expectedTransfer and BurnSeq == expectedBurn
+         and Minter == GAME and MintReceipts.t83 ~= nil,
+       tostring(TotalSupply) .. " / " .. tostring(Balances[ALICE]))
+  end
+
   out[#out + 1] = ""
   out[#out + 1] = string.format("%d passed, %d failed", passed, failed)
   return table.concat(out, "\n")

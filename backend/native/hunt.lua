@@ -42,6 +42,61 @@ local function int(value, fallback)
   return narrowed
 end
 
+-- HyperBEAM normally carries the live Luerl VM between slots in `priv`, while
+-- the returned `base` map is cached independently.  Two requests computing the
+-- same worker concurrently can therefore enter this module with the complete
+-- published map and a freshly initialised (empty) HuntState.  The public
+-- `hunt-run-*` view is intentionally lossy -- it does not contain the ticket,
+-- RNG material, action receipts, or pending settlement payload -- so it cannot
+-- safely rebuild an authoritative run.  Keep one bounded operational record
+-- beside each published view and restore it only on a cold module entry.
+local OperationalStateReady = false
+
+local function decodedTable(value)
+  if type(value) == "table" then return value end
+  if type(value) ~= "string" or value == "" or value == "null" then return nil end
+  local ok, decoded = pcall(json.decode, value)
+  if not ok or type(decoded) ~= "table" then return nil end
+  return decoded
+end
+
+local function restoreOperationalState(base)
+  if OperationalStateReady then return end
+  OperationalStateReady = true
+  if type(base) ~= "table" then return end
+
+  local meta = decodedTable(base.huntops)
+  if meta then
+    State.highWaterTimestamp = math.max(State.highWaterTimestamp,
+      int(meta.highWaterTimestamp, 0))
+  end
+  -- A warm snapshot already has the authoritative globals.  Never replace it
+  -- from the read surface; restoration is solely the empty-priv recovery path.
+  if next(State.runs) ~= nil then return end
+
+  State.runs = {}
+  State.byPlayer = {}
+  State.endedOrder = {}
+  for key, value in pairs(base) do
+    if type(key) == "string" and string.sub(key, 1, 8) == "hunt-op-" then
+      local record = decodedTable(value)
+      if record and type(record.runId) == "string"
+         and type(record.playerId) == "string" then
+        State.runs[record.runId] = record
+        State.byPlayer[record.playerId] = record.runId
+      end
+    end
+  end
+  if meta and type(meta.endedOrder) == "table" then
+    for _, runId in ipairs(meta.endedOrder) do
+      local record = State.runs[runId]
+      if record and (record.status == "ended" or record.status == "lost") then
+        State.endedOrder[#State.endedOrder + 1] = runId
+      end
+    end
+  end
+end
+
 --- Tag lookup that survives every spelling a tag reaches this process in.
 ---
 --- A browser signs `RunId`; the game process emits `run-id`; HTTP lowercases
@@ -275,6 +330,7 @@ local function publish(base, record)
   local encoded = encode(runView(record))
   base["hunt-" .. record.playerId] = encoded
   base["hunt-run-" .. record.runId] = encoded
+  base["hunt-op-" .. record.runId] = encode(record)
 end
 
 local function openedMessage(record)
@@ -667,11 +723,14 @@ local function prune(base)
       State.runs[runId] = nil
       if State.byPlayer[record.playerId] == runId then State.byPlayer[record.playerId] = nil end
       base["hunt-run-" .. runId] = "null"
+      base["hunt-op-" .. runId] = "null"
     end
   end
 end
 
 function compute(base, req, opts)
+  base = type(base) == "table" and base or {}
+  restoreOperationalState(base)
   local msg = messageOf(req)
   local action = string.lower(tostring(field(msg, "action") or "none"))
   local timestamp = int((req and (req.timestamp or req.Timestamp)) or field(msg, "timestamp"), 0)
@@ -694,6 +753,10 @@ function compute(base, req, opts)
       end
       return n
     end)(),
+  })
+  result.huntops = encode({
+    highWaterTimestamp = State.highWaterTimestamp,
+    endedOrder = State.endedOrder,
   })
   result.action = field(msg, "action") or "none"
   collectgarbage("collect")

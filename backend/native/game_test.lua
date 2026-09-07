@@ -86,6 +86,23 @@ local function run(base, req)
 
   local function errOf(r) return type(r) == "table" and r.error or nil end
 
+  --- Gold for the arena, which is staked now (see `C.ARENA`).
+  ---
+  --- Every `Battle.Begin` in this suite predates the stake and would otherwise
+  --- be refused at the door for an empty purse, and every `Battle.Start` and
+  --- `Battle.Challenge` after it for the same reason. Funded from the LOCKED
+  --- launch allocation through the same admin verb the swarm uses, so the
+  --- conservation invariant this file also asserts stays true.
+  --- GOLD ONLY. `Admin.Economy.FundTestBots` tops every asset up to a MINIMUM
+  --- and its defaults are 25 Rune and 5 Scrolls, so funding a wallet for the
+  --- arena would silently rewrite inventories this suite asserts on. Zero means
+  --- "leave it alone".
+  local function fundArena(...)
+    send(OWNER, { Action = "Admin.Economy.FundTestBots" },
+      json.encode({ addresses = { ... }, gold = 5000,
+                    rune = 0, scroll = 0, berries = 0, boxes = 0 }))
+  end
+
   -- Bootstrapping -----------------------------------------------------------
 
   local r = send(OWNER, { Action = "Stats" })
@@ -465,7 +482,9 @@ local function run(base, req)
   r = send(ALICE, { Action = "Battle.Start" })
   ok("cannot fight before entering the arena", errOf(r) ~= nil, r)
 
-  -- Make sure alice can afford a session.
+  -- Make sure alice can afford a session -- energy, happiness and the Gold the
+  -- arena now stakes per battle.
+  fundArena(ALICE)
   send(OWNER, { Action = "Admin.Grant", PlayerId = ALICE, Item = "rune", Amount = "5" })
   send(OWNER, { Action = "Admin.SetStats", PlayerId = ALICE }, json.encode({ energy = 100, happiness = 100 }))
 
@@ -533,6 +552,7 @@ local function run(base, req)
   send(BOB, { Action = "Monster.Adopt" })
   send(OWNER, { Action = "Admin.Grant", PlayerId = BOB, Item = "rune", Amount = "5" })
   send(OWNER, { Action = "Admin.SetStats", PlayerId = BOB }, json.encode({ energy = 100, happiness = 100 }))
+  fundArena(BOB)
   send(BOB, { Action = "Battle.Begin" })
 
   r = send(ALICE, { Action = "Battle.Challenge", Opponent = "OPEN" })
@@ -569,6 +589,7 @@ local function run(base, req)
          json.encode({ energy = 100, happiness = 100 }))
     local home = send(ALICE, { Action = "Battle.Leave" })
     ok("cleared for the reload test", home.monster.status.type == "Home", errOf(home))
+    fundArena(ALICE)
     send(ALICE, { Action = "Battle.Begin" })
     local started = send(ALICE, { Action = "Battle.Start" })
     ok("a battle is in progress", started.battle ~= nil, errOf(started))
@@ -807,7 +828,7 @@ local function run(base, req)
 
   -- Revoking access actually revokes ------------------------------------------
   do
-    local victim = "REVOKEDrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrr"
+    local victim = "REVOKEDrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrr"
     send(OWNER, { Action = "Admin.Unlock", Addresses = victim })
     send(victim, { Action = "Faction.Join", Faction = "Stone Titans" })
     send(victim, { Action = "Monster.Adopt" })
@@ -839,11 +860,12 @@ local function run(base, req)
            json.encode({ energy = 100, happiness = 100 }))
       local cur = send(who, { Action = "User.Info" })
       if cur.monster.status.type ~= "Home" then send(who, { Action = "Battle.Leave" }) end
+      fundArena(who)
       send(who, { Action = "Battle.Begin" })
     end
 
-    local DUEL_A = "DUELAaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
-    local DUEL_B = "DUELBbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+    local DUEL_A = "DUELAaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+    local DUEL_B = "DUELBbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
     arm(DUEL_A, "Inferno Blades")
     arm(DUEL_B, "Aqua Guardians")
 
@@ -861,7 +883,7 @@ local function run(base, req)
     ok("withdrawing is reported as a withdrawal", withdrawn.withdrawn == true)
 
     r = send(DUEL_A, { Action = "Battle.Challenge", Opponent = "OPEN" })
-    duelId = r.battle.id
+    duelId = r.battle and r.battle.id
     r = send(DUEL_B, { Action = "Battle.Accept", BattleId = duelId })
     ok("the challenge is accepted", r.battle and r.battle.status == "battling", errOf(r))
 
@@ -912,6 +934,7 @@ local function run(base, req)
          json.encode({ energy = 100, happiness = 100 }))
     local home = send(ALICE, { Action = "User.Info" })
     if home.monster.status.type ~= "Home" then send(ALICE, { Action = "Battle.Leave" }) end
+    fundArena(ALICE)
     send(ALICE, { Action = "Battle.Begin" })
     local started = send(ALICE, { Action = "Battle.Start" })
     local id = started.battle.id
@@ -940,8 +963,8 @@ local function run(base, req)
 
   -- A PvP opponent who walks away must not freeze the fight -------------------
   do
-    local A = "STALLERaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
-    local B = "STALLERbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+    local A = "STALLERaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+    local B = "STALLERbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
     for who, faction in pairs({ [A] = "Sky Nomads", [B] = "Inferno Blades" }) do
       send(OWNER, { Action = "Admin.Unlock", Addresses = who })
       send(who, { Action = "Faction.Join", Faction = faction })
@@ -949,6 +972,7 @@ local function run(base, req)
       send(OWNER, { Action = "Admin.Grant", PlayerId = who, Item = "rune", Amount = "9" })
       send(OWNER, { Action = "Admin.SetStats", PlayerId = who },
            json.encode({ energy = 100, happiness = 100 }))
+      fundArena(who)
       send(who, { Action = "Battle.Begin" })
     end
     local posted = send(A, { Action = "Battle.Challenge", Opponent = "OPEN" })
@@ -987,10 +1011,180 @@ local function run(base, req)
     send(B, { Action = "Battle.Leave" })
   end
 
+  -- Arena stakes ------------------------------------------------------------
+  --
+  -- What ARENA_STAKES.md 5 says this needs and what `winGold` never had: a
+  -- stake escrowed on entry, refunded on cancel, paid ONCE on settle, and a pot
+  -- that can never pay out more than went into it. Every one of these asserts
+  -- on the Gold LEDGER as well as on the player record, because the two are
+  -- separately capable of being wrong and the conservation identity is the only
+  -- thing that catches it.
+  do
+    local STAKER = "STAKERsssssssssssssssssssssssssssssssssssss"
+    local RIVAL  = "RIVALrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrr"
+    local stake = C.ARENA.stake
+
+    local function purse(who) return int(send(who, { Action = "User.Info" }).gold, 0) end
+    local function pots() return json.decode(tostring(STATE.arenatiers)) end
+    local function goldOk()
+      local view = send(OWNER, { Action = "Economy.View" })
+      local row = view and view.invariants and view.invariants.gold
+      return row and row.ok == true, row and json.encode(row)
+    end
+
+    local function arm(who, faction)
+      send(OWNER, { Action = "Admin.Unlock", Addresses = who })
+      send(who, { Action = "Faction.Join", Faction = faction })
+      send(who, { Action = "Monster.Adopt" })
+      send(OWNER, { Action = "Admin.SetStats", PlayerId = who },
+           json.encode({ energy = 100, happiness = 100 }))
+    end
+    arm(STAKER, "Inferno Blades")
+    arm(RIVAL, "Aqua Guardians")
+
+    -- The door. An empty purse cannot enter, and the refusal says what it costs
+    -- and how to get it -- the quest, which is the chosen onboarding order.
+    local broke = send(STAKER, { Action = "Battle.Begin" })
+    ok("an empty purse cannot enter the arena", errOf(broke) ~= nil, json.encode(broke))
+    ok("and the refusal names the way back",
+       errOf(broke) and string.find(errOf(broke), "quest", 1, true) ~= nil, errOf(broke))
+
+    fundArena(STAKER, RIVAL)
+    local opened = send(STAKER, { Action = "Battle.Begin" })
+    ok("a funded purse enters", opened and opened.monster
+       and opened.monster.status.type == "Battle", errOf(opened))
+    local afterEntry = purse(STAKER)
+
+    -- Entering takes NOTHING. The stake is per battle, which is what makes
+    -- leaving a session early cost nothing that was never charged.
+    ok("entering the arena itself costs no Gold", afterEntry == 5000, afterEntry)
+
+    local potsBefore = pots()
+    local fight = send(STAKER, { Action = "Battle.Start", Difficulty = "1.4" })
+    ok("a staked bot battle starts", fight and fight.battle ~= nil, errOf(fight))
+    ok("the stake leaves the purse", purse(STAKER) == afterEntry - stake,
+       afterEntry - purse(STAKER))
+    local potsAfter = pots()
+    ok("and lands in the tier the difficulty buckets into",
+       potsAfter.hard.pot == int(potsBefore.hard.pot, 0) + stake
+       and potsAfter.even.pot == int(potsBefore.even.pot, 0),
+       json.encode(potsAfter))
+    ok("an attempt is counted for that tier only",
+       potsAfter.hard.attempts == int(potsBefore.hard.attempts, 0) + 1
+       and potsAfter.even.attempts == int(potsBefore.even.attempts, 0),
+       potsAfter.hard.attempts)
+    ok("staking keeps Gold conserved", goldOk())
+    ok("every published pot number is an integer, not a Luerl float",
+       string.find(tostring(STATE.arenatiers), ".0", 1, true) == nil,
+       string.match(tostring(STATE.arenatiers), '"hard":(%b{})'))
+
+    -- Fight it out. However it ends, the receipt has to describe what happened.
+    local done, guard = fight, 0
+    while done and done.battle and done.battle.status ~= "ended" and guard < 40 do
+      guard = guard + 1
+      local pick
+      for name, m in pairs(done.battle.challenger.moves) do
+        if int(m.count, 0) > 0 then pick = name break end
+      end
+      done = send(STAKER, { Action = "Battle.Attack",
+                            BattleId = fight.battle.id, Move = pick or "struggle" })
+      if errOf(done) then break end
+    end
+    ok("the staked fight finishes", done and done.battle
+       and done.battle.status == "ended", guard .. " rounds " .. tostring(errOf(done)))
+
+    local receipt = done and done.arenaLast
+    ok("a settled battle leaves a receipt", type(receipt) == "table",
+       json.encode(receipt))
+    ok("the receipt names the tier that was staked",
+       receipt and receipt.tier == "hard", receipt and receipt.tier)
+    ok("the receipt records the stake", receipt and receipt.stake == stake,
+       receipt and receipt.stake)
+    ok("the receipt carries the pot AS IT STOOD, which nothing else publishes",
+       receipt and receipt.pot >= stake, receipt and receipt.pot)
+    ok("a loss draws nothing from the pot",
+       receipt.won == true or receipt.paid == 0, json.encode(receipt))
+    ok("a win draws floor(pot/3) and never more than the pot held",
+       receipt.won ~= true
+         or (receipt.paid == (receipt.pot * C.ARENA.drainNum) // C.ARENA.drainDen
+             and receipt.paid <= receipt.pot),
+       json.encode(receipt))
+    ok("the pot gave up exactly what the receipt says",
+       pots().hard.pot == receipt.pot - receipt.paid, json.encode(pots().hard))
+    ok("a win is counted for the tier, a loss is not",
+       pots().hard.wins == int(potsBefore.hard.wins, 0) + (receipt.won and 1 or 0),
+       pots().hard.wins)
+    ok("settling keeps Gold conserved", goldOk())
+
+    -- PvP: both stakes escrowed, one pot, winner takes all of it, zero rake.
+    send(RIVAL, { Action = "Battle.Begin" })
+    send(STAKER, { Action = "Battle.Leave" })
+    send(OWNER, { Action = "Admin.SetStats", PlayerId = STAKER },
+         json.encode({ energy = 100, happiness = 100 }))
+    send(STAKER, { Action = "Battle.Begin" })
+
+    local beforePost = purse(STAKER)
+    send(STAKER, { Action = "Battle.Challenge", Opponent = "OPEN" })
+    ok("posting a challenge escrows the challenger's stake",
+       purse(STAKER) == beforePost - stake, beforePost - purse(STAKER))
+    ok("escrowing a challenge keeps Gold conserved", goldOk())
+
+    -- Withdraw: nothing was contested, so the stake comes back whole.
+    send(STAKER, { Action = "Battle.Leave" })
+    ok("withdrawing an unaccepted challenge refunds the whole stake",
+       purse(STAKER) == beforePost, purse(STAKER) - beforePost)
+    ok("refunding keeps Gold conserved", goldOk())
+
+    local rePost = send(STAKER, { Action = "Battle.Challenge", Opponent = "OPEN" })
+    local duelId = rePost.battle and rePost.battle.id
+    local rivalBefore = purse(RIVAL)
+    send(RIVAL, { Action = "Battle.Accept", BattleId = duelId })
+    ok("accepting matches the stake", purse(RIVAL) == rivalBefore - stake,
+       rivalBefore - purse(RIVAL))
+    ok("a matched duel keeps Gold conserved", goldOk())
+
+    local pursesBefore = purse(STAKER) + purse(RIVAL)
+    -- A forfeit is a settle. The winner takes the whole pot; the loser forgoes.
+    send(RIVAL, { Action = "Battle.Leave" })
+    local winner = send(STAKER, { Action = "User.Info" })
+    local loser = send(RIVAL, { Action = "User.Info" })
+    ok("the duel's winner is paid the whole pot, zero rake",
+       winner.arenaLast and winner.arenaLast.paid == stake * 2,
+       winner.arenaLast and json.encode(winner.arenaLast))
+    ok("the loser forgoes their stake",
+       loser.arenaLast and loser.arenaLast.paid == 0,
+       loser.arenaLast and json.encode(loser.arenaLast))
+    ok("a duel moves exactly the pot plus the capped base between the two",
+       purse(STAKER) + purse(RIVAL)
+         == pursesBefore + stake * 2 + int(winner.arenaLast.base, 0),
+       (purse(STAKER) + purse(RIVAL)) - pursesBefore)
+    ok("a settled duel keeps Gold conserved", goldOk())
+
+    -- And a settled fight cannot be drawn from twice.
+    local afterSettle = purse(STAKER)
+    send(STAKER, { Action = "Battle.Leave" })
+    ok("a second settle of the same duel pays nothing",
+       purse(STAKER) == afterSettle, purse(STAKER) - afterSettle)
+    ok("and Gold is still conserved after the replay", goldOk())
+
+    -- The tier buckets are a function of the NUMBER the client sends, so a
+    -- value between two buttons still lands in exactly one pot.
+    ok("difficulty buckets into exactly four pots",
+       C.arenaTier(0.5).key == "easy" and C.arenaTier(0.75).key == "easy"
+       and C.arenaTier(1.0).key == "even" and C.arenaTier(1.19).key == "even"
+       and C.arenaTier(1.4).key == "hard" and C.arenaTier(2.0).key == "brutal"
+       and C.arenaTier(99).key == "brutal",
+       C.arenaTier(1.19).key .. "/" .. C.arenaTier(99).key)
+    ok("the drain is integer and never exceeds the pot",
+       C.arenaDrain(0) == 0 and C.arenaDrain(1) == 0 and C.arenaDrain(10) == 3
+       and C.arenaDrain(60) == 20 and math.type(C.arenaDrain(61)) == "integer",
+       C.arenaDrain(10) .. "/" .. C.arenaDrain(60))
+  end
+
   -- A targeted challenge is for its target only -------------------------------
   do
-    local T1 = "TARGETaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
-    local T2 = "TARGETbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+    local T1 = "TARGETaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+    local T2 = "TARGETbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
     for who, faction in pairs({ [T1] = "Sky Nomads", [T2] = "Stone Titans" }) do
       send(OWNER, { Action = "Admin.Unlock", Addresses = who })
       send(who, { Action = "Faction.Join", Faction = faction })
@@ -998,6 +1192,7 @@ local function run(base, req)
       send(OWNER, { Action = "Admin.Grant", PlayerId = who, Item = "rune", Amount = "9" })
       send(OWNER, { Action = "Admin.SetStats", PlayerId = who },
            json.encode({ energy = 100, happiness = 100 }))
+      fundArena(who)
       send(who, { Action = "Battle.Begin" })
     end
     local r = send(T1, { Action = "Battle.Challenge", Opponent = T2 })
@@ -2081,7 +2276,7 @@ local function run(base, req)
       return offered
     end
 
-    local LEARN = "LEARNERlllllllllllllllllllllllllllllllllll"
+    local LEARN = "LEARNERllllllllllllllllllllllllllllllllllll"
     send(OWNER, { Action = "Admin.Unlock", Addresses = LEARN })
     send(LEARN, { Action = "Faction.Join", Faction = "Inferno Blades" })
     local r = send(LEARN, { Action = "Monster.LearnMove", Replace = "Firenado" })
@@ -2178,7 +2373,7 @@ local function run(base, req)
     end
 
     -- Declining, on a second companion, because a decline is final.
-    local PASSER = "PASSERpppppppppppppppppppppppppppppppppppp"
+    local PASSER = "PASSERppppppppppppppppppppppppppppppppppppp"
     local passed = raiseToOffer(PASSER, "Sky Nomads")
     if type(passed) == "string" then
       local before = send(PASSER, { Action = "User.Info" })
@@ -2855,7 +3050,7 @@ local function run(base, req)
 
   -- The Alter: the streak is the mechanic ---------------------------------------
   do
-    local PILGRIM = "PILGRIMppppppppppppppppppppppppppppppppppp"
+    local PILGRIM = "PILGRIMpppppppppppppppppppppppppppppppppppp"
     send(OWNER, { Action = "Admin.Unlock", Addresses = PILGRIM })
     send(PILGRIM, { Action = "Faction.Join", Faction = "Sky Nomads" })
 
@@ -3094,7 +3289,7 @@ local function run(base, req)
     ok("a locked wallet cannot save a character", errOf(r) ~= nil, json.encode(r))
 
     -- Both recipe and old upload ids survive process recovery.
-    local RETURNING = "RETURNINGrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrr"
+    local RETURNING = "RETURNINGrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrr"
     send(OWNER, { Action = "Admin.Load" }, json.encode({ players = { {
       address = RETURNING, unlocked = true, outfit = OUTFIT, spriteTxId = SPRITE,
     } } }))
@@ -3106,7 +3301,7 @@ local function run(base, req)
 
   -- Daily worship history, the one engagement series the game has ------------
   do
-    local WATCHER = "WATCHERwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwww"
+    local WATCHER = "WATCHERwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwww"
     send(OWNER, { Action = "Admin.Unlock", Addresses = WATCHER })
     send(WATCHER, { Action = "Faction.Join", Faction = "Aqua Guardians" })
 
@@ -3192,6 +3387,7 @@ local function run(base, req)
       json.encode({ energy = 100, happiness = 100 }))
     send(OWNER, { Action = "Admin.AdjustInventory", PlayerId = OPERATED,
                   Item = "rune", Delta = "5" })
+    fundArena(OPERATED)
     send(OPERATED, { Action = "Battle.Begin" })
     local fighting = send(OPERATED, { Action = "Battle.Start" })
     local battleId = fighting.battle and fighting.battle.id
@@ -3549,6 +3745,7 @@ local function run(base, req)
     local playDuringQuest = send(PARTY, { Action = "Monster.SetActive", MonsterId = ids[3] })
     ok("an open quest locks collection switching",
        errOf(playDuringQuest) ~= nil, json.encode(playDuringQuest))
+    fundArena(PARTY)
     local distracted = send(PARTY, { Action = "Battle.Begin" })
     ok("the arena waits until the current activity is done",
        errOf(distracted) ~= nil, json.encode(distracted))
@@ -3569,6 +3766,7 @@ local function run(base, req)
        json.encode(retired))
     local beforeBerry = send(PARTY, { Action = "User.Login" })
     local baseAttack = beforeBerry.monster.attack
+    fundArena(PARTY)
     local entered = send(PARTY, { Action = "Battle.Begin", Item = "fire_berry" })
     ok("berry maxing consumes exactly three berries",
        entered and entered.inventory.fire_berry == beforeBerry.inventory.fire_berry - 3,
@@ -3598,6 +3796,7 @@ local function run(base, req)
     -- were reversed, a player who asked for a boost they could not afford
     -- would be charged the session fee and handed an error — paying for an
     -- arena they never entered.
+    fundArena(PARTY)
     local badItem = send(PARTY, { Action = "Battle.Begin", Item = "scroll" })
     ok("an item that is not a battle berry is refused",
        errOf(badItem) ~= nil and string.find(errOf(badItem) or "", "battle berry") ~= nil,
@@ -3608,6 +3807,7 @@ local function run(base, req)
     -- Strip the water berries so the boost is unaffordable, leaving the Rune.
     send(OWNER, { Action = "Admin.AdjustInventory", PlayerId = PARTY,
                   Item = "water_berry", Delta = "-999" })
+    fundArena(PARTY)
     local poorBerry = send(PARTY, { Action = "Battle.Begin", Item = "water_berry" })
     ok("a boost you cannot afford is refused", errOf(poorBerry) ~= nil,
        json.encode(poorBerry))
@@ -3677,7 +3877,7 @@ local function run(base, req)
       for k, v in pairs(tags) do envelope[k] = v end
       if body then envelope.Data = body end
       local res = computeOn(envelope, { ["scheduler-location"] = SCHED2 })
-      return json.decode(res.results.output.data)
+      return json.decode(res.results.output.data), res
     end
 
     -- OTHERPROC must be a REAL FLEET MEMBER for this to test anything. A
@@ -3700,6 +3900,41 @@ local function run(base, req)
        errOf(foreign) ~= nil
          and string.find(errOf(foreign) or "", "not assigned") ~= nil,
        json.encode(foreign))
+
+    -- A two-hop Hunt -> Game -> Hunt push can reach the authority and time out
+    -- before its acknowledgement reaches the worker. The player may restart
+    -- ONLY that already-fixed acknowledgement from here, turning recovery into
+    -- one hop without rerolling or paying the capture twice.
+    send(OWNER, { Action = "Admin.Grant", PlayerId = HUNTER, Item = "scroll", Amount = "1" })
+    send(OWNER, { Action = "Admin.Grant", PlayerId = HUNTER, Item = "rune", Amount = "1" })
+    local settled, settledBase = fromProcess(HUNTPROC, { Action = "Hunt.Settle" },
+      json.encode({
+        protocol = "runerealm-hunt/1", runId = firstRun, playerId = HUNTER,
+        settlementId = firstRun .. "-capture-1", runeBid = 1,
+        chance = 50, roll = 60, success = false, seenEntries = {},
+      }))
+    ok("the assigned Hunt worker can settle a capture",
+       errOf(settled) == nil and settled.hunt.status == "roaming", json.encode(settled))
+    local firstAck = settledBase.results.outbox
+      and settledBase.results.outbox.acknowledgement
+    ok("settlement emits its acknowledgement",
+       firstAck and firstAck.action == "Hunt.Settled"
+         and firstAck["settlement-id"] == firstRun .. "-capture-1",
+       json.encode(firstAck))
+
+    local retried, retryBase = send(HUNTER, { Action = "Hunt.RetryAck" })
+    local retryAck = retryBase.results.outbox
+      and retryBase.results.outbox.acknowledgement
+    ok("the player can re-emit only their durable acknowledgement",
+       errOf(retried) == nil and retryAck
+         and retryAck.target == HUNTPROC
+         and retryAck["settlement-id"] == firstRun .. "-capture-1",
+       json.encode(retryAck))
+    local stranger = "STRANGER" .. string.rep("s", 35)
+    send(OWNER, { Action = "Admin.Unlock", Addresses = stranger })
+    ok("another player cannot invent a Hunt acknowledgement",
+       errOf(send(stranger, { Action = "Hunt.RetryAck" }))
+         == "No settled Hunt acknowledgement is pending")
 
     -- Put the fixture back so later tests are not handed a hunting companion.
     send(OWNER, { Action = "Admin.SetHuntProcess", ProcessId = "" })
@@ -4172,6 +4407,7 @@ local function run(base, req)
       send(OWNER, { Action = "Admin.Grant", PlayerId = FIGHTER, Item = "rune", Amount = "5" })
       send(OWNER, { Action = "Admin.SetStats", PlayerId = FIGHTER },
            json.encode({ energy = 100, happiness = 100 }))
+      fundArena(FIGHTER)
       send(FIGHTER, { Action = "Battle.Begin" })
       local started = send(FIGHTER, { Action = "Battle.Start" })
       return started and started.battle and started.battle.id
@@ -4572,6 +4808,11 @@ local function run(base, req)
     sendOn(OWNER, { Action = "Admin.SetStats", PlayerId = ECON2 },
       json.encode({ energy = 50, happiness = 50,
                     status = { type = "Home", since = T, until_time = T } }))
+    -- This block runs against a SECOND process, so `fundArena` (which signs at
+    -- the first) cannot reach it. Same verb, same shape, sent on this one.
+    sendOn(OWNER, { Action = "Admin.Economy.FundTestBots" },
+      json.encode({ addresses = { ECON2 }, gold = 5000,
+                    rune = 0, scroll = 0, berries = 0, boxes = 0 }))
     sendOn(ECON2, { Action = "Battle.Begin" })
     local fight = sendOn(ECON2, { Action = "Battle.Start" })
     local move
@@ -5212,6 +5453,33 @@ local function run(base, req)
        fundedPlayer and int(fundedPlayer.gold, 0) == 1000,
        fundedPlayer and tostring(fundedPlayer.gold))
 
+    -- The delayed soak seed can also unlock every item/roster path in one
+    -- owner message. These fields are opt-in so older focused fixtures do not
+    -- gain companions or boxes they did not ask for.
+    send(FUND1, { Action = "Faction.Join", Faction = "Inferno Blades" })
+    local enriched, enrichedRes = send(OWNER, { Action = "Admin.Economy.FundTestBots" },
+      json.encode({ addresses = { FUND1 }, rune = 100, scroll = 20, gold = 1000,
+                    berries = 25, boxes = 3, boxRarity = 2, extraMonsters = 2 }))
+    ok("the delayed test seed reports its complete capped loadout",
+       enriched and enriched.boxes == 3 and enriched.extraMonsters == 2,
+       enriched and json.encode(enriched))
+    local enrichedPlayer = send(OWNER, { Action = "User.Info", Address = FUND1 })
+    ok("the delayed seed tops up all four berry types",
+       enrichedPlayer and int(enrichedPlayer.inventory.air_berry, 0) >= 25
+         and int(enrichedPlayer.inventory.water_berry, 0) >= 25
+         and int(enrichedPlayer.inventory.fire_berry, 0) >= 25
+         and int(enrichedPlayer.inventory.rock_berry, 0) >= 25,
+       enrichedPlayer and json.encode(enrichedPlayer.inventory))
+    ok("and supplies boxes plus loose companions for loot and market coverage",
+       enrichedPlayer and #(enrichedPlayer.lootboxes or {}) >= 3
+         and collectionCount(Players[FUND1]) >= 2,
+       enrichedPlayer and json.encode({ boxes = enrichedPlayer.lootboxes,
+         collection = enrichedPlayer.collection }))
+    ok("the complete delayed seed still serializes integers as integers",
+       string.find(enrichedRes.results.output.data, '"gold":1000', 1, true) ~= nil
+         and string.find(enrichedRes.results.output.data, ".000000", 1, true) == nil,
+       enrichedRes.results.output.data)
+
     local afterFunding = send(OWNER, { Action = "Economy.View" })
     ok("funding Gold out of the locked reserve keeps supply conserved",
        afterFunding and afterFunding.invariants.gold.ok == true,
@@ -5718,8 +5986,11 @@ local function run(base, req)
     r = send(OWNER, { Action = "Admin.SetVenueProcess", ProcessId = "short" })
     ok("the venue must be a process id", errOf(r) ~= nil, json.encode(r))
 
-    r = send(OWNER, { Action = "Admin.SetVenueProcess", ProcessId = VENUE })
+    local venueSetRes
+    r, venueSetRes = send(OWNER, { Action = "Admin.SetVenueProcess", ProcessId = VENUE })
     ok("the owner names the venue", r and r.venue == VENUE, json.encode(r))
+    ok("the configured venue has a dedicated published key",
+       venueSetRes.venueprocess == VENUE, venueSetRes.venueprocess)
 
     local _, beforeRes = send(ALICE, { Action = "Venue.Supply" })
     local total0, inGame0, atVenue0 = supplyOf(beforeRes, "fire_berry")
@@ -5833,6 +6104,129 @@ local function run(base, req)
     ok("and so does Gold's",
        invariants and invariants.gold and invariants.gold.ok == true,
        json.encode(invariants and invariants.gold))
+  end
+
+  -- Cold-slot operational configuration restore ----------------------------
+  --
+  -- HyperBEAM can re-enter this module with an intact published base and empty
+  -- globals. Player/economy restoration was already covered above; the first
+  -- 50-wallet run proved the same event also erased every process link.
+  do
+    local coldRune = "COLDRUNE" .. string.rep("r", 35)
+    local coldVenue = "COLDVENUE" .. string.rep("v", 34)
+    local coldHunt = "COLDHUNT" .. string.rep("h", 35)
+    local coldHunt2 = "COLDHUNT2" .. string.rep("i", 34)
+    local fleetRoutes = {}
+    for i = 1, 3 do
+      fleetRoutes[i] = {
+        workerId = "cold-worker-" .. tostring(i),
+        workerProcessId = "COLDWORKER" .. tostring(i) .. string.rep("w", 32),
+        runtime = "lua@5.3a", lifecycle = "ready",
+      }
+    end
+    local coldFleet = {
+      enabled = true, protocol = FLEET_PROTOCOL, managerMode = "assign-only",
+      node = "http://localhost:8737", ticketTtl = 600000,
+      replayWindow = 3600000, maxEntries = 2000, auditLimit = 1000,
+      workers = fleetRoutes,
+    }
+    local coldBattle = Battle.new("cold-pvp",
+      Battle.makeOpponent(2, { faction = "Inferno Blades" }), ALICE,
+      Battle.makeOpponent(2, { faction = "Aqua Guardians" }), BOB,
+      { kind = "pvp", timestamp = T })
+    coldBattle.pendingMoves = { challenger = Battle.hesitate() }
+    local cached = {
+      runetoken = coldRune,
+      venueprocess = coldVenue,
+      huntconfig = encode({ enabled = true, processId = coldHunt,
+        node = "http://localhost:8737", workers = {
+          { processId = coldHunt }, { processId = coldHunt2 },
+        } }),
+      battlefleet = encode(coldFleet),
+      battlefleetops = encode({
+        protocol = FLEET_PROTOCOL,
+        lastSequence = 7, highWaterTimestamp = T,
+        starts = {}, live = {}, finals = {},
+      }),
+      battleops = encode({ count = 1, battleSeq = 77, completed = 12 }),
+      ["battle-op-cold-pvp"] = encode(Battle.view(coldBattle)),
+      sequenceops = encode({
+        adminAudit = 71, mint = 72, hunt = 73, market = 74,
+        withdrawal = 75, venue = 76, battle = 77, battleFleet = 78,
+        marketOpen = 0, marketHistory = 0, mintQueue = 0,
+        depositQueue = 0, assets = 0, withdrawals = 0, deposits = 0,
+      }),
+    }
+    local saved = {
+      rune = RuneToken, venue = VenueProcess,
+      hunt = HuntProcess, hunts = HuntProcesses, huntNode = HuntNode,
+      fleetCfg = FLEET_CFG, fleetWorkers = FLEET_WORKERS,
+      fleetEnabled = FLEET_ENABLED, sealed = BattleFleetSealedConfig,
+      fingerprint = BattleFleetConfigFingerprint,
+      authority = BattleFleetAuthorityState, starts = BattleFleetStarts,
+      fleetSeq = BattleFleetSeq,
+      battles = Battles, battleSeq = BattleSeq, battlesCompleted = BattlesCompleted,
+      adminAuditSeq = AdminAuditSeq, mintSeq = MintSeq, huntSeq = HuntSeq,
+      marketSeq = MarketSeq, withdrawSeq = WithdrawSeq, venueSeq = VenueSeq,
+    }
+    RuneToken, VenueProcess = "", ""
+    HuntProcess, HuntProcesses, HuntNode = "", {}, ""
+    FLEET_CFG, FLEET_WORKERS, FLEET_ENABLED = {}, {}, false
+    BattleFleetSealedConfig, BattleFleetConfigFingerprint = nil, nil
+    BattleFleetAuthorityState, BattleFleetStarts, BattleFleetSeq = nil, {}, 0
+    Battles, BattleSeq, BattlesCompleted = {}, 0, 0
+    AdminAuditSeq, MintSeq, HuntSeq, MarketSeq = 0, 0, 0, 0
+    WithdrawSeq, VenueSeq = 0, 0
+
+    restoreOperationalConfig(cached)
+    ok("a cold slot restores the Rune and internal-venue links",
+       RuneToken == cached.runetoken and VenueProcess == cached.venueprocess,
+       tostring(RuneToken) .. " / " .. tostring(VenueProcess))
+    ok("a cold slot restores every monotonic id high-water",
+       AdminAuditSeq == 71 and MintSeq == 72 and HuntSeq == 73
+         and MarketSeq == 74 and WithdrawSeq == 75 and VenueSeq == 76
+         and BattleSeq == 77 and BattleFleetSeq == 78,
+       tostring(HuntSeq) .. " / " .. tostring(MarketSeq))
+    local hunt = json.decode(cached.huntconfig or "{}")
+    ok("a cold slot restores the complete Hunt fleet",
+       HuntProcess == hunt.processId and #HuntProcesses == #(hunt.workers or {}),
+       tostring(HuntProcess) .. " / " .. tostring(#HuntProcesses))
+    local ops = json.decode(cached.battlefleetops or "{}")
+    ok("a cold slot restores the sealed battle-fleet routes",
+       FLEET_ENABLED == true and #FLEET_WORKERS == 3,
+       tostring(FLEET_ENABLED) .. " / " .. tostring(#FLEET_WORKERS))
+    ok("and restores the battle authority replay high-water",
+       BattleFleetAuthorityState
+         and int(BattleFleetAuthorityState.lastSequence, 0) == int(ops.lastSequence, 0),
+       BattleFleetAuthorityState and BattleFleetAuthorityState.lastSequence)
+    ok("and restores monolithic PvP combat without publishing a secret move",
+       Battles["cold-pvp"] ~= nil and BattleSeq == 77 and BattlesCompleted == 12
+         and next(Battles["cold-pvp"].pendingMoves or {}) == nil,
+       tostring(Battles["cold-pvp"] and Battles["cold-pvp"].status))
+    local savedAlice = Players[ALICE]
+    local runtimeRow = playerView(savedAlice)
+    runtimeRow.monsters[runtimeRow.activeId].status = {
+      type = "Battle", since = T, until_time = 0,
+    }
+    runtimeRow.battlesRemaining = 3
+    runtimeRow.activeBattleId = nil
+    Players[ALICE] = nil
+    loadPlayerRow(runtimeRow, T, { preserveRuntime = true })
+    ok("a cold player heal preserves the remaining arena session",
+       Players[ALICE] and Players[ALICE].monster.status.type == "Battle"
+         and Players[ALICE].battlesRemaining == 3,
+       Players[ALICE] and Players[ALICE].monster.status.type)
+    Players[ALICE] = savedAlice
+
+    RuneToken, VenueProcess = saved.rune, saved.venue
+    HuntProcess, HuntProcesses, HuntNode = saved.hunt, saved.hunts, saved.huntNode
+    FLEET_CFG, FLEET_WORKERS, FLEET_ENABLED = saved.fleetCfg, saved.fleetWorkers, saved.fleetEnabled
+    BattleFleetSealedConfig, BattleFleetConfigFingerprint = saved.sealed, saved.fingerprint
+    BattleFleetAuthorityState, BattleFleetStarts = saved.authority, saved.starts
+    BattleFleetSeq = saved.fleetSeq
+    Battles, BattleSeq, BattlesCompleted = saved.battles, saved.battleSeq, saved.battlesCompleted
+    AdminAuditSeq, MintSeq, HuntSeq = saved.adminAuditSeq, saved.mintSeq, saved.huntSeq
+    MarketSeq, WithdrawSeq, VenueSeq = saved.marketSeq, saved.withdrawSeq, saved.venueSeq
   end
 
   out[#out + 1] = ""

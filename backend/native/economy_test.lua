@@ -936,6 +936,80 @@ local function run()
   end
 
   do
+    -- A CANDLE DAY IS A NUMBER, and a JSON decode hands it back as a string.
+    --
+    -- `marketDay` indexes `state.marketDaily` by `timestamp // DAY`, an integer.
+    -- Every restore this process has -- the `economystate` self-heal in
+    -- game.lua, `Admin.Load`, `importState` -- goes through a JSON decode
+    -- first, and a decoded object key is a STRING. So the row restored for
+    -- today and the row the next fill writes for today are two different keys
+    -- naming one calendar day, and the chart draws two partial totals.
+    --
+    -- None of those callers arrives with an old `normalisedVersion`; they
+    -- arrive with the current one. That is why `ensureState` folds the keys
+    -- unconditionally instead of behind a migration gate, and why this test
+    -- drives it through a state that is already at the current version.
+    local DAY = 24 * 3600 * 1000
+    local day = T // DAY
+    local split = EconomyEngine.newState()
+    split.marketDaily = {}
+    -- What the decode handed back: the restored history, keyed by string.
+    split.marketDaily[tostring(day)] = {
+      fire_berry = { o = 10, h = 12, l = 9, c = 11, volume = 5, gold = 55,
+                     fills = 2, makers = { [ALICE] = true }, takers = {} },
+    }
+    -- What a fill written since put there: the same day, keyed by number.
+    split.marketDaily[day] = {
+      fire_berry = { o = 11, h = 14, l = 11, c = 13, volume = 3, gold = 39,
+                     fills = 1, makers = {}, takers = { [BOB] = true } },
+    }
+    local healed = EconomyEngine.ensureState(split)
+    local rows = 0
+    for _ in pairs(healed.marketDaily) do rows = rows + 1 end
+    ok("ensureState folds a string day key onto the numeric one", rows == 1, rows)
+    ok("and the key that survives is an integer",
+       math.type(next(healed.marketDaily)) == "integer",
+       tostring(next(healed.marketDaily)))
+    local candle = healed.marketDaily[day] and healed.marketDaily[day].fire_berry
+    ok("the day's volume is summed, not split across two rows",
+       candle ~= nil and int(candle.volume) == 8, candle and candle.volume)
+    ok("and so are its Gold and its fill count",
+       candle ~= nil and int(candle.gold) == 94 and int(candle.fills) == 3,
+       candle and (tostring(candle.gold) .. "/" .. tostring(candle.fills)))
+    ok("high and low span both rows, and the close is the later one",
+       candle ~= nil and int(candle.h) == 14 and int(candle.l) == 9
+         and int(candle.c) == 13,
+       candle and (tostring(candle.h) .. "/" .. tostring(candle.l)
+         .. "/" .. tostring(candle.c)))
+
+    -- Idempotent: a second pass over an already-numeric map changes nothing.
+    -- That is what makes running it on every `ensureState` acceptable.
+    local again = EconomyEngine.ensureState(healed)
+    local againRows = 0
+    for _ in pairs(again.marketDaily) do againRows = againRows + 1 end
+    ok("a second ensureState leaves the folded map alone",
+       againRows == 1 and int((again.marketDaily[day].fire_berry or {}).volume) == 8,
+       againRows)
+
+    -- The same defect through the `Admin.Load` door. The export is at the
+    -- current `normalisedVersion`, so nothing version-gated would fire.
+    local incoming = EconomyEngine.exportState(EconomyEngine.newState())
+    incoming.marketDaily = {
+      [tostring(day)] = { fire_berry = { o = 4, h = 4, l = 4, c = 4, volume = 6,
+                                         gold = 24, fills = 1, makers = {}, takers = {} } },
+    }
+    local loaded = EconomyEngine.importState(nil, incoming)
+    ok("importState keys the loaded candle by number",
+       loaded ~= nil and loaded.marketDaily[day] ~= nil
+         and loaded.marketDaily[tostring(day)] == nil,
+       loaded and tostring(next(loaded.marketDaily)))
+    ok("under the key a fill at that timestamp would write, carrying its volume",
+       loaded ~= nil and int((loaded.marketDaily[day].fire_berry or {}).volume) == 6,
+       loaded and loaded.marketDaily[day].fire_berry
+         and loaded.marketDaily[day].fire_berry.volume)
+  end
+
+  do
     -- A warm index and a cold one must not disagree about anything. The same
     -- sequence twice: once against a book that built its index as it went,
     -- once against a book whose index is thrown away before every action.

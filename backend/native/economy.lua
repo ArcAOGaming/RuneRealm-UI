@@ -125,6 +125,20 @@ local function boxRows()
   return rows
 end
 
+--- One pot per arena difficulty tier, all empty.
+---
+--- `pot` is Gold that has been staked and not yet won; it is part of
+--- `gold.escrow` and therefore part of the conservation identity. `wins` and
+--- `attempts` are display-only (see `C.ARENA.statsHalveAt`) and are deliberately
+--- NOT what the payout is computed from.
+local function newArena()
+  local tiers = {}
+  for _, tier in ipairs(C.ARENA.tiers) do
+    tiers[tier.key] = { pot = 0, wins = 0, attempts = 0 }
+  end
+  return { tiers = tiers }
+end
+
 --- `stockFloor` and `seedStock` are the two fields that make a desk work on a
 --- young process.
 ---
@@ -344,7 +358,7 @@ function M.newState()
   -- do on a fresh contract.
   return seedDeskStock({
     version = 1,
-    normalisedVersion = 6,
+    normalisedVersion = 7,
     mode = "testing",
     assets = assets,
     lootboxes = boxRows(),
@@ -368,6 +382,14 @@ function M.newState()
       feesRouted = 0,
       daily = {},
     },
+    --- The arena's pots. See `C.ARENA` for why they exist and why they are
+    --- not a win-ratio multiplier.
+    ---
+    --- One row per difficulty tier, three integers each: the Gold currently
+    --- staked and unclaimed, and the wins/attempts pair that exists only so
+    --- the client can print a break-even rate. O(tiers), never O(wallets) --
+    --- the one shape CLAUDE.md permits a derived key to have.
+    arena = newArena(),
     orders = {},
     orderSeq = 0,
     fills = {},
@@ -574,6 +596,42 @@ function M.ensureState(state)
     seedDeskStock(state)
     state.normalisedVersion = 6
   end
+  if int(state.normalisedVersion, 0) < 7 then
+    -- The arena pots. A process that has been running without them starts every
+    -- tier empty, which is the correct opening state: a pot can only hold Gold
+    -- somebody staked, and nobody has staked any yet. Nothing is moved between
+    -- buckets here, so `goldInvariant` is untouched by the migration.
+    local fresh = newArena()
+    state.arena = type(state.arena) == "table" and state.arena or fresh
+    state.arena.tiers = type(state.arena.tiers) == "table" and state.arena.tiers or {}
+    for key, row in pairs(fresh.tiers) do
+      local current = state.arena.tiers[key]
+      if type(current) ~= "table" then
+        state.arena.tiers[key] = row
+      else
+        for field, value in pairs(row) do
+          current[field] = math.max(0, int(current[field], value))
+        end
+      end
+    end
+    state.normalisedVersion = 7
+  end
+  -- The candle map is REPAIRED on every entry, not migrated once.
+  --
+  -- JSON object keys come back from a decode as STRINGS, and `marketDay`
+  -- indexes the same epoch day as a NUMBER -- so one calendar day becomes two
+  -- rows and the chart reports two partial totals. The damage is not done by an
+  -- old state shape, which is what a `normalisedVersion` gate would catch; it is
+  -- done by the DECODE, and this process decodes on every restore: the
+  -- `economystate` self-heal in game.lua, `Admin.Load`, and `importState`. All
+  -- three arrive with `normalisedVersion` already at the current number and
+  -- would skip a versioned migration entirely, which is how the venue's defect
+  -- survived here after being fixed there.
+  --
+  -- So it runs unconditionally, next to `ensureIndex` and for the same reason.
+  -- It is idempotent and it is cheap: on a map whose keys are already numbers
+  -- it is one pass that rebuilds the table with the keys it already had.
+  OB.normaliseMarketDaily(state)
   -- The book index is DERIVED, so it is not a migration and does not get a
   -- `normalisedVersion`: it is absent from every export and every published
   -- view on purpose, and a process restored from either simply builds it here.
@@ -630,6 +688,11 @@ function M.normaliseV1(state)
   end
   state.policy.pending = type(state.policy.pending) == "table" and state.policy.pending or {}
   state.policy.history = type(state.policy.history) == "table" and state.policy.history or {}
+  -- Only the default here. Folding the string keys back onto the numeric ones
+  -- used to live in this function behind a `marketDailyKeyVersion` gate, which
+  -- meant it ran once per process and never again -- and never at all for a
+  -- state that arrived already normalised, which is every heal. `ensureState`
+  -- now does it unconditionally at the end, for every caller.
   state.marketDaily = type(state.marketDaily) == "table" and state.marketDaily or {}
   state.activity = type(state.activity) == "table" and state.activity or {}
   state.version = 1
@@ -1569,6 +1632,148 @@ local function creditGold(state, player, amount)
   if amount == 0 then return end
   giveGold(player, amount)
   state.gold.player = int(state.gold.player, 0) + amount
+end
+
+-- The arena's pots -----------------------------------------------------------
+--
+-- Two concerns, kept apart on purpose.
+--
+--   * The GOLD moves between `gold.player` and `gold.escrow`. Escrow is on the
+--     accounted side of `goldInvariant`, so a staked coin still exists and the
+--     identity `issued - burned = player + escrow + shop + locked + venue`
+--     holds at every point in a fight. Nothing here mints or burns anything.
+--   * The POT is bookkeeping over that escrow: which tier the coin is sitting
+--     in, and how the tier has been going lately.
+--
+-- PvP uses the first half only -- its pot is one battle's two stakes and lives
+-- on the battle record -- while a bot battle uses both. Splitting them is what
+-- lets the second kind of pot exist without the ledger knowing what a tier is.
+
+--- Move Gold out of an account and into escrow.
+---
+--- Returns false and a reason when the account cannot cover it. The caller must
+--- treat that as a refusal and not as an error to route around: an unaffordable
+--- stake is an ordinary answer.
+function M.escrowPlayerGold(state, player, amount, reason)
+  state = M.ensureState(state)
+  amount = math.max(0, int(amount, 0))
+  if amount == 0 then return true, nil end
+  if state.policy.emergency and state.policy.emergency.paused == true then
+    return false, state.policy.emergency.reason or "The economy is paused"
+  end
+  if playerGold(player) < amount then return false, reason or "Not enough Gold" end
+  if not debitGold(state, player, amount) then return false, reason or "Not enough Gold" end
+  state.gold.escrow = int(state.gold.escrow, 0) + amount
+  return true, nil
+end
+
+--- Move Gold out of escrow and back into an account.
+---
+--- Bounded by what escrow actually holds, so a double release cannot conjure
+--- Gold: the second call pays whatever is left, which is nothing. Returns the
+--- amount actually paid.
+function M.releasePlayerGold(state, player, amount)
+  state = M.ensureState(state)
+  amount = math.max(0, int(amount, 0))
+  local held = math.max(0, int(state.gold.escrow, 0))
+  local paid = math.min(amount, held)
+  if paid <= 0 then return 0 end
+  state.gold.escrow = held - paid
+  creditGold(state, player, paid)
+  return paid
+end
+
+local function arenaRow(state, tierKey)
+  state.arena = type(state.arena) == "table" and state.arena or newArena()
+  state.arena.tiers = type(state.arena.tiers) == "table" and state.arena.tiers or {}
+  local row = state.arena.tiers[tierKey]
+  if type(row) ~= "table" then
+    row = { pot = 0, wins = 0, attempts = 0 }
+    state.arena.tiers[tierKey] = row
+  end
+  row.pot = math.max(0, int(row.pot, 0))
+  row.wins = math.max(0, int(row.wins, 0))
+  row.attempts = math.max(0, int(row.attempts, 0))
+  return row
+end
+
+--- A stake lands in a tier's pot, and the tier has been attempted once more.
+---
+--- The Gold has already moved to escrow by the time this is called; this is the
+--- half that says which pot it is sitting in.
+---
+--- The counts are HALVED rather than windowed once they get large. That is a
+--- moving average with nothing to store: the ratio survives the halving exactly,
+--- the integers stay bounded, and the pair keeps moving after a few thousand
+--- battles instead of freezing into a lifetime figure nobody can shift. They
+--- are for the screen only -- see `C.ARENA.statsHalveAt`.
+function M.arenaPotAdd(state, tierKey, amount)
+  state = M.ensureState(state)
+  local row = arenaRow(state, tierKey)
+  row.pot = row.pot + math.max(0, int(amount, 0))
+  row.attempts = row.attempts + 1
+  local halveAt = math.max(2, int(C.ARENA.statsHalveAt, 200))
+  if row.attempts >= halveAt then
+    row.attempts = row.attempts // 2
+    row.wins = row.wins // 2
+  end
+  return row.pot
+end
+
+--- Undo a stake that never became a fight.
+---
+--- A cancelled reservation gives the Gold back, so the pot must give up exactly
+--- what it was handed and the attempt must stop counting -- otherwise opening
+--- and cancelling battles is a free way to push the displayed win rate down.
+--- The Gold itself is returned by `releasePlayerGold`; this is the bookkeeping half.
+function M.arenaPotRemove(state, tierKey, amount)
+  state = M.ensureState(state)
+  local row = arenaRow(state, tierKey)
+  row.pot = math.max(0, row.pot - math.max(0, int(amount, 0)))
+  row.attempts = math.max(0, row.attempts - 1)
+  return row.pot
+end
+
+--- A win draws its share of the tier's pot.
+---
+--- `floor(pot * drainNum / drainDen)` and never more than the pot holds, so the
+--- arena cannot pay out Gold nobody staked. That bound is the whole reason this
+--- is a pot and not a multiplier: a player who deliberately loses to fatten it
+--- is funding it themselves.
+---
+--- Returns the amount paid and the pot as it stood BEFORE the draw. The second
+--- number is the one thing about a settlement that is not derivable from
+--- published state a moment later, and a player is entitled to see what they
+--- were actually paid out of rather than what the lobby was advertising when
+--- they clicked.
+function M.arenaPotDrain(state, player, tierKey, won)
+  state = M.ensureState(state)
+  local row = arenaRow(state, tierKey)
+  local before = row.pot
+  if not won then return 0, before end
+  row.wins = row.wins + 1
+  local take = C.arenaDrain(before)
+  if take <= 0 then return 0, before end
+  local paid = M.releasePlayerGold(state, player, take)
+  row.pot = math.max(0, before - paid)
+  return paid, before
+end
+
+--- The pots, for publication. Three integers a tier and nothing derived.
+---
+--- The payout, the break-even rate and the observed win rate are all computed
+--- in the browser from these. Publishing them instead would re-encode a derived
+--- value on every settle in every tier, on a map the node marshals five times
+--- per message -- and a derived value read a slot late is a number that was
+--- never true, where a pot read a slot late is simply the pot, one slot ago.
+function M.arenaView(state)
+  state = M.ensureState(state)
+  local out = {}
+  for _, tier in ipairs(C.ARENA.tiers) do
+    local row = arenaRow(state, tier.key)
+    out[tier.key] = { pot = row.pot, wins = row.wins, attempts = row.attempts }
+  end
+  return out
 end
 
 local function outstandingGold(state)

@@ -191,6 +191,20 @@ function hunttest(base)
 
   -- The same acknowledgement carrying its id ONLY as `reference` — the second
   -- spelling game.lua now sends, and the one the battle fleet has always used.
+  -- Simulate HyperBEAM serving the complete returned map without the Luerl
+  -- `priv` that holds module globals.  A public run view cannot recover the
+  -- ticket or RNG/action receipts; the operational row must do it.
+  HuntState.runs = {}
+  HuntState.byPlayer = {}
+  HuntState.endedOrder = {}
+  HuntState.highWaterTimestamp = 0
+  OperationalStateReady = false
+  restoreOperationalState(base)
+  ok("a cold worker restores the authoritative active hunt",
+    HuntState.runs.h2 and HuntState.runs.h2.status == "roaming"
+      and HuntState.runs.h2.ticket == "ticket_h2",
+    HuntState.runs.h2 and HuntState.runs.h2.status)
+
   r = send({
     Action = "Hunt.Search", Address = ALICE, RunId = "h2", Ticket = "ticket_h2",
     ActionId = "search_ref",

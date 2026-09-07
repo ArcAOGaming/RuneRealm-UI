@@ -79,7 +79,7 @@ Battle.TUNING = {
   ---
   ---   Gale Force   (+5 spd, 3 damage)  68%     Vital Essence (-2 spd)  12%
   ---   Breeze       (+4 spd, 0 damage)  65%     Stone Wall    (-2 spd)  12%
-  ---   Healing Winds(+3 spd, heal 4)    63%     Granite Barrier(-2 spd) 16%
+  ---   Healing Winds(+3 spd, heal 4)    63%     Stone Barrier(-2 spd) 16%
   ---
   --- Both clamps on the old curve are reached at a gap of four points, so ONE
   --- +5 rider pinned the user at the 0.95 ceiling and the opponent at the 0.30
@@ -100,7 +100,7 @@ Battle.TUNING = {
   ---
   ---   Gale Force   (+5 spd, 3 damage)  68%     Vital Essence (-2 spd)  12%
   ---   Breeze       (+4 spd, 0 damage)  65%     Stone Wall    (-2 spd)  12%
-  ---   Healing Winds(+3 spd, heal 4)    63%     Granite Barrier(-2 spd) 16%
+  ---   Healing Winds(+3 spd, heal 4)    63%     Stone Barrier(-2 spd) 16%
   ---
   --- Both clamps on the old curve are reached at a gap of four points, so ONE
   --- +5 rider pinned the user at the 0.95 ceiling and the opponent at the 0.30
@@ -263,13 +263,17 @@ Battle.TUNING = {
   --- 32 and 6, together with `speedSwing` 0.45 and `defenseMitigationMax` 0.3.
   --- Every build row, and the median rounds behind them:
   ---
-  ---   level 5    tank 52  bruiser 52  glass 48  even 48   (5-9 rounds)
-  ---   level 20   tank 51  bruiser 57  glass 48  even 45   (6-9 rounds)
+  ---   level 5    tank 46  bruiser 61  glass 49  even 45   (5-15 rounds)
+  ---   level 20   tank 52  bruiser 54  glass 49  even 45   (6-12 rounds)
   ---
-  --- Every cell is 38-63%, which is the acceptance test at the head of the
-  --- build matrix: no row is a dominant build and none is a trap. What was
-  --- deployed before this work had a pure defensive build at 3% against a
-  --- balanced one at level 20.
+  --- Every cell is 34-66%, inside the 25-75% band the build matrix asks for, so
+  --- counters exist and nothing is unplayable. One row is worth stating rather
+  --- than smoothing: bruiser at 61% at level 5, carried almost entirely by one
+  --- cell (66% against tank). It is the matchup to watch if a fifth build or a
+  --- new evolution tier is added.
+  ---
+  --- What was deployed before this work had a pure defensive build at 3%
+  --- against a balanced one at level 20.
   hpPerHealth = 32,         -- max HP = health stat * this
   shieldPerDefense = 6,     -- max shield = defense stat * this
   healPerPoint = 0.03,      -- one health point on a move = this share of max HP
@@ -1319,107 +1323,78 @@ function Battle.rollMoves(element, opts)
   return Battle.compactMoves(chosen)
 end
 
---- What a level-up does to a roster.
+--- The one move a companion is offered when it reaches a relearn level.
 ---
---- The old behaviour was `m.moves = Battle.rollMoves(...)` every third level: a
---- complete, silent, random replacement. Three things were wrong with it, and
---- the rebuilt catalog makes all three worse rather than better.
+--- This replaced `Battle.relearn`, which applied a whole new roster by itself
+--- every few levels. That version was already an improvement on the total
+--- random reroll before it -- it kept the signature and could never hand back a
+--- rarer move than it took -- but it was still SILENT. A player's roster
+--- changed and nothing told them, and the "never downgrades" rule existed only
+--- because nobody was being asked.
 ---
----   * IT COULD TAKE. Rarity means something now -- a rarity-1 move is about a
----     one-in-twenty draw -- so a full reroll is a mechanic that confiscates the
----     rare thing a player was given, on a schedule, without asking. That is the
----     opposite of every other progression rule in this codebase; see the note
----     on `Admin.Load` in CLAUDE.md.
----   * IT ERASED THE SPECIES. A reroll drew a fresh signature, so the move the
----     monster index says this creature knows was replaced by whatever came up.
----   * IT WAS INVISIBLE. Nothing told the player it had happened.
+--- Asking removes the need for the rule. A player who chooses cannot be robbed,
+--- so the draw no longer has to protect them from itself, and an offer is free
+--- to be a commoner move they take anyway -- a neutral attack is the right pick
+--- for a fire companion that keeps meeting water, and the monotone rule would
+--- have refused to offer it.
 ---
---- So a level-up now RELEARNS: the signature slot is re-derived from the index,
---- which is how an evolution hands over its new signature move, and each of the
---- other slots draws a candidate that is kept only if it is at least as rare as
---- what is already there. A roster can improve and cannot regress.
+--- It is also the only moment the rarity system is VISIBLE. The draw happens
+--- once at adoption, out of sight; this is where a one-in-twenty roll is
+--- something a player watches land.
 ---
---- That makes the third level a thing to look forward to rather than a thing to
---- dread, and it makes a rare move a keepsake rather than a rental. It also
---- converges: over the six relearns between level 0 and level 20 a companion
---- drifts upward, which is the intended shape of a creature you have raised
---- against one you just caught.
----
---- Returns the new compact moveset and the list of names that changed, so the
---- caller can tell the player what it learned.
-function Battle.relearn(moves, element, opts)
+--- Returns a move name, or nil when the pool has nothing left to offer.
+function Battle.offerMove(moves, element, opts)
   opts = opts or {}
-  local slots = math.max(1, math.tointeger((C or {}).MOVE_SLOTS) or 3)
-  local signature = Battle.signatureMove(element, opts)
-
-  -- Everything the companion already has, minus the signature slot, in a fixed
-  -- order: `pairs` is not ordered and a relearn has to be reproducible from a
-  -- seed like every other roll in this file.
   local held = {}
-  for name in pairs(moves or {}) do
-    if name ~= signature then held[#held + 1] = name end
-  end
-  table.sort(held)
+  for name in pairs(moves or {}) do held[name] = true end
 
-  local chosen, order, learned = {}, {}, {}
-  local function take(name, isNew)
-    if not name or chosen[name] then return false end
-    local def = Battle.moveDef(name)
-    if not def then return false end
-    chosen[name] = clone(def)
-    chosen[name].name = name
-    order[#order + 1] = name
-    if isNew then learned[#learned + 1] = name end
-    return true
+  local elementPool = C.MOVE_POOLS[element] and element or nil
+  local from = "neutral"
+  if elementPool and rand(1, 100) <= ((C or {}).MOVE_ELEMENT_BIAS or 40) then
+    from = elementPool
   end
-
-  take(signature, moves == nil or moves[signature] == nil)
+  if not C.MOVE_POOLS[from] then from = elementPool or "neutral" end
 
   local boost = nil
   local entry = Battle.indexEntry(opts.entryNo)
   if entry then boost = entry.advancedMove end
 
-  local elementPool = C.MOVE_POOLS[element] and element or nil
-  local index, guard = 1, 0
-  while #order < slots and guard < 100 do
-    guard = guard + 1
-    local from = "neutral"
-    if elementPool and rand(1, 100) <= ((C or {}).MOVE_ELEMENT_BIAS or 40) then
-      from = elementPool
-    end
-    if not C.MOVE_POOLS[from] then from = elementPool or "neutral" end
-
-    local candidate = Battle.drawMove(from, chosen, boost)
-    local current = held[index]
-    index = index + 1
-
-    -- A slot with nothing in it takes whatever came up: a companion restored
-    -- from an old export, or one an admin wrote short, is being filled rather
-    -- than upgraded.
-    if not current or not Battle.moveDef(current) then
-      take(candidate, true)
-    else
-      -- Rarity 1 is the RARE tier, so "at least as rare" is "not a larger
-      -- number". A tie goes to the new move, which is what stops a relearn from
-      -- being a no-op for a companion already sitting on two commons.
-      local currentDef = Battle.moveDef(current)
-      local candidateDef = candidate and Battle.moveDef(candidate)
-      local keepCurrent = true
-      if candidateDef and not chosen[candidate] then
-        keepCurrent = (candidateDef.rarity or 3) > (currentDef.rarity or 3)
-      end
-      if keepCurrent then take(current, false) else take(candidate, true) end
-    end
+  -- Never offers a move the companion already knows: `held` is the exclusion
+  -- set, and the fallback pool is tried too so a companion holding most of one
+  -- pool is still offered something.
+  local pick = Battle.drawMove(from, held, boost)
+  if not pick then
+    local other = from == "neutral" and (elementPool or "neutral") or "neutral"
+    pick = Battle.drawMove(other, held, boost)
   end
+  return pick
+end
 
-  -- Whatever the loop could not fill -- an element with a pool smaller than the
-  -- slot count -- keeps what was already there rather than leaving a hole.
-  for _, name in ipairs(held) do
-    if #order >= slots then break end
-    take(name, false)
+--- Which moves an offer is allowed to displace.
+---
+--- Everything except the species' own move. "This creature always knows its own
+--- move" is the rule that keeps a species meaning something, and it is doing
+--- three other jobs at once: it is what `BattleScene` matches to play the
+--- signature attack animation, it is the identity the card prints in its top
+--- row, and it is the guarantee that every companion has something that deals
+--- damage. A roster that can trade it away can end up unarmed, which is the
+--- exact dead end `rollMoves` is built to prevent.
+---
+--- So a three-slot roster has two swappable slots, and that is deliberate: the
+--- choice is which of two to give up, not which of three.
+---
+--- A companion whose roster does not CONTAIN its signature -- a legacynet
+--- import, an admin write -- has nothing to protect, and every slot is
+--- swappable. `Monster.LearnMove` guards the damage invariant separately for
+--- exactly that case.
+function Battle.swappableMoves(moves, element, opts)
+  local signature = Battle.signatureMove(element, opts)
+  local out = {}
+  for name in pairs(moves or {}) do
+    if name ~= signature then out[#out + 1] = name end
   end
-
-  return Battle.compactMoves(chosen), learned
+  table.sort(out)
+  return out, signature
 end
 
 --- The monster index entry for an entry number, or nil.

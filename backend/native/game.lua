@@ -85,6 +85,10 @@ Offerings = Offerings or {}
 Checkins = Checkins or {}
 Battles = Battles or {}          -- battle id -> battle
 BattleSeq = BattleSeq or 0
+-- Battle ids removed during this compute. The authoritative restore rows live
+-- in the returned map, so deletion must publish an explicit tombstone at the
+-- end of the slot rather than rely on assigning nil into a cached base.
+local BattleTombstones = {}
 --- How many fights have FINISHED, ever.
 ---
 --- `Battles` used to be the answer to this, because nothing was ever removed
@@ -103,10 +107,6 @@ local FLEET_PROTOCOL = "runerealm-battle-fleet/1"
 local FLEET_AUTHORITY = BattleFleetAuthority
 local FLEET_CAPABLE = type(FLEET_AUTHORITY) == "table"
   and FLEET_AUTHORITY.PROTOCOL == FLEET_PROTOCOL
-  and ((type(BattleFleetBootstrapConfig) == "table"
-      and BattleFleetBootstrapConfig.enabled == true)
-    or type(BattleFleetConfig) == "table"
-    or type(BattleFleetSealedConfig) == "table")
 
 local function normalizeFleetConfig(raw)
   if not FLEET_CAPABLE or type(raw) ~= "table" or raw.enabled ~= true
@@ -798,6 +798,58 @@ local function grantGold(player, address, amount, timestamp)
   paid = int(paid, 0)
   if paid > 0 then player.gold = math.max(0, int(player.gold, 0)) + paid end
   return paid, paid > 0 and nil or reason
+end
+
+--- The arena's stake, into its tier's pot.
+---
+--- Gold moves from the account to `gold.escrow` -- it still exists, it is still
+--- accounted, and `goldInvariant` holds at every point in the fight. The pot is
+--- the bookkeeping over that escrow: which tier the coin is sitting in.
+---
+--- Returns the amount actually staked, and a reason when nothing was. An
+--- unaffordable stake is a REFUSAL and not an error: the caller must stop and
+--- say so rather than starting a fight nobody paid for.
+local function arenaStake(p, tierKey)
+  local stake = int(C.ARENA.stake, 0)
+  if stake <= 0 then return 0, nil end
+  local ok, why = EconomyEngine.escrowPlayerGold(EconomyState, p, stake,
+    "The arena stakes " .. string.format("%d", stake) .. " Gold a battle")
+  if not ok then return 0, why or "Not enough Gold" end
+  if tierKey then EconomyEngine.arenaPotAdd(EconomyState, tierKey, stake) end
+  return stake, nil
+end
+
+--- Give a stake back, for a fight that never happened.
+---
+--- `tierKey` is nil for a PvP escrow, whose pot is the battle itself and has no
+--- tier row to unwind. Bounded by what escrow holds, so a double refund pays
+--- the second caller nothing rather than minting Gold.
+local function arenaUnstake(p, tierKey, amount)
+  amount = math.max(0, int(amount, 0))
+  if amount <= 0 then return 0 end
+  if tierKey then EconomyEngine.arenaPotRemove(EconomyState, tierKey, amount) end
+  return EconomyEngine.releasePlayerGold(EconomyState, p, amount)
+end
+
+--- What a settled fight paid, kept on the player record.
+---
+--- ARENA_STAKES.md 8: the pot AT SETTLE is the one number about a settlement
+--- that is not derivable from published state a moment later. The lobby
+--- advertises `floor(pot/3)` off the live pot, and by the time a fight ends
+--- that pot has moved -- so without this the player is shown what they were
+--- promised rather than what they were paid.
+---
+--- It is on the player record rather than on the reply because the LOSER of a
+--- PvP fight is settled by their opponent's message and never sees a reply of
+--- their own; they read this on their next refresh. Six fields, fixed size,
+--- overwritten by the next battle -- about ninety bytes against a record that
+--- is thousands, which is the deliberate price of the player being told the
+--- truth about what they were paid.
+local function arenaReceipt(p, tier, stake, potBefore, paid, base, won)
+  p.arenaLast = {
+    tier = tier, stake = int(stake, 0), pot = int(potBefore, 0),
+    paid = int(paid, 0), base = int(base, 0), won = won == true,
+  }
 end
 
 local function addLootboxes(player, count, rarity)
@@ -4296,6 +4348,41 @@ H["Hunt.Settle"] = function(base, msg, timestamp)
   return huntReply(base, v, { acknowledgement = ack })
 end
 
+--- Re-emit the acknowledgement for a capture the authority already settled.
+---
+--- A normal capture push is Hunt -> Game -> Hunt. Under load the first hop can
+--- finish (the Rune/Scroll are spent and the receipt is durable) while the
+--- recursive push socket reaches its deadline before the acknowledgement gets
+--- back to the Hunt worker. Retrying `Hunt.Capture` cannot make that second
+--- hop shorter. This player-signed recovery starts at the authority instead,
+--- so the fixed acknowledgement has only one hop left.
+---
+--- It cannot settle, reroll, refund, or mint anything: the receipt must already
+--- exist, must belong to the signer's still-open run, and supplies the exact
+--- settlement id that the assigned Hunt worker is waiting for.
+--- @spec summary   Re-deliver an already-settled Hunt capture acknowledgement.
+--- @spec requires  the signer's open Hunt has a durable settlement receipt
+--- @spec pays      nothing; this is idempotent delivery recovery only
+H["Hunt.RetryAck"] = function(base, msg, timestamp)
+  local address = signer(msg)
+  local p = getPlayer(address, timestamp)
+  local denied = requireAccess(base, p)
+  if denied then return denied end
+  local route = p.hunt
+  local receipt = route and route.lastCapture
+  local settlementId = receipt and receipt.settlementId
+  local settled = settlementId and HuntSettlements[settlementId]
+  if not route or type(settlementId) ~= "string" or settlementId == ""
+     or type(settled) ~= "table" or settled.playerId ~= address
+     or settled.runId ~= route.runId then
+    return fail(base, "No settled Hunt acknowledgement is pending")
+  end
+  local ack = huntMessage("Hunt.Settled", route)
+  ack["settlement-id"] = settlementId
+  ack.reference = settlementId
+  return huntReply(base, playerView(p), { acknowledgement = ack })
+end
+
 -- Combat --------------------------------------------------------------------
 
 local function nextBattleId()
@@ -4388,6 +4475,10 @@ function settleBattle(b, timestamp)
   local function payout(addr, won)
     local other = addr and Players[addr]
     if not other then return end
+    -- What the capped 20-hour allowance actually paid, which is regularly less
+    -- than `winGold` and sometimes zero. The receipt carries the real number,
+    -- never the number that was asked for.
+    local base = 0
     -- Both sides are paid, and at most one of them signed the message that
     -- settled the fight. This clears `activeBattleId`, which is also what
     -- `compute` looks at to decide whether to republish an opponent — so by
@@ -4408,11 +4499,34 @@ function settleBattle(b, timestamp)
       -- players trading wins is exactly the loop that must never be
       -- item-positive. Gold instead, capped per day, so trading wins pays the
       -- same ceiling as playing properly.
-      grantGold(other, addr, C.ACTIVITIES.battle.winGold, timestamp)
+      base = grantGold(other, addr, C.ACTIVITIES.battle.winGold, timestamp)
     else
       other.losses = (other.losses or 0) + 1
       other.sessionLosses = (other.sessionLosses or 0) + 1
       if other.monster then other.monster.exp = (other.monster.exp or 0) + 1 end
+    end
+
+    -- THE COMPETITIVE LAYER, on top of that capped base. See `C.ARENA`.
+    --
+    -- A bot fight draws its share of the tier's shared pot; a PvP fight is one
+    -- pot of exactly two stakes and the winner takes all of it, zero rake. Both
+    -- are redistribution: the Gold was staked by players and is being handed
+    -- back to players, so nothing here is minted, and a pot can never pay out
+    -- more than went into it.
+    --
+    -- `b.settled` is set at the top of this function and every path in returns
+    -- early on it, which is what makes the draw exactly-once: a forfeit, a
+    -- timeout and a final blow all funnel through here.
+    local arena = b.arena
+    if arena and arena.tier then
+      local paid, potBefore = EconomyEngine.arenaPotDrain(
+        EconomyState, other, arena.tier, won)
+      arenaReceipt(other, arena.tier, int(arena.stake, 0), potBefore, paid, base, won)
+    elseif arena and arena.pvp then
+      local potBefore = int(arena.pot, 0)
+      local paid = won and arenaUnstake(other, nil, potBefore) or 0
+      if won then arena.pot = math.max(0, potBefore - paid) end
+      arenaReceipt(other, "pvp", int(arena.stake, 0), potBefore, paid, base, won)
     end
     other.battlesRemaining = math.max(0, (other.battlesRemaining or 0) - 1)
     if (other.battlesRemaining or 0) <= 0 then
@@ -4450,6 +4564,24 @@ H["Battle.Begin"] = function(base, msg, timestamp)
   if m.happiness < cfg.happinessCost then return fail(base, "Not happy enough") end
   if berry and itemCount(p, berryId) < int(berry.cost, 0) then
     return fail(base, "You need " .. berry.cost .. " " .. C.ITEMS[berryId].name)
+  end
+  -- The arena is staked now, so it has a floor: a purse that cannot cover a
+  -- single battle cannot enter. ONE battle's stake, not a session's -- a player
+  -- who only wanted one fight should be stopped at the second, which is a
+  -- truthful place to stop them, rather than refused at the door for holding 39
+  -- of a notional 40.
+  --
+  -- The route back is the quest, which costs the same energy and happiness and
+  -- pays `C.ACTIVITIES.quest.goldReward`. That is the onboarding order this was
+  -- chosen with, and it is why the refusal names it.
+  local minEntry = int(C.ARENA.minEntry, 0)
+  if minEntry > 0 and int(p.gold, 0) < minEntry then
+    return fail(base, "The arena stakes "
+      .. string.format("%d", int(C.ARENA.stake, 0))
+      .. " Gold a battle. You need at least "
+      .. string.format("%d", minEntry)
+      .. " to enter; a quest pays "
+      .. string.format("%d", int(C.ACTIVITIES.quest.goldReward, 0)) .. ".")
   end
   -- v2: free when `cfg.cost` is absent. What bounds a session now is the 25
   -- happiness it costs, which only a fifteen-minute Play restores.
@@ -4510,8 +4642,17 @@ H["Battle.Leave"] = function(base, msg, timestamp)
   if p.activeBattleId then
     local b = Battles[p.activeBattleId]
     if b and b.status == "pending" then
-      -- Nobody took it. Nothing to forfeit.
+      -- Nobody took it. Nothing to forfeit -- and the stake comes back, because
+      -- nothing was ever contested. The pot is emptied first so a second
+      -- withdrawal of the same challenge (there is none, but the shape must
+      -- hold) pays nothing rather than paying again.
+      if b.arena and b.arena.pvp then
+        local held = int(b.arena.pot, 0)
+        b.arena.pot = 0
+        arenaUnstake(p, nil, held)
+      end
       Battles[p.activeBattleId] = nil
+      BattleTombstones[p.activeBattleId] = true
       withdrawnOnly = true
     elseif b and b.status ~= "ended" then
       b.status = "ended"
@@ -4607,6 +4748,7 @@ local function pruneBattles(timestamp)
       -- definition older than anything we would keep.
       if row.at == 0 or (timestamp - row.at) > RETAIN_ENDED_MS then
         Battles[row.id] = nil
+        BattleTombstones[row.id] = true
       end
     end
     return
@@ -4623,6 +4765,7 @@ local function pruneBattles(timestamp)
        or row.at == 0
        or (int(timestamp, 0) > 0 and (timestamp - row.at) > RETAIN_ENDED_MS) then
       Battles[row.id] = nil
+      BattleTombstones[row.id] = true
     end
   end
 end
@@ -4879,6 +5022,11 @@ end
 fleetRefund = function(player, effect, timestamp)
   local refund = effect and effect.refund or {}
   player.battlesRemaining = (player.battlesRemaining or 0) + int(refund.battles, 0)
+  -- The stake, back out of the pot it went into. `authority.lua` copies
+  -- `reservedCost` into `refund` on every cancel, reject and force-resolve, and
+  -- each of those effects is emitted exactly once -- so this is the whole of the
+  -- Gold refund path, and there is no second place that can pay it twice.
+  arenaUnstake(player, refund.tier, int(refund.gold, 0))
   if player.activeBattleId == effect.battleId then player.activeBattleId = nil end
   if player.battleFleet and player.battleFleet.reservationId == effect.reservationId then
     player.battleFleet = nil
@@ -4922,8 +5070,22 @@ local function fleetSettle(player, effect, timestamp)
   -- `grantGold` may legitimately pay nothing once the allowance is spent. That
   -- is the point of a capped faucet, so a refusal is not an error here.
   local gold = int(award.gold, 0)
+  local base = 0
   if gold > 0 and player.address then
-    grantGold(player, player.address, gold, timestamp)
+    base = grantGold(player, player.address, gold, timestamp)
+  end
+
+  -- And the competitive half, out of the tier's pot. Same arithmetic as the
+  -- in-process settle in `settleBattle`: the pot is redistribution and the
+  -- allowance above is the only thing that issues Gold, so a fleet battle and a
+  -- local one pay the player identically. `FLEET_AUTHORITY` emits one settle
+  -- effect per reservation, which is what makes this draw exactly-once.
+  local tier = plan.tier
+  if tier then
+    local paid, potBefore = EconomyEngine.arenaPotDrain(
+      EconomyState, player, tier, effect.result == "win")
+    arenaReceipt(player, tier, int(plan.stake, 0), potBefore, paid, base,
+      effect.result == "win")
   end
   if player.activeBattleId == effect.battleId then player.activeBattleId = nil end
   if player.battleFleet and player.battleFleet.reservationId == effect.reservationId then
@@ -4984,6 +5146,16 @@ local function startFleetBattle(base, msg, timestamp, address, p)
   local difficulty = num(msg.Difficulty, 1.0)
   if difficulty < 0.5 then difficulty = 0.5 end
   if difficulty > 2.0 then difficulty = 2.0 end
+
+  -- The stake, taken before the reservation exists. Everything after this point
+  -- either succeeds or unwinds it explicitly; a fight nobody paid for must
+  -- never reach a worker.
+  local tier = C.arenaTier(difficulty)
+  local staked, stakeWhy = arenaStake(p, tier.key)
+  if staked <= 0 and int(C.ARENA.stake, 0) > 0 then
+    return fail(base, stakeWhy or "Not enough Gold to stake this battle")
+  end
+
   local suffix = string.format("%d", sequence)
   local battleId = "fb" .. suffix
   local reservation = {
@@ -5000,7 +5172,12 @@ local function startFleetBattle(base, msg, timestamp, address, p)
     opponentFaction = msg.OpponentFaction,
     issuedAt = timestamp,
     expiresAt = timestamp + int(FLEET_CFG.ticketTtl, 10 * 60 * 1000),
-    reservedCost = { battles = 1 },
+    -- The stake rides on the reservation, which is what makes the refund
+    -- automatic: `authority.lua` copies `reservedCost` verbatim into
+    -- `effect.refund` on every cancel, reject and force-resolve, so there is no
+    -- second path that has to remember the Gold. The tier is here for the same
+    -- reason -- a refund has to know which pot to take it back out of.
+    reservedCost = { battles = 1, gold = staked, tier = tier.key },
     rewardPlan = {
       -- Gold, from `C.ACTIVITIES.battle.winGold`, never a loot box. A bot win
       -- has no counterparty paying for it, so an item reward here is minted
@@ -5008,11 +5185,19 @@ local function startFleetBattle(base, msg, timestamp, address, p)
       win = { wins = 1, sessionWins = 1, experience = 2,
         gold = int(C.ACTIVITIES.battle.winGold, 0) },
       loss = { losses = 1, sessionLosses = 1, experience = 1 },
+      -- Which pot the competitive half is drawn from. The worker never reads
+      -- it; it comes back on the effect so the authority settles against the
+      -- same tier the stake went into, whatever the difficulty was rounded to.
+      tier = tier.key,
+      stake = staked,
     },
   }
-  local stored, why = FLEET_AUTHORITY.reserve(BattleFleetAuthorityState, reservation)
+  local stored, storeWhy = FLEET_AUTHORITY.reserve(BattleFleetAuthorityState, reservation)
   if not stored then
-    return fail(base, "Battle fleet reservation failed: " .. tostring(why))
+    -- The reservation was refused after the Gold moved, so put it back. The
+    -- pot never saw a fight and must not keep the stake.
+    arenaUnstake(p, tier.key, staked)
+    return fail(base, "Battle fleet reservation failed: " .. tostring(storeWhy))
   end
   BattleFleetSeq = sequence
 
@@ -5043,11 +5228,24 @@ H["Battle.Start"] = function(base, msg, timestamp)
   if difficulty < 0.5 then difficulty = 0.5 end
   if difficulty > 2.0 then difficulty = 2.0 end
 
+  -- The stake, before anything is built. A fight nobody could pay for must not
+  -- exist: `Battle.new` below is what spends the session battle, and a refusal
+  -- after that point would cost the player a battle for a fight that never
+  -- happened.
+  local tier = C.arenaTier(difficulty)
+  local staked, why = arenaStake(p, tier.key)
+  if staked <= 0 and int(C.ARENA.stake, 0) > 0 then
+    return fail(base, why or "Not enough Gold to stake this battle")
+  end
+
   local opponent = Battle.makeOpponent(p.monster.level or 0,
     { difficulty = difficulty, faction = msg.OpponentFaction })
   local id = nextBattleId()
   local b = Battle.new(id, battleMonster(p), address, opponent, "bot",
     { kind = "bot", timestamp = timestamp })
+  -- Which pot this fight's stake went into, carried on the battle so the settle
+  -- draws from the same one however the fight ends.
+  b.arena = { tier = tier.key, stake = staked }
   Battles[id] = b
   -- Reclaim finished fights now, not when this one ends: the reply to the
   -- message that ends a battle still has to carry its own turn log.
@@ -5202,11 +5400,29 @@ H["Battle.Challenge"] = function(base, msg, timestamp)
   if target and target ~= "OPEN" and target == address then
     return fail(base, "You cannot challenge yourself")
   end
+  -- The challenger's stake, escrowed when the challenge is POSTED.
+  --
+  -- ARENA_STAKES.md 5 escrows both sides at accept, on the grounds that a
+  -- losing player must not be able to close the tab and never pay. Taking the
+  -- challenger's half here is strictly stronger and removes the failure the
+  -- doc's version has: a challenge posted an hour ago, whose author has since
+  -- spent their Gold elsewhere, would fail at the moment somebody accepted it
+  -- -- punishing the accepter for the challenger's spending. Withdrawing
+  -- refunds it, and a challenge nobody takes holds `activeBattleId`, so the
+  -- Gold is always one `Battle.Leave` from coming back.
+  --
+  -- No tier: a PvP pot is this one battle's two stakes and is drained in full,
+  -- so there is no shared row to add to.
+  local staked, why = arenaStake(p, nil)
+  if staked <= 0 and int(C.ARENA.stake, 0) > 0 then
+    return fail(base, why or "Not enough Gold to stake this battle")
+  end
   local id = nextBattleId()
   local b = {
     id = id,
     kind = "pvp",
     status = "pending",
+    arena = { pvp = true, stake = staked, pot = staked },
     round = 0,
     turns = {},
     startedAt = timestamp,
@@ -5251,6 +5467,17 @@ H["Battle.Accept"] = function(base, msg, timestamp)
   if b.targetAccepter and b.targetAccepter ~= address then
     return fail(base, "That challenge is for someone else")
   end
+
+  -- The accepter's stake. Agreeing to the fight is what commits it, and both
+  -- halves are now escrowed before a single round is played -- which is the
+  -- property that makes the winner-takes-the-pot rule enforceable. Zero rake:
+  -- the pot is exactly what the two of them put in.
+  local matched, matchWhy = arenaStake(p, nil)
+  if matched <= 0 and int(C.ARENA.stake, 0) > 0 then
+    return fail(base, matchWhy or "Not enough Gold to match this challenge")
+  end
+  b.arena = type(b.arena) == "table" and b.arena or { pvp = true, stake = 0, pot = 0 }
+  b.arena.pot = int(b.arena.pot, 0) + matched
 
   b.accepter = Battle.combatant(battleMonster(p), "accepter", address)
   b.accepterAddress = address
@@ -6050,6 +6277,14 @@ H["Admin.Economy.FundTestBots"] = function(base, msg, timestamp)
     rune = math.max(0, math.min(100, int(body.rune, 25))),
     scroll = math.max(0, math.min(20, int(body.scroll, 5))),
   }
+  local berryTarget = math.max(0, math.min(50, int(body.berries, 0)))
+  local boxTarget = math.max(0, math.min(5, int(body.boxes, 0)))
+  local boxRarity = math.max(1, math.min(C.MAX_LOOT_RARITY,
+    int(body.boxRarity, C.DAILY.lootboxRarity)))
+  local extraTarget = math.max(0, math.min(4, int(body.extraMonsters, 0)))
+  for _, item in ipairs({ "air_berry", "water_berry", "fire_berry", "rock_berry" }) do
+    targets[item] = berryTarget
+  end
   --- Gold is NOT an inventory item, and it is not minted here.
   ---
   --- `grant()` moves `C.ITEMS`, and Gold is deliberately not one of them: it
@@ -6065,7 +6300,7 @@ H["Admin.Economy.FundTestBots"] = function(base, msg, timestamp)
   --- records rather than failing -- and a supply ledger that quietly stops
   --- matching the accounts is worse than a refused admin message.
   local goldTarget = math.max(0, math.min(5000, int(body.gold, 0)))
-  local funded = 0
+  local funded, boxesAdded, monstersAdded = 0, 0, 0
   for _, address in ipairs(addresses) do
     if type(address) ~= "string" or #address ~= 43 then
       return fail(base, "Every test wallet must be a 43-character address")
@@ -6101,6 +6336,22 @@ H["Admin.Economy.FundTestBots"] = function(base, msg, timestamp)
       local held = itemCount(p, item)
       if held < minimum then grant(p, item, minimum - held) end
     end
+    while #(p.lootboxes or {}) < boxTarget do
+      addLootboxes(p, 1, boxRarity)
+      boxesAdded = boxesAdded + 1
+    end
+    -- Extra companions are useful only after the bot has sworn its oath. The
+    -- soak schedules this grant after bootstrap for exactly that reason; a
+    -- generic funding call against an unopened account never chooses a faction
+    -- on the player's behalf.
+    if p.faction then
+      while collectionCount(p) < extraTarget do
+        local monster = createMonster(p.faction, timestamp)
+        if not monster then break end
+        addToCollection(p, monster)
+        monstersAdded = monstersAdded + 1
+      end
+    end
     if math.max(0, int(p.gold, 0)) < goldTarget then p.gold = goldTarget end
     touchAlso(address)
     funded = funded + 1
@@ -6108,7 +6359,9 @@ H["Admin.Economy.FundTestBots"] = function(base, msg, timestamp)
   EconomyState = EconomyEngine.syncHoldings(
     EconomyState, Players, timestamp, "Admin.Economy.FundTestBots")
   return reply(base, {
-    funded = funded, minimums = targets, gold = goldTarget, testing = true,
+    funded = funded, minimums = targets, gold = goldTarget,
+    boxes = boxTarget, boxRarity = boxRarity, extraMonsters = extraTarget,
+    boxesAdded = boxesAdded, monstersAdded = monstersAdded, testing = true,
   })
 end
 
@@ -6976,7 +7229,7 @@ end
 --- narrowing list is the same one the old single-companion restore used; it now
 --- runs for every companion in the roster, the collection and the market
 --- instead of only the active one.
-local function restoreMonster(m, timestamp)
+local function restoreMonster(m, timestamp, preserveRuntime)
   if type(m) ~= "table" then return nil end
   for _, field in ipairs({ "entryNo", "attack", "defense", "speed", "health", "energy",
                            "happiness", "level", "exp", "totalTimesFed",
@@ -6999,9 +7252,12 @@ local function restoreMonster(m, timestamp)
   -- the way in. See `Battle.normaliseRoster` for why trimming is not the
   -- restore taking something away.
   m.moves = Battle.normaliseRoster(m.moves, m.elementType, { entryNo = m.entryNo })
-  -- A restored companion is never mid-fight: the battle it was in did not come
-  -- across, so leaving it "in the arena" would strand it.
-  if type(m.status) ~= "table" or m.status.type == "Battle" or m.status.type == "Hunt" then
+  -- Migration cannot carry a process-specific fight/hunt. A cold-slot heal is
+  -- different: its per-battle and Hunt route records are in this same cached
+  -- base, so preserveRuntime keeps the activity rather than silently burning
+  -- the rest of a paid arena session.
+  if type(m.status) ~= "table"
+     or (not preserveRuntime and (m.status.type == "Battle" or m.status.type == "Hunt")) then
     m.status = { type = "Home", since = timestamp, until_time = timestamp }
   end
   -- Backfilled HERE as well as in `ensureRoster`, because a load replaces both
@@ -7044,8 +7300,9 @@ end
 --- because the published view always carries `pass` as a table, so replaying a
 --- row against an INTACT `EconomyState` (the self-heal case) never re-tallies a
 --- pass.
-local function loadPlayerRow(row, timestamp)
+local function loadPlayerRow(row, timestamp, options)
   if type(row) ~= "table" or type(row.address) ~= "string" then return false end
+      local preserveRuntime = type(options) == "table" and options.preserveRuntime == true
       local p = getPlayer(row.address, timestamp)
       p.unlocked = row.unlocked ~= false
       if type(row.pass) == "table" then
@@ -7078,7 +7335,7 @@ local function loadPlayerRow(row, timestamp)
       local incomingRoster, incomingCollection = {}, {}
       if type(row.monsters) == "table" then
         for id, m in pairs(row.monsters) do
-          local restored = restoreMonster(m, timestamp)
+          local restored = restoreMonster(m, timestamp, preserveRuntime)
           if restored then
             restored.id = tostring(id)
             incomingRoster[tostring(id)] = restored
@@ -7087,7 +7344,7 @@ local function loadPlayerRow(row, timestamp)
       end
       if type(row.collection) == "table" then
         for id, m in pairs(row.collection) do
-          local restored = restoreMonster(m, timestamp)
+          local restored = restoreMonster(m, timestamp, preserveRuntime)
           if restored then
             restored.id = tostring(id)
             incomingCollection[tostring(id)] = restored
@@ -7103,7 +7360,7 @@ local function loadPlayerRow(row, timestamp)
         -- A row written before the roster existed, or by the legacynet build:
         -- one companion and nothing else. Fold it into the shape rather than
         -- assigning the mirror, which is what detached the two.
-        local restored = restoreMonster(row.monster, timestamp)
+        local restored = restoreMonster(row.monster, timestamp, preserveRuntime)
         restored.id = restored.id or ("m" .. string.format("%d", int(p.monsterSeq, 0) + 1))
         p.monsters = { [restored.id] = restored }
         p.collection = p.collection or {}
@@ -7136,7 +7393,8 @@ local function loadPlayerRow(row, timestamp)
       -- survive a process migration: restored companions have already been
       -- thawed above, so carrying the old route would strand the player on a
       -- worker that the new game no longer controls.
-      p.hunt = nil
+      p.hunt = preserveRuntime and type(row.hunt) == "table"
+        and Battle.clone(row.hunt) or nil
       if type(row.activeId) == "string" and p.monsters[row.activeId] then
         setActive(p, row.activeId)
       else
@@ -7208,8 +7466,18 @@ local function loadPlayerRow(row, timestamp)
         end
       end
       if row.seeded then p.seeded = true end
-      p.battlesRemaining = 0
-      p.activeBattleId = nil
+      if preserveRuntime then
+        p.battlesRemaining = math.max(0, int(row.battlesRemaining, 0))
+        p.activeBattleId = type(row.activeBattleId) == "string"
+          and row.activeBattleId or nil
+        p.battleFleet = type(row.battleFleet) == "table"
+          and Battle.clone(row.battleFleet) or nil
+        p.arenaBoost = type(row.arenaBoost) == "table"
+          and Battle.clone(row.arenaBoost) or nil
+      else
+        p.battlesRemaining = 0
+        p.activeBattleId = nil
+      end
       -- Republish this account and no others. A restore arrives in pages, so
       -- the cost of a load is the size of the page rather than the size of the
       -- table it is landing in.
@@ -8608,13 +8876,224 @@ end
 -- guard at the top of `compute`.
 local RESTORE_LOSS_TOLERANCE = 0
 
+--- Decode one dedicated published key from the cached base.
+local function publishedObject(base, key)
+  local raw = base and base[key]
+  if type(raw) == "table" then return raw end
+  if type(raw) ~= "string" or raw == "" or raw == "null" then return nil end
+  local ok, decoded = pcall(json.decode, raw)
+  return ok and type(decoded) == "table" and decoded or nil
+end
+
+local function countRows(value)
+  local n = 0
+  for _ in pairs(type(value) == "table" and value or {}) do n = n + 1 end
+  return n
+end
+
+local function mergePublishedRows(target, published)
+  if type(target) ~= "table" or type(published) ~= "table" then return end
+  for key, row in pairs(published) do
+    local id = type(row) == "table" and row.id or key
+    if type(id) == "string" and id ~= "" and target[id] == nil then
+      target[id] = row
+    end
+  end
+end
+
+--- Restore immutable process wiring when HyperBEAM re-enters the module with
+--- an intact published base and empty Lua globals.
+---
+--- Players and the economy already self-heal below. The first 50-wallet run
+--- proved the same cold slot also loses RuneToken, VenueProcess, HuntProcesses
+--- and the sealed battle-fleet locals: deploy-time reads were correct, then
+--- concurrent actions answered "not configured". Each value has a dedicated
+--- published key precisely so the cached base is authoritative here.
+local function restoreOperationalConfig(base)
+  local sequences = publishedObject(base, "sequenceops")
+  if sequences then
+    AdminAuditSeq = math.max(int(AdminAuditSeq, 0), int(sequences.adminAudit, 0))
+    MintSeq = math.max(int(MintSeq, 0), int(sequences.mint, 0))
+    HuntSeq = math.max(int(HuntSeq, 0), int(sequences.hunt, 0))
+    MarketSeq = math.max(int(MarketSeq, 0), int(sequences.market, 0))
+    WithdrawSeq = math.max(int(WithdrawSeq, 0), int(sequences.withdrawal, 0))
+    VenueSeq = math.max(int(VenueSeq, 0), int(sequences.venue, 0))
+    BattleSeq = math.max(int(BattleSeq, 0), int(sequences.battle, 0))
+    BattleFleetSeq = math.max(int(BattleFleetSeq, 0), int(sequences.battleFleet, 0))
+
+    if countRows(Market) < int(sequences.marketOpen, 0) then
+      local published = publishedObject(base, "market")
+      if published then
+        for id, listing in pairs(published) do
+          if type(listing) == "table" and Market[id] == nil then
+            local restored = Battle.clone(listing)
+            restored.id = restored.id or id
+            restored.monster = restoreMonster(restored.monster,
+              int(restored.listedAt, 0))
+            if restored.monster then Market[id] = restored end
+          end
+        end
+      end
+    end
+    if #MarketHistory < int(sequences.marketHistory, 0) then
+      local published = publishedObject(base, "markethistory")
+      if published then MarketHistory = published end
+    end
+    if countRows(MintQueue) < int(sequences.mintQueue, 0) then
+      local published = publishedObject(base, "mintqueue")
+      if published then MintQueue = published end
+    end
+    if countRows(DepositQueue) < int(sequences.depositQueue, 0) then
+      local published = publishedObject(base, "depositqueue")
+      if published then DepositQueue = published end
+    end
+    if countRows(Assets) < int(sequences.assets, 0) then
+      mergePublishedRows(Assets, publishedObject(base, "assets"))
+    end
+    if countRows(Withdrawals) < int(sequences.withdrawals, 0) then
+      mergePublishedRows(Withdrawals, publishedObject(base, "runewithdrawals"))
+    end
+    if countRows(Deposits) < int(sequences.deposits, 0) then
+      mergePublishedRows(Deposits, publishedObject(base, "runedeposits"))
+    end
+    if MintVault == nil and type(base and base.mintvault) == "string"
+       and base.mintvault ~= "null" then MintVault = base.mintvault end
+  end
+  if RuneToken == "" and type(base and base.runetoken) == "string"
+     and #base.runetoken == 43 then
+    RuneToken = base.runetoken
+  end
+  if VenueProcess == "" and type(base and base.venueprocess) == "string"
+     and #base.venueprocess == 43 then
+    VenueProcess = base.venueprocess
+  end
+
+  do
+    local hunt = publishedObject(base, "huntconfig")
+    local publishedWorkers = hunt and type(hunt.workers) == "table" and #hunt.workers or 0
+    if hunt and hunt.enabled == true and type(hunt.processId) == "string"
+       and (HuntProcess == "" or #(HuntProcesses or {}) < publishedWorkers)
+       and #hunt.processId == 43 then
+      HuntProcess = hunt.processId
+      HuntNode = type(hunt.node) == "string" and hunt.node or ""
+      HuntProcesses = {}
+      for _, worker in ipairs(hunt.workers or {}) do
+        local id = type(worker) == "table" and worker.processId or worker
+        local node = type(worker) == "table" and worker.node or nil
+        if type(id) == "string" and #id == 43 then
+          HuntProcesses[#HuntProcesses + 1] = {
+            processId = id,
+            node = type(node) == "string" and node ~= "" and node or nil,
+          }
+        end
+      end
+    end
+  end
+
+  if not FLEET_ENABLED then
+    local published = publishedObject(base, "battlefleet")
+    local config = published and normalizeFleetConfig(published) or nil
+    if config then
+      FLEET_CFG, FLEET_WORKERS, FLEET_ENABLED = config, config.workers, true
+      BattleFleetSealedConfig = config
+      BattleFleetConfigFingerprint = encode(config)
+      BattleFleetAuthorityState = FLEET_AUTHORITY.newState({
+        maxEntries = config.maxEntries,
+        replayWindow = config.replayWindow,
+        auditLimit = config.auditLimit,
+      })
+    end
+  end
+
+  if FLEET_ENABLED then
+    local operations = publishedObject(base, "battlefleetops")
+    local current = BattleFleetAuthorityState
+    local currentSequence = type(current) == "table" and int(current.lastSequence, 0) or 0
+    local publishedSequence = int(operations and operations.lastSequence, 0)
+    local currentEntries = 0
+    if type(current) == "table" then
+      for _ in pairs(current.reservations or {}) do currentEntries = currentEntries + 1 end
+      for _ in pairs(current.finalized or {}) do currentEntries = currentEntries + 1 end
+    end
+    local publishedEntries = operations
+      and (#(operations.live or {}) + #(operations.finals or {})) or 0
+    if operations and operations.protocol == FLEET_PROTOCOL
+       and (type(current) ~= "table" or currentSequence < publishedSequence
+         or currentEntries < publishedEntries) then
+      local rebuilt = FLEET_AUTHORITY.newState({
+        maxEntries = FLEET_CFG.maxEntries,
+        replayWindow = FLEET_CFG.replayWindow,
+        auditLimit = FLEET_CFG.auditLimit,
+      })
+      local function index(row, final)
+        if type(row) ~= "table" or type(row.reservationId) ~= "string" then return end
+        local id = row.reservationId
+        if final then rebuilt.finalized[id] = row else rebuilt.reservations[id] = row end
+        if type(row.ticket) == "string" then rebuilt.tickets[row.ticket] = id end
+        if type(row.battleId) == "string" then rebuilt.battles[row.battleId] = id end
+        if type(row.assignmentId) == "string" then rebuilt.assignments[row.assignmentId] = id end
+        if type(row.openedId) == "string" then rebuilt.openings[row.openedId] = id end
+        if final and type(row.finalId) == "string" then
+          if row.kind == "settlement" then rebuilt.settlements[row.finalId] = id
+          elseif row.kind == "cancellation" then rebuilt.cancellations[row.finalId] = id
+          elseif row.kind == "rejection" then rebuilt.rejections[row.finalId] = id
+          elseif row.kind == "force" then rebuilt.resolutions[row.finalId] = id end
+        end
+        rebuilt.lastSequence = math.max(int(rebuilt.lastSequence, 0), int(row.sequence, 0))
+      end
+      for _, row in ipairs(operations.live or {}) do index(row, false) end
+      for _, row in ipairs(operations.finals or {}) do index(row, true) end
+      rebuilt.lastSequence = math.max(int(rebuilt.lastSequence, 0), publishedSequence)
+      rebuilt.highWaterTimestamp = int(operations.highWaterTimestamp, 0)
+      BattleFleetAuthorityState = rebuilt
+      BattleFleetSeq = math.max(int(BattleFleetSeq, 0), rebuilt.lastSequence)
+      if type(operations.starts) == "table" then
+        BattleFleetStarts = operations.starts
+      end
+    end
+  end
+
+  -- Restore monolithic PvP battles from their per-id published rows.  These
+  -- are deliberately Battle.view records: every combat field survives, while
+  -- `pendingMoves` does not. Publishing a player's secret committed move would
+  -- let the opponent counter it. A cold slot may therefore require the first
+  -- mover to submit that round again, but it never loses the battle or leaks a
+  -- choice. Existing warm records win so a healthy slot keeps its commitments.
+  do
+    local operations = publishedObject(base, "battleops")
+    BattleSeq = math.max(int(BattleSeq, 0), int(operations and operations.battleSeq, 0))
+    BattlesCompleted = math.max(int(BattlesCompleted, 0),
+      int(operations and operations.completed, 0))
+    local expected = int(operations and operations.count, 0)
+    local live = 0
+    for _ in pairs(Battles) do live = live + 1 end
+    if live < expected then
+      for key, value in pairs(base or {}) do
+        if type(key) == "string" and string.sub(key, 1, 10) == "battle-op-"
+           and type(value) == "string" and value ~= "null" then
+          local ok, row = pcall(json.decode, value)
+          local id = ok and type(row) == "table" and row.id or nil
+          if type(id) == "string" and id ~= "" and Battles[id] == nil then
+            row.waitingOn = nil
+            row.pendingMoves = {}
+            Battles[id] = row
+            live = live + 1
+          end
+        end
+      end
+    end
+  end
+end
+
 function compute(base, req, opts)
   resolveOwner(base)
+  restoreOperationalConfig(base)
 
   -- Emptied per message. `result` IS `base` and survives into the next slot,
   -- so a list left over from the last one would republish strangers on every
   -- message after a trade — cheap, but a lie about what this message did.
   alsoTouched = {}
+  BattleTombstones = {}
 
   local msg = (req and req.body) or {}
   local tags = caseInsensitive(msg.Tags or msg)
@@ -8681,8 +9160,10 @@ function compute(base, req, opts)
   -- policy -- so per CLAUDE.md we do not lossily reconstruct it; it is also not
   -- written to `base` except by economy verbs, so rebuilding `Players` and
   -- running a non-economy handler never republishes it from lost state.
-  -- `Battles` is not published at all and a fight cannot survive a global loss,
-  -- exactly as `Admin.Load` and `playerView` already discard a dangling battle.
+  -- Monolithic PvP `Battles` now have dedicated `battle-op-<id>` restore rows.
+  -- They are rebuilt by `restoreOperationalConfig` before this roster heal;
+  -- hidden pending moves are intentionally not published and may be resubmitted
+  -- after a cold slot rather than exposing one player's choice to the other.
   --
   -- If reconstruction cannot reach the witness (a `player-<address>` key was
   -- absent, "null", or undecodable), we REFUSE the whole message rather than
@@ -8776,7 +9257,7 @@ function compute(base, req, opts)
               local decoded, row = pcall(json.decode, value)
               if decoded and type(row) == "table" then
                 if type(row.address) ~= "string" then row.address = address end
-                loadPlayerRow(row, timestamp)
+                loadPlayerRow(row, timestamp, { preserveRuntime = true })
               end
             end
           end
@@ -9037,6 +9518,36 @@ function compute(base, req, opts)
     result.battleid = terminal and terminal.id or "null"
   end
 
+  -- Durable per-battle restore rows. `battle` above is only the most recently
+  -- touched UI view, so ten concurrent PvP pairs cannot be reconstructed from
+  -- it. Write just the battle this message addressed/changed; the returned base
+  -- keeps every other row from the prior slot. Battle.view strips secret
+  -- pending choices while retaining the complete combat state.
+  do
+    local ids = {}
+    local function mark(id)
+      if type(id) == "string" and id ~= "" then ids[id] = true end
+    end
+    mark(before and before.battleId)
+    mark(tags and tags.BattleId)
+    if touched and Players[touched] then mark(Players[touched].activeBattleId) end
+    for address in pairs(alsoTouched) do
+      if Players[address] then mark(Players[address].activeBattleId) end
+    end
+    for id in pairs(BattleTombstones) do ids[id] = true end
+    for id in pairs(ids) do
+      local battle = Battles[id]
+      result["battle-op-" .. id] = battle and encode(Battle.view(battle)) or "null"
+    end
+    local count = 0
+    for _ in pairs(Battles) do count = count + 1 end
+    result.battleops = encode({
+      count = count,
+      battleSeq = int(BattleSeq, 0),
+      completed = int(BattlesCompleted, 0),
+    })
+  end
+
   -- The other side of a trade, a gift, or a settled fight.
   --
   -- Whoever a handler said it also changed. The block above catches a PvP
@@ -9272,6 +9783,24 @@ function compute(base, req, opts)
       -- rarity and a player is entitled to know what it is worth. Rarity 1 is
       -- the rare tier, so the weights run the other way from the number.
       moveRarityWeight = C.MOVE_RARITY_WEIGHT,
+      -- What a battle stakes and what a win draws, published ONCE.
+      --
+      -- The stake, the drain and the tier thresholds are constants, so they
+      -- belong here and not on `arenatiers` -- repeating the drain on four pot
+      -- rows would rewrite it on every settle for no reason. The client joins
+      -- the two: `arenatiers` says what is in each pot, this says what a win
+      -- takes out of it.
+      --
+      -- `tiers` carries the DIFFICULTY each label was chosen with, so the lobby
+      -- sends the number the process buckets rather than a name it invented.
+      arena = {
+        stake = int(C.ARENA.stake, 0),
+        drainNum = int(C.ARENA.drainNum, 1),
+        drainDen = int(C.ARENA.drainDen, 3),
+        minEntry = int(C.ARENA.minEntry, 0),
+        battlesPerSession = int(C.BATTLES_PER_SESSION, 4),
+        tiers = C.ARENA.tiers,
+      },
       -- Rally and Mend: every companion has them, no companion carries them,
       -- once each per battle. They are not in `movePools` -- deliberately, so
       -- one cannot be smuggled into a stored roster -- so the client would have
@@ -9304,6 +9833,21 @@ function compute(base, req, opts)
       },
     })
   end
+  -- The arena's pots: three integers a tier, and nothing derived.
+  --
+  -- The payout, the break-even win rate and the observed win rate are all
+  -- computed in the browser from these -- see ARENA_STAKES.md 8 and the note on
+  -- `M.arenaView`. Publishing them here instead would re-encode a derived value
+  -- on every settle in every tier, on a map the node marshals five times per
+  -- message, and a derived value read a slot late is a number that was never
+  -- true. A pot read a slot late is simply the pot, one slot ago.
+  --
+  -- Rewritten whenever a stake or a settle moves one, which is most battles,
+  -- and it is four rows of three small integers -- bounded by the tier count
+  -- and never by the player count, which is the only shape CLAUDE.md permits a
+  -- derived key to have.
+  result.arenatiers = encode(EconomyEngine.arenaView(EconomyState))
+
   -- Published independently so the client never has to trust a frontend-only
   -- flag. A build can say the gates are open, but only this process decides
   -- whether a signed action is admitted.
@@ -9321,6 +9865,7 @@ function compute(base, req, opts)
           imageId = worker.imageId,
           abi = worker.abi,
           clockMode = worker.clockMode,
+          lifecycle = "ready",
         }
       end
     end
@@ -9360,34 +9905,20 @@ function compute(base, req, opts)
       protocol = FLEET_PROTOCOL,
       node = FLEET_CFG.node,
       replayWindow = FLEET_CFG.replayWindow,
+      lastSequence = int(BattleFleetAuthorityState.lastSequence, 0),
+      highWaterTimestamp = int(BattleFleetAuthorityState.highWaterTimestamp, 0),
+      starts = Battle.clone(BattleFleetStarts),
       live = {}, finals = {},
     }
     for reservationId, reservation in pairs(BattleFleetAuthorityState.reservations or {}) do
-      operations.live[#operations.live + 1] = {
-        reservationId = reservationId,
-        battleId = reservation.battleId,
-        playerId = reservation.playerId,
-        workerId = reservation.workerId,
-        workerProcessId = reservation.workerProcessId,
-        status = reservation.status,
-        expiresAt = reservation.expiresAt,
-        cancelId = reservation.cancelId,
-        assignmentId = reservation.assignmentId,
-        ticket = reservation.ticket,
-      }
+      local stored = Battle.clone(reservation)
+      stored.reservationId = reservationId
+      operations.live[#operations.live + 1] = stored
     end
     for reservationId, final in pairs(BattleFleetAuthorityState.finalized or {}) do
-      operations.finals[#operations.finals + 1] = {
-        reservationId = reservationId,
-        battleId = final.battleId,
-        playerId = final.playerId,
-        workerId = final.workerId,
-        workerProcessId = final.workerProcessId,
-        kind = final.kind,
-        finalId = final.finalId,
-        deliveryConfirmed = final.deliveryConfirmed == true,
-        finalizedAt = final.finalizedAt,
-      }
+      local stored = Battle.clone(final)
+      stored.reservationId = reservationId
+      operations.finals[#operations.finals + 1] = stored
     end
     result.battlefleetops = encode(operations)
   end
@@ -9419,6 +9950,11 @@ function compute(base, req, opts)
   -- A dedicated key belongs to this value alone and cannot be another
   -- message's reply.
   result.runetoken = RuneToken
+
+  -- The internal venue this game trusts, as its own immutable-size key. A
+  -- deployment verifier must prove both directions of that relationship
+  -- without reading whichever admin reply happened to be latest.
+  result.venueprocess = VenueProcess
 
   -- The two ledgers of the bridge, readable without a wallet.
   --
@@ -9562,6 +10098,21 @@ function compute(base, req, opts)
   -- Echo what the caller sent for diagnostics. All correctness decisions above
   -- used the resolved canonical name.
   result.action = requestedAction
+  -- Every generated id is monotonic and several of them protect replay guards
+  -- in another process. They cannot live only in `priv`: a cold slot rewinding
+  -- HuntSeq reused h1 for a different player and routed that wallet into
+  -- somebody else's retained hunt. One compact high-water record restores all
+  -- generators before dispatch.
+  result.sequenceops = encode({
+    adminAudit = int(AdminAuditSeq, 0), mint = int(MintSeq, 0),
+    hunt = int(HuntSeq, 0), market = int(MarketSeq, 0),
+    withdrawal = int(WithdrawSeq, 0), venue = int(VenueSeq, 0),
+    battle = int(BattleSeq, 0), battleFleet = int(BattleFleetSeq, 0),
+    marketOpen = marketCount(), marketHistory = #MarketHistory,
+    mintQueue = #MintQueue, depositQueue = #DepositQueue,
+    assets = countRows(Assets), withdrawals = countRows(Withdrawals),
+    deposits = countRows(Deposits),
+  })
 
   -- Compact the heap before the node photographs it.
   --

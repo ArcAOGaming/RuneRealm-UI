@@ -232,7 +232,7 @@ C.MOVE_POOLS = {
     ["Boulder Crush"]      = { type = "rock", rarity = 1, count = 3, damage = 7, attack = 3, speed = 0, defense = 0, health = 0 },
     ["Rock Slide"]         = { type = "rock", rarity = 2, count = 2, damage = 8, attack = 2, speed = -1, defense = -2, health = 0 },
     ["Seismic Slam"]       = { type = "rock", rarity = 2, count = 4, damage = 4, attack = 3, speed = 0, defense = 0, health = 0 },
-    ["Granite Barrier"]    = { type = "rock", rarity = 3, count = 2, damage = 5, attack = 1, speed = -1, defense = 0, health = 0 },
+    ["Stone Barrier"]    = { type = "rock", rarity = 3, count = 2, damage = 5, attack = 1, speed = -1, defense = 0, health = 0 },
     ["Earth Shield"]       = { type = "rock", rarity = 3, count = 3, damage = 4, attack = 0, speed = -1, defense = 3, health = 0 },
     ["Stone Wall"]         = { type = "rock", rarity = 3, count = 3, damage = 3, attack = 0, speed = 0, defense = 4, health = 1 },
   },
@@ -247,8 +247,8 @@ C.MOVE_POOLS = {
     ["Battle Cry"]         = { type = "boost", rarity = 2, count = 3, damage = 2, attack = 3, speed = 3, defense = 0, health = 0 },
     ["Iron Skin"]          = { type = "boost", rarity = 2, count = 3, damage = 2, attack = 0, speed = 1, defense = 6, health = 2 },
     ["Swift Wind"]         = { type = "boost", rarity = 3, count = 3, damage = 2, attack = 1, speed = 4, defense = 0, health = 0 },
-    ["Warrior's Resolve"]  = { type = "boost", rarity = 3, count = 3, damage = 2, attack = 2, speed = 2, defense = 1, health = 0 },
-    ["Adrenaline Surge"]   = { type = "boost", rarity = 3, count = 3, damage = 2, attack = 3, speed = 1, defense = 0, health = 0 },
+    ["Iron Will"]  = { type = "boost", rarity = 3, count = 3, damage = 2, attack = 2, speed = 2, defense = 1, health = 0 },
+    ["Adrenal Rush"]   = { type = "boost", rarity = 3, count = 3, damage = 2, attack = 3, speed = 1, defense = 0, health = 0 },
     ["Life Surge"]         = { type = "heal", rarity = 1, count = 3, damage = 0, attack = 1, speed = 1, defense = 0, health = 7 },
     ["Regenerate"]         = { type = "heal", rarity = 2, count = 3, damage = 0, attack = 0, speed = 1, defense = 1, health = 6 },
     ["Recovery"]           = { type = "heal", rarity = 2, count = 3, damage = 0, attack = 0, speed = 1, defense = 0, health = 6 },
@@ -310,6 +310,21 @@ C.MOVE_ELEMENT_BIAS = 40
 --- species, rare in the world, and a companion holding both of its signature
 --- moves is a roll worth keeping.
 C.MOVE_SIGNATURE_BOOST = 6
+
+--- How often a companion relearns: every Nth level.
+---
+--- FIVE, not three. A relearn is the only way a roster changes after adoption,
+--- so the cadence is the whole pace of that half of progression -- at three it
+--- fired six times on the climb to level 20 and a roster stopped feeling like
+--- something you were given and started feeling like something on a timer. At
+--- five it fires at 5, 10, 15 and 20: four times, on the levels a player
+--- already treats as milestones.
+---
+--- A named constant and not `% 5`, because the number is published in the
+--- catalog and the walkthrough on the companion screen states it out loud. See
+--- the walkthrough rule in CLAUDE.md: the sentence that says when a companion
+--- relearns and the code that decides it are the same change.
+C.MOVE_RELEARN_LEVELS = 5
 
 --- The two actions every companion has and no companion carries.
 ---
@@ -422,10 +437,132 @@ C.ACTIVITIES = {
 C.MAX_ENERGY = 100
 C.MAX_HAPPINESS = 100
 
---- Battles granted per arena session. The session is free in v2; what bounds it
---- is the 25 happiness it costs to enter, and happiness comes only from a
---- fifteen-minute Play. Four actions an hour is the ceiling, for everyone.
+--- Battles granted per arena session. Entering the arena is still free of Gold;
+--- what bounds a session is the 25 happiness it costs, and happiness comes only
+--- from a fifteen-minute Play. Four actions an hour is the ceiling, for
+--- everyone. The Gold is charged per BATTLE (see `C.ARENA`), not per session,
+--- so leaving early never forfeits a stake that was never taken.
 C.BATTLES_PER_SESSION = 4
+
+-- Arena stakes --------------------------------------------------------------
+--
+-- What a fight is worth, and the whole reason it is not a faucet.
+--
+-- Every previous version of "the arena pays" was a faucet with a cap bolted on,
+-- and the cap was the only thing stopping it printing. This is the structural
+-- version, out of ARENA_STAKES.md: the arena issues Gold only through the
+-- capped base layer (`C.ACTIVITIES.battle.winGold`, one 20-hour allowance
+-- shared with the quest), and **everything on top of that is redistribution
+-- between players**. A stake goes into a pot, a win draws from the pot, and
+-- across all players a pot pays out exactly what was paid in.
+--
+-- WHY A POT RATHER THAN A WIN-RATIO MULTIPLIER, which is the design this
+-- replaced and the one worth not going back to. The goal is the same: a tier
+-- nobody wins should pay a lot and a tier everybody wins should pay a little.
+-- The obvious way is to track each tier's rolling win ratio and multiply the
+-- payout by it. A shared pot with a fixed drain does that EXACTLY, with no
+-- statistic to maintain, and -- this is the part that matters -- it cannot be
+-- driven. With stake `S`, drain `d` and population win rate `w`:
+--
+--     inflow per battle   = S
+--     outflow per battle  = w x pot x d
+--     equilibrium         = pot* = S / (w x d)
+--     payout per win      = pot* x d = S / w
+--     EV per battle       = w x S/w = S
+--
+-- The `S / w` multiplier arrives by arithmetic instead of by bookkeeping.
+-- Three properties follow and all three are load-bearing:
+--
+--  * **EV is the stake.** An average player gets their stake back; the base
+--    layer is what makes playing worth it and the pot is what makes WINNING
+--    worth it. Nobody is paid for showing up.
+--  * **It cannot be farmed above what is in it.** A ratio can be pushed by a
+--    player who owns the sample. A pot cannot pay out Gold nobody staked, so
+--    inflating it means funding it yourself.
+--  * **It self-corrects at whatever speed the tier is played at**, with no
+--    window to choose. A short window swings and is drivable; a long one never
+--    moves. A pot is not an average and has neither problem.
+--
+-- So an individual's record NEVER touches their payout -- that is the exploit
+-- surface, and it stays closed. What moves the payout is the TIER's recent
+-- results, through the pot: a run of losses fattens it and the next win takes a
+-- third of a bigger number.
+C.ARENA = {
+  --- Per BATTLE, not per session, and the same in every tier.
+  ---
+  --- Flat on purpose. With one stake and four pots the harder tier has the
+  --- lower win rate, so its pot settles higher and `S / w` pays more -- "harder
+  --- is worth more" falls out of the arithmetic instead of being a fifth
+  --- constant somebody has to keep in step with the difficulty curve.
+  ---
+  --- 10 against a quest's `goldReward = 15`: one quest buys one fight, which is
+  --- the onboarding order this was chosen with. A new wallet quests, then
+  --- fights.
+  stake = 10,
+  --- The drain, as a rational so the arithmetic stays in integers.
+  ---
+  --- `floor(pot * drainNum / drainDen)`. A third is responsive without being
+  --- lumpy: at a 50% win rate a 10-stake tier settles near a 60 pot and a win
+  --- pays about 20. It does not change EV -- only how fast the pot answers and
+  --- how big a single win feels.
+  drainNum = 1,
+  drainDen = 3,
+  --- What a player must hold to enter the arena at all: one battle's stake.
+  ---
+  --- Not a session's worth. A player who can afford one fight is allowed in and
+  --- stopped at the second, which is a truthful place to be stopped; refusing
+  --- entry at 39 Gold to somebody who only wanted one battle is not.
+  minEntry = 10,
+  --- The pots, and the buckets a numeric difficulty falls into.
+  ---
+  --- `Difficulty` arrives as a NUMBER the client picks off a row of four
+  --- buttons and the engine multiplies straight into the bot's stat budget
+  --- (`battle.lua`), so the tier cannot be a key the client names -- it is
+  --- derived here, by threshold, and a value between two buttons still lands in
+  --- exactly one pot. `below` is exclusive and the last row catches everything;
+  --- `C.arenaTier` is the only thing that reads them.
+  tiers = {
+    { key = "easy",   label = "Easy",   difficulty = 0.75, below = 0.9 },
+    { key = "even",   label = "Even",   difficulty = 1.0,  below = 1.2 },
+    { key = "hard",   label = "Hard",   difficulty = 1.4,  below = 1.7 },
+    { key = "brutal", label = "Brutal", difficulty = 2.0,  below = 99 },
+  },
+  --- Win/attempt counts per tier, kept for DISPLAY and nothing else.
+  ---
+  --- The separation is the entire point of ARENA_STAKES.md 8: a DISPLAY
+  --- statistic that is skewed costs a misinformed player, where a PAYOUT
+  --- statistic that is skewed is farmable. So a player can push the number on
+  --- screen by dumping games and gain nothing, because the payout still comes
+  --- only from what is in the pot. If this ever feeds a payout the exploit
+  --- surface above reopens.
+  ---
+  --- Windowed by HALVING both counts once attempts reach this, which is a
+  --- moving average with no window to store, no clock to read and no unbounded
+  --- integer -- the ratio survives the halving exactly and the pair keeps
+  --- moving after a few thousand battles.
+  statsHalveAt = 200,
+}
+
+--- Which pot a numeric difficulty belongs to.
+---
+--- Returns the tier row, never nil: an out-of-range or garbage difficulty falls
+--- into the last bucket rather than into a fifth pot nobody can see.
+function C.arenaTier(difficulty)
+  local d = tonumber(difficulty) or 1.0
+  local tiers = C.ARENA.tiers
+  for i = 1, #tiers do
+    if d < tiers[i].below then return tiers[i] end
+  end
+  return tiers[#tiers]
+end
+
+--- What a win takes out of a pot of this size. Integer, and never more than
+--- the pot holds.
+function C.arenaDrain(pot)
+  local held = math.max(0, math.floor(tonumber(pot) or 0))
+  local take = (held * C.ARENA.drainNum) // C.ARENA.drainDen
+  return math.max(0, math.min(held, math.floor(take)))
+end
 
 -- Hunt ----------------------------------------------------------------------
 --

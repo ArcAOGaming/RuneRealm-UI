@@ -72,6 +72,8 @@
 ---     See `provenSigner`: an hmac commitment naming the game once minted a
 ---     million Rune in a test, and a token cannot afford a lenient resolver.
 
+local json = require(".json")
+
 -- Configuration --------------------------------------------------------------
 
 --- Assigned, not defaulted. hyper-aos presets `Name = "aos"` as it loads, so
@@ -420,6 +422,57 @@ local function balancesView()
     if n > 0 then out[address] = asString(n) end
   end
   return out
+end
+
+-- Restore the token ledger from its published state when a concurrent slot
+-- arrives without the Luerl `priv` snapshot. The balance sum is exactly the
+-- circulating supply, so any disagreement with the cached total is a precise
+-- lost/partial-global witness. Mint receipts are published individually: they
+-- are the idempotency barrier that prevents a replayed game withdrawal from
+-- minting twice after a cold entry.
+local function publishedObject(base, key)
+  local raw = base and base[key]
+  if type(raw) == "table" then return raw end
+  if type(raw) ~= "string" or raw == "" or raw == "null" then return nil end
+  local ok, decoded = pcall(json.decode, raw)
+  return ok and type(decoded) == "table" and decoded or nil
+end
+
+local function restoreTokenState(base)
+  local publishedBalances = publishedObject(base, "balances")
+  local publishedTotal = int(base and base.totalsupply, nil)
+  if publishedBalances and publishedTotal ~= nil then
+    local liveTotal = 0
+    for _, amount in pairs(Balances) do liveTotal = liveTotal + int(amount, 0) end
+    if int(TotalSupply, 0) ~= publishedTotal or liveTotal ~= publishedTotal then
+      local rebuilt = {}
+      for address, amount in pairs(publishedBalances) do
+        local value = int(amount, 0)
+        if type(address) == "string" and value > 0 then rebuilt[address] = value end
+      end
+      Balances = rebuilt
+      TotalSupply = publishedTotal
+      local info = publishedObject(base, "tokeninfo")
+      Minted = math.max(int(Minted, 0), int(info and info.Minted, publishedTotal))
+      Burned = math.max(int(Burned, 0), int(info and info.Burned, 0))
+    end
+  end
+  if Minter == "" and type(base and base.minter) == "string" then Minter = base.minter end
+  TransferSeq = math.max(int(TransferSeq, 0), int(base and base.transferseq, 0))
+  BurnSeq = math.max(int(BurnSeq, 0), int(base and base.burnseq, 0))
+
+  local expectedReceipts = int(base and base.mintreceiptcount, 0)
+  local receipts = 0
+  for _ in pairs(MintReceipts) do receipts = receipts + 1 end
+  if receipts < expectedReceipts then
+    for key, value in pairs(base or {}) do
+      if type(key) == "string" and string.sub(key, 1, 13) == "mint-receipt-" then
+        local reference = string.sub(key, 14)
+        local amount = int(value, 0)
+        if reference ~= "" and amount > 0 then MintReceipts[reference] = amount end
+      end
+    end
+  end
 end
 
 local function infoView()
@@ -820,6 +873,8 @@ local function resolveHandler(action)
 end
 
 function compute(base, req, opts)
+  base = type(base) == "table" and base or {}
+  restoreTokenState(base)
   resolveOwner(base)
 
   local msg = (req and req.body) or {}
@@ -855,6 +910,15 @@ function compute(base, req, opts)
   result.totalsupply = asString(TotalSupply)
   result.ticker = Ticker
   result.minter = Minter
+  result.transferseq = asString(TransferSeq)
+  result.burnseq = asString(BurnSeq)
+  local receiptCount = 0
+  for _ in pairs(MintReceipts) do receiptCount = receiptCount + 1 end
+  result.mintreceiptcount = asString(receiptCount)
+  local mintReference = tags.Reference or tags.reference
+  if type(mintReference) == "string" and MintReceipts[mintReference] then
+    result["mint-receipt-" .. mintReference] = asString(MintReceipts[mintReference])
+  end
 
   -- One holder's balance, addressable without pulling the whole book:
   -- `/now/balance-<address>`. Only the accounts this message touched are
