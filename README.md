@@ -164,6 +164,8 @@ npm run monster-index:check            # fail if the two repositories drifted
 npm run test:lua                  # the process suite, on a public node, free
 npm run test:hunt                 # Hunt process + game bridge, offline
 npm run test:marketplace:local    # quote + Rune + marketplace suites, offline
+npm run test:venue:local          # both shared order-book venues, offline
+npm run test:coverage             # 100% line gate for live-graph/coverage strategy
 node backend/native/e2e.mjs       # play the game through the real client code
 ```
 
@@ -193,15 +195,18 @@ npm run swarm:plan                            # all names, roles, descriptions
 npm run swarm:config                          # prove every process link live
 HB_WALLET=owner.json npm run fleet:prepare    # test funding + companions
 npm run swarm:lived-in                        # one hour, directed + gated
+npm run swarm:three-hour                      # 50 bots, 10 in flight, 10 starts/s,
+                                              # admin seed at five minutes
 ```
 
 The lived-in profile keeps all fifty wallet workers online, safely gates write
 starts at the measured node limit, and uses progression-aware randomized play
 while directing different actors toward missing features. Its receipt fails unless
 worship, loot, care, progression, PvE, PvP, Hunt, character customization,
-companion custody/trading, the Gold order book and NPC shop, the Rune bridge,
-and the Rune bridge all produced successful live outcomes. Every generated
-client receives one validated game/Hunt/Rune/quote/AMM graph; a `--pid`
+companion custody/trading, the Gold order book and NPC shop, both custody
+venues, and both directions of the Rune bridge all produced successful live
+outcomes. Every generated client receives one validated
+game/Hunt/Rune/quote/venue graph; a `--pid`
 override can no longer retain external process ids from another deployment.
 
 Game actions need no AR funding. See
@@ -223,6 +228,7 @@ npm run deploy:contracts:plan          # inspect only; creates nothing
 npm run deploy:contracts:check         # all preflight checks; no chain writes
 npm run deploy:contracts               # contracts + linked client build; no site publish
 npm run deploy:contracts:resume        # resume an interrupted contract deployment
+npm run deploy:contracts:soak          # blank graph; defer bot resources to the soak
 ```
 
 **Every deployment is blank.** No migration from the process being replaced, no
@@ -247,7 +253,8 @@ process, or the reverse. `deploy.mjs` on its own takes the same decision through
 
 The fixed `deploy:contracts*` scripts always enable `--free --with-bots`, never
 pass `--seed`, and never pass `--site`. They deploy the integrated game/economy, Rune bridge,
-test quote token, AMM, battle workers, and hunt workers; verify the graph; rewrite the frontend
+test quote token, internal and external order-book venues, battle workers, and hunt workers;
+verify the graph; rewrite the frontend
 process ids; and create the linked `dist/` bundle. Review
 `backend/native/deployment-state.json` after completion. Then commit and push
 the rewritten ids: pushing does **not** publish the site.
@@ -295,14 +302,14 @@ Running only `npm run build` cannot open a closed process. Likewise, changing a
 client environment variable cannot bypass the process's Eternal Pass checks.
 
 Before reading the owner wallet or creating anything, the command runs the
-offline game/economy, hunt, AMM, token, adversarial simulation, fuzz, and swarm
-suites, then runs the game, Rune, AMM/quote, and recovered-player suites unsigned on a live
+offline game/economy, Hunt, token/quote, both-venue, adversarial simulation,
+fuzz, and swarm suites, then runs the game, Rune, quote, and venue suites unsigned on a live
 `~lua@5.3a`, followed by the app build. Override that free test host with
 `--live-test-node <url>` or `LUA_TEST_NODE`.
 
 It migrates from the process currently recorded in `live-process.txt`, deploys
 the new game and zero-supply Rune token on the same node, wires both directions,
-deploys `TEST-RELIC` and the Rune AMM, verifies every recorded
+deploys `TEST-RELIC` plus both order-book venues, verifies every recorded
 relationship, rewrites all frontend process ids, and only then creates `dist`.
 The final public process graph is saved in
 `backend/native/deployment-state.json`; it contains ids and the owner address,

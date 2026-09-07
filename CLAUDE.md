@@ -90,10 +90,17 @@ the sentence that says what the arena charges are the same diff.
 
 Those sentences state real numbers and real rules: a free session of four
 battles, 25 energy and 25 happiness to enter, +5 from three berries, a Scroll
-and one to three Rune to bind and all of it consumed either way. **If you
+and one to three Rune to bind and all of it consumed either way, three moves on
+a companion, one move offered every fifth level, final
+either way and gone at the next level-up, and Rally and Mend free to everybody
+once each per battle. **If you
 move any of those, the walkthrough moves with them in the same commit.** A tour
 describing rules the game no longer has is worse than no tour: it is
 confidently wrong, and the player has no way to tell.
+
+`BATTLE_TOUR` in `screens/Arena.tsx` is the one to remember, because it is the
+only one whose targets do not exist until a fight does — a step pointing at the
+move grid from the lobby is silently dropped and never shown once.
 
 Same rule for the shape of a screen. Steps point at `data-tour` attributes and a
 step whose target is missing is silently dropped — so deleting a panel does not
@@ -111,6 +118,31 @@ npm run recover:verify # the 168 recovered players load and read back
 All three run on a live `~lua@5.3a` and cost nothing. `node backend/native/e2e.mjs`
 signs real ANS-104 items and is the only thing that exercises the real
 signature path — run it after any node, scheduler or `signer()` change.
+
+## Balance is measured, and there are four different fights
+
+`backend/native/balance.lua` is the harness and `./run-balance.sh <mode>` runs it
+on a live `~lua@5.3a` for free. There are four questions and they do not have the
+same answer, which is how each of them came to be wrong at some point:
+
+- **`balance`** — is a fight the right length? Bot against bot.
+- **`arena<level>`** — a grown PLAYER against a bot. This is the fight a session
+  is spent on and it went unmeasured until 2026-09; when it was finally measured
+  it was a 100% win rate at every level, in two to five rounds.
+- **`matrix<level>`** — is each BUILD worth playing? Grown player against grown
+  player, every stat spread against every other. A row far from 50% is a
+  dominant build or a trap.
+- **`rank<pool><level>`** — is each MOVE worth its slot? One roster carrying the
+  move under test against an identical roster carrying a plain attack instead.
+  50% means "worth about what a common is worth".
+
+Sizing a constant against one of them and not the others is how the tank mirror
+became unfinishable (pools chosen against bot-versus-bot, which is fifty stat
+points a side when the real fight is two hundred and ten) and how the arena
+became a walkover. **Run `arena`, `matrix` and `rank` together before believing
+a tuning change**, and remember that a mode name is a PATH segment: separators do
+not survive, and an absent key is answered with the node's HTML landing page
+rather than an error.
 
 ## Process shape is decided by three measured numbers
 
