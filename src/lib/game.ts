@@ -1188,9 +1188,11 @@ const OWN_FILL_LIMIT = 20;
 /**
  * The caller's recent fills, newest first.
  *
- * A global fill names four addresses and no perspective, so the fallback
- * derives the two fields the record already carries: which side of the trade
- * this account was on, and whether it was the resting order.
+ * A global fill names two addresses and no perspective, so the fallback
+ * derives what the record no longer stores: which side of the trade this
+ * account was on, whether it was the resting order, and what the trade was
+ * worth. `takerSide` names which of buyer/seller took; the other made and was
+ * not charged.
  *
  * It also sorts and truncates, which the record path gets from the process.
  * Without that the two shapes disagree — `economy.fills` is appended oldest
@@ -1211,17 +1213,20 @@ export function ownFills(
     .slice()
     .sort((a, b) => b.filledAt - a.filledAt)
     .slice(0, OWN_FILL_LIMIT)
-    .map((fill): OwnFill => ({
-      id: fill.id,
-      item: fill.item,
-      side: fill.buyer === address ? 'buy' : 'sell',
-      price: fill.price,
-      quantity: fill.quantity,
-      gross: fill.gross,
-      fee: fill.fee,
-      filledAt: fill.filledAt,
-      role: fill.maker === address ? 'maker' : 'taker',
-    }));
+    .map((fill): OwnFill => {
+      const side = fill.buyer === address ? 'buy' : 'sell';
+      return {
+        id: fill.id,
+        item: fill.item,
+        side,
+        price: fill.price,
+        quantity: fill.quantity,
+        gross: fill.price * fill.quantity,
+        fee: fill.fee,
+        filledAt: fill.filledAt,
+        role: fill.takerSide === side ? 'taker' : 'maker',
+      };
+    });
 }
 
 /** `buy` buys from the NPC; `sell` sells the named inventory item to it. */

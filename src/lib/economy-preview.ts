@@ -136,9 +136,10 @@ function previewFills(): EconomyFill[] {
         id: `F${id}`, item, buyOrder: `O${id}`, sellOrder: `O${id + 500}`,
         buyer: 'DA9qhP25ZPz6MHIhO-7aNHDN3LsTAL7yCKYIkqr13Z8',
         seller: 'BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB',
-        maker: 'BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB',
-        taker: 'DA9qhP25ZPz6MHIhO-7aNHDN3LsTAL7yCKYIkqr13Z8',
-        price, quantity: 1 + (step % 4), gross: price * (1 + (step % 4)),
+        // The buyer took; the seller was resting. `maker`/`taker`/`gross` are
+        // all derived from this and the two addresses now.
+        takerSide: 'buy',
+        price, quantity: 1 + (step % 4),
         fee: Math.max(1, Math.round(price * 0.02)),
         filledAt: now - (7 * day) + (step * (7 * day)) / 26,
       });
