@@ -5,7 +5,9 @@
  * state instead of sending a wallet signature to a placeholder id.
  */
 export const MARKET_DEFAULTS = {
-  rune: '3c2FKXXdz-gC15K_38W9jdwDCx_eSnpj-tTRCb2IdA0',
-  quote: '7rUsU5Hs0EZFik5WQ9wmvHqK3tOaQpW1blKy-Q8OJX4',
-  node: 'https://hyperbeam.tylerw.ai',
+  rune: 'qm6v_m_igHJKvHFLN3YrCveIXwt9mCYmN9GSzfe8UVQ',
+  quote: '7igIbzIxOyax3coasMVJV8tuqRIiGRrdoZjoKeQPOp8',
+  internalVenue: 'i4X-1aJrTsCdENH12AKMr-lAce3RgNzNoNoDGFkU5Iw',
+  externalVenue: '0NEltc1z-wSzNEjpU90wPc23Ingn7F7d1Fi_COFEx6Y',
+  node: 'http://localhost:8737',
 } as const;
