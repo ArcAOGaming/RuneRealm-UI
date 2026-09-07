@@ -156,6 +156,10 @@ claimed before discretionary work; critical energy or happiness is restored;
 boxes are opened when supplies are thin; quests, arena fights, and hunts gain
 weight when they advance the current companion; stronger stored companions are
 promoted; and market actors preserve the resources their gameplay role needs.
+Any role that can fight keeps one arena stake out of Gold order and venue
+escrow. If it falls below the entry floor it sells genuine surplus to the NPC
+desk first, then runs a quest for Gold rather than repeatedly sending a battle
+the contract must refuse.
 Most turns are a progression-weighted lottery and 12% use the original role
 weights as exploration, so identical states can branch without bots knowingly
 making self-defeating choices. Every event records the decision reason.
@@ -163,7 +167,7 @@ making self-defeating choices. Every event records the decision reason.
 Coverage also persists across runs in `.swarm/eventual-coverage.json`. It stores
 only successful action names and counts, never wallet keys. A later lived-in run
 puts paths never seen in the campaign ahead of paths already proven, while its
-own fresh-run 51-path gate still applies. The summary reports both numbers, so
+own fresh-run gate still applies. The summary reports both numbers, so
 "eventually" is a durable receipt rather than a claim based on probabilities.
 
 `--mode stress` (or the `--stress` shorthand) is the explicit overload mode. It
@@ -183,6 +187,9 @@ First-time faction choice and adoption are setup, not part of the requested
 gameplay observation window. Once the deadline passes, the scheduler stops
 starting new wallets and PvP pairs. An already-published challenge is cancelled
 instead of being accepted late, and the normal safety cleanup still runs.
+Each PvP pair also withdraws its first pending challenge on purpose, proves the
+challenger's Gold stake returned, then posts a new challenge for its repeated
+accepted-duel loop.
 
 The default per-actor timeout is five minutes. A first-time bootstrap can make
 three sequential signed calls, and each slot deliberately tolerates up to one
@@ -263,7 +270,10 @@ does.
 It asserts that every deliberately illegal probe was refused, that a listing was
 sold at most once and only after it was listed, that nobody bought their own
 listing, that no wallet's companion count moved without an action to explain it,
-and that the roster cap held. It separates failures a concurrent run is entitled
+and that the roster cap held. Arena actions carry before/after Gold balances and
+the contract's settlement receipt; verification checks the exact PvE stake,
+both halves and the full pot of a PvP fight, pending-challenge refunds, capped
+base rewards, and pot payouts. It separates failures a concurrent run is entitled
 to produce from the ones it is not, and reports whether the node got slower as
 the run went on — the difference between a wrong process and a loaded one. The
 report lands beside the events as `verify.json`, and a major or critical finding
@@ -320,8 +330,9 @@ the process costs under fifty concurrent wallets.
 
 - 8 quest runners start and later claim quests.
 - 7 caretakers feed companions and run play/recovery loops.
-- 10 arena fighters play complete bot battles at varied difficulty.
-- 10 duelists form 5 stable targeted-PvP pairs and submit both sides of rounds.
+- 10 arena fighters stake Gold and play complete bot battles at varied difficulty.
+- 10 duelists form 5 stable targeted-PvP pairs, verify challenge refunds, stake
+  both sides, and submit both sides of rounds through settlement.
 - 5 collectors claim dailies, open chests, and consume loot.
 - 5 progression generalists mix all routine features and level up.
 - 5 randomized explorers choose uniformly from every legal routine action.
@@ -366,7 +377,9 @@ useful with the local browser relay when the shell cannot reach HyperBEAM.
 ## Funding
 
 No AR funding is needed for login, faction choice, adoption, feeding, quests,
-loot, daily claims, level-ups, bot combat, or PvP. HyperBEAM compute and
+loot, daily claims, level-ups, bot combat, or PvP. Arena fights do require
+in-game Gold stakes; that Gold is contract state, not an AR transaction fee.
+HyperBEAM compute and
 scheduling are free on the configured node; the wallet supplies identity and a
 signature, not payment. New accounts receive starter berries when they join.
 Rune is not a per-wallet starter or daily faucet: a contract deploy with bots

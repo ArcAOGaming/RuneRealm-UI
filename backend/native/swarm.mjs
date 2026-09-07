@@ -575,7 +575,9 @@ async function runLive() {
   );
 
   const pairs = focus === 'trading' ? []
-    : pvpPairs(profiles).map((pair) => ({ ...pair, stage: 'prepare', battleId: null, rounds: 0 }));
+    : pvpPairs(profiles).map((pair) => ({
+      ...pair, stage: 'prepare', battleId: null, rounds: 0, refundProven: false,
+    }));
   const pairedWallets = new Set(pairs.flatMap((pair) => [pair.challenger.wallet, pair.accepter.wallet]));
   const routineActors = focus === 'trading'
     ? actors : actors.filter((actor) => !pairedWallets.has(actor.profile.wallet));
@@ -618,6 +620,23 @@ async function runLive() {
         pair.rounds = 0;
         return;
       }
+      // Prove the challenger's escrow is reversible before this pair starts
+      // its repeated accepted-duel loop. One cancellation per pair is enough;
+      // every later challenge is accepted and played through settlement.
+      if (!pair.refundProven) {
+        const withdrawn = await invokeGameplay(
+          challenger, `cycle.${cycle}.pvp.refund`, 'withdrawPvp',
+        );
+        if (!withdrawn) return;
+        if (withdrawn.action !== 'pvp.challenge.refund') {
+          throw new Error(`${pair.name} challenge refund was not confirmed`);
+        }
+        pair.refundProven = true;
+        pair.stage = 'prepare';
+        pair.battleId = null;
+        pair.rounds = 0;
+        return;
+      }
       const accepted = await invokeGameplay(
         accepter, `cycle.${cycle}.pvp.accept`, 'accept', pair.battleId,
       );
@@ -634,6 +653,7 @@ async function runLive() {
     pair.rounds++;
     const outcomes = moved.filter(Boolean);
     const ended = outcomes.some((outcome) => outcome.action === 'pvp.ended'
+      || outcome.action === 'battle.settle.pvp'
       || outcome.state?.battle?.status === 'ended'
       || outcome.battle?.status === 'ended');
     if (ended) {

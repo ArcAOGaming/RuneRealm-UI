@@ -705,6 +705,14 @@ local function marketView()
       maxQuantity = int(market.maxQuantity, 0),
       takerBps = int(market.takerBps, 0),
       bandBps = int(market.bandBps, 0),
+      -- Every other field the order ticket needs was here and this one was
+      -- not, so the client showed a creation cost of zero whatever the market
+      -- charged. Both venues deploy at 0 today (`deploy-venue.mjs`), which is
+      -- what made the omission invisible rather than harmless: `placeOrder`
+      -- requires it on top of the escrow on a buy and on its own on a sell, so
+      -- an unread non-zero cost is an order refused for a reason the ticket
+      -- never showed. Published, not assumed.
+      creationCost = int(market.creationCost, 0),
       status = market.status,
     }
   end

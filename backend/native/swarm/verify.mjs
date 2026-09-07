@@ -35,10 +35,12 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { livedInCoverage } from './coverage.mjs';
+import { readArenaTerms } from './arena-terms.mjs';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.resolve(HERE, '..', '..', '..');
 const RUNS = path.join(ROOT, '.swarm', 'runs');
+const ARENA = readArenaTerms(ROOT);
 
 const argv = process.argv.slice(2);
 const flag = (name) => argv.includes(`--${name}`);
@@ -102,6 +104,16 @@ function verify(runId) {
   const adminSeedAt = Date.parse(
     events.find((event) => event.type === 'admin.seed.start')?.at ?? '',
   );
+  const adminSeedCompleteAt = Date.parse(
+    events.find((event) => event.type === 'admin.seed.complete')?.at ?? '',
+  );
+  const affectedByAdminSeed = (event) => {
+    const endedAt = Date.parse(event.at ?? '');
+    const startedAt = endedAt - Number(event.durationMs ?? 0);
+    return Number.isFinite(adminSeedAt) && Number.isFinite(startedAt)
+      && Number.isFinite(endedAt) && endedAt >= adminSeedAt
+      && (!Number.isFinite(adminSeedCompleteAt) || startedAt <= adminSeedCompleteAt);
+  };
   const coverage = livedInCoverage(actions.map((event) => event.action));
 
   if (runEnd?.coverageMode === 'lived-in' && !coverage.complete) {
@@ -123,6 +135,83 @@ function verify(runId) {
         || Number(event.state?.berries ?? 0) < 0) {
       finding('critical', 'negative-balance', `${event.wallet} published a negative holding after ${event.action}`,
         { wallet: event.wallet, action: event.action, state: event.state });
+    }
+  }
+
+  // -- Gold-staked arena ---------------------------------------------------
+  // Successful action names are coverage only when their attached balances
+  // prove the contract moved the exact stake. Settlement receipts then prove
+  // the pot paid no more than it held and that the wallet received exactly the
+  // competitive plus capped-base amounts reported by the contract.
+  for (const event of actions) {
+    const staked = ['battle.start.bot', 'pvp.challenge', 'pvp.accept'].includes(event.action);
+    if (staked) {
+      const before = Number(event.goldBefore);
+      const after = Number(event.goldAfter);
+      const paid = Number(event.stakeGold);
+      if (!affectedByAdminSeed(event) && (!Number.isFinite(before) || !Number.isFinite(after)
+          || paid !== ARENA.stake || before - after !== ARENA.stake)) {
+        finding('critical', 'arena-stake-mismatch',
+          `${event.wallet} did not prove the ${ARENA.stake} Gold stake on ${event.action}`,
+          { wallet: event.wallet, action: event.action, before, after, paid });
+      }
+      const expectedPot = event.action === 'pvp.challenge' ? ARENA.stake
+        : event.action === 'pvp.accept' ? ARENA.stake * 2 : null;
+      if (expectedPot !== null && Number(event.potGold) !== expectedPot) {
+        finding('critical', 'pvp-pot-mismatch',
+          `${event.action} published a ${event.potGold} Gold pot; expected ${expectedPot}`,
+          { wallet: event.wallet, action: event.action, battleId: event.battleId });
+      }
+    }
+
+    if (event.action === 'pvp.challenge.refund') {
+      const before = Number(event.goldBefore);
+      const after = Number(event.goldAfter);
+      const refunded = Number(event.refundedGold);
+      if (!affectedByAdminSeed(event) && (!Number.isFinite(before) || !Number.isFinite(after)
+          || refunded !== ARENA.stake || after - before !== ARENA.stake)) {
+        finding('critical', 'pvp-refund-mismatch',
+          `${event.wallet} did not prove the ${ARENA.stake} Gold challenge refund`,
+          { wallet: event.wallet, battleId: event.battleId, before, after, refunded });
+      }
+    }
+
+    if (event.action !== 'battle.settle.bot' && event.action !== 'battle.settle.pvp') continue;
+    const receipt = event.arena;
+    const integers = ['stake', 'pot', 'paid', 'base'];
+    const invalid = !receipt || integers.some((key) =>
+      !Number.isSafeInteger(Number(receipt?.[key])) || Number(receipt[key]) < 0);
+    if (invalid || Number(receipt.stake) !== ARENA.stake
+        || Number(receipt.paid) > Number(receipt.pot)) {
+      finding('critical', 'arena-receipt-invalid',
+        `${event.wallet} published an invalid arena settlement receipt`,
+        { wallet: event.wallet, action: event.action, battleId: event.battleId, receipt });
+      continue;
+    }
+    const pvp = event.action === 'battle.settle.pvp';
+    if ((pvp && receipt.tier !== 'pvp') || (!pvp && receipt.tier === 'pvp')) {
+      finding('critical', 'arena-tier-mismatch',
+        `${event.action} carried tier ${receipt.tier}`,
+        { wallet: event.wallet, battleId: event.battleId, receipt });
+    }
+    if (receipt.won !== true && Number(receipt.paid) !== 0) {
+      finding('critical', 'arena-loser-paid',
+        `${event.wallet} received ${receipt.paid} competitive Gold after a loss`,
+        { wallet: event.wallet, action: event.action, battleId: event.battleId, receipt });
+    }
+    if (pvp && receipt.won === true && Number(receipt.paid) !== ARENA.stake * 2) {
+      finding('critical', 'pvp-winner-pot-mismatch',
+        `${event.wallet} won ${receipt.paid} Gold from a ${ARENA.stake * 2} Gold PvP pot`,
+        { wallet: event.wallet, battleId: event.battleId, receipt });
+    }
+    const before = Number(event.goldBefore);
+    const after = Number(event.goldAfter);
+    const expected = Number(receipt.paid) + Number(receipt.base);
+    if (!affectedByAdminSeed(event) && (!Number.isFinite(before) || !Number.isFinite(after)
+        || after - before !== expected)) {
+      finding('critical', 'arena-payout-mismatch',
+        `${event.wallet} balance moved ${after - before} Gold on settlement; receipt says ${expected}`,
+        { wallet: event.wallet, action: event.action, battleId: event.battleId, receipt });
     }
   }
 
@@ -204,10 +293,10 @@ function verify(runId) {
     // Growing by one is a retrieve-from-nothing, a purchase, a gift received,
     // or an adoption. Shrinking by one is a sale, a gift given, or a mint.
     // More than one at a time is not something any single verb does.
-    const crossedAdminSeed = Number.isFinite(adminSeedAt)
+    const crossedSeed = Number.isFinite(adminSeedAt)
       && Number.isFinite(last.at) && Number.isFinite(at)
       && last.at <= adminSeedAt && adminSeedAt <= at && delta > 0;
-    if (Math.abs(delta) > 1 && !crossedAdminSeed) {
+    if (Math.abs(delta) > 1 && !crossedSeed) {
       finding('major', 'holding-jumped',
         `${event.wallet} went from ${last.held} companions to ${held} across one action `
         + `(${last.action} then ${event.action})`,

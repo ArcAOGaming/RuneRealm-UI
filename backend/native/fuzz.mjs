@@ -120,7 +120,8 @@ const FACTIONS = ['Sky Nomads', 'Aqua Guardians', 'Inferno Blades', 'Stone Titan
  * it straight back into 25 and hide it. See the repo rule on integers.
  */
 const INTEGER_KEYS = [
-  'price', 'level', 'exp', 'attack', 'defense', 'speed', 'health', 'energy',
+  'price', 'gold', 'stake', 'pot', 'paid', 'base',
+  'level', 'exp', 'attack', 'defense', 'speed', 'health', 'energy',
   'happiness', 'rune', 'amount', 'listedAt', 'soldAt', 'bornAt', 'since',
   'until_time', 'wins', 'losses', 'questsCompleted', 'battlesRemaining',
   'rosterMax', 'dailyStreak', 'count', 'rarity', 'totalTimesFed',

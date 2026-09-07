@@ -76,6 +76,7 @@ export function chooseProgressionAction({
   random,
   prefer,
   explorationRate = 0.12,
+  arenaMinEntry = 0,
 }) {
   if (!candidates?.length) return { action: null, reason: 'no-legal-action' };
   const byName = new Map(candidates.map((candidate) => [candidate.name, candidate]));
@@ -87,6 +88,14 @@ export function chooseProgressionAction({
   }
   if (Number(player?.monster?.happiness ?? 0) < 25 && byName.has('play')) {
     return { action: 'play', reason: 'restore-quest-and-arena-happiness' };
+  }
+  const needsArenaGold = ((profile.weights?.bot ?? 0) > 0 || profile.role === 'duelist')
+    && Number(player?.gold ?? 0) < Number(arenaMinEntry ?? 0);
+  if (needsArenaGold && byName.has('shop_trade')) {
+    return { action: 'shop_trade', reason: 'sell-surplus-for-arena-stake' };
+  }
+  if (needsArenaGold && byName.has('quest')) {
+    return { action: 'quest', reason: 'quest-for-arena-stake' };
   }
 
   // The full-world runner may ask this actor to cover a missing path. It still

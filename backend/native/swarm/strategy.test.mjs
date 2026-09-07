@@ -36,6 +36,19 @@ test('hard care needs restore the companion before discretionary progression', (
   assert.equal(happiness.action, 'play');
 });
 
+test('fighters earn Gold before selecting another arena session', () => {
+  const fighter = { role: 'arena', weights: { bot: 14 } };
+  const broke = player({ gold: 5 });
+  assert.deepEqual(chooseProgressionAction({
+    candidates: choices('bot', 'quest', 'shop_trade'), player: broke,
+    profile: fighter, random: () => 0.99, arenaMinEntry: 10,
+  }), { action: 'shop_trade', reason: 'sell-surplus-for-arena-stake' });
+  assert.deepEqual(chooseProgressionAction({
+    candidates: choices('bot', 'quest'), player: broke,
+    profile: fighter, random: () => 0.99, arenaMinEntry: 10,
+  }), { action: 'quest', reason: 'quest-for-arena-stake' });
+});
+
 test('coverage direction is honored only when the requested action is legal', () => {
   assert.equal(chooseProgressionAction({
     candidates: choices('quest', 'feed'), player: player(), profile,

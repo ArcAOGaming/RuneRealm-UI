@@ -74,7 +74,7 @@ function toolkit(ctx, scenario) {
  * which an account belongs to a faction and holds nothing, which is exactly
  * why the two were merged.
  */
-async function cast(ctx, tag, count, { runes: runeCount = 200 } = {}) {
+async function cast(ctx, tag, count, { runes: runeCount = 200, gold = 0 } = {}) {
   const people = [];
   for (let index = 0; index < count; index++) {
     const address = scenarioAddress(tag, index);
@@ -86,6 +86,11 @@ async function cast(ctx, tag, count, { runes: runeCount = 200 } = {}) {
       Action: 'Admin.AdjustInventory', PlayerId: address, Item: 'rune',
       Amount: String(runeCount),
     });
+    if (gold > 0) {
+      await ctx.send(ctx.owner, { Action: 'Admin.Economy.FundTestBots' }, JSON.stringify({
+        addresses: [address], rune: runeCount, gold,
+      }));
+    }
     people.push(address);
   }
   return people;
@@ -323,7 +328,7 @@ async function rosterCap(ctx) {
 /** A companion in a fight cannot be swapped out or filed away mid-round. */
 async function battleSwap(ctx) {
   const t = toolkit(ctx, 'battle-swap');
-  const [player] = await cast(ctx, 'BS', 1);
+  const [player] = await cast(ctx, 'BS', 1, { gold: 20 });
   await ctx.send(ctx.owner, {
     Action: 'Admin.CreateMonster', PlayerId: player, Faction: 'Inferno Blades', Into: 'roster',
   });
@@ -344,6 +349,10 @@ async function battleSwap(ctx) {
     t.claim(false, `starting a bot battle failed: ${started.body.error}`);
     return t.claims;
   }
+  t.claim(Number(started.body.gold) === Number(entered.body.gold) - 10,
+    'starting a bot battle must escrow the 10 Gold stake');
+  t.claim(Number(started.body.battle?.arena?.stake) === 10,
+    'the battle view must carry its Gold stake');
 
   const fighting = await ctx.readFresh(player);
   const other = collectionIds(fighting)[0];

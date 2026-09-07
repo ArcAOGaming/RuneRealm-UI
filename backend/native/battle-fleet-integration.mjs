@@ -501,7 +501,14 @@ assert.equal(settled.output.battlesRemaining, 3);
 assert.equal(settled.outbox.acknowledgement.action, 'Fleet.Settlement.Ack');
 assert.equal(settled.telemetryFullRebuilds, rebuildsBeforeSettle);
 assert.notEqual(settled.derived.users, 'SENTINEL');
-assert.notEqual(settled.derived.factions, 'SENTINEL');
+assert.notEqual(settled.derived.leaderboard, 'SENTINEL');
+if (settled.output.result === 'win') {
+  assert.notEqual(settled.derived.factions, 'SENTINEL');
+} else {
+  // Faction cards publish wins but not losses or experience. A lost fight
+  // moves the leaderboard and metrics, while this view is truthfully unchanged.
+  assert.equal(settled.derived.factions, 'SENTINEL');
+}
 assert.notEqual(settled.derived.metrics, 'SENTINEL');
 assert.equal(settled.derived.market, 'SENTINEL');
 const winsAfter = settled.output.wins;
@@ -710,7 +717,8 @@ assert.equal(cancelledAtGame.output.monster.exp, expBeforeForfeit + 1);
 assert.equal(cancelledAtGame.output.fleetCancelled.disposition, 'forfeit');
 assert.equal(cancelledAtGame.telemetryFullRebuilds, rebuildsBeforeCancelled);
 assert.notEqual(cancelledAtGame.derived.users, 'SENTINEL');
-assert.notEqual(cancelledAtGame.derived.factions, 'SENTINEL');
+assert.notEqual(cancelledAtGame.derived.leaderboard, 'SENTINEL');
+assert.equal(cancelledAtGame.derived.factions, 'SENTINEL');
 assert.notEqual(cancelledAtGame.derived.metrics, 'SENTINEL');
 assert.equal(cancelledAtGame.derived.market, 'SENTINEL');
 const cancelledReplay = await cancelGame.call('TEST_GAME', processNotice(

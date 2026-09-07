@@ -26,6 +26,16 @@ const api = await import(
     + `?wallet=${encodeURIComponent(workerData.profile.wallet)}&run=${workerData.runId}`
 );
 const profile = workerData.profile;
+const ARENA_STAKE = Number(api.SWARM_ARENA_STAKE);
+const ARENA_MIN_ENTRY = Number(api.SWARM_ARENA_MIN_ENTRY);
+if (!Number.isSafeInteger(ARENA_STAKE) || ARENA_STAKE <= 0
+    || !Number.isSafeInteger(ARENA_MIN_ENTRY) || ARENA_MIN_ENTRY < ARENA_STAKE) {
+  throw new Error('generated swarm client has invalid arena Gold terms');
+}
+// A wallet that can fight must not escrow its last stake on a trading venue.
+// PvE sessions charge once per battle; PvP charges each side before round one.
+const arenaGoldReserve = (profile.weights?.bot ?? 0) > 0 || profile.role === 'duelist'
+  ? ARENA_MIN_ENTRY : 0;
 const acceptedDelivery = (error) => error instanceof api.OutboxDeliveryError
   || (error?.accepted === true && error?.durable === true);
 const missingListing = (error) => /no such listing/i.test(
@@ -278,6 +288,14 @@ function summarize(player) {
     losses: player.losses ?? 0,
     battlesRemaining: player.battlesRemaining ?? 0,
     activeBattleId: player.activeBattleId ?? null,
+    arenaLast: player.arenaLast ? {
+      tier: player.arenaLast.tier,
+      stake: player.arenaLast.stake,
+      pot: player.arenaLast.pot,
+      paid: player.arenaLast.paid,
+      base: player.arenaLast.base,
+      won: player.arenaLast.won === true,
+    } : null,
     battle: player.battle ? {
       id: player.battle.id,
       kind: player.battle.kind,
@@ -322,11 +340,9 @@ function ownBerry(player) {
 /**
  * A berry this wallet can actually afford to burn for the arena boost.
  *
- * Entering costs three of one kind, on top of the Rune for the session, so a
- * wallet with two berries must enter unboosted rather than be refused. The
- * process checks the berry BEFORE it spends the Rune precisely so that refusal
- * is free — but an actor that keeps asking for a boost it cannot pay for spends
- * its turns on refusals instead of on gameplay.
+ * A boost costs three of one kind. The arena's Gold is charged per battle, not
+ * at entry, so a wallet with two berries enters unboosted rather than spending
+ * its turns repeatedly asking for a boost it cannot pay for.
  */
 function boostableBerry(player) {
   const own = player.monster?.berryItem;
@@ -510,7 +526,8 @@ function quotePrice(side, stats, fair, skewBps) {
 
 function tradeIntelligence(player, view) {
   if (!view) return null;
-  const gold = player.gold ?? 0;
+  const gold = Number(player.gold ?? 0);
+  const spendableGold = Math.max(0, gold - arenaGoldReserve);
   /* The caller's own orders come off the PLAYER record now. `view.orders` is a
      copy of the whole book, and reading all of it to find one wallet's handful
      is the shape the process is trying to stop paying for. The published book
@@ -552,7 +569,7 @@ function tradeIntelligence(player, view) {
       // take, and separating them is what stops an actor paying up for a berry
       // it has twenty of.
       const cheap = fair > 0 && plan.average > 0 && plan.average <= fair * 0.98;
-      if (plan.units > 0 && gold > plan.cost + 1) {
+      if (plan.units > 0 && spendableGold > plan.cost + 1) {
         needs.push({ item, held, target, plan, fair, cheap, band,
           urgent: held * 2 < target });
       }
@@ -578,10 +595,10 @@ function tradeIntelligence(player, view) {
     const houseAsk = Number(stats.houseAsk ?? 0);
     const p2pBid = Number(stats.p2pBid ?? 0);
     const p2pAsk = Number(stats.p2pAsk ?? 0);
-    if (houseAsk > 0 && p2pBid > houseAsk && gold > houseAsk + 1) {
+    if (houseAsk > 0 && p2pBid > houseAsk && spendableGold > houseAsk + 1) {
       arbitrage.push({ item, direction: 'house-to-p2p', buy: houseAsk, sell: p2pBid, band });
     }
-    if (houseBid > 0 && p2pAsk > 0 && houseBid > p2pAsk && gold > p2pAsk + 1) {
+    if (houseBid > 0 && p2pAsk > 0 && houseBid > p2pAsk && spendableGold > p2pAsk + 1) {
       arbitrage.push({ item, direction: 'p2p-to-house', buy: p2pAsk, sell: houseBid, band });
     }
 
@@ -620,7 +637,7 @@ function tradeIntelligence(player, view) {
     if (order.side === 'buy' && order.price < fair * 0.6) return true;
     return false;
   });
-  return { gold, ownOrders, needs, excess, arbitrage, quotes, stale };
+  return { gold, spendableGold, ownOrders, needs, excess, arbitrage, quotes, stale };
 }
 
 const affordableOrderQuantity = (price, wanted, gold) => {
@@ -698,7 +715,7 @@ async function economicAction(action, player, view, intel) {
       .sort((a, b) => b.drift - a.drift)[0];
     if (moving) {
       const size = Math.max(1, Math.min(Number(moving.live.remaining) || 1,
-        quoteSize(moving, player, intel.gold) || Number(moving.live.remaining) || 1));
+        quoteSize(moving, player, intel.spendableGold) || Number(moving.live.remaining) || 1));
       let updated;
       try {
         updated = await api.amendGoldOrder(moving.live.id,
@@ -749,7 +766,8 @@ async function economicAction(action, player, view, intel) {
       // Never ask for more than is on the shelf: a desk holding one refuses a
       // request for three outright rather than filling what it can.
       const quantity = Math.max(1, Math.min(3, opportunity.target - opportunity.held,
-        Math.floor(intel.gold / Math.max(1, Number(desk.ask) || 1)), Number(desk.stock) || 1));
+        Math.floor(intel.spendableGold / Math.max(1, Number(desk.ask) || 1)),
+        Number(desk.stock) || 1));
       let updated;
       try { updated = await api.tradeGameShop('buy', opportunity.item, quantity); }
       catch (error) {
@@ -792,7 +810,7 @@ async function economicAction(action, player, view, intel) {
     const opportunity = opportunities[0] ?? choose(intel.needs);
     if (opportunity?.plan?.units > 0) {
       const quantity = affordableOrderQuantity(opportunity.plan.limit,
-        opportunity.plan.units, intel.gold);
+        opportunity.plan.units, intel.spendableGold);
       if (quantity > 0) {
         const allOrNone = random() < 0.15 && quantity <= opportunity.plan.units;
         const tif = allOrNone ? 'FOK' : 'IOC';
@@ -820,12 +838,12 @@ async function economicAction(action, player, view, intel) {
        than adding a second one. Twenty stacked quotes from one wallet is not
        liquidity, it is the per-account cap being burned. */
     const candidates = intel.quotes
-      .filter((quote) => quoteSize(quote, player, intel.gold) > 0)
-      .filter((quote) => quote.price * quoteSize(quote, player, intel.gold) >= 10);
+      .filter((quote) => quoteSize(quote, player, intel.spendableGold) > 0)
+      .filter((quote) => quote.price * quoteSize(quote, player, intel.spendableGold) >= 10);
     const fresh = candidates.filter((quote) => !quote.live);
     const quote = fresh.length ? choose(fresh) : candidates.find((entry) => entry.drift >= 1);
     if (quote) {
-      const size = quoteSize(quote, player, intel.gold);
+      const size = quoteSize(quote, player, intel.spendableGold);
       if (quote.live) {
         let updated;
         try {
@@ -890,7 +908,7 @@ async function economicAction(action, player, view, intel) {
         const stats = view.market?.[item] ?? {};
         return { item, ask: Number(stats.houseAsk ?? 0),
           high: Number(stats.band?.high ?? 0) };
-      }).find(({ ask, high }) => ask >= 10 && intel.gold > ask + 2
+      }).find(({ ask, high }) => ask >= 10 && intel.spendableGold > ask + 2
         && (!high || ask + 1 <= high));
       if (setup) {
         const price = setup.ask + 1;
@@ -919,7 +937,7 @@ async function economicAction(action, player, view, intel) {
     }
     const opportunity = intel.arbitrage.sort((a, b) => (b.sell - b.buy) - (a.sell - a.buy))[0];
     if (opportunity) {
-      const quantity = affordableOrderQuantity(opportunity.buy, 2, intel.gold);
+      const quantity = affordableOrderQuantity(opportunity.buy, 2, intel.spendableGold);
       if (quantity > 0) {
         if (opportunity.direction === 'house-to-p2p') {
           // Buying from the house THROUGH the book, not through the Shop tab:
@@ -940,6 +958,66 @@ async function economicAction(action, player, view, intel) {
     }
   }
   return result('idle.no-economic-opportunity', player, { requested: action });
+}
+
+/** Turn surplus inventory into the next arena stake without gambling on a bid. */
+async function recoverArenaGold(player) {
+  const goldBefore = Number(player.gold ?? 0);
+  if (goldBefore >= ARENA_MIN_ENTRY) return null;
+  const view = await economy();
+  const intel = tradeIntelligence(player, view);
+  if (!view || !intel) return null;
+  const opportunity = intel.excess
+    .filter(({ desk, quantity }) => desk && !desk.pause?.sell
+      && quantity > 0 && Number(desk.stock ?? 0) < Number(desk.stockCap ?? 0)
+      && Number(desk.goldReserve ?? 0) > 0 && Number(desk.bid ?? 0) > 0)
+    .sort((left, right) => Number(right.desk.bid) - Number(left.desk.bid))[0];
+  if (!opportunity) return null;
+
+  const unitPrice = Number(opportunity.desk.bid);
+  const capacity = Math.min(
+    Number(opportunity.quantity),
+    Number(opportunity.desk.stockCap) - Number(opportunity.desk.stock),
+    Math.floor(Number(opportunity.desk.goldReserve) / unitPrice),
+  );
+  const quantity = Math.min(capacity,
+    Math.max(1, Math.ceil((ARENA_MIN_ENTRY - goldBefore) / unitPrice)));
+  if (quantity <= 0) return null;
+
+  let updated;
+  try { updated = await api.tradeGameShop('sell', opportunity.item, quantity); }
+  catch (error) {
+    if (!staleShop(error)) throw error;
+    return result('idle.shop-race', await refresh().catch(() => player), {
+      item: opportunity.item, side: 'sell', outcome: 'arena-recovery-desk-moved',
+    });
+  }
+  return result('shop.sell', updated, {
+    item: opportunity.item,
+    quantity,
+    expectedUnitPrice: unitPrice,
+    counterparty: 'NPC',
+    purpose: 'arena-stake-recovery',
+    goldBefore,
+    goldAfter: Number(updated.gold ?? goldBefore),
+  });
+}
+
+function arenaSettlement(before, after, battleId) {
+  if (!before || before.activeBattleId !== battleId || after?.activeBattleId === battleId) {
+    return null;
+  }
+  return after?.arenaLast ?? null;
+}
+
+function arenaSettlementDetail(receipt, before, after, battleId, detail = {}) {
+  return {
+    ...detail,
+    battleId,
+    arena: receipt,
+    goldBefore: Number(before?.gold ?? 0),
+    goldAfter: Number(after?.gold ?? 0),
+  };
 }
 
 // The two custody venues -----------------------------------------------------
@@ -1017,19 +1095,21 @@ async function internalVenueAction(player) {
   }
   if (makerSide === 'buy' && freeGold < 40) {
     const held = Number(player.gold ?? 0);
-    if (held >= 40) {
+    const spendable = Math.max(0, held - arenaGoldReserve);
+    if (spendable >= 40) {
+      const quantity = Math.min(100, spendable);
       let updated;
       try {
-        updated = await api.sendToVenue('gold', Math.min(100, held));
+        updated = await api.sendToVenue('gold', quantity);
       } catch (error) {
         if (!acceptedDelivery(error)) throw error;
         return result('venue.internal.deposit', player, {
-          asset: 'gold', quantity: Math.min(100, held), side: makerSide,
+          asset: 'gold', quantity, side: makerSide,
           deliveryState: 'accepted-delivery-unconfirmed', slot: error.slot ?? null,
         });
       }
       return result('venue.internal.deposit', updated, {
-        asset: 'gold', quantity: Math.min(100, held), side: makerSide,
+        asset: 'gold', quantity, side: makerSide,
       });
     }
   }
@@ -1373,8 +1453,14 @@ async function botRound(player) {
   const landed = await settleOrAccept(() => api.attack(battle.id, move, battle.round));
   const refreshed = landed.value ?? await refresh().catch(() => player);
   const updated = refreshed?.address ? refreshed : player;
-  return result('battle.attack.bot', updated, { move,
-    ...(landed.accepted ? { deliveryState: 'accepted-delivery-unconfirmed', slot: landed.slot } : {}) });
+  const receipt = arenaSettlement(player, updated, battle.id);
+  const delivery = landed.accepted
+    ? { deliveryState: 'accepted-delivery-unconfirmed', slot: landed.slot } : {};
+  if (receipt) {
+    return result('battle.settle.bot', updated,
+      arenaSettlementDetail(receipt, player, updated, battle.id, { move, ...delivery }));
+  }
+  return result('battle.attack.bot', updated, { move, ...delivery });
 }
 
 /** Drive a whole Hunt worker session instead of stopping after Hunt.Begin. */
@@ -1603,14 +1689,42 @@ async function tick({ prefer, focus } = {}) {
     if (player.activeBattleId) return result('idle.pvp-managed', player);
     if (profile.role === 'duelist') return result('idle.awaiting-pvp', player);
     if ((player.battlesRemaining ?? 0) > 0 && (profile.weights.bot ?? 0) > 0) {
+      if (Number(player.gold ?? 0) < ARENA_STAKE) {
+        const recovered = await recoverArenaGold(player);
+        if (recovered) return recovered;
+        const goldBefore = Number(player.gold ?? 0);
+        player = await api.leaveArena();
+        return result('arena.leave.insufficient-gold', player, {
+          goldBefore,
+          requiredGold: ARENA_STAKE,
+          recovery: 'quest-or-shop-required',
+        });
+      }
+      const goldBefore = Number(player.gold ?? 0);
       try {
         player = await api.startBotBattle(profile.botDifficulty);
-        return result('battle.start.bot', player, { difficulty: profile.botDifficulty });
+        return result('battle.start.bot', player, {
+          difficulty: profile.botDifficulty,
+          goldBefore,
+          goldAfter: Number(player.gold ?? 0),
+          stakeGold: goldBefore - Number(player.gold ?? 0),
+          potGold: Number(player.battle?.arena?.pot ?? 0),
+        });
       } catch (error) {
         if (!acceptedDelivery(error)) throw error;
         const accepted = await refresh().catch(() => player);
-        return result('battle.start.bot', accepted, { difficulty: profile.botDifficulty,
-          deliveryState: 'accepted-delivery-unconfirmed', slot: error.slot ?? null });
+        const goldAfter = Number(accepted.gold ?? goldBefore);
+        const confirmed = goldBefore - goldAfter === ARENA_STAKE
+          && accepted.activeBattleId;
+        return result(confirmed ? 'battle.start.bot' : 'battle.start.bot.accepted-unconfirmed',
+          accepted, {
+            difficulty: profile.botDifficulty,
+            goldBefore,
+            goldAfter,
+            stakeGold: goldBefore - goldAfter,
+            deliveryState: 'accepted-delivery-unconfirmed',
+            slot: error.slot ?? null,
+          });
       }
     }
     player = await api.leaveArena();
@@ -1659,10 +1773,11 @@ async function tick({ prefer, focus } = {}) {
   // testing a core free loop even though the shipped client could start it.
   add('quest', status === 'Home'
     && monster.energy >= 25 && monster.happiness >= 25);
-  // Economy v2 made arena entry free. Energy and happiness are the gate; Rune
-  // is advancement currency and must not stop a zero-Rune bot testing combat.
+  // Entry itself is free, but the contract requires enough Gold to stake one
+  // battle. Rune is advancement currency and is deliberately not a gate here.
   add('bot', status === 'Home' && profile.role !== 'duelist'
-    && monster.energy >= 25 && monster.happiness >= 25);
+    && monster.energy >= 25 && monster.happiness >= 25
+    && Number(player.gold ?? 0) >= ARENA_MIN_ENTRY);
 
   // Hunting freezes the companion on a separate worker process and holds it
   // until the run settles, so it is gated like any other activity that takes
@@ -1762,7 +1877,8 @@ async function tick({ prefer, focus } = {}) {
   const unquoted = (intelligence?.quotes ?? []).filter((quote) => {
     if (quote.live) return false;
     const shown = quote.side === 'buy' ? quote.stats?.p2pBid : quote.stats?.p2pAsk;
-    return !(Number(shown) > 0) && quoteSize(quote, player, intelligence.gold) > 0;
+    return !(Number(shown) > 0)
+      && quoteSize(quote, player, intelligence.spendableGold) > 0;
   });
   if (unquoted.length > 0 && (profile.weights.goods_make ?? 0) > 0 && (player.gold ?? 0) >= 1) {
     return economicAction('goods_make', player, economyView,
@@ -1776,7 +1892,9 @@ async function tick({ prefer, focus } = {}) {
   // remain real while rare paths stop being left entirely to luck.
   const decision = tradePlan && intelligence
     ? { action: 'arbitrage', reason: 'complete-open-arbitrage' }
-    : chooseProgressionAction({ candidates, player, profile, random, prefer });
+    : chooseProgressionAction({
+      candidates, player, profile, random, prefer, arenaMinEntry: ARENA_MIN_ENTRY,
+    });
   decisionReason = decision.reason;
   const action = decision.action;
   const choose = (list) => list[Math.floor(random() * list.length)];
@@ -1789,8 +1907,8 @@ async function tick({ prefer, focus } = {}) {
   else if (action === 'quest') player = await api.startQuest();
   else if (action === 'bot') {
     // Sometimes buy the boost, sometimes do not. Both are real player choices
-    // and they exercise different code: the plain entry spends one Rune, the
-    // boosted entry additionally spends three berries and writes `arenaBoost`,
+    // and they exercise different code: the plain entry only opens the session;
+    // the boosted entry spends three berries and writes `arenaBoost`,
     // which the battle then folds into the temporary combatant. Choosing only
     // one of them would leave the other unexercised in every soak.
     const boost = boostBerry && random() < 0.5 ? boostBerry : undefined;
@@ -2093,12 +2211,28 @@ async function preparePvp() {
     if (player.activeBattleId) {
       return result('pvp.occupied', player, { ready: false, occupied: true });
     }
-    return result('pvp.ready', player, { ready: (player.battlesRemaining ?? 0) > 0 });
+    if (Number(player.gold ?? 0) < ARENA_STAKE) {
+      const recovered = await recoverArenaGold(player);
+      if (recovered) return { ...recovered, ready: false };
+      const goldBefore = Number(player.gold ?? 0);
+      player = await api.leaveArena();
+      return result('arena.leave.insufficient-gold', player, {
+        ready: false,
+        goldBefore,
+        requiredGold: ARENA_STAKE,
+        recovery: 'quest-or-shop-required',
+      });
+    }
+    return result('pvp.ready', player, {
+      ready: (player.battlesRemaining ?? 0) > 0,
+      availableGold: Number(player.gold ?? 0),
+      requiredGold: ARENA_STAKE,
+    });
   }
 
   // PvP actors do not enter the routine dispatcher, so they need the same
-  // spend-XP priority here. Arena entry is free in economy v2, so there is no
-  // stale one-Rune reserve after paying the level cost.
+  // spend-XP priority here. Entry costs no Rune, but the next challenge does
+  // require the Gold stake exported into the generated worker client.
   const levelRuneCost = Math.max(1, Math.floor(((monster.level ?? 0) + 4) / 4));
   if (monster.exp >= monster.nextLevelExp
       && (player.inventory?.rune ?? 0) >= levelRuneCost) {
@@ -2138,21 +2272,71 @@ async function preparePvp() {
     }
     return result('pvp.needs-happiness', player, { ready: false });
   }
+  if (Number(player.gold ?? 0) < ARENA_MIN_ENTRY) {
+    const recovered = await recoverArenaGold(player);
+    if (recovered) return { ...recovered, ready: false };
+    player = await api.startQuest();
+    return result('activity.start.quest', player, {
+      ready: false,
+      purpose: 'arena-stake-recovery',
+      requiredGold: ARENA_MIN_ENTRY,
+    });
+  }
   player = await api.enterArena();
   return result('arena.enter.pvp', player, { ready: false });
 }
 
 async function challenge(target) {
+  const before = await refresh();
   const player = await api.challenge(target);
-  return result('pvp.challenge', player, { battleId: player.battle?.id ?? null });
+  const goldBefore = Number(before.gold ?? 0);
+  const goldAfter = Number(player.gold ?? 0);
+  return result('pvp.challenge', player, {
+    battleId: player.battle?.id ?? null,
+    goldBefore,
+    goldAfter,
+    stakeGold: goldBefore - goldAfter,
+    potGold: Number(player.battle?.arena?.pot ?? 0),
+  });
 }
 
 async function accept(battleId) {
+  const before = await refresh();
   const player = await api.acceptChallenge(battleId);
-  return result('pvp.accept', player, { battleId });
+  const goldBefore = Number(before.gold ?? 0);
+  const goldAfter = Number(player.gold ?? 0);
+  return result('pvp.accept', player, {
+    battleId,
+    goldBefore,
+    goldAfter,
+    stakeGold: goldBefore - goldAfter,
+    potGold: Number(player.battle?.arena?.pot ?? 0),
+  });
+}
+
+async function withdrawPvp() {
+  const before = await refresh();
+  const battleId = before.activeBattleId ?? before.battle?.id ?? null;
+  const landed = await settleOrAccept(() => api.leaveArena());
+  const updated = landed.value ?? await refresh().catch(() => before);
+  const goldBefore = Number(before.gold ?? 0);
+  const goldAfter = Number(updated.gold ?? goldBefore);
+  const refundedGold = goldAfter - goldBefore;
+  const confirmed = updated.withdrawn === true
+    || (battleId && updated.activeBattleId !== battleId && refundedGold === ARENA_STAKE);
+  return result(confirmed ? 'pvp.challenge.refund' : 'pvp.challenge.refund-unconfirmed',
+    updated, {
+      battleId,
+      goldBefore,
+      goldAfter,
+      refundedGold,
+      ...(landed.accepted
+        ? { deliveryState: 'accepted-delivery-unconfirmed', slot: landed.slot } : {}),
+    });
 }
 
 async function pvpMove(battleId) {
+  const before = await refresh();
   const reconcileTerminal = async (error, phase) => {
     const message = error instanceof Error ? error.message : String(error);
     if (!/battle not found|that battle is over/i.test(message)) throw error;
@@ -2160,6 +2344,14 @@ async function pvpMove(battleId) {
     // Still locked to this id means authoritative state really is missing; do
     // not hide that as an ordinary last-round race.
     if (player?.activeBattleId === battleId) throw error;
+    const receipt = arenaSettlement(before, player, battleId);
+    if (receipt) {
+      return result('battle.settle.pvp', player,
+        arenaSettlementDetail(receipt, before, player, battleId, {
+          battle: { id: battleId, status: 'ended', winner: null },
+          outcome: `battle-cleared-before-${phase}`,
+        }));
+    }
     return result('pvp.ended', player, {
       battle: { id: battleId, status: 'ended', winner: null },
       outcome: `battle-cleared-before-${phase}`,
@@ -2169,7 +2361,16 @@ async function pvpMove(battleId) {
   try { battle = await api.battleInfo(battleId); }
   catch (error) { return reconcileTerminal(error, 'read'); }
   if (battle.status === 'ended') {
-    return result('pvp.ended', lastPlayer, { battle: {
+    const player = await refresh();
+    const receipt = arenaSettlement(before, player, battleId);
+    if (receipt) {
+      return result('battle.settle.pvp', player,
+        arenaSettlementDetail(receipt, before, player, battleId, { battle: {
+          id: battle.id, status: battle.status, round: battle.round,
+          winner: battle.winner ?? null,
+        } }));
+    }
+    return result('pvp.ended', player, { battle: {
       id: battle.id, status: battle.status, round: battle.round, winner: battle.winner ?? null,
     } });
   }
@@ -2185,6 +2386,11 @@ async function pvpMove(battleId) {
       });
     }
     return reconcileTerminal(error, 'attack');
+  }
+  const receipt = arenaSettlement(before, player, battleId);
+  if (receipt) {
+    return result('battle.settle.pvp', player,
+      arenaSettlementDetail(receipt, before, player, battleId, { move }));
   }
   return result('battle.attack.pvp', player, { move });
 }
@@ -2215,7 +2421,9 @@ async function cleanup() {
     ? { deliveryState: 'accepted-delivery-unconfirmed', slot: landed.slot } : {});
 }
 
-const handlers = { bootstrap, tick, preparePvp, challenge, accept, pvpMove, cleanup };
+const handlers = {
+  bootstrap, tick, preparePvp, challenge, accept, withdrawPvp, pvpMove, cleanup,
+};
 
 function errorMessage(error) {
   const parts = [];

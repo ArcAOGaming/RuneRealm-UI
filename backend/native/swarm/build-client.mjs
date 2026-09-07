@@ -3,6 +3,7 @@ import path from 'node:path';
 import { pathToFileURL } from 'node:url';
 import * as esbuild from 'esbuild';
 import { viteEnvForGraph } from '../live-config.mjs';
+import { readArenaTerms } from './arena-terms.mjs';
 
 /**
  * Bundle the exact game client used by the React app for Node worker threads.
@@ -11,6 +12,7 @@ import { viteEnvForGraph } from '../live-config.mjs';
 export async function buildSwarmClient({ root, graph, pid, node, outDir }) {
   fs.mkdirSync(outDir, { recursive: true });
   const outfile = path.join(outDir, 'client.mjs');
+  const arena = readArenaTerms(root);
   // Keep pid/node for callers outside the swarm tests, but always inject the
   // WHOLE graph. Overriding only the game used to leave Hunt and the exchange
   // on whatever ids happened to be baked into the source tree.
@@ -56,6 +58,11 @@ export async function buildSwarmClient({ root, graph, pid, node, outDir }) {
     '  amendVenueOrder, cancelVenueOrder, cancelAllVenueOrders,',
     '  maintainVenueOrders, withdrawFromVenue, depositTokenToVenue }',
     `  from ${JSON.stringify(path.join(root, 'src', 'lib', 'venue.ts').replace(/\\/g, '/'))};`,
+    // Generated from constants.lua, not repeated in the harness. These are
+    // needed before the first signed action so a bot never discovers the Gold
+    // stake by paying for a refused Battle.Start.
+    `export const SWARM_ARENA_STAKE = ${arena.stake};`,
+    `export const SWARM_ARENA_MIN_ENTRY = ${arena.minEntry};`,
   ].join('\n');
   await esbuild.build({
     stdin: { contents: entry, resolveDir: root, sourcefile: 'swarm-client.ts', loader: 'ts' },

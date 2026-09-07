@@ -50,7 +50,9 @@ test('coverage assignment handles complete runs and roles with no eligible adapt
   const all = [
     'bootstrap', 'daily.claim', 'lootbox.open', 'monster.feed', 'activity.start.play',
     'activity.start.quest', 'activity.claim.quest', 'monster.level-up', 'character.save',
-    'arena.enter', 'battle.attack.bot', 'pvp.challenge', 'pvp.accept', 'battle.attack.pvp',
+    'arena.enter', 'battle.start.bot', 'battle.attack.bot', 'battle.settle.bot',
+    'pvp.challenge', 'pvp.challenge.refund', 'pvp.accept', 'battle.attack.pvp',
+    'battle.settle.pvp',
     'hunt.begin', 'hunt.search', 'hunt.attack', 'hunt.capture', 'hunt.end', 'monster.store',
     'monster.retrieve', 'monster.set-active', 'monster.transfer', 'market.list', 'market.buy',
     'market.cancel', 'goods.order.bid', 'goods.order.amend', 'goods.order.buy',

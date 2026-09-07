@@ -64,7 +64,9 @@ assert.ok(directed.size > 0, 'missing coverage is distributed across live actors
 const completeCoverage = livedInCoverage([
   'bootstrap', 'daily.claim', 'lootbox.open', 'monster.feed', 'activity.start.play',
   'activity.start.quest', 'activity.claim.quest', 'monster.level-up', 'character.save',
-  'arena.enter', 'battle.attack.bot', 'pvp.challenge', 'pvp.accept', 'battle.attack.pvp',
+  'arena.enter', 'battle.start.bot', 'battle.attack.bot', 'battle.settle.bot',
+  'pvp.challenge', 'pvp.challenge.refund', 'pvp.accept', 'battle.attack.pvp',
+  'battle.settle.pvp',
   'hunt.begin', 'hunt.search', 'hunt.attack', 'hunt.capture', 'hunt.end', 'monster.store',
   'monster.retrieve', 'monster.set-active', 'monster.transfer', 'market.list', 'market.buy',
   'market.cancel', 'goods.order.bid', 'goods.order.amend', 'goods.order.buy',
@@ -98,7 +100,19 @@ const workerSource = fs.readFileSync(path.join(HERE, 'worker.mjs'), 'utf8');
 assert.match(workerSource, /inventory\?\.\[item\].*>= 2/,
   'the bot uses the current two-of-each Hunt entry, not the retired five');
 assert.doesNotMatch(workerSource, /pvp\.needs-rune/,
-  'free economy-v2 arena entry must not be gated on Rune');
+  'Gold-staked arena entry must not regress to a Rune gate');
+assert.match(workerSource, /Number\(player\.gold \?\? 0\) >= ARENA_MIN_ENTRY/,
+  'routine fighters enter only when they can fund one Gold stake');
+assert.match(workerSource, /arenaGoldReserve/,
+  'trading keeps the next arena stake out of order-book and venue escrow');
+assert.match(workerSource, /purpose: 'arena-stake-recovery'/,
+  'fighters can sell surplus goods to recover a missing Gold stake');
+assert.match(workerSource, /battle\.settle\.bot/,
+  'PvE settlement records the authoritative arena receipt');
+assert.match(workerSource, /battle\.settle\.pvp/,
+  'PvP settlement records the authoritative arena receipt');
+assert.match(workerSource, /pvp\.challenge\.refund/,
+  'a pending challenge refund is a first-class verified bot outcome');
 assert.match(workerSource, /tokenBalance >= 1_000_000n/,
   'the Rune deposit adapter gates on one whole six-decimal token unit');
 assert.match(workerSource, /venue\.internal\.order\.fill/);
@@ -123,6 +137,13 @@ assert.match(workerSource, /placedForCancellation/,
   'internal venue cancellation places and cancels a real resting order');
 assert.match(workerSource, /arbitrage-liquidity-bootstrap/,
   'arbitrage coverage can bootstrap a real crossed P2P/NPC quote');
+const runnerSource = fs.readFileSync(path.join(HERE, '..', 'swarm.mjs'), 'utf8');
+assert.match(runnerSource, /refundProven: false/,
+  'every PvP pair begins with an unaccepted-stake refund to prove');
+assert.match(runnerSource, /'withdrawPvp'/,
+  'the pair coordinator invokes the pending-challenge refund adapter');
+assert.match(runnerSource, /outcome\.action === 'battle\.settle\.pvp'/,
+  'an observed PvP receipt advances the pair into its next duel');
 
 const packageScripts = JSON.parse(fs.readFileSync(path.join(ROOT, 'package.json'), 'utf8')).scripts;
 assert.match(packageScripts['swarm:three-hour'], /--duration 3h/);
@@ -197,6 +218,10 @@ assert.equal(api.RUNE_PROCESS, 'R'.repeat(43), 'the bundled client receives this
 assert.equal(api.QUOTE_PROCESS, 'Q'.repeat(43), 'the bundled client receives this graph\'s quote id');
 assert.equal(api.MARKET_NODE, 'https://market.invalid',
   'the bundled client receives this graph\'s market node');
+assert.equal(api.SWARM_ARENA_STAKE, 10,
+  'the worker bundle receives the contract\'s Gold stake');
+assert.equal(api.SWARM_ARENA_MIN_ENTRY, 10,
+  'the worker bundle receives the contract\'s arena entry floor');
 
 const originalFetch = globalThis.fetch;
 const originalSetTimeout = globalThis.setTimeout;
