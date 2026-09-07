@@ -69,11 +69,17 @@ export interface EconomyFill {
   sellOrder: string;
   buyer: string;
   seller: string;
-  maker: string;
-  taker: string;
+  /**
+   * Which of `buyer`/`seller` took, and therefore paid the fee.
+   *
+   * The record used to carry `maker`, `taker` and `feePayer` as three separate
+   * 43-character addresses, which were always a permutation of the two above --
+   * five fields saying two things, in a 500-row ring that every message pays
+   * for five times over. `gross` went the same way: it is `price * quantity`.
+   */
+  takerSide: GoldOrderSide;
   price: number;
   quantity: number;
-  gross: number;
   fee: number;
   filledAt: number;
   /** True when the counterparty was the NPC desk quoting into the ladder. */
@@ -402,6 +408,21 @@ export interface Monster {
   totalTimesPlay: number;
   totalTimesQuest: number;
   moves: Record<string, Move>;
+  /**
+   * The one move this companion has been offered and has not answered.
+   *
+   * Set by `Monster.LevelUp` on a level divisible by `catalog.moveRelearnLevels`
+   * and cleared by `Monster.LearnMove`. It blocks NOTHING — the level-up it came
+   * from committed by itself, so an unanswered offer is an unopened envelope
+   * rather than an unfinished level, and a player can quest, battle and hunt
+   * with it sitting there.
+   *
+   * It expires on the NEXT LEVEL-UP, of any level, answered or not. That is a
+   * deadline the player controls rather than a clock that runs while they are
+   * away — the only thing that spends it is an action they sign and pay Rune
+   * for — so `LevelUpDialog` warns before the one door it can happen behind.
+   */
+  pendingMove?: string | null;
   status: MonsterStatus;
   bornAt: number;
 }

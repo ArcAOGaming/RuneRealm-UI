@@ -2337,9 +2337,12 @@ deskSettle = function(state, ledger, desk, order, price, units, timestamp)
     sellOrder = side == "sell" and order.id or HOUSE,
     buyer = side == "buy" and account or HOUSE,
     seller = side == "sell" and account or HOUSE,
-    maker = HOUSE, taker = account,
-    price = price, quantity = units, gross = gross, fee = 0,
-    feePayer = HOUSE, feeAsset = "gold", house = true,
+    -- The same compact shape the P2P path writes: the desk is always the
+    -- MAKER, so naming the taker's side names both. See the note on the fill
+    -- record in `orderbook.lua`, and ORDERBOOK.md §13.
+    takerSide = side,
+    price = price, quantity = units, fee = 0,
+    house = true,
     filledAt = timestamp,
   }
   appendBounded(state.fills, fill, C.ECONOMY.orderbook.historyLimit)

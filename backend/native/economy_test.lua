@@ -24,6 +24,10 @@ local function run()
   end
 
   local T = 1700000000000
+
+  --- Narrow to an integer the way the engine does; a fixture that
+  --- computed with floats would store them.
+  local function int(v) return math.tointeger(tonumber(v)) or 0 end
   local ALICE = "ALICEaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
   local BOB   = "BOBbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
   local CAROL = "CAROLcccccccccccccccccccccccccccccccccccccc"
@@ -42,8 +46,18 @@ local function run()
     -- The book's own supply accounting has to start consistent with those
     -- inventories or `player` counts go negative on the first escrow.
     for _, item in ipairs({ "fire_berry", "water_berry" }) do
-      state.assets[item].issued = 300000
-      state.assets[item].player = 300000
+      local row = state.assets[item]
+      row.player = 300000
+      -- ISSUED HAS TO COVER THE DESK'S SHELF AS WELL AS THE PLAYERS.
+      --
+      -- `newState` seeds every desk with stock, and this fixture used to set
+      -- `issued = player = 300000` and leave `shop` where it was -- so the
+      -- world it built failed `itemInvariant` by exactly the seeded stock
+      -- before a single test ran. Nothing caught it because no test had
+      -- asserted the item invariant on a `world()` state; the first one that
+      -- did (the dust test) reported a 50-unit hole that was the fixture's,
+      -- not the book's.
+      row.issued = row.player + int(row.shop) + int(row.escrow)
     end
     state.gold.issued = state.gold.issued + 3000000
     state.gold.authorized = state.gold.issued
@@ -64,6 +78,21 @@ local function run()
     return state, players
   end
 
+  --- Restock a desk's shelf, ISSUING THE DIFFERENCE.
+  ---
+  --- Every call site used to write `issued = issued + N` beside `shop = N`
+  --- over a shelf that `newState` had already seeded, which issues N against
+  --- an accounted change of N-minus-the-seed. It balanced only because
+  --- `world()` was itself short by exactly the seed -- two fixture bugs
+  --- cancelling, which is not a passing invariant but one that cannot see.
+  local function restock(state, item, units)
+    local row = state.assets[item]
+    row.issued = int(row.issued) + (units - int(row.shop))
+    row.shop = units
+    state.desks[item].stock = units
+    return units
+  end
+
   --- Put the house and the corridor back on one market.
   local function withHouse(state, item)
     local market = EconomyEngine.resolveMarket(state, item)
@@ -75,6 +104,29 @@ local function run()
   local function place(state, players, account, side, item, price, quantity, timestamp)
     return EconomyEngine.placeOrder(state, players, account, side, item,
       price, quantity, timestamp or T, nil)
+  end
+
+  --- Who made and who took, derived the way every reader now has to.
+  ---
+  --- A fill stopped carrying `maker`, `taker` and `feePayer` -- three
+  --- 43-character addresses that were always a permutation of the two it does
+  --- carry. `takerSide` names which of `buyer`/`seller` took; the other made
+  --- and was not charged. Asserting through these helpers is what keeps the
+  --- derivation itself tested rather than assumed.
+  local function makerOf(fill)
+    if type(fill) ~= "table" then return nil end
+    return fill.takerSide == "buy" and fill.seller or fill.buyer
+  end
+
+  local function takerOf(fill)
+    if type(fill) ~= "table" then return nil end
+    return fill.takerSide == "buy" and fill.buyer or fill.seller
+  end
+
+  --- What a fill was worth, which used to be a stored field and is arithmetic.
+  local function grossOf(fill)
+    if type(fill) ~= "table" then return nil end
+    return math.tointeger(tonumber(fill.price)) * math.tointeger(tonumber(fill.quantity))
   end
 
   local cfg = C.ECONOMY.orderbook
@@ -212,7 +264,7 @@ local function run()
     ok("and only then the worse price",
        fills[3] and fills[3].price == 12, fills[3] and fills[3].price)
     ok("a taker that crosses is refunded the difference",
-       fills[1] and fills[1].gross == 10, fills[1] and fills[1].gross)
+       fills[1] and grossOf(fills[1]) == 10, fills[1] and grossOf(fills[1]))
   end
 
   -- 7. Gold is conserved across a sweep, a fill and a cancel ------------------
@@ -727,9 +779,7 @@ local function run()
     withHouse(state, "fire_berry")
     local desk = state.desks.fire_berry
     -- Give the desk a shelf so it can quote an ask as well as a bid.
-    state.assets.fire_berry.issued = state.assets.fire_berry.issued + 200
-    state.assets.fire_berry.shop = 200
-    desk.stock = 200
+    restock(state, "fire_berry", 200)
 
     local view = EconomyEngine.publicView(state, {}, {}, T)
     local stats = view.market.fire_berry
@@ -762,9 +812,7 @@ local function run()
     -- reprices against its own stock after every single unit, so a fill that
     -- starts on a boundary sweeps into the next band and stops -- which is
     -- correct, and is a different test from this one.
-    state.assets.fire_berry.issued = state.assets.fire_berry.issued + 100
-    state.assets.fire_berry.shop = 100
-    desk.stock = 100
+    restock(state, "fire_berry", 100)
     local stock, reserve = desk.stock, desk.goldReserve
     local askBefore = EconomyEngine.publicView(state, {}, {}, T).market.fire_berry.houseAsk
 
@@ -774,8 +822,10 @@ local function run()
     -- working rather than getting in the way.
     local bought = place(state, players, BOB, "buy", "fire_berry", askBefore, 3, T)
     ok("a taker fills against the house when the book is empty",
-       bought and #bought.fills == 1 and bought.fills[1].maker == "desk",
-       bought and bought.fills[1] and bought.fills[1].maker)
+       bought and #bought.fills == 1 and makerOf(bought.fills[1]) == "desk",
+       bought and makerOf(bought.fills[1]))
+    ok("and the buyer is named as the one who took",
+       bought and takerOf(bought.fills[1]) == BOB, bought and takerOf(bought.fills[1]))
     ok("at the desk's price, not the price they offered",
        bought.fills[1].price == askBefore, bought.fills[1].price)
     ok("and the desk's shelf is what paid for it",
@@ -804,15 +854,13 @@ local function run()
     local state, players = world()
     withHouse(state, "fire_berry")
     local desk = state.desks.fire_berry
-    state.assets.fire_berry.issued = state.assets.fire_berry.issued + 100
-    state.assets.fire_berry.shop = 100
-    desk.stock = 100
+    restock(state, "fire_berry", 100)
     local ask = EconomyEngine.publicView(state, {}, {}, T).market.fire_berry.houseAsk
     place(state, players, ALICE, "sell", "fire_berry", ask, 4, T)
     local taken = place(state, players, BOB, "buy", "fire_berry", ask, 4, T + 1)
     ok("the player at the same price is filled, not the desk",
-       taken and #taken.fills == 1 and taken.fills[1].maker == ALICE,
-       taken and taken.fills[1] and taken.fills[1].maker)
+       taken and #taken.fills == 1 and makerOf(taken.fills[1]) == ALICE,
+       taken and makerOf(taken.fills[1]))
     ok("and the desk's stock is untouched", desk.stock == 100, desk.stock)
   end
 
@@ -1251,6 +1299,133 @@ local function run()
          and ringState.bookIndex.trades[CAROL] ~= nil,
          ringState.bookIndex.trades[CAROL] and #ringState.bookIndex.trades[CAROL])
     end
+  end
+
+  local json = require(".json")
+  -- 21. Dust: the book does not leave resting what it would not accept -------
+  --
+  -- `minValue` was checked on the way in and nowhere else, so an order swept
+  -- down to a crumb rested for its full lifetime BELOW the minimum -- and it
+  -- rested on the touch, where every taker had to walk past it first. See
+  -- ORDERBOOK.md §13; OasisDEX has carried this rule as `_dust` since 2017.
+  do
+    local state, players = world()
+    local market = EconomyEngine.resolveMarket(state, "fire_berry")
+    market.minValue = 100
+
+    -- 20 lots at 10 is 200, comfortably above the floor.
+    local ask = place(state, players, ALICE, "sell", "fire_berry", 10, 20, T)
+    ok("a big ask rests", ask and ask.open == true, json.encode(ask and ask.order))
+
+    -- Take 15 of them. The remainder is 5 lots at 10 = 50, which is below the
+    -- 100 the book would have refused to accept.
+    local took = place(state, players, BOB, "buy", "fire_berry", 10, 15, T + 1)
+    ok("the taker fills", took and #took.fills == 1, json.encode(took and took.fills))
+    ok("and the maker's crumb is cancelled rather than left on the touch",
+       state.orders[ask.order.id] == nil, json.encode(state.orders[ask.order.id]))
+
+    local closed = nil
+    for _, row in ipairs(state.orderHistory) do
+      if row.id == ask.order.id then closed = row end
+    end
+    ok("with `dust` as its own reason, not an expiry",
+       closed and closed.status == "dust", closed and closed.status)
+
+    -- The escrow has to come back. A cancel that forgot to would fail the
+    -- conservation invariant on the very next read, which is the point of
+    -- routing this through `cancelOrder` rather than dropping the order.
+    local invariants = EconomyEngine.invariants(state, {}, {})
+    ok("and conservation still holds after a dust cancel",
+       invariants.assets.fire_berry.ok and invariants.gold.ok,
+       json.encode(invariants.assets.fire_berry))
+
+    -- The other direction: a TAKER whose own remainder is dust.
+    local rest = place(state, players, CAROL, "sell", "fire_berry", 10, 4, T + 2)
+    ok("an order that is dust from the start is refused outright, not cancelled",
+       rest == nil, json.encode(rest))
+
+    local big = place(state, players, ALICE, "sell", "fire_berry", 10, 30, T + 3)
+    ok("a fresh ask rests", big and big.open == true, nil)
+    -- Buy 28 of the 30 at a price that crosses. The taker's own remainder is
+    -- zero here; what is left is the MAKER's 2 lots = 20, which is dust.
+    local sweep = place(state, players, BOB, "buy", "fire_berry", 10, 28, T + 4)
+    ok("a sweep that leaves the maker a crumb clears it too",
+       sweep and state.orders[big.order.id] == nil, json.encode(sweep and sweep.fills))
+
+    -- A market with no floor switches the rule off, exactly as it switches off
+    -- the entry check. That is what lets a venue opt out.
+    local state2, players2 = world()
+    local free = EconomyEngine.resolveMarket(state2, "water_berry")
+    free.minValue = 0
+    local tiny = place(state2, players2, ALICE, "sell", "water_berry", 1, 20, T)
+    place(state2, players2, BOB, "buy", "water_berry", 1, 19, T + 1)
+    ok("a market with no minimum keeps its crumbs",
+       state2.orders[tiny.order.id] ~= nil, json.encode(state2.orders[tiny.order.id]))
+  end
+
+  -- 22. Replay receipts expire by AGE, not by how busy the book was ----------
+  --
+  -- The bound used to be "keep the newest 500", so other people's traffic
+  -- evicted a receipt that was still inside a browser's retry window -- and an
+  -- evicted receipt does not fail safe, it re-arms the double-place the
+  -- mechanism exists to prevent.
+  do
+    local state, players = world()
+    -- Priced ABOVE the noise below, so BOB's bids never cross it: the point of
+    -- the test is the receipt's lifetime, not the order's.
+    local first = EconomyEngine.placeOrder(state, players, ALICE, "sell",
+      "fire_berry", 20, 1, T, "retry-me")
+    ok("an order with an ActionId is placed", first and first.order ~= nil,
+       json.encode(first))
+
+    local replayed = EconomyEngine.placeOrder(state, players, ALICE, "sell",
+      "fire_berry", 20, 1, T + 1, "retry-me")
+    ok("and the same ActionId does not place a second one",
+       replayed and replayed.replayed == true, json.encode(replayed))
+
+    -- Six hundred other RECEIPT-WRITING actions, which under the old count
+    -- bound would have pushed the receipt above out of the map entirely.
+    --
+    -- Place-then-cancel rather than six hundred placements, and the pairing is
+    -- not cosmetic: a plain loop of bids hits the twenty-open-order account
+    -- cap on the twenty-first, and every refusal after it writes no receipt at
+    -- all -- so the version of this test that only placed was asserting
+    -- against a map of twenty entries and would have passed against the old
+    -- bound too. Cancelling between placements keeps BOB at one open order and
+    -- makes all six hundred land.
+    for i = 1, 300 do
+      local n = string.format("%d", i)
+      local made = EconomyEngine.placeOrder(state, players, BOB, "buy",
+        "fire_berry", 10, 1, T + 1 + i, "noise-place-" .. n)
+      if made and made.order then
+        EconomyEngine.cancelOrder(state, players, BOB, made.order.id,
+          T + 1 + i, "noise-cancel-" .. n)
+      end
+    end
+    local written = 0
+    for _ in pairs(state.actionReceipts) do written = written + 1 end
+    ok("the noise actually wrote receipts, or this proves nothing",
+       written > 500, written)
+
+    local stillGuarded = EconomyEngine.placeOrder(state, players, ALICE, "sell",
+      "fire_berry", 20, 1, T + 700, "retry-me")
+    ok("a busy book does NOT evict a receipt that is still in its window",
+       stillGuarded and stillGuarded.replayed == true, json.encode(stillGuarded))
+
+    -- An hour later it is gone, which is the eviction working rather than
+    -- failing to: nothing retries for an hour, and the map has to stop growing.
+    local HOUR = 3600 * 1000
+    EconomyEngine.placeOrder(state, players, BOB, "buy", "fire_berry", 10, 1,
+      T + 2 * HOUR, "roll-the-clock")
+    local expired = EconomyEngine.placeOrder(state, players, ALICE, "sell",
+      "fire_berry", 20, 1, T + 2 * HOUR + 1, "retry-me")
+    ok("but an hour-old receipt is released", expired and expired.replayed ~= true,
+       json.encode(expired))
+
+    local held = 0
+    for _ in pairs(state.actionReceipts) do held = held + 1 end
+    ok("and the map is bounded rather than growing with every action",
+       held <= 5000 and held > 0, held)
   end
 
   out[#out + 1] = ""

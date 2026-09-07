@@ -949,17 +949,26 @@ local function ownRecentFills(address)
   local rows = {}
   for i = 1, #fills do
     local f = fills[i]
+    local side = f.buyer == address and "buy" or "sell"
     rows[i] = {
       id = f.id,
       market = f.market or (tostring(f.item) .. "/gold"),
       item = f.item,
-      side = f.buyer == address and "buy" or "sell",
+      side = side,
       price = int(f.price, 0),
       quantity = int(f.quantity, 0),
-      gross = int(f.gross, 0),
+      -- Both DERIVED from the compact fill, which stopped carrying either.
+      -- `gross` was always `price * quantity`, and the three address fields
+      -- that named the maker, the taker and the fee payer are one word now:
+      -- whoever is on `takerSide` took. See ORDERBOOK.md §13.
+      --
+      -- They are still written HERE because this row is the one a player
+      -- reads, and a reader who has to multiply two fields to learn what a
+      -- trade cost them is a reader who will get it wrong once.
+      gross = int(f.price, 0) * int(f.quantity, 0),
       fee = int(f.fee, 0),
       filledAt = int(f.filledAt, 0),
-      role = f.maker == address and "maker" or "taker",
+      role = f.takerSide == side and "taker" or "maker",
     }
   end
   return rows

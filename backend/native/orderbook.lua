@@ -657,7 +657,10 @@ local function fillDigest(state, timestamp)
     if age >= 0 and age < 7 * DAY then
       row.prices7[#row.prices7 + 1] = price
       row.volume7 = row.volume7 + int(fill.quantity, 0)
-      row.makers[fill.maker] = true; row.takers[fill.taker] = true
+      -- Derived rather than stored; see the note on the fill record.
+      local buyerTook = fill.takerSide == "buy"
+      row.takers[buyerTook and fill.buyer or fill.seller] = true
+      row.makers[buyerTook and fill.seller or fill.buyer] = true
     end
   end
   index.fillDigest = { rev = int(index.fillsRev, 0), at = now, rows = rows }
@@ -783,13 +786,41 @@ local function replayedAction(state, account, actionId, kind)
   return receipt ~= nil, key, nil
 end
 
+--- How long a replay guard is worth keeping, and the hard ceiling behind it.
+---
+--- THE BOUND USED TO BE A COUNT, AND THAT WAS A SAFETY BUG WEARING A SIZE FIX.
+--- Evicting the oldest whenever the map passed 500 meant a busy hour dropped
+--- receipts that were still inside a browser's retry window -- and an evicted
+--- receipt does not fail safe, it RE-ARMS the double-place the whole mechanism
+--- exists to prevent. The pressure that evicts it is other people's traffic,
+--- so the failure gets likelier exactly when the book is busiest.
+---
+--- An hour is longer than any retry a client makes and shorter than the count
+--- bound was in every quiet case, so this is both safer and usually smaller.
+--- The ceiling stays as a backstop against a single burst, and it is set high
+--- enough that reaching it is itself the anomaly.
+local RECEIPT_TTL = 3600 * 1000
+local RECEIPT_CEILING = 5000
+
+--- Evictions per message, bounded the way `expireOrders` is bounded: the work
+--- costs what it releases rather than what the map holds, so one message after
+--- a quiet week does not pay for the whole week.
+local RECEIPT_SWEEP = 50
+
 local function rememberAction(state, key, kind, timestamp)
   if not key then return end
   state.actionReceipts[key] = { kind = kind, timestamp = timestamp }
   state.actionReceiptOrder[#state.actionReceiptOrder + 1] = key
-  while #state.actionReceiptOrder > 500 do
-    local oldest = table.remove(state.actionReceiptOrder, 1)
+  local swept = 0
+  while swept < RECEIPT_SWEEP and #state.actionReceiptOrder > 0 do
+    local oldest = state.actionReceiptOrder[1]
+    local receipt = state.actionReceipts[oldest]
+    local expired = receipt == nil
+      or (int(timestamp, 0) - int(receipt.timestamp, 0)) >= RECEIPT_TTL
+    if not expired and #state.actionReceiptOrder <= RECEIPT_CEILING then break end
+    table.remove(state.actionReceiptOrder, 1)
     state.actionReceipts[oldest] = nil
+    swept = swept + 1
   end
 end
 
@@ -987,6 +1018,37 @@ local function routeFee(host, state, asset, amount, timestamp, reason)
   host.fee(state, asset, amount, timestamp, reason)
 end
 
+--- Cancel a remainder the book would never have accepted as an order.
+---
+--- A 400-lot ask at 12 Gold that gets swept down to one lot leaves a 12-Gold
+--- order resting for its full lifetime -- below the `minValue` the book refused
+--- to accept when it was placed. It is not liquidity anybody wants: it sits on
+--- the TOUCH, so it is the first thing every taker has to walk past, and it
+--- holds a price level, a heap slot, one of its owner's twenty account slots
+--- and its share of every published byte until it expires.
+---
+--- OasisDEX has carried this since 2017 as a per-token `_dust` and cancels an
+--- offer the moment a buy drops it below the limit. We had the check on the way
+--- in and nowhere else. See ORDERBOOK.md §13.
+---
+--- The threshold is `minValue` itself rather than a second field, and that is
+--- the point: the book will not leave resting an order it would not accept.
+--- A market with `minValue = 0` -- which is every venue market that wants none
+--- -- switches the rule off, exactly as it switches off the entry check.
+---
+--- The escrow goes back the way any cancel returns it, and the reason is its
+--- own word so an owner can tell dust from an expiry.
+local function retireDust(host, state, ledger, order, timestamp)
+  if not order or not state.orders[order.id] then return false end
+  local remaining = int(order.remaining, 0)
+  if remaining <= 0 then return false end
+  local market = M.resolveMarket(state, order.market or order.item)
+  local floor = market and math.max(0, int(market.minValue, 0)) or 0
+  if floor <= 0 or int(order.price, 0) * remaining >= floor then return false end
+  cancelOrder(host, state, ledger, order, timestamp, "dust")
+  return true
+end
+
 local function settleFill(host, state, ledger, taker, maker, timestamp)
   local buy = taker.side == "buy" and taker or maker
   local sell = taker.side == "sell" and taker or maker
@@ -1050,6 +1112,18 @@ local function settleFill(host, state, ledger, taker, maker, timestamp)
   -- Monotonic, NOT `#state.fills + 1`: `appendBounded` pins that length at the
   -- history cap, so the old expression named every fill past the cap `F501`.
   state.fillSeq = int(state.fillSeq, 0) + 1
+  -- FIVE FIELDS CARRYING TWO FACTS, until this was measured.
+  --
+  -- `maker` and `taker` are always a permutation of `buyer` and `seller`, and
+  -- `feePayer` was assigned `taker.account` on the line below itself -- so
+  -- three 43-character addresses said what one word says. `takerSide` is that
+  -- word: whichever of the two accounts is on it took, and the other made and
+  -- was not charged.
+  --
+  -- `gross` is `price * quantity` and `feeAsset` is the market's quote, both
+  -- of which the record already carries. A fill was 482 bytes of which about
+  -- a hundred were information, in a 500-row ring that every message pays for
+  -- five times over. See ORDERBOOK.md §13.
   local fill = {
     id = "F" .. string.format("%d", state.fillSeq), item = buy.item,
     -- The pair this happened on, said rather than inferred. A consumer that
@@ -1059,9 +1133,8 @@ local function settleFill(host, state, ledger, taker, maker, timestamp)
     market = market.id or maker.market or marketId(buy.item, "gold"),
     buyOrder = buy.id, sellOrder = sell.id,
     buyer = buy.account, seller = sell.account,
-    maker = maker.account, taker = taker.account,
-    price = price, quantity = quantity, gross = gross, fee = fee,
-    feePayer = taker.account, feeAsset = quote,
+    takerSide = taker.side,
+    price = price, quantity = quantity, fee = fee,
     filledAt = timestamp,
   }
   appendBounded(state.fills, fill, C.ECONOMY.orderbook.historyLimit)
@@ -1080,6 +1153,10 @@ local function settleFill(host, state, ledger, taker, maker, timestamp)
       }, C.ECONOMY.orderbook.historyLimit)
     end
   end
+  -- The MAKER only. The taker is still sweeping -- its remainder may fill on
+  -- the very next turn of `matchOrder`'s loop -- so it is checked once, after
+  -- matching finishes, beside `retireRemainder`.
+  retireDust(host, state, ledger, maker, timestamp)
   return fill
 end
 
@@ -1422,9 +1499,13 @@ function M.placeOrder(host, state, account, side, item, price, quantity, timesta
 
   local fills = matchOrder(host, state, ledger, order, timestamp, house)
   local killed = retireRemainder(host, state, ledger, order, timestamp, tif)
+  -- Now that the sweep is over, whatever is left of the taker is a resting
+  -- order like any other and has to clear the same floor. See `retireDust`.
+  local dusted = not killed and retireDust(host, state, ledger, order, timestamp)
   return {
     order = copy(order), fills = fills, open = state.orders[order.id] ~= nil,
     tif = tif, stp = stp, selfCancelled = #mine, killed = killed,
+    dusted = dusted or nil,
     bandLow = bandLow, bandHigh = bandHigh,
   }, nil
 end
@@ -1590,6 +1671,7 @@ function M.amendOrder(host, state, account, orderId, price, quantity, timestamp,
   end
   putOrder(state, replacement)
   local fills = matchOrder(host, state, ledger, replacement, timestamp, house)
+  retireDust(host, state, ledger, replacement, timestamp)
   return {
     order = copy(replacement), fills = fills,
     open = state.orders[replacement.id] ~= nil,
