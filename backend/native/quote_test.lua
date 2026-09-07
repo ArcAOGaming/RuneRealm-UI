@@ -54,6 +54,16 @@ local function run(base, req)
   local _, raw = signed(OWNER, { Action = "Info" })
   ok("token state contains no floats", not raw.tokeninfo:match("[%d]%.[%d]"), raw.tokeninfo)
 
+  local expectedAlice = Balances[ALICE]
+  local expectedSupply = TotalSupply
+  local expectedTransferSeq = TransferSeq
+  Balances, TotalSupply, Minted, TransferSeq = {}, 0, 0, 0
+  restoreTokenState(raw)
+  ok("a cold slot restores quote balances, supply and transfer high-water",
+     Balances[ALICE] == expectedAlice and TotalSupply == expectedSupply
+       and TransferSeq == expectedTransferSeq,
+     tostring(Balances[ALICE]) .. " / " .. tostring(TotalSupply))
+
   out[#out + 1] = ""
   out[#out + 1] = string.format("%d passed, %d failed", passed, failed)
   return table.concat(out, "\n")

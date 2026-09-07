@@ -266,11 +266,17 @@ local function run()
   ok("and the escrow left the free balance", freeOf(r, "fire_berry") == 480,
      json.encode(r))
 
-  r = send(BOB, { Action = "Order.Place", Side = "buy", Item = "fire_berry",
+  local fillRes
+  r, fillRes = send(BOB, { Action = "Order.Place", Side = "buy", Item = "fire_berry",
     Price = "10", Quantity = "20", Tif = "ioc" })
   ok("a taker fills against it", fillCount(r) == 1, json.encode(r))
   ok("and pays the resting price", num((fillOf(r) or {}).price) == 10, json.encode(r))
   ok("the buyer has the berries", freeOf(r, "fire_berry") == 20, json.encode(r))
+  local makerPosition = json.decode(fillRes["balance-" .. ALICE] or "{}")
+  ok("a taker fill republishes the resting maker's complete position",
+     makerPosition and makerPosition.free and num(makerPosition.free.gold) == 1199
+       and makerPosition.fills and #makerPosition.fills == 1,
+     json.encode(makerPosition))
 
   r = send(ALICE, { Action = "Balance" })
   ok("and the seller has the Gold", r and num(r.free.gold) == 1199,
@@ -285,6 +291,29 @@ local function run()
   r = send(ALICE, { Action = "Order.Place", Side = "sell", Item = "fire_berry",
     Price = "12", Quantity = "400" })
   ok("a big ask rests", r and r.order and r.order.open == true, json.encode(r and r.order))
+
+  local amendedState
+  r, amendedState = send(ALICE, {
+    Action = "Order.Amend", OrderId = "O3", Quantity = "399",
+  })
+  ok("a quantity-only amend keeps the resting unit price",
+     errOf(r) == nil and r and r.order ~= nil, json.encode(r))
+
+  -- Re-enter with the returned map and none of the Luerl globals that normally
+  -- ride in `priv`. Custody, the resting order and replay ledgers must all be
+  -- reconstructed before the next write.
+  VenueMode, VenueSealed, VenueName, GameProcess = nil, false, "TEST-Rune Realm Venue", ""
+  Assets, AssetByProcess, Ledger, Book = {}, {}, {}, nil
+  Deposits, Withdrawals, WithdrawSeq = {}, {}, 0
+  Emergency = { paused = false, reason = "", scope = "trading", at = 0 }
+  restoreOperationalState(amendedState)
+  ok("a cold venue restores custody, configuration and its resting book",
+     VenueMode == "internal" and GameProcess == GAME
+       and Ledger[ALICE] and num(Ledger[ALICE].fire_berry) == 81
+       and Book and Book.orders and Book.orders.O3
+       and num(Book.orders.O3.remaining) == 399 and num(Book.orders.O3.price) == 12
+       and Deposits[GAME .. ":d7"] ~= nil,
+     tostring(VenueMode) .. " / " .. tostring(Book and Book.orderSeq))
 
   r = send(ALICE, { Action = "Withdraw", Asset = "fire_berry", Quantity = "200" })
   ok("what a resting order holds cannot be withdrawn", errOf(r) ~= nil, json.encode(r))

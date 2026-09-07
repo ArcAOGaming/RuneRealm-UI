@@ -972,13 +972,66 @@ local function marketDay(state, timestamp, item)
   if not row then row = {}; state.marketDaily[day] = row end
   local asset = row[item]
   if not asset then
-    asset = { volume = 0, gold = 0, fills = 0, makers = {}, takers = {} }
+    asset = { volume = 0, gold = 0, fills = 0 }
     row[item] = asset
   end
   for key in pairs(state.marketDaily) do
     if int(key, day) < day - 35 then state.marketDaily[key] = nil end
   end
   return asset
+end
+
+--- JSON object keys return from a cold snapshot as strings. New fills index
+--- the same epoch day numerically; without normalization one calendar day
+--- becomes two candle rows and the UI reports two partial trade totals.
+local function normaliseMarketDaily(state)
+  local source = type(state.marketDaily) == "table" and state.marketDaily or {}
+  local normalized = {}
+  local function fold(wantString)
+    for rawDay, row in pairs(source) do
+      if (type(rawDay) == "string") == wantString and type(row) == "table" then
+        local day = int(rawDay, nil)
+        if day then
+          local target = normalized[day]
+          if not target then
+            normalized[day] = row
+          else
+            -- String rows are restored history; numeric rows are fills written
+            -- after restoration. Merge defensively if both already exist.
+            for item, nextCandle in pairs(row) do
+              local prior = target[item]
+              if type(prior) ~= "table" then
+                target[item] = nextCandle
+              elseif type(nextCandle) == "table" then
+                prior.h = math.max(int(prior.h, int(nextCandle.h, 0)), int(nextCandle.h, 0))
+                prior.l = math.min(int(prior.l, int(nextCandle.l, 0)), int(nextCandle.l, 0))
+                prior.c = nextCandle.c
+                prior.volume = int(prior.volume, 0) + int(nextCandle.volume, 0)
+                prior.gold = int(prior.gold, 0) + int(nextCandle.gold, 0)
+                prior.fills = int(prior.fills, 0) + int(nextCandle.fills, 0)
+              end
+            end
+          end
+        end
+      end
+    end
+  end
+  fold(true); fold(false)
+  -- A row restored from an older process still carries the `makers`/`takers`
+  -- sets `recordCandle` used to write, and there was never a reader for them
+  -- (see the note there). Tolerate them and drop them on the way through:
+  -- leaving them attached would keep charging every message for two sets of
+  -- 43-byte addresses per market per day for another 35 days. Nothing is
+  -- taken away that anything could ask for.
+  for _, row in pairs(normalized) do
+    for _, candle in pairs(row) do
+      if type(candle) == "table" then
+        candle.makers, candle.takers = nil, nil
+      end
+    end
+  end
+  state.marketDaily = normalized
+  return state
 end
 
 --- Fold one fill into the day's candle and its volume.
@@ -989,7 +1042,21 @@ end
 --- 500 rows -- so a busy market went blank the moment its own history rolled
 --- off the end. A candle is permanent, and 30 days of them is smaller than
 --- the fills they replace. ORDERBOOK.md §2.8.
-local function recordCandle(day, price, quantity, gross, maker, taker)
+---
+--- `maker` and `taker` are accepted and IGNORED, and that is deliberate.
+--- The row used to carry `makers`/`takers` -- two sets of 43-byte addresses
+--- per market per day, kept for the 35 days `marketDay` prunes to, and
+--- shipped inside `venuebookstate` and `economystate` on every single write
+--- message, which the cost model charges five times over. Nothing ever read
+--- them: `candleView` emits `d,o,h,l,c,v,g,n` and never looks, and the
+--- `uniqueMakers7d`/`uniqueTakers7d` the market view publishes come from
+--- `fillDigest`'s OWN maker/taker sets, computed from `state.fills` over the
+--- trailing seven days. That reading is live and correct and is a different
+--- thing entirely; these were write-only.
+---
+--- The two parameters stay because `economy.lua` still passes them from the
+--- desk path, and a signature change there is somebody else's file.
+local function recordCandle(day, price, quantity, gross, maker, taker) -- luacheck: ignore maker taker
   day.volume = int(day.volume, 0) + quantity
   day.gold = int(day.gold, 0) + gross
   day.fills = int(day.fills, 0) + 1
@@ -997,11 +1064,6 @@ local function recordCandle(day, price, quantity, gross, maker, taker)
   day.h = math.max(int(day.h, price), price)
   day.l = day.l ~= nil and math.min(int(day.l, price), price) or price
   day.c = price
-  -- The house is not a participant. `uniqueMakers7d` is a reading of how many
-  -- PLAYERS are willing to quote; counting the desk in it would report one
-  -- extra maker in every market forever, including the empty ones.
-  if maker then day.makers[maker] = true end
-  if taker then day.takers[taker] = true end
 end
 
 --- A percentage fee against an asset that does not divide.
@@ -1092,31 +1154,68 @@ local function settleFill(host, state, ledger, taker, maker, timestamp)
   local sellerHere = ledger.exists(sell.account)
   local takerIsBuyer = taker.side == "buy"
 
+  -- CONSERVATION: nothing may leave `escrow` without landing somewhere the
+  -- host's own check counts. `player` is that somewhere when there is an
+  -- account to credit; when there is not, the QUOTE asset is parked in
+  -- `locked` exactly as `cancelOrder` parks a refund it cannot pay, because
+  -- `locked` is on the accounted side of both `goldInvariant` and the venue's
+  -- `player + escrow + locked`. The escrow reduction used to be
+  -- unconditional while both credits were guarded, so an absent counterparty
+  -- took the value out of `escrow` and put it in neither bucket -- gone, and
+  -- the pool no longer balancing. Unreachable on the venue (its `exists` is
+  -- `validId` and the account was checked when the order was placed) and hard
+  -- to reach in the game; this is the invariant, not an exploit.
+  --
+  -- The BASE asset is the one asymmetry and it is not an oversight: the
+  -- game's `itemInvariant` counts `player + escrow + shop + venue` and NOT
+  -- `locked`, so parking goods there would delete them from the very check
+  -- this is protecting. Base units move `escrow -> player` whether or not
+  -- anybody is credited, which is what `cancelOrder`'s sell branch already
+  -- does. After this, the two functions handle both halves identically.
   local quotePool = host.pool(state, quote)
   quotePool.escrow = math.max(0, int(quotePool.escrow, 0) - committed)
   local refund = committed - gross
-  if buyerHere and refund > 0 then
-    ledger.credit(buy.account, quote, refund)
-    quotePool.player = int(quotePool.player, 0) + refund
+  if refund > 0 then
+    if buyerHere then
+      ledger.credit(buy.account, quote, refund)
+      quotePool.player = int(quotePool.player, 0) + refund
+    else
+      quotePool.locked = int(quotePool.locked, 0) + refund
+    end
   end
   -- A taking BUYER pays the fee out of free balance rather than escrow. That
   -- is safe because every fill a taker causes happens inside the same
   -- `placeOrder` call that checked their balance -- nothing else runs in
   -- between -- and `placeOrder` requires the fee on top of the escrow before
   -- it will take the order at all.
-  if takerIsBuyer and fee > 0 and buyerHere then
-    if ledger.debit(buy.account, quote, fee) then
-      quotePool.player = math.max(0, int(quotePool.player, 0) - fee)
+  --
+  -- That fee is the one amount in this function that does NOT come out of
+  -- escrow, so it is also the one that must not be routed when it was not
+  -- taken: with no account to debit there is nothing behind it, and paying
+  -- the fee sink anyway would mint it. When the buyer is there this is byte
+  -- for byte what it always did, debit failure included.
+  local collected = fee
+  if takerIsBuyer and fee > 0 then
+    if buyerHere then
+      if ledger.debit(buy.account, quote, fee) then
+        quotePool.player = math.max(0, int(quotePool.player, 0) - fee)
+      end
+    else
+      collected = 0
     end
   end
   -- A taking SELLER pays out of proceeds; there is always something to take it
-  -- from, because they are receiving the quote asset.
+  -- from, because they are receiving the quote asset. Those proceeds DID come
+  -- out of escrow, so when there is nobody to pay they are parked rather than
+  -- dropped -- and the fee still routes, because it left escrow either way.
   local sellerGets = takerIsBuyer and gross or (gross - fee)
   if sellerHere then
     ledger.credit(sell.account, quote, sellerGets)
     quotePool.player = int(quotePool.player, 0) + sellerGets
+  else
+    quotePool.locked = int(quotePool.locked, 0) + sellerGets
   end
-  routeFee(host, state, quote, fee, timestamp, "P2P taker fee")
+  routeFee(host, state, quote, collected, timestamp, "P2P taker fee")
 
   -- `quantity` is lots; the base asset moves `quantity * lot` units. Both
   -- orders in a fill are on the same market, so either side's `lot` will do.
@@ -1124,6 +1223,10 @@ local function settleFill(host, state, ledger, taker, maker, timestamp)
   local baseUnits = quantity * lot
   local asset = host.pool(state, buy.item)
   asset.escrow = math.max(0, int(asset.escrow, 0) - baseUnits)
+  -- The base half of the rule above: `escrow -> player` regardless, because
+  -- `player` is counted by every host's check and `locked` is not counted by
+  -- the game's `itemInvariant`. The units stay accounted for; only the credit
+  -- is conditional.
   asset.player = int(asset.player, 0) + baseUnits
   if buyerHere then ledger.credit(buy.account, buy.item, baseUnits) end
 
@@ -1891,6 +1994,10 @@ end
 --- integers wide, and already sitting on the row that carries the day's
 --- volume -- so publishing it costs a handful of bytes per market per day and
 --- removes the only reason the client needed the raw fills at all.
+---
+--- Eight named fields, copied out one at a time: a candle restored from an
+--- older process that still carries `makers`/`takers` is read exactly the
+--- same way and neither set is propagated.
 local function candleView(state, timestamp, item)
   local today = timestamp // DAY
   local keep = math.max(1, int(C.ECONOMY.orderbook.candleDays, 30))
@@ -1941,6 +2048,7 @@ M.fillRecorded = fillRecorded
 M.ladder = ladder
 M.marketDay = marketDay
 M.marketId = marketId
+M.normaliseMarketDaily = normaliseMarketDaily
 M.mode = mode
 M.newMarket = newMarket
 M.orderView = orderView

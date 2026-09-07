@@ -6,6 +6,8 @@
 --- AO later by configuring AO's process id and denomination after the full
 --- Credit-Notice/outbox path has been verified on the target node.
 
+local json = require(".json")
+
 Name = "TEST-Relic"
 Ticker = "TEST-RELIC"
 Denomination = 6
@@ -147,6 +149,39 @@ local function balancesView()
   return out
 end
 
+-- Recover token globals when HyperBEAM retains the returned map but loses the
+-- Luerl `priv` snapshot under concurrent slots. Balances are already published
+-- in full; the supply invariant (sum of balances == TotalSupply) tells a warm
+-- state from a missing/partial one without overwriting healthy globals.
+local function publishedObject(base, key)
+  local raw = base and base[key]
+  if type(raw) == "table" then return raw end
+  if type(raw) ~= "string" or raw == "" or raw == "null" then return nil end
+  local ok, decoded = pcall(json.decode, raw)
+  return ok and type(decoded) == "table" and decoded or nil
+end
+
+local function restoreTokenState(base)
+  local publishedBalances = publishedObject(base, "balances")
+  local publishedTotal = int(base and base.totalsupply, nil)
+  if publishedBalances and publishedTotal ~= nil then
+    local liveTotal = 0
+    for _, amount in pairs(Balances) do liveTotal = liveTotal + int(amount, 0) end
+    if int(TotalSupply, 0) ~= publishedTotal or liveTotal ~= publishedTotal then
+      local rebuilt = {}
+      for address, amount in pairs(publishedBalances) do
+        local value = int(amount, 0)
+        if type(address) == "string" and value > 0 then rebuilt[address] = value end
+      end
+      Balances = rebuilt
+      TotalSupply = publishedTotal
+      local info = publishedObject(base, "tokeninfo")
+      Minted = math.max(int(Minted, 0), int(info and info.Minted, publishedTotal))
+    end
+  end
+  TransferSeq = math.max(int(TransferSeq, 0), int(base and base.transferseq, 0))
+end
+
 local function infoView()
   return {
     Name = Name, Ticker = Ticker, Denomination = asString(Denomination), Logo = Logo,
@@ -279,6 +314,8 @@ local function resolveHandler(action)
 end
 
 function compute(base, req, opts)
+  base = type(base) == "table" and base or {}
+  restoreTokenState(base)
   resolveOwner(base)
   local raw = (req and req.body) or {}
   local msg = caseInsensitive(raw.Tags or raw)
@@ -295,6 +332,7 @@ function compute(base, req, opts)
   result.balances = encode(balancesView())
   result.totalsupply = asString(TotalSupply)
   result.ticker = Ticker
+  result.transferseq = asString(TransferSeq)
   local who = actor(msg, base) or msg.Recipient or msg.Account
   if type(who) == "string" and who ~= "" then result["balance-" .. who] = asString(balanceOf(who)) end
   -- Compact the heap before the node photographs it. See the long note at the

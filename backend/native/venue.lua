@@ -44,6 +44,8 @@
 --- through `int`, and never trust a json round-trip to prove an amount is
 --- integral.
 
+local json = require(".json")
+
 -- Identity and configuration ---------------------------------------------------
 
 --- "internal" or "external". Nil until configured; every custody verb refuses
@@ -94,8 +96,20 @@ Book = Book or nil
 
 --- reference -> row. Both directions, both idempotent, and NEITHER is ever
 --- trimmed: an aged-out reference is a replayable deposit, which is the one
---- kind of leak that mints value out of nothing. These live in the heap and
---- the snapshot, never in the published map.
+--- kind of leak that mints value out of nothing.
+---
+--- THEY ARE PUBLISHED, as `venuedepositstate` and `venuewithdrawalstate`, on
+--- every write message. (They used to be heap-and-snapshot only, and the
+--- comment here still said so long after `restoreOperationalState` started
+--- reading them back.) So these are the two keys that grow for the life of the
+--- process, and CLAUDE.md's cost model charges the whole published map to
+--- every message five times over.
+---
+--- Since they cannot be trimmed, they are COMPACTED instead: `depositExport`
+--- and `withdrawalExport` publish a resolved row as its status alone, because
+--- the guard only has to answer "have I seen this reference" and a settled row
+--- has nothing left for an admin to act on. Rows an admin still owes an answer
+--- on -- an unresolved deposit, a pending withdrawal -- are published in full.
 Deposits = Deposits or {}
 Withdrawals = Withdrawals or {}
 WithdrawSeq = WithdrawSeq or 0
@@ -188,13 +202,25 @@ local function provenSigner(msg)
     -- accept such a message, so this is unreachable in production.
     return msg.Address or msg.From
   end
+  local found = nil
   for _, commitment in pairs(c) do
     if type(commitment) == "table" and commitment.committer
        and SIGNATURE_ALGS[commitment.type or commitment.alg] then
-      return commitment.committer
+      -- TWO DIFFERENT SIGNATURE COMMITTERS IDENTIFY NOBODY, rather than
+      -- "whichever `pairs()` happened to visit first". `game.lua`'s `signer`
+      -- carries the same guard and for the same reason, and on a VENUE it is
+      -- the load-bearing one: `sourceProcess` believes `from-process` only
+      -- when the proven signer IS our scheduler, and that gate is what stands
+      -- between a stranger and `Credit-Notice`/`Venue.Credit` -- crediting
+      -- balance out of nothing. Winning table iteration order by attaching a
+      -- second signature must not be a way through it.
+      if found and found ~= commitment.committer then return nil end
+      found = commitment.committer
     end
   end
-  return nil
+  -- Commitments present, none of them a signature: nobody is identified. An
+  -- hmac names whoever it claims to, so it is never a fallback.
+  return found
 end
 
 --- This process's own scheduler: the only identity allowed to vouch for
@@ -322,11 +348,26 @@ local function balanceOf(account, asset)
   return int(held and held[asset], 0)
 end
 
+-- Accounts whose addressed view must be republished by this compute. The
+-- signer alone is not enough: a taker can fill a resting maker, and that maker
+-- needs their released escrow/fill receipt on the read path without first
+-- sending another message of their own.
+local TouchedAccounts = {}
+
+-- Set TRUE by a handler that is not in the `readOnly` set but turned out to
+-- have changed nothing a restore would want back. Only `Order.Maintain` sets
+-- it, and only in the message where it released no escrow at all; `compute`
+-- clears it before every dispatch, so a handler that does not set it publishes
+-- as it always did. The decision is the WORK, never the action name -- a
+-- Maintain that did expire an order moved escrow and must republish.
+local StateIdle = false
+
 --- Credit free balance. Never called on its own: value only ever enters this
 --- process through a deposit, and `deposit` moves the pool with it.
 local function creditFree(account, asset, amount)
   amount = int(amount, 0)
   if amount == 0 then return end
+  if validId(account) then TouchedAccounts[account] = true end
   local held = Ledger[account]
   if not held then held = {}; Ledger[account] = held end
   local next_ = int(held[asset], 0) + amount
@@ -426,6 +467,217 @@ local function ensureBook()
   end
   OrderBook.ensureIndex(Book)
   return Book
+end
+
+-- Operational restore -------------------------------------------------------
+--
+-- The venue holds custody, so losing its Luerl globals while the published map
+-- survives is not a tolerable empty-book reset. HyperBEAM can produce exactly
+-- that shape under concurrent computes. Keep the authoritative components in
+-- separate cached keys: unchanged reads reuse them, while a write refreshes
+-- the snapshot. The public UI views stay lean; these records exist solely so a
+-- cold slot cannot forget balances, escrow, orders or replay guards.
+local function decodedTable(value)
+  if type(value) == "table" then return value end
+  if type(value) ~= "string" or value == "" or value == "null" then return nil end
+  local ok, decoded = pcall(json.decode, value)
+  if not ok or type(decoded) ~= "table" then return nil end
+  return decoded
+end
+
+local function tableCount(value)
+  local n = 0
+  for _ in pairs(type(value) == "table" and value or {}) do n = n + 1 end
+  return n
+end
+
+local function narrowNumbers(value)
+  if type(value) == "number" then return math.tointeger(value) or value end
+  if type(value) ~= "table" then return value end
+  for key, child in pairs(value) do value[key] = narrowNumbers(child) end
+  return value
+end
+
+--- What `venuebookstate` carries, and it is deliberately not the whole book.
+---
+--- This key is rewritten on EVERY write message and CLAUDE.md charges the
+--- whole published map to every message five times over, so the question per
+--- key is only ever "would a cold restore be missing something that matters".
+--- `economy.lua`'s `M.exportState(..., { forRestore = true })` asks the same
+--- question and reaches a DIFFERENT answer on one key -- see `fills` below --
+--- so this list is reasoned per field rather than copied from it.
+---
+--- DROPPED:
+---   bookIndex          derived from `orders`; the largest hot index, and
+---                      restoring it would risk stale level membership.
+---                      `ensureBook` -> `ensureIndex` rebuilds it.
+---   orderHistory       500 rows of CLOSED orders. Nothing reconstructs state
+---                      from it, no invariant reads it, and no view publishes
+---                      it; it is a log. `orderSeq` is stored top-level and
+---                      monotonic, so identity does not depend on it.
+---   rejected           a refusal histogram. Telemetry, keyed by a fixed enum
+---                      of reasons, rebuilt by the next refusal.
+---   actionReceiptOrder pure derived FIFO order over `actionReceipts` -- every
+---                      key in it is already a key of the map it orders, and
+---                      `economy.importState` rebuilds it the same way
+---                      `restoreOperationalState` does below. It MUST be
+---                      rebuilt and not merely defaulted to `{}`: an empty
+---                      order against a full receipt map makes
+---                      `rememberAction`'s sweep break on its first iteration
+---                      forever, and the receipts then grow without bound.
+---
+--- KEPT, and each for a reason:
+---   fills              THE ONE THAT DIFFERS FROM THE GAME. `economy.lua` can
+---                      drop it because `bookView` publishes the ring
+---                      elsewhere and `M.restoreHistory` puts it back. This
+---                      venue's `bookView` publishes candles, depth and the
+---                      band -- NOT the raw fills -- so there is nowhere to
+---                      restore them from. And they are not decoration: the
+---                      venue has no NPC desk, so `hostAnchors` answers
+---                      nothing and `priceBand` falls through to the 7-day
+---                      median of `state.fills`. Dropping them would silently
+---                      move the corridor every order is priced against.
+---                      `accountFills` reads the index rebuilt from the same
+---                      list, so a trader's own history rides on it too.
+---   orderSeq, fillSeq  the identity of every future id.
+---   orders, pools, fees, markets, marketDaily
+---                      custody, escrow and the candle history. Verbatim.
+---   actionReceipts     the replay guard. Dropping it re-arms the double-place
+---                      it exists to prevent, on exactly the message a restore
+---                      makes most likely.
+local function bookExport()
+  local dropped = {
+    bookIndex = true, orderHistory = true, rejected = true,
+    actionReceiptOrder = true,
+  }
+  local out = {}
+  for key, value in pairs(ensureBook()) do
+    if not dropped[key] then out[key] = value end
+  end
+  return out
+end
+
+--- Put back the FIFO eviction order `bookExport` deliberately omits.
+---
+--- Timestamp order is the order `rememberAction` appended in, so the rebuilt
+--- list evicts the same receipt the original would have; ties keep a stable
+--- key order so two nodes restoring the same export agree. This is the same
+--- rebuild `economy.importState` performs, and it is not optional: without it
+--- `rememberAction` walks a list of length zero, breaks immediately, and the
+--- receipt map never sheds anything again.
+local function rebuildReceiptOrder(book)
+  local receipts = type(book.actionReceipts) == "table" and book.actionReceipts or {}
+  if type(book.actionReceiptOrder) == "table" and #book.actionReceiptOrder > 0 then return end
+  local keys = {}
+  for key in pairs(receipts) do keys[#keys + 1] = key end
+  table.sort(keys, function(a, b)
+    local ta = int((receipts[a] or {}).timestamp, 0)
+    local tb = int((receipts[b] or {}).timestamp, 0)
+    if ta ~= tb then return ta < tb end
+    return a < b
+  end)
+  book.actionReceiptOrder = keys
+end
+
+--- Put an id back on a row whose id is its own key.
+---
+--- `depositExport`/`withdrawalExport` compact a RESOLVED row to its status
+--- alone, because the map is keyed by the reference and re-publishing a
+--- 43-character id inside the value it is already the key of is the same bytes
+--- twice on every message. The heap wants the field back.
+local function rekey(rows)
+  for key, row in pairs(type(rows) == "table" and rows or {}) do
+    if type(row) == "table" and row.id == nil then row.id = key end
+  end
+  return rows
+end
+
+--- The replay guards, with the rows nobody can still act on collapsed.
+---
+--- Neither map may be TRIMMED -- an aged-out reference is a replayable deposit
+--- -- but a row that is already resolved does not need its body to keep doing
+--- its job. Everything that reads these back asks one of two questions:
+---
+---   `settleDeposit` / `settleWithdrawal`: is there a row for this reference?
+---   `Admin.SettleDeposit` / `Admin.SettleWithdrawal`: is it still open, and
+---   if so, who and what and how much?
+---
+--- Only the second needs the body, and only on an OPEN row -- an unresolved
+--- deposit or a pending withdrawal, which is exactly what an admin has left to
+--- do. Everything else is published as its status and nothing more; the map is
+--- keyed by the reference, so even the id is a byte the key already paid for
+--- (`rekey` puts it back on the way in).
+---
+--- `status` is the one field that is never dropped, and that is a safety
+--- property rather than a nicety: `Admin.SettleWithdrawal` refunds a row it
+--- reads as `pending`, so a compacted row that lost its status would be
+--- refundable a second time. A missing status reads as not-pending, so this
+--- fails closed in both directions.
+local function compactRows(rows, openStatus)
+  local out = {}
+  for key, row in pairs(type(rows) == "table" and rows or {}) do
+    if type(row) ~= "table" then
+      out[key] = row
+    elseif row.status == openStatus then
+      out[key] = row
+    else
+      out[key] = { status = row.status or "resolved" }
+    end
+  end
+  return out
+end
+
+local function depositExport() return compactRows(Deposits, "unresolved") end
+local function withdrawalExport() return compactRows(Withdrawals, "pending") end
+
+local function rebuildAssetIndex()
+  AssetByProcess = {}
+  for id, asset in pairs(Assets) do
+    if type(asset) == "table" and type(asset.process) == "string"
+       and asset.process ~= "" then AssetByProcess[asset.process] = id end
+  end
+end
+
+local function restoreOperationalState(base)
+  local meta = decodedTable(base and base.venuecommit)
+  if not meta then return end
+
+  if VenueMode == nil or tableCount(Assets) < int(meta.assets, 0) then
+    local config = decodedTable(base.venueconfigstate)
+    if config then
+      VenueMode = config.mode
+      VenueSealed = config.sealed == true
+      VenueName = type(config.name) == "string" and config.name or VenueName
+      GameProcess = type(config.gameProcess) == "string" and config.gameProcess or ""
+      Assets = narrowNumbers(type(config.assets) == "table" and config.assets or {})
+      Emergency = narrowNumbers(type(config.emergency) == "table" and config.emergency
+        or { paused = false, reason = "", scope = "trading", at = 0 })
+      rebuildAssetIndex()
+    end
+  end
+  if tableCount(Ledger) < int(meta.accounts, 0) then
+    local restored = decodedTable(base.venueledgerstate)
+    if restored then Ledger = narrowNumbers(restored) end
+  end
+  if type(Book) ~= "table" or int(Book.orderSeq, 0) < int(meta.orderSeq, 0)
+     or int(Book.fillSeq, 0) < int(meta.fillSeq, 0) then
+    local restored = decodedTable(base.venuebookstate)
+    if restored then
+      Book = narrowNumbers(restored)
+      OrderBook.normaliseMarketDaily(Book)
+      ensureBook()
+      rebuildReceiptOrder(Book)
+    end
+  end
+  if tableCount(Deposits) < int(meta.deposits, 0) then
+    local restored = decodedTable(base.venuedepositstate)
+    if restored then Deposits = rekey(narrowNumbers(restored)) end
+  end
+  if tableCount(Withdrawals) < int(meta.withdrawals, 0) then
+    local restored = decodedTable(base.venuewithdrawalstate)
+    if restored then Withdrawals = rekey(narrowNumbers(restored)) end
+  end
+  WithdrawSeq = math.max(int(WithdrawSeq, 0), int(meta.withdrawSeq, 0))
 end
 
 -- Views ------------------------------------------------------------------------
@@ -586,7 +838,11 @@ H["Order.Amend"] = function(base, msg, timestamp, b)
   if not who then return refusal end
   local amended, problem = OrderBook.amendOrder(host(), Book, who,
     tostring(tag(msg, "OrderId", "Order") or ""),
-    int(tag(msg, "Price"), 0), int(tag(msg, "Quantity"), 0),
+    -- An omitted field means "keep the resting value".  Passing zero for a
+    -- missing Price made every quantity-only amend fail as Invalid unit price;
+    -- the in-game book already preserves nil in exactly this way.
+    tag(msg, "Price") ~= nil and int(tag(msg, "Price"), 0) or nil,
+    tag(msg, "Quantity") ~= nil and int(tag(msg, "Quantity"), 0) or nil,
     timestamp, tag(msg, "ActionId"), {
       tif = tag(msg, "Tif", "TimeInForce"),
       stp = tag(msg, "Stp", "SelfTrade"),
@@ -618,8 +874,19 @@ end
 --- Anyone may call it and nobody is paid to: matching does not depend on it,
 --- because expiry is reconciled in the index rather than swept. This is
 --- housekeeping, and it is here so that housekeeping is possible at all.
+--- Anyone may call it and nobody is paid to, which is fine for the work and
+--- expensive for the publication: a Maintain that released nothing would still
+--- rewrite the config, the ledger, the book, the deposits and the withdrawals,
+--- and every message pays for the whole published map five times over. So a
+--- call that expired zero orders declares itself idle and skips the state
+--- rewrite. One that expired ANY must not: escrow moved back to its owners and
+--- a restore that missed it would hand the money out twice.
+---
+--- Note the gate is the count, not the verb. `Order.Maintain` is never
+--- unconditionally read-only.
 H["Order.Maintain"] = function(base, msg, timestamp)
   local expired = OrderBook.maintain(host(), Book, timestamp, int(tag(msg, "Limit"), 25))
+  StateIdle = int(expired, 0) == 0
   return reply(base, { expired = expired })
 end
 
@@ -916,18 +1183,30 @@ H["Admin.CreateMarket"] = function(base, msg, _, b)
   end
 
   local overrides = { status = "closed" }
-  local function number(name, field, low)
+  --- `high` is optional and only two fields have one, because only two of these
+  --- are a RATE rather than a size. Owner-only, so this is a sanity bound and
+  --- not a live exploit -- but an unbounded `TakerBps` accepts 1000000, which
+  --- is a 100x fee, and `accrueFee` clamps `fee > gross` only AFTER it has
+  --- already banked the carry, so an absurd bps is not merely a big number.
+  --- 1000 is 10%, far above anything this venue would ever charge.
+  ---
+  --- `BandBps` is capped at BPS because above it the value is already
+  --- meaningless: `orderbook.priceBand` does `math.min(bps, BPS - 1)` on the
+  --- low side, so 10000 and 10000000 name the same corridor floor.
+  local function number(name, field, low, high)
     local given = tag(msg, name)
     if given == nil then return nil end
     local n = int(given, -1)
     if n < low then return name .. " must be at least " .. asString(low) end
+    if high and n > high then return name .. " must be at most " .. asString(high) end
     overrides[field] = n
     return nil
   end
   local problem = number("Tick", "tick", 1) or number("Lot", "lot", 1)
     or number("MinValue", "minValue", 0) or number("MaxPrice", "maxPrice", 1)
     or number("MaxQuantity", "maxQuantity", 1)
-    or number("TakerBps", "takerBps", 0) or number("BandBps", "bandBps", 0)
+    or number("TakerBps", "takerBps", 0, 1000)
+    or number("BandBps", "bandBps", 0, 10000)
     or number("CreationCost", "creationCost", 0)
   if problem then return fail(base, problem) end
 
@@ -1111,24 +1390,53 @@ end
 --- accounts it touched: the whole ledger would be rewritten on every trade for
 --- the benefit of almost nobody, and the venue's ledger is the one key here
 --- that grows with the number of wallets that have ever traded.
+---
+--- PROVEN IDENTITY AND MOVED BALANCE ONLY -- NEVER A RAW TAG. This used to add
+--- `Account`, `Recipient` and `Sender` straight off the message, and a
+--- published key, once created, stays in the process map forever. Any wallet
+--- could therefore mint one per message -- with the read-only `Info`, at that
+--- -- by naming a 43-character id it had made up, and CLAUDE.md's cost model
+--- charges the WHOLE published map to every subsequent message, five times
+--- over. That is the `player-<address>` growth shape with the cost moved onto
+--- everybody else and the trigger handed to a stranger.
+---
+--- Nothing legitimate needs them: `creditFree`/`debitFree` record every
+--- address whose balance actually MOVED in `TouchedAccounts`, which covers the
+--- `Credit-Notice` depositor named in `Sender`, the `Venue.Credit` account,
+--- `Withdraw`, and both of the admin settlement paths including the refund. A
+--- quarantined deposit credits nobody and correctly mints no key. `H["Balance"]`
+--- still ANSWERS for any account it is asked about; only the published key for
+--- a stranger goes away.
 local function touched(msg, extra)
   local out = {}
   local function add(value)
     if validId(value) then out[value] = true end
   end
   add(provenSigner(msg))
-  add(tag(msg, "Account"))
-  add(tag(msg, "Recipient"))
-  add(tag(msg, "Sender"))
+  for value in pairs(TouchedAccounts) do add(value) end
   for _, value in ipairs(extra or {}) do add(value) end
   return out
 end
 
 function compute(base, req)
+  base = type(base) == "table" and base or {}
+  restoreOperationalState(base)
   local msg = (req and req.body) or {}
-  local timestamp = int(msg.Timestamp or msg.timestamp
-    or (req and (req.Timestamp or req.timestamp)), 0)
+  -- THE ASSIGNMENT FIRST, THE BODY ONLY AS A LAST RESORT, AND THE ORDER IS THE
+  -- WHOLE POINT. `msg` is `req.body` -- the user's own signed data item -- so
+  -- reading `msg.Timestamp` first lets any wallet set this venue's clock, and
+  -- the clock is not decoration here: a far-future stamp retires every resting
+  -- order into the index's dead queue and `Order.Maintain` (which anybody may
+  -- call) then cancels them, a fill stamped far ahead makes `marketDay` prune
+  -- every real candle as `< day - 35`, and `rememberAction`'s TTL sweep evicts
+  -- replay guards that are still inside a client's retry window. `req.timestamp`
+  -- is the scheduler's assignment and no wallet can forge it. This is the order
+  -- game.lua, hunt.lua, marketplace.lua and the battle worker all read in.
+  local timestamp = int((req and (req.timestamp or req.Timestamp))
+    or msg.Timestamp or msg.timestamp, 0)
 
+  TouchedAccounts = {}
+  StateIdle = false
   ensureBook()
   Emergency = type(Emergency) == "table" and Emergency
     or { paused = false, reason = "", scope = "trading", at = 0 }
@@ -1166,15 +1474,33 @@ function compute(base, req)
   result.supply = encode(supplyView())
   result.paused = Emergency.paused and "1" or "0"
 
-  -- One trader's position, addressable without pulling the whole ledger:
-  -- `/now/balance-<address>`. An emptied account publishes "{}" rather than
-  -- disappearing -- a key already in the map stays in it -- which caps what a
-  -- departed trader costs at a few dozen bytes instead of their whole
-  -- position.
+  local readOnly = { info = true, balance = true, book = true, supply = true }
+  if result.venuecommit == nil
+     or (handler and not readOnly[word(action)] and not StateIdle) then
+    result.venueconfigstate = encode({
+      mode = VenueMode, sealed = VenueSealed == true, name = VenueName,
+      gameProcess = GameProcess, assets = Assets, emergency = Emergency,
+    })
+    result.venueledgerstate = encode(Ledger)
+    result.venuebookstate = encode(bookExport())
+    result.venuedepositstate = encode(depositExport())
+    result.venuewithdrawalstate = encode(withdrawalExport())
+  end
+  result.venuecommit = encode({
+    assets = tableCount(Assets), accounts = tableCount(Ledger),
+    deposits = tableCount(Deposits), withdrawals = tableCount(Withdrawals),
+    withdrawSeq = int(WithdrawSeq, 0),
+    orderSeq = int(Book and Book.orderSeq, 0), fillSeq = int(Book and Book.fillSeq, 0),
+  })
+
+  -- One trader's complete bounded position, addressable without pulling the
+  -- whole ledger: `/now/balance-<address>`. It includes free balances plus the
+  -- caller's own orders and fills; publishing only `free` made a reload forget
+  -- every order id and left no unsigned way to cancel it. An emptied account
+  -- remains a small object rather than disappearing because a published key,
+  -- once created, stays in the process map.
   for address in pairs(touched(msg, {})) do
-    local free = {}
-    for asset, amount in pairs(Ledger[address] or {}) do free[asset] = asString(amount) end
-    result["balance-" .. address] = encode(free)
+    result["balance-" .. address] = encode(accountView(address, timestamp))
   end
 
   -- Compact the heap before the node photographs it. HyperBEAM snapshots this
