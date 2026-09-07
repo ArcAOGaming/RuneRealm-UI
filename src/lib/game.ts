@@ -780,7 +780,7 @@ export const retryHuntAcknowledgement = () =>
 
 // Arena ---------------------------------------------------------------------
 
-/** Pay the Rune, take the four battles. */
+/** Enter a four-battle session; each fight stakes Gold when it starts. */
 export const enterArena = (berry?: BerryItemId) =>
   write<Player>({ Action: 'Battle.Begin', ...(berry ? { Item: berry } : {}) });
 

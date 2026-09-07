@@ -931,6 +931,13 @@ export interface Battle {
   /** The fight hit the round cap and was decided on remaining health. */
   timedOut?: boolean;
   forfeited?: boolean;
+  /** Gold committed to this fight; PvE names a shared tier, PvP carries its pot. */
+  arena?: {
+    pvp?: boolean;
+    tier?: string;
+    stake: number;
+    pot?: number;
+  };
   /** Worker metadata on fleet bot battles. */
   protocol?: string;
   workerId?: string;
