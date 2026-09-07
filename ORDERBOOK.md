@@ -909,3 +909,149 @@ funded out of the locked reserve on top of its own bucket move.
 164, hunt 25+38, rune 85, marketplace 11, minify 17/17 including the deploy
 ceiling.
 
+---
+
+## 13. What the Solidity books do, and what of it is worth taking (2026-09-06)
+
+Read against [OasisDEX/`maker-otc`](https://github.com/daifoundation/maker-otc),
+which [hord's DEX](https://github.com/hord/hord-orderbook-dex-contracts) is a
+fork of (`SimpleMarket.sol` + `MatchingMarket.sol`), and
+[samwitch-orderbook](https://github.com/PaintSwap/samwitch-orderbook), which is
+the modern red-black-tree answer to the same problem.
+
+### The short version: they are optimising a different cost
+
+On Ethereum the cost is the **storage write** — ~20,000 gas per 32-byte slot —
+so every trick in both codebases is about touching fewer slots. Here a slot
+costs the size of the **whole published map, five times over, whatever the
+message did** (CLAUDE.md), and compute is 231 us and therefore free.
+
+That inverts almost every conclusion:
+
+| their optimisation | why it exists | here |
+|---|---|---|
+| red-black tree over price levels (`O(log n)`) | tree ops are storage writes | **no.** Our index is derived, never published, rebuilt on absence. Its shape is pure compute — free. |
+| four orders packed into one 256-bit word | 4x fewer SSTOREs | **no.** Lua tables have no slot alignment to exploit. |
+| deferred `claimable` settlement, no transfer on fill | a transfer is gas | **no.** In-process settlement is free, and deferring it would break `goldInvariant`. |
+| caller-supplied insert hint (`_findpos(id, pos)`) | walking the list is gas | **no.** `priceSlot` is already a binary search. |
+| tombstone deletion (`delb = block.number`) | deleting is a write | **no**, and we rejected it on purpose: a tombstoned heap grows with every order the book has EVER held. See the note on `heapBefore`. |
+
+So: **the data structure is not the lever.** Anyone proposing we port a
+red-black tree into `orderbook.lua` is optimising the one dimension that is
+already free, and the measurement to demand before believing otherwise is the
+same one CLAUDE.md demands of a language change.
+
+### Two things ARE worth taking, and one of them is a real bug
+
+**1. The dust rule, and we do not have it.** OasisDEX carries `_dust[token]`
+and, after every partial fill:
+
+```solidity
+if (isActive(id) && offers[id].pay_amt < _dust[address(offers[id].pay_gem)]) {
+    cancel(id);
+}
+```
+
+We enforce `minValue` at **creation** and never again. So a 400-lot ask at 12
+Gold that gets swept down to one lot leaves a 12-Gold order resting for its
+full 30-day lifetime — below the 10-Gold minimum the book refused to accept in
+the first place. It occupies a price level, a heap slot, an account slot
+against the 20-order cap, and published bytes, and it does all of that on the
+touch, where it is the first thing every taker has to walk past.
+
+This is the single highest-value idea in either codebase for us, it is about
+fifteen lines in `settleFill`, and it costs nothing: the escrow release path
+already exists (`cancelOrder` with a reason). Reason it `"dust"` so the owner
+can tell it from an expiry.
+
+**2. Do not store what is derivable.** OasisDEX stores **no price at all** —
+an offer is `pay_amt`/`buy_amt` and comparison is a cross-multiplication
+(`_isPricedLtOrEq`), so there is no price field, no tick, and no rounding. We
+should not copy that specific trade (we would lose the price-level index, which
+is what makes our ladder cheap), but the principle is exactly what the byte
+audit below found, independently, in our own published state.
+
+Worth noting that OasisDEX also has `_span[pay][buy]` — a live count per pair —
+which we already have per-account and globally in the index.
+
+### The byte audit, and what each line actually is
+
+Measured on the live process. ~250 KB of published state, and roughly two
+thirds of it is one rule being broken.
+
+**`fills` — 96 KB, 199 rows at 482 bytes.** Five of seventeen fields are
+43-character addresses: `buyer`, `seller`, `maker`, `taker`, `feePayer`. But
+`maker`/`taker` are always a permutation of `buyer`/`seller`, and `feePayer` is
+assigned `taker.account` on the line that builds the record — five fields
+carrying two facts. Add `gross` (it is `price * quantity`), `feeAsset` (it is
+the market's quote), and `item` (it is the market's base), and a fill is about
+100 bytes of information wearing 482.
+
+The compaction is `buyer`, `seller`, and a one-character `takerSide`. That is
+~200 bytes a row, 41%.
+
+**But the real answer is that `fills` should not be published at all.** §11
+already said so and nobody took it; `venue.lua` now ships as the proof that a
+book does not need to. The candles keep the price history permanently, and
+`player.recentFills` gives a trader their own. The client's `ownFills` selector
+already prefers the record and only falls back to the global array for a
+process that has not been redeployed — that fallback is exactly the bridge this
+change was designed to cross.
+
+**`orders` — 71 KB, and it is the same 130 orders twice**: a list in
+`economybook` (`orderView`) and a map in `economystate` (`exportState`).
+"Publish a record once" (CLAUDE.md), violated as plainly as it can be.
+`economystate` needs them — it is the restore shape. `economybook` does not:
+the ladder, the band and the candles are all published, and `ownOrders` prefers
+`player.openOrders`. Drop `orders` from `bookView` and the 71 KB halves; the
+remaining copy compacts further (`id` is `"O" .. seq`, `market` is derivable
+from `item` while a base heads one market, `lot` is 1 on every in-game row).
+
+**`actionReceipts` — 59 KB.** Key is `<43-char address>:<action-id>` at 60
+bytes against a 51-byte value. Two separate problems:
+
+- **The bound is wrong, not just the size.** `rememberAction` evicts by COUNT
+  (`while #state.actionReceiptOrder > 500`), so a busy hour silently evicts a
+  receipt that is still inside a browser's retry window — and an evicted
+  receipt re-arms a double-place, which is what the whole mechanism exists to
+  prevent. Evict by AGE instead. An hour is longer than any client retry and
+  shorter than the current bound in every interesting case, so it is both safer
+  and usually smaller.
+- Do not drop the address from the key to save 43 bytes. The `ActionId` is
+  client-chosen, so an unnamespaced key lets one wallet's id swallow another
+  wallet's order. Shorten the VALUE instead — `kind` is a fixed vocabulary and
+  can be one character — and stop publishing the map at all. It has to survive
+  a redeploy (`exportState`), which is not the same as being in `bookView`.
+
+**`desks.accountUsage` — 15 KB, and this is the one that grows with the
+playerbase.** `pruneDeskUsage` is correct and is called from the right place —
+but only from `usageRows`, which is only reached when somebody **trades that
+desk**. A desk nobody has traded this month keeps every stale row from every
+month before it, and every message marshals all of them five times. Eviction is
+trade-triggered where it needs to be time-triggered: sweep every desk when the
+process notices a new window, not only the desk being traded.
+
+This one is `economy.lua`, not `orderbook.lua` — the desk did not come out in
+the split, deliberately.
+
+### The order to do them in
+
+1. **The dust rule.** A correctness gap, ~15 lines, and it is the only item
+   here that makes the touch better rather than the bytes smaller.
+2. **Stop publishing `fills` and `orders` in `bookView`.** ~167 KB of ~250 KB,
+   no new mechanism, and the client fallback for it already shipped. Needs two
+   small replacements first: a published open-order COUNT (the index already
+   has it) for the market header, and a bounded per-market trade tape — 30 rows,
+   compact — for the intraday chart, which is the one thing the candles do not
+   cover.
+3. **Age-based receipt eviction.** A correctness fix wearing a byte fix.
+4. **Sweep every desk's usage on a window roll.** The only line here that gets
+   worse as the game succeeds.
+5. **Compact the fill and order records** that remain in `exportState`,
+   `accountFills` and `player.recentFills`. Worth ~40% of whatever survives
+   step 2, and it is the least urgent because it is the smallest.
+
+Steps 2-5 are all the same rule — publish state, never constants; publish a
+record once; bound at the point of append — and none of them is a new idea.
+They are the ones nobody has taken yet.
+
