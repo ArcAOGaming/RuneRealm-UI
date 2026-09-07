@@ -49,7 +49,8 @@
     "test:marketplace:local": "node backend/native/run-local-marketplace-test.mjs",
     "test:slots": "node backend/native/slot-continuity.mjs",
     "test:config": "node --test backend/native/live-config.test.mjs",
-    "test:swarm": "npm run test:config && node --test backend/native/swarm/coverage.test.mjs backend/native/swarm/strategy.test.mjs && node backend/native/swarm/swarm.test.mjs",
+    "test:swarm": "npm run test:config && node --test backend/native/swarm/bridge.test.mjs backend/native/swarm/coverage.test.mjs backend/native/swarm/strategy.test.mjs && node backend/native/swarm/swarm.test.mjs",
+    "test:coverage": "node --test --experimental-test-coverage --test-coverage-lines=100 backend/native/live-config.test.mjs backend/native/swarm/coverage.test.mjs backend/native/swarm/strategy.test.mjs",
     "test:battle-fleet": "node backend/native/battle-fleet/run-local-test.mjs && node backend/native/battle-fleet-integration.mjs && node --test backend/native/battle-fleet/allocator.test.mjs backend/native/battle-fleet/http-error.test.mjs backend/native/battle-fleet/probe-devices.test.mjs backend/native/battle-fleet/manifest.test.mjs backend/native/battle-fleet/mixed-runtime-contract.test.mjs backend/native/battle-fleet-config.test.mjs backend/native/battle-fleet-recovery.test.mjs",
     "test:battle-rust": "cargo test --offline --manifest-path backend/native/battle-fleet-rust/Cargo.toml",
     "build:battle-rust": "node backend/native/battle-fleet-rust/build.mjs",
@@ -67,6 +68,9 @@
     "swarm:plan": "node backend/native/swarm.mjs plan",
     "swarm:config": "node backend/native/swarm.mjs config --complete --online",
     "swarm:lived-in": "node backend/native/swarm.mjs run --live --mode soak --duration 1h --coverage lived-in --report 5m",
+    "swarm:three-hour": "node backend/native/swarm.mjs run --live --mode soak --limit 50 --duration 3h --coverage lived-in --concurrency 10 --actions-per-second 10 --burst 1 --report 5m --admin-seed-after 5m --strict-plan",
+    "swarm:trading-thirty": "node backend/native/swarm.mjs run --live --mode soak --limit 50 --duration 30m --coverage observe --concurrency 10 --actions-per-second 10 --burst 1 --report 5m --focus trading --skip-cleanup",
+    "swarm:trading-thousand": "node backend/native/swarm.mjs run --live --mode stress --limit 50 --cycles 20 --coverage observe --concurrency 25 --actions-per-second 25 --burst 5 --focus trading --skip-cleanup",
     "swarm:wallets": "node backend/native/swarm.mjs wallets",
     "swarm:unlock": "node backend/native/burners.mjs unlock",
     "swarm:fund": "node backend/native/burners.mjs fund 50 --rune 100 --scroll 20 --gold 1000",
@@ -81,6 +85,7 @@
     "deploy:contracts:plan": "npm run monster-index:check && node backend/native/redeploy.mjs --plan --free --with-bots",
     "deploy:contracts:check": "npm run monster-index:check && node backend/native/redeploy.mjs --preflight-only --free --with-bots",
     "deploy:contracts": "npm run monster-index:check && node backend/native/redeploy.mjs --free --with-bots",
+    "deploy:contracts:soak": "npm run monster-index:check && node backend/native/redeploy.mjs --blank --free --with-bots --defer-bot-funding",
     "deploy:contracts:resume": "npm run monster-index:check && node backend/native/redeploy.mjs --free --with-bots --resume",
     "deploy:contracts:final:plan": "npm run monster-index:check && node backend/native/redeploy.mjs --plan --seed",
     "deploy:contracts:final:check": "npm run monster-index:check && node backend/native/redeploy.mjs --preflight-only --seed",
@@ -112,7 +117,8 @@
     "hyper:deploy": "npm --prefix hyper-Real run deploy",
     "hyper:dev": "npm --prefix hyper-Real start",
     "hyper:site": "npm --prefix hyper-Real run build",
-    "hyper:release": "npm run hyper:build && npm run hyper:test && npm run hyper:deploy"
+    "hyper:release": "npm run hyper:build && npm run hyper:test && npm run hyper:deploy",
+    "test:catalog": "node --test backend/native/catalog-ref.test.mjs"
   },
   "dependencies": {
     "@ardrive/turbo-sdk": "^1.42.0",

@@ -11,6 +11,7 @@
  *   NODE_URL=<url>       every Lua process must share this scheduler node
  *   --only=internal|external   deploy one of them
  *   --launch             open the markets as well as create them
+ *   --no-env             leave frontend defaults and env files untouched
  *
  * WHAT THIS DEPLOYS, and why it is two processes rather than one.
  *
@@ -35,7 +36,9 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { spawnProcess, sendMessage, jwkToAddress, transportNode } from './hbclient.mjs';
+import {
+  awaitComputedSlot, spawnProcess, sendMessage, jwkToAddress, transportNode,
+} from './hbclient.mjs';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.resolve(HERE, '..', '..');
@@ -125,6 +128,8 @@ async function action(pid, name, tags = {}, data) {
   if (sent.slot == null || !/^\d+$/.test(String(sent.slot))) {
     throw new Error(`${name} was scheduled without a readable slot`);
   }
+  await awaitComputedSlot({ node: NODE, process: pid, slot: sent.slot,
+    attempts: 60, delayMs: 1_000 });
   const text = await readKey(pid, `compute&slot=${sent.slot}/results/output/data`);
   let result;
   try {
@@ -247,6 +252,38 @@ const state = {
 fs.writeFileSync(path.join(HERE, 'venue-state.json'), `${JSON.stringify(state, null, 2)}\n`);
 fs.writeFileSync(path.join(ROOT, 'venue-processes.txt'),
   `${[state.internal || '', state.external || '', NODE, owner].join('\n')}\n`);
+
+function syncFrontend() {
+  if (process.argv.includes('--no-env')) return;
+  const defaultsFile = path.join(ROOT, 'src', 'lib', 'marketplace-config.ts');
+  let defaults = fs.readFileSync(defaultsFile, 'utf8');
+  for (const [key, value] of Object.entries({
+    internalVenue: state.internal || '', externalVenue: state.external || '', node: NODE,
+  })) {
+    const pattern = new RegExp(`(${key}:\\s*')[^']*(')`);
+    if (!pattern.test(defaults)) throw new Error(`Cannot find MARKET_DEFAULTS.${key}`);
+    defaults = defaults.replace(pattern, `$1${value}$2`);
+  }
+  fs.writeFileSync(defaultsFile, defaults);
+
+  const vars = {
+    VITE_INTERNAL_VENUE_PROCESS: state.internal || '',
+    VITE_EXTERNAL_VENUE_PROCESS: state.external || '',
+    VITE_VENUE_NODE: NODE,
+  };
+  for (const name of ['.env.example', '.env.local']) {
+    const file = path.join(ROOT, name);
+    let text = fs.existsSync(file) ? fs.readFileSync(file, 'utf8') : '';
+    for (const [key, value] of Object.entries(vars)) {
+      const line = `${key}=${value}`;
+      text = new RegExp(`^${key}=.*$`, 'm').test(text)
+        ? text.replace(new RegExp(`^${key}=.*$`, 'm'), line)
+        : `${text.replace(/\s*$/, '\n')}${line}\n`;
+    }
+    fs.writeFileSync(file, text);
+  }
+}
+syncFrontend();
 
 console.log('\nWritten: backend/native/venue-state.json, venue-processes.txt');
 console.log('\nNext:');

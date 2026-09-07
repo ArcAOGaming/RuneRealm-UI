@@ -53,6 +53,7 @@ import { fileURLToPath } from 'node:url';
 import { spawnProcess, sendMessage, jwkToAddress, transportNode, awaitComputedSlot } from './hbclient.mjs';
 import { minifyLua } from './lua-minify.mjs';
 import { gameModuleSources } from './game-bundle.mjs';
+import { catalogRef } from './catalog-ref.mjs';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.resolve(HERE, '..', '..');
@@ -134,9 +135,52 @@ if (fleetManifestPath) {
 // `lua-minify.test.mjs` measures the assembled module against the deploy
 // ceiling and used to re-declare the list by hand. Two copies drifted apart
 // once already; one copy cannot.
+/**
+ * Pin the catalog to Arweave BEFORE the spawn, not after.
+ *
+ * `catalog` is ~6.9 KB of constants that change only when the source changes,
+ * and a `~lua@5.3a` slot pays for the whole published map five times over
+ * whatever the message did — so it was charged against every action forever.
+ * Uploaded instead, the process publishes a 43-byte id and the client reads
+ * the bytes off a gateway (16 ms, against 184 ms for `/now/catalog`).
+ *
+ * The ordering is not stylistic. Measured 2026-09-06, time from upload to the
+ * first successful serve was 21.9 s on permagate.io, 32.9 s on ar-io.dev and
+ * 283.7 s — 4.7 minutes — on arweave.net. Spawning a process that points at an
+ * id no gateway will answer yet ships a client that silently reads no `tuning`,
+ * which is the exact drift the note above the `levelUp` block in `game.lua`
+ * exists to stop. `catalogRef()` therefore does not return until a gateway has
+ * served the bytes back, and a failure there aborts the deploy having spawned
+ * nothing.
+ *
+ * Set CATALOG_REF to reuse an id already on Arweave (a redeploy whose constants
+ * did not change), or NO_CATALOG_REF=1 to publish the catalog inline as before.
+ */
+const catalogRefId = await (async () => {
+  if (process.env.NO_CATALOG_REF === '1') {
+    console.log('catalog: inline (NO_CATALOG_REF=1) — ~6.9 KB on every slot');
+    return null;
+  }
+  if (process.env.CATALOG_REF) {
+    console.log(`catalog: reusing ${process.env.CATALOG_REF}`);
+    return process.env.CATALOG_REF;
+  }
+  const receipt = await catalogRef({
+    jwk,
+    publicAccess: PUBLIC_ACCESS,
+    onProgress: (e) => {
+      if (e.phase === 'uploaded') console.log(`catalog: uploaded ${e.id} (${e.winc} winc)`);
+      if (e.phase === 'available') console.log(`catalog: served by ${e.gateway} after ${e.availableMs} ms`);
+    },
+  });
+  console.log(`catalog: ${receipt.bytes} B pinned to ${receipt.id}`);
+  return receipt.id;
+})();
+
 const sources = gameModuleSources({
   publicAccess: PUBLIC_ACCESS,
   hyperAos: process.env.HYPER_AOS || null,
+  catalogRef: catalogRefId,
 });
 
 /**

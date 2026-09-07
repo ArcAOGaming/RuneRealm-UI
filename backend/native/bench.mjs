@@ -19,27 +19,19 @@
  * every message; `users` is a single number. Sampling all four separates "this
  * node is slow" from "this key is expensive".
  */
-import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { assertLiveGraph, resolveLiveGraph } from './live-config.mjs';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.resolve(HERE, '..', '..');
 
-const live = (() => {
-  const f = path.join(ROOT, 'live-process.txt');
-  if (!fs.existsSync(f)) return [];
-  return fs.readFileSync(f, 'utf8').trim().split(/\r?\n/);
-})();
-
-const PID = process.argv[2] || live[0];
-const NODE = process.argv[3] || live[1] || 'https://schedule.forward.computer';
+const graph = assertLiveGraph(resolveLiveGraph({ root: ROOT, overrides: {
+  game: process.argv[2], node: process.argv[3],
+} }));
+const PID = graph.game;
+const NODE = graph.node;
 const SAMPLES = Number(process.argv[4] || 7);
-
-if (!PID) {
-  console.error('No process id. Pass one, or deploy so live-process.txt exists.');
-  process.exit(1);
-}
 
 const KEYS = ['users', 'factions', 'leaderboard', 'catalog'];
 

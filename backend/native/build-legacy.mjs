@@ -143,10 +143,20 @@ function stream(seed) {
  *
  * Keeps every name the current pools still define, taking the CURRENT numbers
  * — the old ones were tuned against a type chart that never fired. Tops up to
- * four from the companion's own element and then the support pools, and
- * guarantees at least one damaging move, which the original did not: four
+ * `C.MOVE_SLOTS` from the companion's own element and then the neutral pool,
+ * and guarantees at least one damaging move, which the original did not: four
  * zero-damage moves was a real roster in the old game and two of them could not
  * hurt each other at all (§5.6).
+ *
+ * THREE slots and TWO pools now, not four and four. `normal`, `boost` and
+ * `heal` merged into one `neutral` pool, so the old `[element, 'normal',
+ * 'boost', 'heal']` rotation names three pools that no longer exist and would
+ * have topped every restored roster up with nothing at all.
+ *
+ * This only matters if the export is ever rebuilt: `legacy-players.json` is
+ * committed, was written when a companion carried four, and is trimmed on the
+ * way in by `Battle.normaliseRoster` instead. Both paths have to agree about
+ * the slot count, so both read it from the constants.
  */
 function rebuildMoves(oldMoves, element, rng) {
   const chosen = {};
@@ -167,8 +177,10 @@ function rebuildMoves(oldMoves, element, rng) {
   const damaging = () => Object.values(chosen).some((m) => (m.damage || 0) > 0);
   const count = () => Object.keys(chosen).length;
 
-  // Trim first: a roster longer than four would be a free upgrade.
-  while (count() > 4) {
+  const SLOTS = C.MOVE_SLOTS ?? 3;
+
+  // Trim first: a roster longer than the slot count would be a free upgrade.
+  while (count() > SLOTS) {
     const names = Object.keys(chosen).sort();
     const droppable = damaging()
       ? names.filter((n) => (chosen[n].damage || 0) === 0 || names.filter((x) => chosen[x].damage > 0).length > 1)
@@ -176,17 +188,17 @@ function rebuildMoves(oldMoves, element, rng) {
     delete chosen[droppable[droppable.length - 1] ?? names[names.length - 1]];
   }
 
-  const pools = [element, 'normal', 'boost', 'heal'];
+  const pools = [element, 'neutral'];
   let guard = 0;
-  while (count() < 4 && guard++ < 40) {
-    if (!damaging()) { if (take(element) || take('normal')) continue; }
+  while (count() < SLOTS && guard++ < 40) {
+    if (!damaging()) { if (take(element) || take('neutral')) continue; }
     take(pools[guard % pools.length]);
   }
   if (!damaging()) {
     // Displace the alphabetically last support move for an element attack.
     const names = Object.keys(chosen).sort();
     delete chosen[names[names.length - 1]];
-    take(element) || take('normal');
+    take(element) || take('neutral');
   }
   return chosen;
 }

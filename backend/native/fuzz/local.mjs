@@ -143,6 +143,10 @@ function bundle() {
     'local jsonx = (function()', read('jsonenc.lua'), 'end)()',
     'local encode, jsonObject = jsonx.encode, jsonx.object',
     'Battle = (function()', read('battle.lua'), 'end)()',
+    // `economy.lua` delegates every book operation to this shared module. The
+    // deploy and game-test bundles already load it first; omitting it here made
+    // fuzz fail only when a generated action finally touched the book.
+    'local OrderBook = (function()', read('orderbook.lua'), 'end)()',
     'local EconomyEngine = (function()', read('economy.lua'), 'end)()',
     read('game.lua'),
     SHIM,

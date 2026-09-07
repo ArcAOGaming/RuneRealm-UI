@@ -47,9 +47,23 @@ export const GAME_BUNDLE_FILES = [
  * @param {string}  [options.hyperAos] path to a full hyper-aos runtime to
  *   bundle instead of `json.lua`; only its basename is used, and it is read
  *   from `backend/native/`, which is what `deploy.mjs` has always done.
+ * @param {string}  [options.catalogRef] Arweave id of an already-uploaded
+ *   catalog. When given, `game.lua` publishes the 43-byte id as `catalogref`
+ *   instead of ~6.9 KB of `catalog` -- bytes every slot pays for five times
+ *   over. Omit it and the module behaves exactly as it always has, which is
+ *   what the test suites and local runners depend on. Get one from
+ *   `catalog-ref.mjs`, which only returns an id a gateway has actually served.
  */
-export function gameModuleSources({ publicAccess = false, hyperAos = null } = {}) {
+export function gameModuleSources({
+  publicAccess = false, hyperAos = null, catalogRef = null,
+} = {}) {
   const read = (f) => fs.readFileSync(path.join(HERE, f), 'utf8');
+  // Interpolated into Lua source, so it is checked rather than trusted: an
+  // Arweave id is exactly 43 base64url characters and nothing else can appear
+  // between the quotes.
+  if (catalogRef !== null && !/^[A-Za-z0-9_-]{43}$/.test(catalogRef)) {
+    throw new Error(`catalogRef is not an Arweave id: ${JSON.stringify(catalogRef)}`);
+  }
   return [
     // `json.lua` alone, not all of hyper-aos: this process defines its own
     // `compute` and uses nothing else aos provides. Set HYPER_AOS to bundle the
@@ -58,6 +72,7 @@ export function gameModuleSources({ publicAccess = false, hyperAos = null } = {}
     'local C = (function()',     read('constants.lua'), 'end)()',
     read('monster-index.generated.lua'),
     `C.PUBLIC_ACCESS = ${publicAccess ? 'true' : 'false'}`,
+    ...(catalogRef ? [`C.CATALOG_REF = "${catalogRef}"`] : []),
     'local jsonx = (function()', read('jsonenc.lua'),   'end)()',
     'local encode, jsonObject = jsonx.encode, jsonx.object',
     'Battle = (function()',      read('battle.lua'),    'end)()',

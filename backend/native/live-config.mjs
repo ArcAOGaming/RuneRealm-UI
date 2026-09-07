@@ -120,6 +120,7 @@ export function resolveLiveGraph({
   const live = textReceipt(path.join(root, 'live-process.txt'), ['game', 'node', 'owner']);
   const deployment = json(path.join(native, 'deployment-state.json'), issues);
   const market = json(path.join(native, 'marketplace-state.json'), issues);
+  const venue = json(path.join(native, 'venue-state.json'), issues);
   const marketText = marketReceipt(path.join(root, 'marketplace-processes.txt'));
   const runeText = textReceipt(path.join(root, 'rune-process.txt'), ['rune', 'node', 'owner']);
   const hunt = huntReceipt(path.join(root, 'hunt-process.txt'));
@@ -154,6 +155,13 @@ export function resolveLiveGraph({
     && nodeMatches(deployment?.node);
   const liveMatches = live?.game === game && nodeMatches(live?.node);
   const marketMatches = market?.game === game && nodeMatches(market?.node);
+  const receiptRune = deploymentMatches ? deployment?.processes?.rune
+    : (marketMatches ? market?.rune : '');
+  const receiptQuote = deploymentMatches ? deployment?.processes?.quote
+    : (marketMatches ? market?.quote : '');
+  const venueMatches = venue?.game === game && (!receiptRune || venue?.rune === receiptRune)
+    && (!receiptQuote || venue?.quote === receiptQuote)
+    && nodeMatches(venue?.node);
   const huntMatches = hunt?.game === game && nodeMatches(hunt?.node);
   const battleMatches = battle?.gameProcess === game && nodeMatches(battle?.node);
 
@@ -162,6 +170,9 @@ export function resolveLiveGraph({
   }
   if (market && !marketMatches) {
     issues.warnings.push('marketplace-state.json belongs to another game or node and was not joined');
+  }
+  if (venue && !venueMatches) {
+    issues.warnings.push('venue-state.json belongs to another game, token pair or node and was not joined');
   }
   if (hunt && !huntMatches) {
     issues.warnings.push('hunt-process.txt belongs to another game or node and was not joined');
@@ -205,6 +216,34 @@ export function resolveLiveGraph({
       { value: node, source: nodeChoice.source },
     ],
   );
+  const internalVenueChoice = choose(
+    provided(overrides, env, 'internalVenue',
+      ['INTERNAL_VENUE_PROCESS', 'VITE_INTERNAL_VENUE_PROCESS'], issues),
+    [
+      deploymentMatches && { value: deployment.processes?.internalVenue,
+        source: 'deployment-state.json' },
+      venueMatches && { value: venue.internal, source: 'venue-state.json' },
+    ],
+  );
+  const externalVenueChoice = choose(
+    provided(overrides, env, 'externalVenue',
+      ['EXTERNAL_VENUE_PROCESS', 'VITE_EXTERNAL_VENUE_PROCESS'], issues),
+    [
+      deploymentMatches && { value: deployment.processes?.externalVenue,
+        source: 'deployment-state.json' },
+      venueMatches && { value: venue.external, source: 'venue-state.json' },
+    ],
+  );
+  const venueNodeChoice = choose(
+    provided(overrides, env, 'venueNode', ['VENUE_NODE', 'VITE_VENUE_NODE'], issues),
+    [
+      explicitNode && { value: node, source: nodeChoice.source },
+      deploymentMatches && { value: cleanNode(deployment.nodes?.venue),
+        source: 'deployment-state.json' },
+      venueMatches && { value: cleanNode(venue.node), source: 'venue-state.json' },
+      { value: node, source: nodeChoice.source },
+    ],
+  );
   const huntChoice = choose(
     provided(overrides, env, 'hunt', ['HUNT_PROCESS', 'VITE_HUNT_PROCESS'], issues),
     [
@@ -233,6 +272,14 @@ export function resolveLiveGraph({
     marketMatches && market.quote,
     marketMatches && marketText?.quote,
   ], issues);
+  rejectReceiptConflict('internal venue', internalVenueChoice, [
+    deploymentMatches && deployment.processes?.internalVenue,
+    venueMatches && venue.internal,
+  ], issues);
+  rejectReceiptConflict('external venue', externalVenueChoice, [
+    deploymentMatches && deployment.processes?.externalVenue,
+    venueMatches && venue.external,
+  ], issues);
   rejectReceiptConflict('Hunt process', huntChoice, [
     deploymentMatches && deployment.processes?.hunt,
     huntMatches && hunt?.process,
@@ -257,6 +304,9 @@ export function resolveLiveGraph({
     rune: clean(runeChoice.value),
     quote: clean(quoteChoice.value),
     marketNode: cleanNode(marketNodeChoice.value),
+    internalVenue: clean(internalVenueChoice.value),
+    externalVenue: clean(externalVenueChoice.value),
+    venueNode: cleanNode(venueNodeChoice.value),
     hunt: clean(huntChoice.value),
     huntNode: cleanNode(huntNodeChoice.value),
     huntWorkers,
@@ -271,6 +321,8 @@ export function resolveLiveGraph({
       game: gameChoice.source, node: nodeChoice.source, owner: ownerChoice.source,
       rune: runeChoice.source, quote: quoteChoice.source,
       marketNode: marketNodeChoice.source,
+      internalVenue: internalVenueChoice.source,
+      externalVenue: externalVenueChoice.source, venueNode: venueNodeChoice.source,
       hunt: huntChoice.source, huntNode: huntNodeChoice.source,
     },
     errors: issues.errors,
@@ -284,9 +336,13 @@ export function resolveLiveGraph({
   if (graph.quote && !graph.rune) {
     graph.errors.push('the external exchange must provide both a Rune and a quote process id');
   }
+  if (Boolean(graph.internalVenue) !== Boolean(graph.externalVenue)) {
+    graph.errors.push('the venue graph must provide both internal and external process ids');
+  }
   for (const [key, value] of Object.entries({
     game: graph.game, rune: graph.rune, quote: graph.quote,
     hunt: graph.hunt, owner: graph.owner,
+    internalVenue: graph.internalVenue, externalVenue: graph.externalVenue,
   })) {
     if (value && !PROCESS_ID_RE.test(value)) {
       graph.errors.push(`${key} is not a 43-character process id: ${value}`);
@@ -305,7 +361,8 @@ export function resolveLiveGraph({
  * genuinely needs, so a game-only tool is not blocked by an absent Hunt fleet.
  */
 export function assertLiveGraph(graph, {
-  requireHunt = false, requireExchange = false, requireBattleFleet = false,
+  requireHunt = false, requireExchange = false, requireVenues = false,
+  requireBattleFleet = false,
 } = {}) {
   const errors = [...graph.errors];
   if (!PROCESS_ID_RE.test(graph.game ?? '')) {
@@ -315,6 +372,11 @@ export function assertLiveGraph(graph, {
   if (requireExchange
       && ![graph.rune, graph.quote].every((id) => PROCESS_ID_RE.test(id ?? ''))) {
     errors.push('Rune/quote exchange is required but not configured');
+  }
+  if (requireVenues
+      && ![graph.internalVenue, graph.externalVenue]
+        .every((id) => PROCESS_ID_RE.test(id ?? ''))) {
+    errors.push('both internal and external venues are required but not configured');
   }
   if (requireHunt && !PROCESS_ID_RE.test(graph.hunt ?? '')) {
     errors.push('a Hunt process is required but not configured');
@@ -348,6 +410,11 @@ export function viteEnvForGraph(graph) {
   if (graph.rune) env.VITE_RUNE_PROCESS = graph.rune;
   if (graph.quote) env.VITE_QUOTE_PROCESS = graph.quote;
   if (graph.rune || graph.quote) env.VITE_MARKET_NODE = graph.marketNode || graph.node;
+  if (graph.internalVenue) env.VITE_INTERNAL_VENUE_PROCESS = graph.internalVenue;
+  if (graph.externalVenue) env.VITE_EXTERNAL_VENUE_PROCESS = graph.externalVenue;
+  if (graph.internalVenue || graph.externalVenue) {
+    env.VITE_VENUE_NODE = graph.venueNode || graph.node;
+  }
   return env;
 }
 
@@ -380,7 +447,8 @@ async function published(node, pid, key, fetchImpl, timeoutMs) {
  */
 export async function verifyLiveGraph(graph, {
   fetchImpl = fetch, timeoutMs = 15_000,
-  requireHunt = false, requireExchange = false, requireBattleFleet = false,
+  requireHunt = false, requireExchange = false, requireVenues = false,
+  requireBattleFleet = false,
 } = {}) {
   const checks = [];
   const errors = [];
@@ -396,6 +464,36 @@ export async function verifyLiveGraph(graph, {
         fetchImpl, timeoutMs);
       check('game -> Rune', wired === graph.rune, `published ${wired || '(empty)'}`);
       check('Rune -> game', minter === graph.game, `published ${minter || '(empty)'}`);
+    })());
+  }
+  if (graph.internalVenue || graph.externalVenue || requireVenues) {
+    tasks.push((async () => {
+      const venueNode = graph.venueNode || graph.node;
+      const [wired, internalInfo, externalInfo, internalMarkets, externalMarkets] =
+        await Promise.all([
+          published(graph.node, graph.game, 'venueprocess', fetchImpl, timeoutMs),
+          published(venueNode, graph.internalVenue, 'venueinfo', fetchImpl, timeoutMs),
+          published(venueNode, graph.externalVenue, 'venueinfo', fetchImpl, timeoutMs),
+          published(venueNode, graph.internalVenue, 'markets', fetchImpl, timeoutMs),
+          published(venueNode, graph.externalVenue, 'markets', fetchImpl, timeoutMs),
+        ]);
+      check('game -> internal venue', wired === graph.internalVenue,
+        `published ${wired || '(empty)'}`);
+      check('internal venue -> game', internalInfo?.Mode === 'internal'
+        && internalInfo?.Sealed === true && internalInfo?.GameProcess === graph.game,
+      `published ${internalInfo?.Mode || '(empty)'}/${internalInfo?.GameProcess || '(empty)'}`);
+      check('external venue token pair', externalInfo?.Mode === 'external'
+        && externalInfo?.Sealed === true
+        && externalInfo?.Assets?.rune?.process === graph.rune
+        && externalInfo?.Assets?.relic?.process === graph.quote,
+      `published ${externalInfo?.Assets?.rune?.process || '(empty)'} / ${externalInfo?.Assets?.relic?.process || '(empty)'}`);
+      const internalRows = Object.values(internalMarkets ?? {});
+      const externalRows = Object.values(externalMarkets ?? {});
+      check('venue markets launched', internalRows.length === 7
+        && internalRows.every((row) => row?.status === 'open')
+        && externalRows.length === 1 && externalRows[0]?.status === 'open',
+      `published ${internalRows.filter((row) => row?.status === 'open').length}/7 internal, `
+        + `${externalRows.filter((row) => row?.status === 'open').length}/1 external`);
     })());
   }
   if (graph.hunt) {
@@ -439,6 +537,8 @@ export function publicLiveGraph(graph) {
   return {
     game: graph.game, node: graph.node, owner: graph.owner,
     rune: graph.rune, quote: graph.quote, marketNode: graph.marketNode,
+    internalVenue: graph.internalVenue, externalVenue: graph.externalVenue,
+    venueNode: graph.venueNode,
     hunt: graph.hunt, huntNode: graph.huntNode,
     huntWorkers: [...(graph.huntWorkers ?? [])],
     battleWorkers: [...(graph.battleWorkers ?? [])],

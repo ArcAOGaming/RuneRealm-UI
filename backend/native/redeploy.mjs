@@ -22,12 +22,12 @@
  *   --quote <pid>           use an existing compatible quote token
  *   --quote-ticker <name>   ticker for --quote (default TEST-RELIC)
  *   --quote-denomination N  decimals for --quote (default 6)
- *   --fee-bps N             AMM fee in basis points (default 30)
  *   --site                  upload the final build and print its manifest id
  *   --free / --public-access  explicit free sign-up — already the default
  *   --paid-access           gate sign-up behind the Eternal Pass allow-list
  *   --no-free               alias for --paid-access
  *   --with-bots             validate the 50-wallet swarm and grant it access
+ *   --defer-bot-funding     leave bot resources empty for an in-run admin seed
  *   --no-hunt               skip the hunt fleet
  *   --hunt-size N           hunt workers to spawn (default 3)
  *   --hunt-node <url>       node for the hunt fleet (default: the deploy node)
@@ -110,10 +110,10 @@ const publicAccess = freeEnabled ? true : !(
 );
 const withBots = flag('--with-bots')
   || /^(1|true|yes)$/i.test(process.env.SWARM_BOTS || '');
+const deferBotFunding = flag('--defer-bot-funding');
 const customQuote = opt('--quote', process.env.QUOTE_TOKEN || null);
 const quoteTicker = opt('--quote-ticker', process.env.QUOTE_TICKER || 'TEST-RELIC');
 const quoteDenomination = opt('--quote-denomination', process.env.QUOTE_DENOMINATION || '6');
-const feeBps = opt('--fee-bps', process.env.FEE_BPS || '30');
 // The node the free unsigned preflight suites run on. Defaults to the node
 // being deployed to, and that default changed for a reason: the public
 // zephyrdev/arweave.net nodes sit behind an nginx that gives up at ~25 s, and
@@ -144,11 +144,11 @@ const botRoster = withBots ? inspectBotRoster() : null;
 
 if (from && !isId(from)) throw new Error('--from must be a 43-character process id');
 if (customQuote && !isId(customQuote)) throw new Error('--quote must be a 43-character process id');
+if (deferBotFunding && !withBots) {
+  throw new Error('--defer-bot-funding requires --with-bots');
+}
 if (!/^\d+$/.test(String(quoteDenomination)) || Number(quoteDenomination) > 18) {
   throw new Error('--quote-denomination must be an integer from 0 through 18');
-}
-if (!/^\d+$/.test(String(feeBps)) || Number(feeBps) > 1000) {
-  throw new Error('--fee-bps must be an integer from 0 through 1000');
 }
 try {
   const url = new URL(liveTestNode);
@@ -168,16 +168,15 @@ if (flag('--plan')) {
     ? '(--fresh — legacy restore only, no migration)'
     : '(nothing — blank deployment)')}`);
   console.log(`  quote        ${customQuote || 'new TEST-RELIC faucet token'}`);
-  console.log(`  AMM fee      ${feeBps} bps`);
   console.log(`  sign-up      ${publicAccess
     ? 'FREE (any wallet may join) — the default'
     : 'PAID (--paid-access: Eternal Pass allow-list)'}`);
   console.log(`  test bots    ${withBots
-    ? `${botRoster.available}/${botRoster.expected} wallets ready; ${publicAccess ? 'admitted by free mode' : 'allow-list after spawn'}`
+    ? `${botRoster.available}/${botRoster.expected} wallets ready; ${publicAccess ? 'admitted by free mode' : 'allow-list after spawn'}; ${deferBotFunding ? 'funding deferred' : 'funded during deploy'}`
     : 'not enrolled'}`);
   console.log(`  live tests   ${liveTestNode} (unsigned; creates no processes)`);
-  console.log('  stages       offline/live preflight -> game -> Rune -> bridge -> quote/AMM'
-    + ' -> hunt + battle fleets -> verify -> build');
+  console.log('  stages       offline/live preflight -> game -> Rune -> bridge -> quote token'
+    + ' -> both order-book venues -> hunt + battle fleets -> verify -> build');
   console.log(`  hunt         ${flag('--no-hunt') ? 'skipped' : `${opt('--hunt-size', process.env.HUNT_FLEET_SIZE || '3')} worker(s), wired both ways`}`);
   console.log(`  battle       ${flag('--no-battle-fleet') ? 'SKIPPED — battles run in the monolith' : `${opt('--battle-size', process.env.BATTLE_FLEET_LUA || '3')} worker(s), sealed into the game`}`);
   console.log(`  site         ${flag('--site')
@@ -334,7 +333,7 @@ const readLive = () => fs.readFileSync(liveFile, 'utf8').trim().split(/\r?\n/);
 
 // -- preflight ---------------------------------------------------------------
 
-rule('1/8  offline checks, live Luerl suites and preflight build');
+rule('1/9  offline checks, live Luerl suites and preflight build');
 if (flag('--skip-checks')) {
   console.log('skipped by --skip-checks');
 } else {
@@ -351,6 +350,8 @@ if (flag('--skip-checks')) {
     [path.join(HERE, 'run-local-game-test.mjs')]);
   await runCommand('native exchange tests', process.execPath,
     [path.join(HERE, 'run-local-marketplace-test.mjs')]);
+  await runCommand('native two-venue tests', process.execPath,
+    [path.join(HERE, 'run-local-venue-test.mjs')]);
   await runCommand('native hunt bridge tests', process.execPath,
     [path.join(HERE, 'run-local-hunt-test.mjs')]);
   await runCommand('adversarial economy calibration', process.execPath,
@@ -359,6 +360,12 @@ if (flag('--skip-checks')) {
     [path.join(HERE, 'fuzz.mjs'), '--ops', '500', '--wallets', '20', '--seed', '20260830']);
   await runCommand('swarm orchestration tests', process.execPath,
     [path.join(HERE, 'swarm', 'swarm.test.mjs')]);
+  await runCommand('orchestration 100% line coverage', process.execPath, [
+    '--test', '--experimental-test-coverage', '--test-coverage-lines=100',
+    path.join(HERE, 'live-config.test.mjs'),
+    path.join(HERE, 'swarm', 'coverage.test.mjs'),
+    path.join(HERE, 'swarm', 'strategy.test.mjs'),
+  ]);
   // The game's LIVE gate is the smoke test, not the full suite.
   //
   // The full suite is 367 tests: 29 seconds on the offline aos WASM (already
@@ -380,6 +387,8 @@ if (flag('--skip-checks')) {
     [path.join(HERE, 'run-rune-test.sh'), liveTestNode]);
   await runCommand('live exchange tests', process.env.BASH || 'bash',
     [path.join(HERE, 'run-marketplace-test.sh'), liveTestNode]);
+  await runCommand('live two-venue tests', process.env.BASH || 'bash',
+    [path.join(HERE, 'run-venue-test.sh'), liveTestNode]);
   // Only when the legacy players are actually part of this deployment.
   //
   // Without `--seed` nothing restores them, so the check would verify a body of
@@ -411,7 +420,7 @@ console.log(`node   ${NODE}`);
 console.log(`owner  ${owner}`);
 console.log(`from   ${from ?? (seedData ? '(fresh — legacy restore only)' : '(nothing — blank)')}`);
 
-rule('2/8  the game process');
+rule('2/9  the game process');
 const gameArgs = [];
 if (from) gameArgs.push('--migrate-from', from);
 // A deployment starts empty on purpose, and says so out loud either way.
@@ -511,22 +520,26 @@ if (withBots) {
    * 50,000 of it. Raising this without raising `C.ECONOMY.gold` first is
    * refused by the handler rather than silently half-applied.
    */
-  const BOT_FUNDING = { rune: 100, scroll: 20, gold: 1000 };
-  console.log('       funding test-only Rune/Scroll/Gold minimums for economic play');
-  await sendAndSettle(game, {
-    action: 'Admin.Economy.FundTestBots',
-    tags: { Action: 'Admin.Economy.FundTestBots' },
-    data: JSON.stringify({ addresses: botRoster.addresses, ...BOT_FUNDING }),
-  }, 'test-bot funding');
-  // The handler has run, so the published record is the funded one.
-  const fundedSample = JSON.parse(await readKey(game, `player-${botRoster.addresses[0]}`));
-  if (Number(fundedSample?.inventory?.rune ?? 0) < BOT_FUNDING.rune
-      || Number(fundedSample?.inventory?.scroll ?? 0) < BOT_FUNDING.scroll
-      || Number(fundedSample?.gold ?? 0) < BOT_FUNDING.gold) {
-    throw new Error('test-bot economy funding did not publish the configured minimums');
+  if (deferBotFunding) {
+    console.log('       test inventory intentionally empty until the soak admin seed');
+  } else {
+    const BOT_FUNDING = { rune: 100, scroll: 20, gold: 1000 };
+    console.log('       funding test-only Rune/Scroll/Gold minimums for economic play');
+    await sendAndSettle(game, {
+      action: 'Admin.Economy.FundTestBots',
+      tags: { Action: 'Admin.Economy.FundTestBots' },
+      data: JSON.stringify({ addresses: botRoster.addresses, ...BOT_FUNDING }),
+    }, 'test-bot funding');
+    // The handler has run, so the published record is the funded one.
+    const fundedSample = JSON.parse(await readKey(game, `player-${botRoster.addresses[0]}`));
+    if (Number(fundedSample?.inventory?.rune ?? 0) < BOT_FUNDING.rune
+        || Number(fundedSample?.inventory?.scroll ?? 0) < BOT_FUNDING.scroll
+        || Number(fundedSample?.gold ?? 0) < BOT_FUNDING.gold) {
+      throw new Error('test-bot economy funding did not publish the configured minimums');
+    }
+    console.log(`       ${botRoster.expected} wallets hold >= ${BOT_FUNDING.rune} Rune, `
+      + `${BOT_FUNDING.scroll} Scroll, ${BOT_FUNDING.gold} Gold`);
   }
-  console.log(`       ${botRoster.expected} wallets hold >= ${BOT_FUNDING.rune} Rune, `
-    + `${BOT_FUNDING.scroll} Scroll, ${BOT_FUNDING.gold} Gold`);
 }
 
 if (flag('--game-only')) {
@@ -537,7 +550,7 @@ if (flag('--game-only')) {
 
 // -- the token ----------------------------------------------------------------
 
-rule('3/8  the Rune token');
+rule('3/9  the Rune token');
 const runeFile = path.join(ROOT, 'rune-process.txt');
 const priorRune = fs.existsSync(runeFile)
   ? fs.readFileSync(runeFile, 'utf8').trim().split(/\r?\n/)
@@ -554,7 +567,7 @@ console.log(`\ntoken  ${token}`);
 
 // -- wiring -------------------------------------------------------------------
 
-rule('4/8  wiring the game and Rune together');
+rule('4/9  wiring the game and Rune together');
 
 console.log('naming the game as the only minter');
 await sendAndSettle(token, {
@@ -574,11 +587,10 @@ const wired = await readKey(game, 'runetoken');
 if (wired !== token) throw new Error(`game runetoken is "${wired}", expected ${token}`);
 console.log(`  game.runetoken  = ${wired}`);
 
-// -- Rune quote token and AMM -------------------------------------------------
+// -- Rune quote token ---------------------------------------------------------
 
-rule('5/8  quote token and Rune AMM');
+rule('5/9  quote token');
 const marketplaceStateFile = path.join(HERE, 'marketplace-state.json');
-let amm = '';
 let quote = '';
 let marketState = null;
 
@@ -588,9 +600,8 @@ if (flag('--no-market')) {
   if (resume && fs.existsSync(marketplaceStateFile)) {
     const candidate = JSON.parse(fs.readFileSync(marketplaceStateFile, 'utf8'));
     if (candidate.game === game && candidate.rune === token && candidate.node === NODE
-        && isId(candidate.amm) && isId(candidate.quote)) {
+        && isId(candidate.quote)) {
       marketState = candidate;
-      console.log(`resume: reusing AMM    ${candidate.amm}`);
       console.log(`resume: reusing quote  ${candidate.quote}`);
     }
   }
@@ -603,15 +614,62 @@ if (flag('--no-market')) {
       ...(customQuote ? { QUOTE_TOKEN: customQuote } : {}),
       QUOTE_TICKER: quoteTicker,
       QUOTE_DENOMINATION: String(quoteDenomination),
-      FEE_BPS: String(feeBps),
     });
     marketState = JSON.parse(fs.readFileSync(marketplaceStateFile, 'utf8'));
   }
 
-  ({ amm, quote } = marketState);
+  ({ quote } = marketState);
   if (marketState.game !== game || marketState.rune !== token || marketState.node !== NODE) {
     throw new Error('marketplace deploy recorded a different game, Rune token or node');
   }
+}
+
+// -- both custody/order-book venues -----------------------------------------
+
+rule('6/9  internal and external order-book venues');
+const venueStateFile = path.join(HERE, 'venue-state.json');
+let internalVenue = '';
+let externalVenue = '';
+let venueState = null;
+
+if (flag('--no-market')) {
+  console.log('skipped with the quote token by --no-market');
+} else {
+  if (resume && fs.existsSync(venueStateFile)) {
+    const candidate = JSON.parse(fs.readFileSync(venueStateFile, 'utf8'));
+    if (candidate.game === game && candidate.rune === token && candidate.quote === quote
+        && candidate.node === NODE && isId(candidate.internal) && isId(candidate.external)
+        && candidate.launched === true) {
+      venueState = candidate;
+      console.log(`resume: reusing internal venue  ${candidate.internal}`);
+      console.log(`resume: reusing external venue  ${candidate.external}`);
+    }
+  }
+
+  if (!venueState) {
+    const venueArgs = ['--launch', ...(flag('--no-env') ? ['--no-env'] : [])];
+    await run('deploy-venue.mjs', venueArgs, {
+      GAME_PROCESS: game, RUNE_TOKEN: token, QUOTE_TOKEN: quote,
+    });
+    venueState = JSON.parse(fs.readFileSync(venueStateFile, 'utf8'));
+  }
+
+  ({ internal: internalVenue, external: externalVenue } = venueState);
+  if (venueState.game !== game || venueState.rune !== token || venueState.quote !== quote
+      || venueState.node !== NODE || !isId(internalVenue) || !isId(externalVenue)) {
+    throw new Error('venue deploy recorded a different game, token pair or node');
+  }
+
+  console.log('telling the game which internal venue it trusts');
+  await sendAndSettle(game, {
+    action: 'Admin.SetVenueProcess',
+    tags: { Action: 'Admin.SetVenueProcess', ProcessId: internalVenue },
+  }, 'Admin.SetVenueProcess');
+  const wiredVenue = await readKey(game, 'venueprocess');
+  if (wiredVenue !== internalVenue) {
+    throw new Error(`game venueprocess is "${wiredVenue}", expected ${internalVenue}`);
+  }
+  console.log(`  game.venue      = ${wiredVenue}`);
 }
 
 // -- the hunt fleet -----------------------------------------------------------
@@ -627,7 +685,9 @@ if (flag('--no-market')) {
 // Fresh workers per deploy is the same rule the battle fleet follows: a worker
 // is compiled against one game id and cannot be pointed at another.
 
-rule('6/8  the hunt and battle fleets');
+rule('7/9  the hunt and battle fleets');
+let deployedHunt = null;
+let deployedBattleWorkers = [];
 if (flag('--no-hunt')) {
   console.log('skipped by --no-hunt');
 } else {
@@ -646,6 +706,12 @@ if (flag('--no-hunt')) {
     throw new Error(`game published huntconfig ${JSON.stringify(huntConfig).slice(0, 120)}`);
   }
   const huntWorkers = Array.isArray(huntConfig.workers) ? huntConfig.workers : [];
+  deployedHunt = {
+    process: huntConfig.processId,
+    workers: huntWorkers.map((worker) => typeof worker === 'string' ? worker
+      : (worker.processId || worker.workerProcessId || worker.id)).filter(isId),
+    node: opt('--hunt-node', process.env.HUNT_NODE || NODE),
+  };
   console.log(`  hunt.enabled    = ${huntConfig.enabled}`);
   console.log(`  hunt.workers    = ${huntWorkers.length}`);
   console.log(`  hunt.lead       = ${huntConfig.processId}`);
@@ -693,13 +759,15 @@ if (flag('--no-battle-fleet')) {
   if (battleConfig.enabled !== true || battleWorkers.length < 1) {
     throw new Error(`game published battlefleet ${JSON.stringify(battleConfig).slice(0, 160)}`);
   }
+  deployedBattleWorkers = battleWorkers.map((worker) => typeof worker === 'string' ? worker
+    : (worker.processId || worker.workerProcessId || worker.id)).filter(isId);
   console.log(`  battle.enabled  = ${battleConfig.enabled}`);
   console.log(`  battle.workers  = ${battleWorkers.length}`);
 }
 
 // -- verification -------------------------------------------------------------
 
-rule('7/8  checking every process relationship');
+rule('8/9  checking every process relationship');
 
 const supply = await readKey(token, 'totalsupply');
 console.log(`  supply          = ${supply}  ${supply === '0' ? '(nothing pre-mined)' : '!! expected 0'}`);
@@ -713,9 +781,9 @@ if (!String(info.Ticker).startsWith('TEST-')) {
 if (!flag('--no-market')) {
   // The companion market is INSIDE the game now, so there is no market process
   // to interrogate — `deploy-marketplace.mjs` stopped spawning `marketplace.lua`
-  // when monsters stopped being one-unit `token@1.0` assets for it to index.
-  // What is left out here is the exchange: Rune and the quote token have real
-  // holders, so they stay their own processes with an AMM between them.
+  // What is left out here is the quote token: Rune and it have real holders,
+  // so they stay their own processes. What trades between them is an ORDER
+  // BOOK -- user-placed bids and asks, no pool and no market maker.
   //
   // Verify the market by asking the GAME for it, which is now where it lives.
   const marketStats = JSON.parse(await readKey(game, 'marketstats'));
@@ -724,27 +792,41 @@ if (!flag('--no-market')) {
   }
   console.log(`  market.listings = ${marketStats.listings} (in-game, not a separate process)`);
 
-  const pool = JSON.parse(await readKey(amm, 'amm'));
-  if (!pool.configured || pool.baseToken !== token || pool.quoteToken !== quote) {
-    throw new Error('AMM pair does not match the deployed Rune and quote processes');
-  }
-  const expectedFee = resume && marketState?.feeBps != null ? marketState.feeBps : feeBps;
-  if (String(pool.feeBps) !== String(expectedFee)) {
-    throw new Error(`AMM fee is ${pool.feeBps}, expected ${expectedFee}`);
-  }
   const quoteInfo = JSON.parse(await readKey(quote, 'tokeninfo'));
-  if (quoteInfo.Ticker !== pool.quoteTicker
-      || String(quoteInfo.Denomination) !== String(pool.quoteDenomination)) {
-    throw new Error('quote token metadata does not match the AMM configuration');
+  if (quoteInfo.Ticker !== quoteTicker
+      || String(quoteInfo.Denomination) !== String(quoteDenomination)) {
+    throw new Error('quote token metadata does not match what was requested');
   }
-  console.log(`  AMM.base        = ${pool.baseTicker} (${pool.baseToken})`);
-  console.log(`  AMM.quote       = ${pool.quoteTicker} (${pool.quoteToken})`);
-  console.log(`  AMM.fee         = ${pool.feeBps} bps`);
+  console.log(`  quote.ticker    = ${quoteInfo.Ticker} (${quote})`);
+
+  const [internalInfo, externalInfo, internalMarkets, externalMarkets] = await Promise.all([
+    readKey(internalVenue, 'venueinfo').then(JSON.parse),
+    readKey(externalVenue, 'venueinfo').then(JSON.parse),
+    readKey(internalVenue, 'markets').then(JSON.parse),
+    readKey(externalVenue, 'markets').then(JSON.parse),
+  ]);
+  if (internalInfo.Mode !== 'internal' || internalInfo.Sealed !== true
+      || internalInfo.GameProcess !== game) {
+    throw new Error('internal venue is not sealed to the deployed game');
+  }
+  if (externalInfo.Mode !== 'external' || externalInfo.Sealed !== true
+      || externalInfo.Assets?.rune?.process !== token
+      || externalInfo.Assets?.relic?.process !== quote) {
+    throw new Error('external venue is not sealed to the deployed token pair');
+  }
+  const internalOpen = Object.values(internalMarkets)
+    .filter((row) => row?.status === 'open').length;
+  const externalOpen = Object.values(externalMarkets)
+    .filter((row) => row?.status === 'open').length;
+  if (internalOpen !== 7 || externalOpen !== 1) {
+    throw new Error(`venue markets are not all open (${internalOpen}/7 internal, ${externalOpen}/1 external)`);
+  }
+  console.log(`  venues          = ${internalOpen}/7 internal, ${externalOpen}/1 external open`);
 }
 
 // IDs are now baked into the source defaults and local env by the child
 // deployers. Build once more so dist contains this exact process graph.
-rule('8/8  final app build');
+rule('9/9  final app build');
 
 // ...except on --resume, where `deploy.mjs` never ran and therefore never
 // repointed anything. The exchange ids WERE rewritten (that deployer did run), so
@@ -769,15 +851,28 @@ if (!flag('--no-env')) {
 await buildApp();
 
 const deployment = {
-  version: 1,
+  version: 2,
   deployedAt: new Date().toISOString(),
   node: NODE,
   owner,
-  processes: { game, rune: token, amm, quote },
+  processes: {
+    game, rune: token, quote,
+    internalVenue, externalVenue,
+    hunt: deployedHunt?.process ?? '',
+    huntWorkers: deployedHunt?.workers ?? [],
+    battleWorkers: deployedBattleWorkers,
+  },
+  nodes: {
+    game: NODE,
+    hunt: deployedHunt?.node ?? '',
+    market: marketState?.node ?? NODE,
+    venue: venueState?.node ?? NODE,
+    battle: NODE,
+  },
   wiring: {
     runeMinter: minter,
     gameRuneToken: wired,
-    ammPair: amm ? [token, quote] : [],
+    gameVenue: internalVenue,
   },
   build: 'passed',
   publicAccess,
@@ -789,6 +884,7 @@ const deployment = {
     enabled: withBots,
     walletCount: withBots ? botRoster.expected : 0,
     access: withBots ? (publicAccess ? 'public' : 'allow-listed') : null,
+    funding: withBots ? (deferBotFunding ? 'deferred' : 'deployed') : null,
   },
 };
 fs.writeFileSync(path.join(HERE, 'deployment-state.json'), `${JSON.stringify(deployment, null, 2)}\n`);
@@ -804,8 +900,9 @@ if (flag('--site')) {
 
 console.log(`\nGAME   ${game}`);
 console.log(`TOKEN  ${token}`);
-if (amm) console.log(`AMM    ${amm}`);
 if (quote) console.log(`QUOTE  ${quote}`);
+if (internalVenue) console.log(`VENUE  ${internalVenue} (internal)`);
+if (externalVenue) console.log(`VENUE  ${externalVenue} (external)`);
 console.log(`NODE   ${NODE}`);
 console.log(`FREE   ${publicAccess ? 'ON' : 'OFF'}`);
 if (withBots) console.log(`BOTS   ${botRoster.expected} ready`);

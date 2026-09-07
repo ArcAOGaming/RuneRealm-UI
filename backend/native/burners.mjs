@@ -19,21 +19,15 @@ import path from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { generateWallet, jwkToAddress } from './ans104.mjs';
 import { sendMessage, awaitComputedSlot } from './hbclient.mjs';
+import { assertLiveGraph, resolveLiveGraph } from './live-config.mjs';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.resolve(HERE, '..', '..');
 const DIR = process.env.BURNER_DIR || path.join(ROOT, '.burners');
 
 export function liveProcess() {
-  const file = path.join(ROOT, 'live-process.txt');
-  if (process.env.GAME_PROCESS && process.env.NODE_URL) {
-    return { pid: process.env.GAME_PROCESS, node: process.env.NODE_URL };
-  }
-  if (!fs.existsSync(file)) {
-    throw new Error('No live-process.txt — run backend/native/deploy.mjs first.');
-  }
-  const [pid, node] = fs.readFileSync(file, 'utf8').trim().split('\n');
-  return { pid: process.env.GAME_PROCESS || pid, node: process.env.NODE_URL || node };
+  const graph = assertLiveGraph(resolveLiveGraph({ root: ROOT }));
+  return { pid: graph.game, node: graph.node, graph };
 }
 
 export function listBurners() {
@@ -61,6 +55,19 @@ function validCount(value, label = 'count') {
     throw new Error(`${label} must be an integer from 1 to 500`);
   }
   return count;
+}
+
+function nonNegativeInt(value, fallback, max, label) {
+  const parsed = Number(value ?? fallback);
+  if (!Number.isSafeInteger(parsed) || parsed < 0 || parsed > max) {
+    throw new Error(`${label} must be an integer from 0 to ${max}`);
+  }
+  return parsed;
+}
+
+function cliOption(name, fallback) {
+  const at = process.argv.indexOf(`--${name}`);
+  return at >= 0 ? process.argv[at + 1] : fallback;
 }
 
 function writeWallet(name) {
@@ -180,6 +187,78 @@ export async function unlockBurners(addresses) {
   return reply;
 }
 
+/**
+ * Give the live-test roster enough reversible inventory to reach every path.
+ * This calls the contract's testing-only top-up; it is unavailable forever
+ * after economy activation and Gold comes from the conserved locked reserve.
+ */
+export async function fundBurners(addresses, {
+  rune = 100, scroll = 20, gold = 1000,
+  berries = 25, boxes = 3, boxRarity = 2, extraMonsters = 2,
+  pid: selectedPid, node: selectedNode, walletPath: selectedWalletPath,
+} = {}) {
+  const targets = {
+    rune: nonNegativeInt(rune, 100, 100, 'rune'),
+    scroll: nonNegativeInt(scroll, 20, 20, 'scroll'),
+    gold: nonNegativeInt(gold, 1000, 5000, 'gold'),
+    berries: nonNegativeInt(berries, 25, 50, 'berries'),
+    boxes: nonNegativeInt(boxes, 3, 5, 'boxes'),
+    boxRarity: nonNegativeInt(boxRarity, 2, 5, 'box-rarity'),
+    extraMonsters: nonNegativeInt(extraMonsters, 2, 4, 'extra-monsters'),
+  };
+  if (targets.boxRarity < 1) throw new Error('box-rarity must be an integer from 1 to 5');
+  const walletPath = selectedWalletPath || process.env.HB_WALLET
+    || path.join(ROOT, 'arweave-wallet-DA9qhP25.json');
+  if (!fs.existsSync(walletPath)) {
+    throw new Error(`Owner keyfile not found at ${walletPath}. Set HB_WALLET.`);
+  }
+  const jwk = JSON.parse(fs.readFileSync(walletPath, 'utf8'));
+  const live = selectedPid && selectedNode
+    ? { pid: selectedPid, node: selectedNode }
+    : liveProcess();
+  const { pid, node } = live;
+  console.log(`\nfunding ${addresses.length} test address(es) on ${pid}`);
+  console.log(`minimums  ${targets.rune} Rune, ${targets.scroll} Scroll, ${targets.gold} Gold, `
+    + `${targets.berries} of each berry, ${targets.boxes} tier-${targets.boxRarity} boxes, `
+    + `${targets.extraMonsters} stored companions`);
+  const sent = await sendMessage({
+    node, jwk, process: pid, action: 'Admin.Economy.FundTestBots',
+    data: JSON.stringify({ addresses, ...targets }),
+  });
+  const slot = sent?.slot;
+  if (slot === undefined || slot === null) {
+    throw new Error('Admin.Economy.FundTestBots did not report a compute slot');
+  }
+  await awaitComputedSlot({ node, process: pid, slot, attempts: 60, delayMs: 1_000 });
+  let reply = null;
+  for (let attempt = 0; attempt < 40; attempt += 1) {
+    const response = await fetch(
+      `${node}/${pid}~process@1.0/compute&slot=${slot}/results/output/data`,
+      // This endpoint is a JSON *value* stored in a plain HyperBEAM leaf, not
+      // a JSON-interface object.  Asking the node to content-negotiate it as
+      // application/json can yield the interface's empty object (`{}`), which
+      // is valid JSON but is not the handler reply.  Admin.Unlock and deploy's
+      // sendAndSettle already use text/plain for the same reason.
+      { headers: { accept: 'text/plain' }, signal: AbortSignal.timeout(45_000) },
+    ).catch(() => null);
+    if (response?.ok) {
+      const body = (await response.text()).trim();
+      if (body && !/^<!DOCTYPE html|^<html/i.test(body)) {
+        try { reply = JSON.parse(body); } catch { /* retry */ }
+      }
+      if (reply) break;
+    }
+    await new Promise((done) => setTimeout(done, 1_000));
+  }
+  if (!reply) throw new Error(`test funding slot ${slot} did not return a JSON reply`);
+  if (reply.error) throw new Error(`test funding failed: ${reply.error}`);
+  if (Number(reply.funded) !== addresses.length) {
+    throw new Error(`test funding reported ${reply.funded ?? 0}/${addresses.length} wallets`);
+  }
+  console.log(`  -> ${reply.funded} wallets verified by the contract`);
+  return reply;
+}
+
 // This file is also imported by e2e.mjs for `listBurners`/`loadBurner`, so the
 // CLI only runs when it is what was invoked.
 const invokedDirectly =
@@ -219,6 +298,22 @@ if (cmd === 'make') {
     throw new Error(`Expected burner-01 through burner-${String(arg).padStart(2, '0')}; found ${selected.length}`);
   }
   await unlockBurners(selected.map((b) => b.address));
+} else if (cmd === 'fund') {
+  const all = listBurners();
+  if (!all.length) throw new Error('No burners yet. Run: node backend/native/burners.mjs ensure 50');
+  const total = arg ? validCount(arg, 'total') : all.length;
+  const selected = all.filter((burner) =>
+    Number(burner.name.slice('burner-'.length)) <= total);
+  if (selected.length !== total) {
+    throw new Error(`Expected burner-01 through burner-${String(total).padStart(2, '0')}; found ${selected.length}`);
+  }
+  await fundBurners(selected.map((burner) => burner.address), {
+    rune: cliOption('rune', 100), scroll: cliOption('scroll', 20),
+    gold: cliOption('gold', 1000),
+    berries: cliOption('berries', 25), boxes: cliOption('boxes', 3),
+    boxRarity: cliOption('box-rarity', 2),
+    extraMonsters: cliOption('extra-monsters', 2),
+  });
 } else if (cmd === 'retire') {
   if (!arg) throw new Error('usage: burners.mjs retire burner-02');
   const { previous, address, archived } = retireBurner(arg);
@@ -237,6 +332,6 @@ if (cmd === 'make') {
   }
   for (const b of all) console.log(`  ${b.name}  ${b.address}`);
 } else {
-  console.error('usage: burners.mjs [make <n> [--no-unlock] | ensure <total> [--unlock] | unlock [total] | retire <name> | list]');
+  console.error('usage: burners.mjs [make <n> [--no-unlock] | ensure <total> [--unlock] | unlock [total] | fund [total] [--rune N --scroll N --gold N --berries N --boxes N --box-rarity N --extra-monsters N] | retire <name> | list]');
   process.exit(1);
 }

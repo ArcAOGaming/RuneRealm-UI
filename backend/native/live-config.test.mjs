@@ -5,7 +5,7 @@ import path from 'node:path';
 import test, { after } from 'node:test';
 
 import {
-  assertLiveGraph, resolveLiveGraph, verifyLiveGraph, viteEnvForGraph,
+  assertLiveGraph, publicLiveGraph, resolveLiveGraph, verifyLiveGraph, viteEnvForGraph,
 } from './live-config.mjs';
 
 const id = (letter) => letter.repeat(43);
@@ -33,11 +33,16 @@ function fixture() {
   fs.writeFileSync(path.join(native, 'deployment-state.json'), JSON.stringify({
     version: 2, node, owner: id('O'),
     processes: { game: id('G'), rune: id('R'), quote: id('Q'),
+      internalVenue: id('V'), externalVenue: id('E'),
       hunt: id('H'), huntWorkers: [id('H'), id('I')], battleWorkers: [id('B')] },
-    nodes: { game: node, hunt: node, market: node, battle: node },
+    nodes: { game: node, hunt: node, market: node, venue: node, battle: node },
   }));
   fs.writeFileSync(path.join(native, 'marketplace-state.json'), JSON.stringify({
     game: id('G'), rune: id('R'), quote: id('Q'), node,
+  }));
+  fs.writeFileSync(path.join(native, 'venue-state.json'), JSON.stringify({
+    game: id('G'), rune: id('R'), quote: id('Q'), node,
+    internal: id('V'), external: id('E'),
   }));
   fs.writeFileSync(path.join(native, 'battle-fleet', 'manifest.local.json'), JSON.stringify({
     gameProcess: id('G'), node, workers: [{ workerProcessId: id('B') }],
@@ -48,11 +53,14 @@ function fixture() {
 test('matching receipts resolve into one complete graph', () => {
   const root = fixture();
   const graph = assertLiveGraph(resolveLiveGraph({ root, env: {} }), {
-    requireHunt: true, requireExchange: true, requireBattleFleet: true,
+    requireHunt: true, requireExchange: true, requireVenues: true,
+    requireBattleFleet: true,
   });
   assert.deepEqual({ game: graph.game, hunt: graph.hunt, rune: graph.rune,
-    quote: graph.quote }, {
+    quote: graph.quote, internalVenue: graph.internalVenue,
+    externalVenue: graph.externalVenue }, {
     game: id('G'), hunt: id('H'), rune: id('R'), quote: id('Q'),
+    internalVenue: id('V'), externalVenue: id('E'),
   });
   assert.deepEqual(graph.huntWorkers, [id('H'), id('I')]);
   assert.deepEqual(graph.battleWorkers, [id('B')]);
@@ -62,6 +70,8 @@ test('matching receipts resolve into one complete graph', () => {
     VITE_HUNT_NODE: 'https://node.test', VITE_RUNE_PROCESS: id('R'),
     VITE_QUOTE_PROCESS: id('Q'),
     VITE_MARKET_NODE: 'https://node.test',
+    VITE_INTERNAL_VENUE_PROCESS: id('V'), VITE_EXTERNAL_VENUE_PROCESS: id('E'),
+    VITE_VENUE_NODE: 'https://node.test',
   });
 });
 
@@ -72,6 +82,8 @@ test('overriding only the game cannot leak optional processes from another deplo
   assert.equal(graph.hunt, '');
   assert.equal(graph.rune, '');
   assert.equal(graph.quote, '');
+  assert.equal(graph.internalVenue, '');
+  assert.equal(graph.externalVenue, '');
   assert.deepEqual(graph.battleWorkers, []);
   assert.ok(graph.warnings.some((warning) => warning.includes('another game or node')));
   assert.throws(() => assertLiveGraph(graph, { requireExchange: true }),
@@ -84,21 +96,25 @@ test('explicit complete graph overrides stale receipts as one unit', () => {
     game: id('X'), node: 'https://other.test/', owner: id('Z'), hunt: id('J'),
     huntNode: 'https://hunt.test/', rune: id('S'), quote: id('T'),
     marketNode: 'https://market.test/',
-  } }), { requireHunt: true, requireExchange: true });
+    internalVenue: id('U'), externalVenue: id('V'), venueNode: 'https://venue.test/',
+  } }), { requireHunt: true, requireExchange: true, requireVenues: true });
   assert.equal(graph.node, 'https://other.test');
   assert.equal(graph.huntNode, 'https://hunt.test');
   assert.equal(graph.marketNode, 'https://market.test');
   assert.equal(graph.rune, id('S'));
+  assert.equal(graph.venueNode, 'https://venue.test');
 });
 
 test('a transport-node override carries the matching graph through a browser relay', () => {
   const root = fixture();
   const graph = assertLiveGraph(resolveLiveGraph({ root, env: {
     GAME_PROCESS: id('G'), NODE_URL: 'http://127.0.0.1:43111/',
-  } }), { requireHunt: true, requireExchange: true, requireBattleFleet: true });
+  } }), { requireHunt: true, requireExchange: true, requireVenues: true,
+    requireBattleFleet: true });
   assert.equal(graph.node, 'http://127.0.0.1:43111');
   assert.equal(graph.huntNode, 'http://127.0.0.1:43111');
   assert.equal(graph.marketNode, 'http://127.0.0.1:43111');
+  assert.equal(graph.venueNode, 'http://127.0.0.1:43111');
   assert.equal(graph.hunt, id('H'));
   assert.deepEqual(graph.battleWorkers, [id('B')]);
 });
@@ -134,22 +150,38 @@ test('a malformed JSON receipt is a configuration error', () => {
 test('online verification checks both directions and every worker roster', async () => {
   const root = fixture();
   const graph = assertLiveGraph(resolveLiveGraph({ root, env: {} }), {
-    requireHunt: true, requireExchange: true, requireBattleFleet: true,
+    requireHunt: true, requireExchange: true, requireVenues: true,
+    requireBattleFleet: true,
   });
   const values = {
-    runetoken: id('R'), minter: id('G'),
+    runetoken: id('R'), minter: id('G'), venueprocess: id('V'),
     huntconfig: { enabled: true, processId: id('H'), workers: [id('H'), id('I')] },
     battlefleet: { enabled: true, workers: [{ workerProcessId: id('B') }] },
   };
   const fetchImpl = async (url) => {
     const key = String(url).split('/').pop();
+    if (key === 'venueinfo' && String(url).includes(id('V'))) {
+      return new Response(JSON.stringify({ Mode: 'internal', Sealed: true, GameProcess: id('G') }));
+    }
+    if (key === 'venueinfo' && String(url).includes(id('E'))) {
+      return new Response(JSON.stringify({ Mode: 'external', Sealed: true,
+        Assets: { rune: { process: id('R') }, relic: { process: id('Q') } } }));
+    }
+    if (key === 'markets' && String(url).includes(id('V'))) {
+      return new Response(JSON.stringify(Object.fromEntries(Array.from({ length: 7 }, (_, index) =>
+        [`m${index}`, { status: 'open' }]))));
+    }
+    if (key === 'markets' && String(url).includes(id('E'))) {
+      return new Response(JSON.stringify({ pair: { status: 'open' } }));
+    }
     return new Response(JSON.stringify(values[key]));
   };
   const audit = await verifyLiveGraph(graph, {
-    fetchImpl, requireHunt: true, requireExchange: true, requireBattleFleet: true,
+    fetchImpl, requireHunt: true, requireExchange: true, requireVenues: true,
+    requireBattleFleet: true,
   });
   assert.equal(audit.ok, true);
-  assert.equal(audit.checks.length, 5);
+  assert.equal(audit.checks.length, 9);
 
   // A game naming a Rune token that does not name it back is a half-wired
   // deployment, and it reads as working right up to the first withdrawal.
@@ -183,4 +215,47 @@ test('the graph exposes both spellings of where each id came from', () => {
   const graph = resolveLiveGraph({ root, env: {} });
   assert.equal(graph.provenance, graph.sources);
   assert.ok(graph.provenance.game);
+});
+
+test('partial and malformed optional graphs fail with actionable errors', () => {
+  const root = fixture();
+  const halfExchange = resolveLiveGraph({ root, env: {
+    GAME_PROCESS: id('G'), NODE_URL: 'https://node.test', QUOTE_PROCESS: id('Q'),
+    RUNE_PROCESS: '', INTERNAL_VENUE_PROCESS: id('V'), EXTERNAL_VENUE_PROCESS: '',
+  }, overrides: { rune: 'bad-id' } });
+  assert.match(halfExchange.errors.join('\n'), /rune is not a 43-character process id/);
+
+  const sparse = fixture();
+  fs.rmSync(path.join(sparse, 'backend', 'native', 'deployment-state.json'));
+  fs.rmSync(path.join(sparse, 'backend', 'native', 'marketplace-state.json'));
+  fs.rmSync(path.join(sparse, 'backend', 'native', 'venue-state.json'));
+  fs.rmSync(path.join(sparse, 'rune-process.txt'));
+  const quoteOnly = resolveLiveGraph({ root: sparse, env: {
+    GAME_PROCESS: id('G'), NODE_URL: 'https://node.test', QUOTE_PROCESS: id('Q'),
+    INTERNAL_VENUE_PROCESS: id('V'),
+  } });
+  assert.match(quoteOnly.errors.join('\n'), /external exchange must provide both/);
+  assert.match(quoteOnly.errors.join('\n'), /venue graph must provide both/);
+
+  assert.throws(() => assertLiveGraph({ errors: [], game: '', node: '', battleWorkers: [] }, {
+    requireExchange: true, requireVenues: true, requireHunt: true,
+    requireBattleFleet: true,
+  }), /game process id is required[\s\S]*node URL is required[\s\S]*exchange is required[\s\S]*venues are required[\s\S]*Hunt process is required[\s\S]*battle fleet is required/);
+});
+
+test('failed published reads are reported and public graph output stays data-only', async () => {
+  const root = fixture();
+  const graph = assertLiveGraph(resolveLiveGraph({ root, env: {} }), {
+    requireExchange: true, requireVenues: true,
+  });
+  const audit = await verifyLiveGraph(graph, {
+    requireExchange: true, requireVenues: true,
+    fetchImpl: async () => { throw new Error('offline'); }, timeoutMs: 0,
+  });
+  assert.equal(audit.ok, false);
+  const publicGraph = publicLiveGraph(graph);
+  assert.equal(publicGraph.internalVenue, id('V'));
+  assert.equal(publicGraph.externalVenue, id('E'));
+  assert.equal('sources' in publicGraph, false);
+  assert.deepEqual(publicGraph.huntWorkers, [id('H'), id('I')]);
 });

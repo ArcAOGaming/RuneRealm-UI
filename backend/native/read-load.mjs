@@ -24,6 +24,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import process from 'node:process';
 import { fileURLToPath } from 'node:url';
+import { assertLiveGraph, resolveLiveGraph } from './live-config.mjs';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.resolve(HERE, '..', '..');
@@ -45,15 +46,10 @@ const readers = int('readers', 20, 1, 500);
 const durationSec = int('duration', 120, 5, 7200);
 const intervalMs = int('interval', 1500, 100, 60_000);
 
-const live = fs.existsSync(path.join(ROOT, 'live-process.txt'))
-  ? fs.readFileSync(path.join(ROOT, 'live-process.txt'), 'utf8').trim().split(/\r?\n/)
-  : [];
-const pid = opt('pid', process.env.GAME_PROCESS || live[0]);
-const node = (opt('node', process.env.NODE_URL || live[1] || 'https://hyperbeam.tylerw.ai'))
-  .replace(/\/$/, '');
-if (!/^[A-Za-z0-9_-]{43}$/.test(pid || '')) {
-  throw new Error('No process id: pass --pid or write live-process.txt');
-}
+const graph = assertLiveGraph(resolveLiveGraph({ root: ROOT, overrides: {
+  game: opt('pid', undefined), node: opt('node', undefined),
+} }));
+const { game: pid, node } = graph;
 
 // What the app actually polls. `player-<address>` is included because it is the
 // per-player key every connected wallet reads, and it is the one whose cost

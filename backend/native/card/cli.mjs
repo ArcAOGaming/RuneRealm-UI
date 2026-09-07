@@ -29,22 +29,26 @@ const flag = (name, fallback) => {
 const has = (name) => argv.includes(`--${name}`);
 
 const FACTION = {
-  fire: { name: 'FireFox', moves: ['Firenado', 'Flame Shield', 'Power Up', 'Recovery'] },
-  water: { name: 'WaterDoge', moves: ['Tidal Wave', 'Ocean Mist', 'Iron Skin', 'Heal'] },
-  air: { name: 'Airbud', moves: ['Tornado', 'Breeze', 'Battle Cry', 'Regenerate'] },
-  rock: { name: 'Rockpup', moves: ['Boulder Crush', 'Stone Wall', 'Swift Wind', 'Life Surge'] },
+  // Three moves as [name, type, rarity], and the first of each is that species'
+  // own `basicMove` from the monster index -- the slot `Battle.rollMoves`
+  // guarantees, so a sample carrying anything else is a companion the game
+  // cannot issue.
+  //
+  // The rarity is here because the card orders its rows by it: a fixture that
+  // omits it renders in a different order from every real companion, which is
+  // the one thing an offline preview must not do. The types used to be guessed
+  // from a hardcoded list of four heal names, which had already gone stale.
+  fire: { name: 'FireFox', moves: [['Scorching Ash', 'fire', 2], ['Firenado', 'fire', 1], ['Recovery', 'heal', 2]] },
+  water: { name: 'WaterDoge', moves: [['Whirlpool', 'water', 2], ['Tidal Wave', 'water', 1], ['Iron Skin', 'boost', 2]] },
+  air: { name: 'Airbud', moves: [['Wind Slash', 'air', 2], ['Tornado', 'air', 1], ['Regenerate', 'heal', 2]] },
+  rock: { name: 'Rockpup', moves: [['Boulder Crush', 'rock', 1], ['Earth Shield', 'rock', 3], ['Life Surge', 'heal', 1]] },
 };
 
 /** A record shaped like the one the process publishes, for offline rendering. */
 function sample(element, level) {
   const f = FACTION[element];
   const moves = {};
-  for (const name of f.moves) {
-    moves[name] = { type: name in { Heal: 1, Recovery: 1, Regenerate: 1, 'Life Surge': 1 } ? 'heal' : 'boost' };
-  }
-  // The first two are the element's own; the layout puts those in the top row.
-  moves[f.moves[0]] = { type: element };
-  moves[f.moves[1]] = { type: element };
+  for (const [name, type, rarity] of f.moves) moves[name] = { type, rarity };
   return {
     name: f.name, elementType: element, level,
     attack: 12 + level, speed: 9 + level, defense: 11 + level, health: 40 + level * 3,

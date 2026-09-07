@@ -38,6 +38,7 @@ import { fileURLToPath } from 'node:url';
 import { jwkToAddress, sendMessage, awaitComputedSlot } from './hbclient.mjs';
 import { listBurners } from './burners.mjs';
 import { profileFor } from './swarm/profiles.mjs';
+import { assertLiveGraph, resolveLiveGraph } from './live-config.mjs';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.join(HERE, '..', '..');
@@ -80,15 +81,8 @@ function mulberry32(seed) {
 }
 
 function liveProcess() {
-  const file = path.join(ROOT, 'live-process.txt');
-  const [fileId, fileNode] = fs.existsSync(file)
-    ? fs.readFileSync(file, 'utf8').trim().split(/\r?\n/).map((l) => l.trim())
-    : [];
-  const pid = process.env.GAME_PROCESS || fileId;
-  if (!/^[A-Za-z0-9_-]{43}$/.test(String(pid ?? ''))) {
-    throw new Error('set GAME_PROCESS, or write live-process.txt');
-  }
-  return { pid, node: process.env.NODE_URL || fileNode || 'https://schedule.forward.computer' };
+  const graph = assertLiveGraph(resolveLiveGraph({ root: ROOT }));
+  return { pid: graph.game, node: graph.node };
 }
 
 function wallet() {

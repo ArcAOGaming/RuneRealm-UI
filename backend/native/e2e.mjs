@@ -19,9 +19,10 @@ import path from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import * as esbuild from 'esbuild';
 import { installWalletShim } from './ans104.mjs';
-import { listBurners, loadBurner, liveProcess } from './burners.mjs';
+import { listBurners, loadBurner } from './burners.mjs';
 import { sendMessage as ownerSend } from './hbclient.mjs';
 import { useKeepAlive } from './keepalive.mjs';
+import { assertLiveGraph, resolveLiveGraph, viteEnvForGraph } from './live-config.mjs';
 
 // So the journey is timed over the same connection the swarm uses. Without it
 // every request pays a fresh three-round-trip handshake and e2e reports a
@@ -34,7 +35,7 @@ const OUT = path.join(ROOT, '.e2e');
 
 // Bundle the client -----------------------------------------------------------
 
-async function buildClient(pid, node) {
+async function buildClient(graph) {
   fs.mkdirSync(OUT, { recursive: true });
   const outfile = path.join(OUT, 'client.mjs');
   await esbuild.build({
@@ -53,7 +54,7 @@ async function buildClient(pid, node) {
     // `(import.meta as any).env ?? {}`.
     define: {
       window: 'globalThis',
-      'import.meta.env': JSON.stringify({ VITE_GAME_PROCESS: pid, VITE_HB_NODE: node }),
+      'import.meta.env': JSON.stringify(viteEnvForGraph(graph)),
     },
     logLevel: 'warning',
   });
@@ -135,6 +136,10 @@ async function journey(api, { address, faction, pid, node }) {
 
   step('2. Factions');
   const factions = await api.readFactions();
+  // Read once and reused below. The move slot count and the free actions are
+  // process facts now, so the checks that used to hardcode "four" ask the
+  // process instead.
+  const catalog = await api.readCatalog();
   check('factions are published (free, unsigned read)',
     Array.isArray(factions) && factions.length === 4, `${factions?.length} factions`);
 
@@ -162,8 +167,20 @@ async function journey(api, { address, faction, pid, node }) {
   }
   check('companion element matches its faction', !!player.monster.elementType,
     player.monster.elementType);
-  check('companion has four moves', Object.keys(player.monster.moves).length === 4,
+  // The slot count comes from the catalog, not from a literal here. It moved
+  // from four to three once already, and a test that hardcodes it fails for the
+  // right reason exactly once and then has to be edited by hand every time.
+  const slots = catalog?.moveSlots ?? 3;
+  check(`companion has ${slots} moves`,
+    Object.keys(player.monster.moves).length === slots,
     Object.keys(player.monster.moves).join(', '));
+  // Rally and Mend are free to everybody and carried by nobody, so they must
+  // NOT be in a stored roster -- if one ever is, it was smuggled in past the
+  // roster validation and can be used every round.
+  check('and neither of the free actions is one of them',
+    Object.keys(catalog?.freeActions ?? {})
+      .every((name) => player.monster.moves[name] === undefined),
+    Object.keys(catalog?.freeActions ?? {}).join(', ') || '(none published)');
   check('nextLevelExp is published', typeof player.monster.nextLevelExp === 'number',
     `${player.monster.exp}/${player.monster.nextLevelExp}`);
 
@@ -443,12 +460,13 @@ async function journey(api, { address, faction, pid, node }) {
 
 // PvP -------------------------------------------------------------------------
 
-async function pvp(pid, node, a, b) {
+async function pvp(graph, a, b) {
+  const { game: pid, node } = graph;
   console.log(`\n[1mPvP: ${a.name} vs ${b.name}[0m`);
 
   const asPlayer = async (burner, fn) => {
     installWalletShim(burner.jwk);
-    const api = await buildClient(pid, node);
+    const api = await buildClient(graph);
     return fn(api);
   };
 
@@ -535,7 +553,8 @@ const faction = factionIndex >= 0 ? argv[factionIndex + 1] : undefined;
 const names = argv.filter((a, i) =>
   !a.startsWith('--') && !(factionIndex >= 0 && i === factionIndex + 1));
 
-const { pid, node } = liveProcess();
+const graph = assertLiveGraph(resolveLiveGraph({ root: ROOT }));
+const { game: pid, node } = graph;
 console.log(`process  ${pid}`);
 console.log(`node     ${node}`);
 
@@ -543,7 +562,7 @@ if (isPvp) {
   const all = listBurners();
   const a = loadBurner(names[0] ?? all[0]?.name);
   const b = loadBurner(names[1] ?? all[1]?.name);
-  await pvp(pid, node, a, b);
+  await pvp(graph, a, b);
 } else {
   const burner = names[0] ? loadBurner(names[0]) : listBurners()[0];
   if (!burner) {
@@ -552,7 +571,7 @@ if (isPvp) {
   }
   const address = installWalletShim(burner.jwk);
   console.log(`burner   ${burner.name}  ${address}`);
-  const api = await buildClient(pid, node);
+  const api = await buildClient(graph);
   await journey(api, { address, faction, pid, node });
 }
 

@@ -1,13 +1,13 @@
 {
   "generator": "backend/native/gen-action-spec.mjs",
   "source": {
-    "game.lua": "8ceb07a9b3d77a9a",
-    "constants.lua": "163979fbfe475995",
-    "hunt.lua": "c3ce805da4708093"
+    "game.lua": "e53c3e67ae615f7f",
+    "constants.lua": "b857f9a2fedeec41",
+    "hunt.lua": "4a1e70cb54d41374"
   },
   "coverage": {
-    "actions": 106,
-    "documented": 3,
+    "actions": 107,
+    "documented": 4,
     "undocumented": 103,
     "aliases": 1,
     "parseProblems": []
@@ -137,14 +137,14 @@
     {
       "action": "User.Login",
       "sameAs": "User.Info",
-      "line": 1534
+      "line": 1589
     }
   ],
   "actions": [
     {
       "action": "Admin.AdjustAll",
       "group": "admin",
-      "sourceLine": 6339,
+      "sourceLine": 6595,
       "signed": false,
       "requiresPass": false,
       "ownerOnly": true,
@@ -213,7 +213,7 @@
     {
       "action": "Admin.AdjustInventory",
       "group": "admin",
-      "sourceLine": 6163,
+      "sourceLine": 6419,
       "signed": false,
       "requiresPass": false,
       "ownerOnly": true,
@@ -264,7 +264,7 @@
     {
       "action": "Admin.ConfigureBattleFleet",
       "group": "admin",
-      "sourceLine": 4633,
+      "sourceLine": 4779,
       "signed": true,
       "requiresPass": false,
       "ownerOnly": true,
@@ -306,7 +306,7 @@
     {
       "action": "Admin.CreateMonster",
       "group": "admin",
-      "sourceLine": 7549,
+      "sourceLine": 7820,
       "signed": false,
       "requiresPass": false,
       "ownerOnly": true,
@@ -390,7 +390,7 @@
     {
       "action": "Admin.DeleteMonster",
       "group": "admin",
-      "sourceLine": 7597,
+      "sourceLine": 7868,
       "signed": false,
       "requiresPass": false,
       "ownerOnly": true,
@@ -425,7 +425,7 @@
     {
       "action": "Admin.Deposited",
       "group": "admin",
-      "sourceLine": 7747,
+      "sourceLine": 8018,
       "signed": false,
       "requiresPass": false,
       "ownerOnly": true,
@@ -467,7 +467,7 @@
     {
       "action": "Admin.Economy.Apply",
       "group": "admin",
-      "sourceLine": 5979,
+      "sourceLine": 6209,
       "signed": true,
       "requiresPass": false,
       "ownerOnly": true,
@@ -496,7 +496,7 @@
     {
       "action": "Admin.Economy.EmergencyPause",
       "group": "admin",
-      "sourceLine": 5988,
+      "sourceLine": 6218,
       "signed": true,
       "requiresPass": false,
       "ownerOnly": true,
@@ -525,7 +525,7 @@
     {
       "action": "Admin.Economy.FundTestBots",
       "group": "admin",
-      "sourceLine": 6034,
+      "sourceLine": 6264,
       "signed": false,
       "requiresPass": false,
       "ownerOnly": true,
@@ -547,7 +547,7 @@
     {
       "action": "Admin.Economy.ObserveGold",
       "group": "admin",
-      "sourceLine": 6025,
+      "sourceLine": 6255,
       "signed": true,
       "requiresPass": false,
       "ownerOnly": true,
@@ -576,7 +576,7 @@
     {
       "action": "Admin.Economy.ObserveRuneSupply",
       "group": "admin",
-      "sourceLine": 6007,
+      "sourceLine": 6237,
       "signed": true,
       "requiresPass": false,
       "ownerOnly": true,
@@ -612,7 +612,7 @@
     {
       "action": "Admin.Economy.PauseDesk",
       "group": "admin",
-      "sourceLine": 5997,
+      "sourceLine": 6227,
       "signed": true,
       "requiresPass": false,
       "ownerOnly": true,
@@ -655,7 +655,7 @@
     {
       "action": "Admin.Economy.Preview",
       "group": "admin",
-      "sourceLine": 5955,
+      "sourceLine": 6185,
       "signed": false,
       "requiresPass": false,
       "ownerOnly": true,
@@ -687,7 +687,7 @@
     {
       "action": "Admin.Economy.Propose",
       "group": "admin",
-      "sourceLine": 5966,
+      "sourceLine": 6196,
       "signed": true,
       "requiresPass": false,
       "ownerOnly": true,
@@ -730,7 +730,7 @@
     {
       "action": "Admin.Economy.ReleaseGold",
       "group": "admin",
-      "sourceLine": 6016,
+      "sourceLine": 6246,
       "signed": true,
       "requiresPass": false,
       "ownerOnly": true,
@@ -773,7 +773,7 @@
     {
       "action": "Admin.ExpireFleetBattle",
       "group": "admin",
-      "sourceLine": 4793,
+      "sourceLine": 4939,
       "signed": true,
       "requiresPass": false,
       "ownerOnly": true,
@@ -812,7 +812,7 @@
     {
       "action": "Admin.Export",
       "group": "admin",
-      "sourceLine": 6789,
+      "sourceLine": 7045,
       "signed": false,
       "requiresPass": false,
       "ownerOnly": true,
@@ -851,7 +851,7 @@
     {
       "action": "Admin.ForceResolveFleetBattle",
       "group": "admin",
-      "sourceLine": 4839,
+      "sourceLine": 4985,
       "signed": true,
       "requiresPass": false,
       "ownerOnly": true,
@@ -892,7 +892,7 @@
     {
       "action": "Admin.Grant",
       "group": "admin",
-      "sourceLine": 6704,
+      "sourceLine": 6960,
       "signed": false,
       "requiresPass": false,
       "ownerOnly": true,
@@ -948,7 +948,7 @@
     {
       "action": "Admin.Load",
       "group": "admin",
-      "sourceLine": 7217,
+      "sourceLine": 7488,
       "signed": false,
       "requiresPass": false,
       "ownerOnly": true,
@@ -983,7 +983,7 @@
     {
       "action": "Admin.Lock",
       "group": "admin",
-      "sourceLine": 6686,
+      "sourceLine": 6942,
       "signed": false,
       "requiresPass": false,
       "ownerOnly": true,
@@ -1010,7 +1010,7 @@
     {
       "action": "Admin.Minted",
       "group": "admin",
-      "sourceLine": 7666,
+      "sourceLine": 7937,
       "signed": false,
       "requiresPass": false,
       "ownerOnly": true,
@@ -1046,7 +1046,7 @@
     {
       "action": "Admin.MintFailed",
       "group": "admin",
-      "sourceLine": 7725,
+      "sourceLine": 7996,
       "signed": false,
       "requiresPass": false,
       "ownerOnly": true,
@@ -1081,7 +1081,7 @@
     {
       "action": "Admin.MonsterIndex.Update",
       "group": "admin",
-      "sourceLine": 5883,
+      "sourceLine": 6113,
       "signed": false,
       "requiresPass": false,
       "ownerOnly": true,
@@ -1133,7 +1133,7 @@
     {
       "action": "Admin.MoveMonster",
       "group": "admin",
-      "sourceLine": 7621,
+      "sourceLine": 7892,
       "signed": false,
       "requiresPass": false,
       "ownerOnly": true,
@@ -1184,7 +1184,7 @@
     {
       "action": "Admin.Pass.ConfigureGenesis",
       "group": "admin",
-      "sourceLine": 6112,
+      "sourceLine": 6368,
       "signed": true,
       "requiresPass": false,
       "ownerOnly": true,
@@ -1208,7 +1208,7 @@
     {
       "action": "Admin.ReleaseBattle",
       "group": "admin",
-      "sourceLine": 6309,
+      "sourceLine": 6565,
       "signed": false,
       "requiresPass": false,
       "ownerOnly": true,
@@ -1233,7 +1233,7 @@
     {
       "action": "Admin.RemoveUser",
       "group": "admin",
-      "sourceLine": 6753,
+      "sourceLine": 7009,
       "signed": false,
       "requiresPass": false,
       "ownerOnly": true,
@@ -1264,7 +1264,7 @@
     {
       "action": "Admin.RetryFleetAck",
       "group": "admin",
-      "sourceLine": 4862,
+      "sourceLine": 5008,
       "signed": true,
       "requiresPass": false,
       "ownerOnly": true,
@@ -1296,7 +1296,7 @@
     {
       "action": "Admin.RetryFleetCancel",
       "group": "admin",
-      "sourceLine": 4803,
+      "sourceLine": 4949,
       "signed": true,
       "requiresPass": false,
       "ownerOnly": true,
@@ -1328,7 +1328,7 @@
     {
       "action": "Admin.RetryFleetOpen",
       "group": "admin",
-      "sourceLine": 4820,
+      "sourceLine": 4966,
       "signed": true,
       "requiresPass": false,
       "ownerOnly": true,
@@ -1361,7 +1361,7 @@
     {
       "action": "Admin.SetHuntProcess",
       "group": "admin",
-      "sourceLine": 6474,
+      "sourceLine": 6730,
       "signed": false,
       "requiresPass": false,
       "ownerOnly": true,
@@ -1428,7 +1428,7 @@
     {
       "action": "Admin.SetRuneToken",
       "group": "admin",
-      "sourceLine": 6398,
+      "sourceLine": 6654,
       "signed": false,
       "requiresPass": false,
       "ownerOnly": true,
@@ -1462,7 +1462,7 @@
     {
       "action": "Admin.SetStats",
       "group": "admin",
-      "sourceLine": 6723,
+      "sourceLine": 6979,
       "signed": false,
       "requiresPass": false,
       "ownerOnly": true,
@@ -1505,7 +1505,7 @@
     {
       "action": "Admin.SettleDeposit",
       "group": "admin",
-      "sourceLine": 6574,
+      "sourceLine": 6830,
       "signed": false,
       "requiresPass": false,
       "ownerOnly": true,
@@ -1563,7 +1563,7 @@
     {
       "action": "Admin.SettleVenueReturn",
       "group": "admin",
-      "sourceLine": 6438,
+      "sourceLine": 6694,
       "signed": false,
       "requiresPass": false,
       "ownerOnly": true,
@@ -1648,7 +1648,7 @@
     {
       "action": "Admin.SettleWithdrawal",
       "group": "admin",
-      "sourceLine": 6534,
+      "sourceLine": 6790,
       "signed": false,
       "requiresPass": false,
       "ownerOnly": true,
@@ -1683,7 +1683,7 @@
     {
       "action": "Admin.SetVault",
       "group": "admin",
-      "sourceLine": 7794,
+      "sourceLine": 8065,
       "signed": false,
       "requiresPass": false,
       "ownerOnly": true,
@@ -1710,7 +1710,7 @@
     {
       "action": "Admin.SetVenueProcess",
       "group": "admin",
-      "sourceLine": 6416,
+      "sourceLine": 6672,
       "signed": false,
       "requiresPass": false,
       "ownerOnly": true,
@@ -1751,7 +1751,7 @@
     {
       "action": "Admin.Snapshot",
       "group": "admin",
-      "sourceLine": 5873,
+      "sourceLine": 6103,
       "signed": false,
       "requiresPass": false,
       "ownerOnly": true,
@@ -1768,7 +1768,7 @@
     {
       "action": "Admin.Unlock",
       "group": "admin",
-      "sourceLine": 6613,
+      "sourceLine": 6869,
       "signed": false,
       "requiresPass": false,
       "ownerOnly": true,
@@ -1818,7 +1818,7 @@
     {
       "action": "Admin.UpdatePlayer",
       "group": "admin",
-      "sourceLine": 6186,
+      "sourceLine": 6442,
       "signed": false,
       "requiresPass": false,
       "ownerOnly": true,
@@ -1868,7 +1868,7 @@
     {
       "action": "Battle.Accept",
       "group": "player",
-      "sourceLine": 5225,
+      "sourceLine": 5444,
       "signed": true,
       "requiresPass": true,
       "ownerOnly": false,
@@ -1903,13 +1903,13 @@
         "That challenge is no longer open",
         "You cannot accept your own challenge"
       ],
-      "computedRefusals": 1,
+      "computedRefusals": 2,
       "documented": false
     },
     {
       "action": "Battle.Attack",
       "group": "player",
-      "sourceLine": 5279,
+      "sourceLine": 5509,
       "signed": true,
       "requiresPass": true,
       "ownerOnly": false,
@@ -1958,7 +1958,7 @@
     {
       "action": "Battle.Begin",
       "group": "player",
-      "sourceLine": 4431,
+      "sourceLine": 4548,
       "signed": true,
       "requiresPass": true,
       "ownerOnly": false,
@@ -1989,6 +1989,7 @@
         "Not enough energy",
         "Not happy enough",
         "That is not a battle berry",
+        "The arena stakes ",
         "You need …",
         "Your companion is busy: …"
       ],
@@ -1998,7 +1999,7 @@
     {
       "action": "Battle.Challenge",
       "group": "player",
-      "sourceLine": 5187,
+      "sourceLine": 5388,
       "signed": true,
       "requiresPass": true,
       "ownerOnly": false,
@@ -2023,13 +2024,13 @@
       "refusals": [
         "You cannot challenge yourself"
       ],
-      "computedRefusals": 1,
+      "computedRefusals": 2,
       "documented": false
     },
     {
       "action": "Battle.Fleet.Cancelled",
       "group": "process",
-      "sourceLine": 5131,
+      "sourceLine": 5332,
       "signed": false,
       "requiresPass": false,
       "ownerOnly": false,
@@ -2050,7 +2051,7 @@
     {
       "action": "Battle.Fleet.FinalAcked",
       "group": "process",
-      "sourceLine": 5166,
+      "sourceLine": 5367,
       "signed": false,
       "requiresPass": false,
       "ownerOnly": false,
@@ -2070,7 +2071,7 @@
     {
       "action": "Battle.Fleet.Opened",
       "group": "process",
-      "sourceLine": 5064,
+      "sourceLine": 5265,
       "signed": false,
       "requiresPass": false,
       "ownerOnly": false,
@@ -2090,7 +2091,7 @@
     {
       "action": "Battle.Fleet.OpenRejected",
       "group": "process",
-      "sourceLine": 5081,
+      "sourceLine": 5282,
       "signed": false,
       "requiresPass": false,
       "ownerOnly": false,
@@ -2110,7 +2111,7 @@
     {
       "action": "Battle.Fleet.Settle",
       "group": "process",
-      "sourceLine": 5105,
+      "sourceLine": 5306,
       "signed": false,
       "requiresPass": false,
       "ownerOnly": false,
@@ -2130,7 +2131,7 @@
     {
       "action": "Battle.Info",
       "group": "player",
-      "sourceLine": 5391,
+      "sourceLine": 5621,
       "signed": false,
       "requiresPass": false,
       "ownerOnly": false,
@@ -2157,7 +2158,7 @@
     {
       "action": "Battle.Leave",
       "group": "player",
-      "sourceLine": 4490,
+      "sourceLine": 4625,
       "signed": true,
       "requiresPass": true,
       "ownerOnly": false,
@@ -2180,7 +2181,7 @@
     {
       "action": "Battle.OpenChallenges",
       "group": "player",
-      "sourceLine": 5415,
+      "sourceLine": 5645,
       "signed": false,
       "requiresPass": false,
       "ownerOnly": false,
@@ -2197,7 +2198,7 @@
     {
       "action": "Battle.Start",
       "group": "player",
-      "sourceLine": 5030,
+      "sourceLine": 5218,
       "signed": true,
       "requiresPass": true,
       "ownerOnly": false,
@@ -2234,13 +2235,13 @@
       ],
       "spends": [],
       "refusals": [],
-      "computedRefusals": 1,
+      "computedRefusals": 2,
       "documented": false
     },
     {
       "action": "Burn-Notice",
       "group": "player",
-      "sourceLine": 3517,
+      "sourceLine": 3572,
       "signed": false,
       "requiresPass": false,
       "ownerOnly": false,
@@ -2287,7 +2288,7 @@
     {
       "action": "Daily.Claim",
       "group": "player",
-      "sourceLine": 3061,
+      "sourceLine": 3116,
       "signed": true,
       "requiresPass": true,
       "ownerOnly": false,
@@ -2310,7 +2311,7 @@
     {
       "action": "Economy.Order.Amend",
       "group": "player",
-      "sourceLine": 2409,
+      "sourceLine": 2464,
       "signed": true,
       "requiresPass": true,
       "ownerOnly": false,
@@ -2401,7 +2402,7 @@
     {
       "action": "Economy.Order.Cancel",
       "group": "player",
-      "sourceLine": 2426,
+      "sourceLine": 2481,
       "signed": true,
       "requiresPass": true,
       "ownerOnly": false,
@@ -2437,7 +2438,7 @@
     {
       "action": "Economy.Order.CancelAll",
       "group": "player",
-      "sourceLine": 2446,
+      "sourceLine": 2501,
       "signed": true,
       "requiresPass": true,
       "ownerOnly": false,
@@ -2480,7 +2481,7 @@
     {
       "action": "Economy.Order.Maintain",
       "group": "player",
-      "sourceLine": 2465,
+      "sourceLine": 2520,
       "signed": true,
       "requiresPass": true,
       "ownerOnly": false,
@@ -2509,7 +2510,7 @@
     {
       "action": "Economy.Order.Place",
       "group": "player",
-      "sourceLine": 2387,
+      "sourceLine": 2442,
       "signed": true,
       "requiresPass": true,
       "ownerOnly": false,
@@ -2607,7 +2608,7 @@
     {
       "action": "Economy.Shop.Trade",
       "group": "player",
-      "sourceLine": 2476,
+      "sourceLine": 2531,
       "signed": true,
       "requiresPass": true,
       "ownerOnly": false,
@@ -2657,7 +2658,7 @@
     {
       "action": "Economy.View",
       "group": "player",
-      "sourceLine": 2334,
+      "sourceLine": 2389,
       "signed": false,
       "requiresPass": false,
       "ownerOnly": false,
@@ -2674,7 +2675,7 @@
     {
       "action": "Faction.Join",
       "group": "player",
-      "sourceLine": 1938,
+      "sourceLine": 1993,
       "signed": true,
       "requiresPass": true,
       "ownerOnly": false,
@@ -2708,7 +2709,7 @@
     {
       "action": "Faction.List",
       "group": "player",
-      "sourceLine": 1934,
+      "sourceLine": 1989,
       "signed": false,
       "requiresPass": false,
       "ownerOnly": false,
@@ -2725,7 +2726,7 @@
     {
       "action": "Hunt.Begin",
       "group": "player",
-      "sourceLine": 4019,
+      "sourceLine": 4074,
       "signed": true,
       "requiresPass": true,
       "ownerOnly": false,
@@ -2762,7 +2763,7 @@
     {
       "action": "Hunt.Opened",
       "group": "process",
-      "sourceLine": 4100,
+      "sourceLine": 4155,
       "signed": false,
       "requiresPass": false,
       "ownerOnly": false,
@@ -2798,7 +2799,7 @@
     {
       "action": "Hunt.Released",
       "group": "process",
-      "sourceLine": 4115,
+      "sourceLine": 4170,
       "signed": false,
       "requiresPass": false,
       "ownerOnly": false,
@@ -2830,9 +2831,35 @@
       "documented": false
     },
     {
+      "action": "Hunt.RetryAck",
+      "group": "player",
+      "sourceLine": 4366,
+      "signed": true,
+      "requiresPass": true,
+      "ownerOnly": false,
+      "crossProcess": false,
+      "replayGuarded": true,
+      "usesTimestamp": true,
+      "tags": [],
+      "envelopeTags": [
+        "Address",
+        "commitments",
+        "From"
+      ],
+      "spends": [],
+      "refusals": [
+        "No settled Hunt acknowledgement is pending"
+      ],
+      "computedRefusals": 0,
+      "documented": true,
+      "summary": "Re-deliver an already-settled Hunt capture acknowledgement.",
+      "requires": "the signer's open Hunt has a durable settlement receipt",
+      "pays": "nothing; this is idempotent delivery recovery only"
+    },
+    {
       "action": "Hunt.Settle",
       "group": "process",
-      "sourceLine": 4178,
+      "sourceLine": 4233,
       "signed": false,
       "requiresPass": false,
       "ownerOnly": false,
@@ -2889,7 +2916,7 @@
     {
       "action": "Leaderboard",
       "group": "player",
-      "sourceLine": 5649,
+      "sourceLine": 5879,
       "signed": false,
       "requiresPass": false,
       "ownerOnly": false,
@@ -2914,7 +2941,7 @@
     {
       "action": "Lootbox.Open",
       "group": "player",
-      "sourceLine": 3782,
+      "sourceLine": 3837,
       "signed": true,
       "requiresPass": true,
       "ownerOnly": false,
@@ -2950,7 +2977,7 @@
     {
       "action": "Market.Buy",
       "group": "player",
-      "sourceLine": 2278,
+      "sourceLine": 2333,
       "signed": true,
       "requiresPass": true,
       "ownerOnly": false,
@@ -2985,7 +3012,7 @@
     {
       "action": "Market.Cancel",
       "group": "player",
-      "sourceLine": 2254,
+      "sourceLine": 2309,
       "signed": true,
       "requiresPass": true,
       "ownerOnly": false,
@@ -3017,7 +3044,7 @@
     {
       "action": "Market.List",
       "group": "player",
-      "sourceLine": 2217,
+      "sourceLine": 2272,
       "signed": true,
       "requiresPass": true,
       "ownerOnly": false,
@@ -3056,7 +3083,7 @@
     {
       "action": "Monster.Adopt",
       "group": "player",
-      "sourceLine": 1999,
+      "sourceLine": 2054,
       "signed": true,
       "requiresPass": true,
       "ownerOnly": false,
@@ -3081,7 +3108,7 @@
     {
       "action": "Monster.Claim",
       "group": "player",
-      "sourceLine": 2747,
+      "sourceLine": 2802,
       "signed": true,
       "requiresPass": true,
       "ownerOnly": false,
@@ -3112,7 +3139,7 @@
     {
       "action": "Monster.Deposit",
       "group": "player",
-      "sourceLine": 5749,
+      "sourceLine": 5979,
       "signed": true,
       "requiresPass": true,
       "ownerOnly": false,
@@ -3147,7 +3174,7 @@
     {
       "action": "Monster.Feed",
       "group": "player",
-      "sourceLine": 2637,
+      "sourceLine": 2692,
       "signed": true,
       "requiresPass": true,
       "ownerOnly": false,
@@ -3190,7 +3217,7 @@
     {
       "action": "Monster.LearnMove",
       "group": "player",
-      "sourceLine": 2905,
+      "sourceLine": 2960,
       "signed": true,
       "requiresPass": true,
       "ownerOnly": false,
@@ -3234,7 +3261,7 @@
     {
       "action": "Monster.LevelUp",
       "group": "player",
-      "sourceLine": 2794,
+      "sourceLine": 2849,
       "signed": true,
       "requiresPass": true,
       "ownerOnly": false,
@@ -3293,7 +3320,7 @@
     {
       "action": "Monster.Mint",
       "group": "player",
-      "sourceLine": 5699,
+      "sourceLine": 5929,
       "signed": true,
       "requiresPass": true,
       "ownerOnly": false,
@@ -3322,7 +3349,7 @@
     {
       "action": "Monster.Play",
       "group": "player",
-      "sourceLine": 2667,
+      "sourceLine": 2722,
       "signed": true,
       "requiresPass": true,
       "ownerOnly": false,
@@ -3366,7 +3393,7 @@
     {
       "action": "Monster.Quest",
       "group": "player",
-      "sourceLine": 2718,
+      "sourceLine": 2773,
       "signed": true,
       "requiresPass": true,
       "ownerOnly": false,
@@ -3405,7 +3432,7 @@
     {
       "action": "Monster.Retrieve",
       "group": "player",
-      "sourceLine": 2084,
+      "sourceLine": 2139,
       "signed": true,
       "requiresPass": true,
       "ownerOnly": false,
@@ -3437,7 +3464,7 @@
     {
       "action": "Monster.SetActive",
       "group": "player",
-      "sourceLine": 2113,
+      "sourceLine": 2168,
       "signed": true,
       "requiresPass": true,
       "ownerOnly": false,
@@ -3472,7 +3499,7 @@
     {
       "action": "Monster.Store",
       "group": "player",
-      "sourceLine": 2059,
+      "sourceLine": 2114,
       "signed": true,
       "requiresPass": true,
       "ownerOnly": false,
@@ -3507,7 +3534,7 @@
     {
       "action": "Monster.Transfer",
       "group": "player",
-      "sourceLine": 2154,
+      "sourceLine": 2209,
       "signed": true,
       "requiresPass": true,
       "ownerOnly": false,
@@ -3548,7 +3575,7 @@
     {
       "action": "Pass.BeginUnbond",
       "group": "player",
-      "sourceLine": 2605,
+      "sourceLine": 2660,
       "signed": true,
       "requiresPass": true,
       "ownerOnly": false,
@@ -3572,7 +3599,7 @@
     {
       "action": "Pass.Bond",
       "group": "player",
-      "sourceLine": 2587,
+      "sourceLine": 2642,
       "signed": true,
       "requiresPass": true,
       "ownerOnly": false,
@@ -3600,7 +3627,7 @@
     {
       "action": "Pass.ClaimPromise",
       "group": "player",
-      "sourceLine": 2502,
+      "sourceLine": 2557,
       "signed": true,
       "requiresPass": false,
       "ownerOnly": false,
@@ -3637,7 +3664,7 @@
     {
       "action": "Pass.CompleteUnbond",
       "group": "player",
-      "sourceLine": 2620,
+      "sourceLine": 2675,
       "signed": true,
       "requiresPass": true,
       "ownerOnly": false,
@@ -3661,7 +3688,7 @@
     {
       "action": "Pass.Info",
       "group": "player",
-      "sourceLine": 2492,
+      "sourceLine": 2547,
       "signed": true,
       "requiresPass": false,
       "ownerOnly": false,
@@ -3682,7 +3709,7 @@
     {
       "action": "Pass.Recover",
       "group": "player",
-      "sourceLine": 2544,
+      "sourceLine": 2599,
       "signed": true,
       "requiresPass": false,
       "ownerOnly": false,
@@ -3723,7 +3750,7 @@
     {
       "action": "Pass.SetRecovery",
       "group": "player",
-      "sourceLine": 2529,
+      "sourceLine": 2584,
       "signed": true,
       "requiresPass": true,
       "ownerOnly": false,
@@ -3754,7 +3781,7 @@
     {
       "action": "Rune.Deposits",
       "group": "player",
-      "sourceLine": 3758,
+      "sourceLine": 3813,
       "signed": true,
       "requiresPass": false,
       "ownerOnly": false,
@@ -3775,7 +3802,7 @@
     {
       "action": "Rune.Minted",
       "group": "player",
-      "sourceLine": 3460,
+      "sourceLine": 3515,
       "signed": false,
       "requiresPass": false,
       "ownerOnly": false,
@@ -3815,7 +3842,7 @@
     {
       "action": "Rune.Withdraw",
       "group": "player",
-      "sourceLine": 3367,
+      "sourceLine": 3422,
       "signed": true,
       "requiresPass": true,
       "ownerOnly": false,
@@ -3850,7 +3877,7 @@
     {
       "action": "Rune.Withdrawals",
       "group": "player",
-      "sourceLine": 3767,
+      "sourceLine": 3822,
       "signed": true,
       "requiresPass": false,
       "ownerOnly": false,
@@ -3871,7 +3898,7 @@
     {
       "action": "Sprite.Update",
       "group": "player",
-      "sourceLine": 3022,
+      "sourceLine": 3077,
       "signed": true,
       "requiresPass": true,
       "ownerOnly": false,
@@ -3940,7 +3967,7 @@
     {
       "action": "Stats",
       "group": "player",
-      "sourceLine": 5653,
+      "sourceLine": 5883,
       "signed": false,
       "requiresPass": false,
       "ownerOnly": false,
@@ -3957,7 +3984,7 @@
     {
       "action": "User.Info",
       "group": "player",
-      "sourceLine": 1508,
+      "sourceLine": 1563,
       "signed": true,
       "requiresPass": false,
       "ownerOnly": false,
@@ -3980,7 +4007,7 @@
     {
       "action": "Venue.Credited",
       "group": "player",
-      "sourceLine": 3662,
+      "sourceLine": 3717,
       "signed": false,
       "requiresPass": false,
       "ownerOnly": false,
@@ -4019,7 +4046,7 @@
     {
       "action": "Venue.Return",
       "group": "player",
-      "sourceLine": 3692,
+      "sourceLine": 3747,
       "signed": false,
       "requiresPass": false,
       "ownerOnly": false,
@@ -4102,7 +4129,7 @@
     {
       "action": "Venue.Send",
       "group": "player",
-      "sourceLine": 3614,
+      "sourceLine": 3669,
       "signed": true,
       "requiresPass": false,
       "ownerOnly": false,
@@ -4155,7 +4182,7 @@
     {
       "action": "Venue.Supply",
       "group": "player",
-      "sourceLine": 3750,
+      "sourceLine": 3805,
       "signed": false,
       "requiresPass": false,
       "ownerOnly": false,

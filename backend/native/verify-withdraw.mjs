@@ -27,6 +27,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import { signDataItem, jwkToAddress } from './ans104.mjs';
+import { assertLiveGraph, resolveLiveGraph } from './live-config.mjs';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.join(HERE, '..', '..');
@@ -40,13 +41,8 @@ const flag = (name, fallback) => {
 const WALLET = flag('wallet', 'burner-01');
 const AMOUNT = Math.max(1, Math.floor(Number(flag('amount', 1))));
 
-function liveProcess() {
-  const file = path.join(ROOT, 'live-process.txt');
-  const [pid, node] = fs.readFileSync(file, 'utf8').trim().split(/\r?\n/).map((l) => l.trim());
-  return { pid, node: process.env.NODE_URL || node };
-}
-
-const { pid: GAME, node: NODE } = liveProcess();
+const graph = assertLiveGraph(resolveLiveGraph({ root: ROOT }));
+const { game: GAME, node: NODE } = graph;
 const jwk = JSON.parse(fs.readFileSync(path.join(ROOT, '.burners', `${WALLET}.json`), 'utf8'));
 const me = jwkToAddress(jwk);
 
@@ -130,6 +126,9 @@ const runeToken = await readKey(GAME, 'runetoken');
 if (!runeToken) {
   console.error('The game has no Rune token wired (`runetoken` is unset). Deploy the bridge first.');
   process.exit(1);
+}
+if (graph.rune && runeToken !== graph.rune) {
+  throw new Error(`game publishes Rune ${runeToken}, but the selected graph records ${graph.rune}`);
 }
 console.log(`rune   ${runeToken}\n`);
 

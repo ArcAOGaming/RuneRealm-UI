@@ -36,6 +36,7 @@ import { installWalletShim, jwkToAddress } from './ans104.mjs';
 import { sendMessage } from './hbclient.mjs';
 import { buildSwarmClient } from './swarm/build-client.mjs';
 import { listBurners } from './burners.mjs';
+import { assertLiveGraph, resolveLiveGraph } from './live-config.mjs';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.resolve(HERE, '..', '..');
@@ -45,12 +46,8 @@ const flag = (name, fallback) => {
   return i >= 0 ? argv[i + 1] : fallback;
 };
 
-const live = fs.existsSync(path.join(ROOT, 'live-process.txt'))
-  ? fs.readFileSync(path.join(ROOT, 'live-process.txt'), 'utf8').trim().split(/\r?\n/)
-  : [];
-const pid = process.env.GAME_PROCESS || live[0];
-const node = (process.env.NODE_URL || live[1] || '').replace(/\/$/, '');
-if (!/^[A-Za-z0-9_-]{43}$/.test(pid || '')) throw new Error('set GAME_PROCESS or write live-process.txt');
+const graph = assertLiveGraph(resolveLiveGraph({ root: ROOT }), { requireHunt: true });
+const { game: pid, node } = graph;
 
 const ownerFile = process.env.HB_WALLET || path.join(ROOT, 'arweave-wallet-DA9qhP25.json');
 const ownerJwk = JSON.parse(fs.readFileSync(ownerFile, 'utf8'));
@@ -60,7 +57,7 @@ const burner = listBurners().find((entry) => entry.name === wanted);
 if (!burner) throw new Error(`no burner named ${wanted}; run \`npm run swarm:wallets\``);
 const burnerJwk = JSON.parse(fs.readFileSync(burner.file, 'utf8'));
 const player = await jwkToAddress(burnerJwk);
-const bid = Math.max(1, Math.min(5, Number(flag('bid', '1'))));
+const bid = Math.max(1, Math.min(3, Number(flag('bid', '1'))));
 
 console.log(`game    ${pid}`);
 console.log(`node    ${node}`);
@@ -76,7 +73,7 @@ const admin = (action, tags, data) => sendMessage({
 
 installWalletShim(burnerJwk);
 const { url } = await buildSwarmClient({
-  root: ROOT, pid, node, outDir: path.join(ROOT, '.verify', 'hunt'),
+  root: ROOT, graph, outDir: path.join(ROOT, '.verify', 'hunt'),
 });
 const api = await import(`${url}?run=${Date.now()}`);
 
@@ -133,18 +130,24 @@ if (me.hunt) {
   done('released');
 }
 
-step('offering + bid');
+step('offering + bid + ticket');
 for (const item of ['fire_berry', 'water_berry', 'air_berry', 'rock_berry']) {
   await admin('Admin.Grant', { PlayerId: player, Item: item, Amount: '20' });
 }
 await admin('Admin.Grant', { PlayerId: player, Item: 'rune', Amount: '5' });
+// A capture spends a Scroll as well as the Rune, and a settlement short of
+// either is refused — which the worker then retries, so the run would sit in
+// `settling` and this script would fail for a reason it is not testing.
+await admin('Admin.Grant', { PlayerId: player, Item: 'scroll', Amount: '3' });
 // `sendMessage` returns when the SCHEDULER accepts the item, which is before
 // the assignment is visible to a `/now` read. Reading once here saw the berries
 // and not the Rune granted a beat later, and then failed at the capture for a
 // reason that had nothing to do with the capture.
 me = await settle((record) => (record.inventory?.rune ?? 0) >= bid
+  && (record.inventory?.scroll ?? 0) >= 1
   && (record.inventory?.fire_berry ?? 0) >= 5, 'the grants to land');
-done(`${me.inventory.fire_berry} of each berry, ${me.inventory.rune} Rune`);
+done(`${me.inventory.fire_berry} of each berry, ${me.inventory.rune} Rune, `
+  + `${me.inventory.scroll} Scroll`);
 
 // A level-0 starter loses to a level-0 wild about as often as it wins, and a
 // lost fight exercises nothing this script is here to check. Stack it: the

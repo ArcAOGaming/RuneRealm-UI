@@ -1,5 +1,5 @@
 /**
- * Deploy the Rune Realm Rune AMM and test quote token.
+ * Deploy the Rune Realm test quote token.
  *
  *   HB_WALLET=path/to/key.json node backend/native/deploy-marketplace.mjs
  *
@@ -10,7 +10,6 @@
  *   QUOTE_DENOMINATION=N   atomic decimals (default 6)
  *   GAME_PROCESS=<pid>     defaults to live-process.txt
  *   NODE_URL=<url>         all Lua processes must share this scheduler node
- *   FEE_BPS=30             AMM fee, one basis point = 0.01%
  *   --no-env               do not update frontend defaults or .env files
  *
  * This deploys an EMPTY pool. Rune has no premine by design, so a deployment
@@ -39,7 +38,6 @@ const REQUEST_NODE = transportNode(NODE);
 const WALLET = process.env.HB_WALLET || path.join(ROOT, 'arweave-wallet-DA9qhP25.json');
 const QUOTE_TICKER = process.env.QUOTE_TICKER || 'TEST-RELIC';
 const QUOTE_DENOMINATION = Number(process.env.QUOTE_DENOMINATION || 6);
-const FEE_BPS = Number(process.env.FEE_BPS || 30);
 
 const isId = (v) => /^[A-Za-z0-9_-]{43}$/.test(v || '');
 if (!fs.existsSync(WALLET)) throw new Error(`No keyfile at ${WALLET}. Set HB_WALLET.`);
@@ -47,9 +45,6 @@ if (!isId(GAME)) throw new Error('No valid game process. Set GAME_PROCESS or dep
 if (!isId(RUNE)) throw new Error('No valid Rune token. Set RUNE_TOKEN or run deploy:rune first.');
 if (!Number.isInteger(QUOTE_DENOMINATION) || QUOTE_DENOMINATION < 0 || QUOTE_DENOMINATION > 18) {
   throw new Error('QUOTE_DENOMINATION must be an integer from 0 through 18.');
-}
-if (!Number.isInteger(FEE_BPS) || FEE_BPS < 0 || FEE_BPS > 1000) {
-  throw new Error('FEE_BPS must be an integer from 0 through 1000.');
 }
 
 const jwk = JSON.parse(fs.readFileSync(WALLET, 'utf8'));
@@ -123,17 +118,6 @@ if (quote) {
   console.log(`             owner faucet: 1000 ${QUOTE_TICKER}`);
 }
 
-const amm = await spawn('amm', 'amm.lua', 'TEST-Rune Realm Swap');
-
-await action(amm, 'Admin.Configure', {
-  BaseToken: RUNE,
-  QuoteToken: quote,
-  BaseTicker: 'TEST-RUNE',
-  QuoteTicker: QUOTE_TICKER,
-  BaseDenomination: '0',
-  QuoteDenomination: String(QUOTE_DENOMINATION),
-  FeeBps: String(FEE_BPS),
-});
 // `marketplace.lua` is deliberately NOT spawned here. It indexes one-unit
 // `token@1.0` companion assets that settle in native AR, and monsters are no
 // longer minted as those, so it would index nothing. The live companion market
@@ -146,17 +130,21 @@ await action(amm, 'Admin.Configure', {
 // it was never wired to the UI, so "bring it back" means building that too.
 // See MARKETPLACE.md.
 //
-// What remains here is the exchange, which is a different thing and still real:
-// Rune and the quote token have holders, so they stay their own processes with
-// an AMM between them.
+// What remains here is the quote token. Rune and the quote token have holders,
+// so they stay their own processes -- and what sits BETWEEN them is an ORDER
+// BOOK, not a pool. The AMM that used to be spawned here is gone: this game
+// trades on bids and asks that users place. The only always-fills-now
+// counterparty is the in-game Shop, which is a supply-policy tool inside
+// `game.lua` -- an anchored, banded desk answering to the issuance ledger, not
+// a market maker and not a curve.
 
 const state = {
-  amm, rune: RUNE, quote, game: GAME,
+  rune: RUNE, quote, game: GAME,
   node: NODE, owner, quoteTicker: QUOTE_TICKER,
-  quoteDenomination: QUOTE_DENOMINATION, feeBps: FEE_BPS,
+  quoteDenomination: QUOTE_DENOMINATION,
 };
 fs.writeFileSync(path.join(ROOT, 'marketplace-processes.txt'), [
-  amm, RUNE, quote, NODE, owner,
+  RUNE, quote, NODE, owner,
 ].join('\n') + '\n');
 fs.writeFileSync(path.join(HERE, 'marketplace-state.json'), `${JSON.stringify(state, null, 2)}\n`);
 
@@ -175,7 +163,7 @@ function syncFrontend() {
   const defaultsFile = path.join(ROOT, 'src', 'lib', 'marketplace-config.ts');
   let defaults = fs.readFileSync(defaultsFile, 'utf8');
   const values = {
-    amm, rune: RUNE, quote, node: NODE,
+    rune: RUNE, quote, node: NODE,
   };
   for (const [key, value] of Object.entries(values)) {
     const pattern = new RegExp(`(${key}:\\s*')[^']*(')`);
@@ -185,7 +173,6 @@ function syncFrontend() {
   fs.writeFileSync(defaultsFile, defaults);
 
   const vars = {
-    VITE_AMM_PROCESS: amm,
     VITE_RUNE_PROCESS: RUNE,
     VITE_QUOTE_PROCESS: quote,
     VITE_MARKET_NODE: NODE,
@@ -200,9 +187,9 @@ function syncFrontend() {
 }
 syncFrontend();
 
-console.log('\nMarketplace deployed with an empty AMM. Next:');
+console.log('\nQuote token deployed. Next:');
 console.log(`  1. Withdraw earned Rune to ${owner}`);
 if (QUOTE_TICKER === 'TEST-RELIC') console.log('  2. The owner starts with 1,000 TEST-RELIC; every signed wallet may faucet 5 repeatedly');
-console.log(`  3. Transfer both tokens to the AMM: ${amm}`);
-console.log('  4. Open /market and add the credited deposits as initial liquidity');
+console.log('  3. The external order book is what trades these two. There is no pool');
+console.log('     to seed: liquidity is the resting bids and asks users place.');
 console.log('\nNo production AO compatibility is claimed by this test deployment.');

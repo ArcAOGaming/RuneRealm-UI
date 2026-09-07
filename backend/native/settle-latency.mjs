@@ -22,18 +22,19 @@
  * advance for these writes; the last is `settleHeadIfUseful` declining to keep
  * paying for an answer that never arrives. See `src/lib/slot-settle.mjs`.
  */
-import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { buildSwarmClient } from './swarm/build-client.mjs';
 import { listBurners } from './burners.mjs';
 import { useKeepAlive } from './keepalive.mjs';
 import { installWalletShim } from './ans104.mjs';
+import { assertLiveGraph, resolveLiveGraph } from './live-config.mjs';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.resolve(HERE, '..', '..');
-const NODE = process.env.HB_NODE || 'https://hyperbeam.tylerw.ai';
-const PID = process.env.GAME_PROCESS || fs.readFileSync(path.join(ROOT, 'live-process.txt'), 'utf8').trim().split(/\r?\n/)[0];
+const graph = assertLiveGraph(resolveLiveGraph({ root: ROOT }));
+const NODE = graph.node;
+const PID = graph.game;
 const LABEL = process.argv[2] || 'run';
 const ROUNDS = Number(process.env.ROUNDS || 12);
 
@@ -41,7 +42,7 @@ await useKeepAlive({ quiet: false });
 
 const outDir = path.join(ROOT, '.test-tmp', `settle-${LABEL}-${Date.now()}`);
 console.log(`process: ${PID}`);
-await buildSwarmClient({ root: ROOT, pid: PID, node: NODE, outDir });
+await buildSwarmClient({ root: ROOT, graph, outDir });
 const burners = await listBurners();
 const actor = burners.find((b) => b.name === (process.env.BURNER || 'burner-01')) || burners[0];
 installWalletShim(actor.jwk);

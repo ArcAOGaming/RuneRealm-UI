@@ -1,21 +1,37 @@
 {
-  "version": 1,
-  "deployedAt": "2026-09-06T08:56:21.777Z",
-  "node": "https://hyperbeam.tylerw.ai",
+  "version": 2,
+  "deployedAt": "2026-09-07T09:56:15.501Z",
+  "node": "http://localhost:8737",
   "owner": "DA9qhP25ZPz6MHIhO-7aNHDN3LsTAL7yCKYIkqr13Z8",
   "processes": {
-    "game": "kUIrz96cRRzaBrBVACkr8xXxulT3mzYMWFooNojZFmU",
-    "rune": "3c2FKXXdz-gC15K_38W9jdwDCx_eSnpj-tTRCb2IdA0",
-    "amm": "vAhjQlZesUAO5Wvhp7lmcFpZC5t6LRrIwGeBRdUBVOc",
-    "quote": "7rUsU5Hs0EZFik5WQ9wmvHqK3tOaQpW1blKy-Q8OJX4"
+    "game": "fIRBOzA0qH0RmHz2Ljx99K0_9qEL33T1MzJFvs6g3Lw",
+    "rune": "qm6v_m_igHJKvHFLN3YrCveIXwt9mCYmN9GSzfe8UVQ",
+    "quote": "7igIbzIxOyax3coasMVJV8tuqRIiGRrdoZjoKeQPOp8",
+    "internalVenue": "i4X-1aJrTsCdENH12AKMr-lAce3RgNzNoNoDGFkU5Iw",
+    "externalVenue": "0NEltc1z-wSzNEjpU90wPc23Ingn7F7d1Fi_COFEx6Y",
+    "hunt": "rThwpdM2HcbTLD402h6cTBC16072eKlh-wkPCWPYplE",
+    "huntWorkers": [
+      "rThwpdM2HcbTLD402h6cTBC16072eKlh-wkPCWPYplE",
+      "T3gJsR4XhgKD8G2Wwn6_VmoEsvv93ctoyIMOa9ha5xw",
+      "ko7VuXuORuaORKujz153D7erguwNfwaXbzbAChYH4Vc"
+    ],
+    "battleWorkers": [
+      "jg8KTFH1uRQ9PvyuOw1PSrrM_dHf9IdrY0RA2Y3qiU4",
+      "7yCdB4dH4-wQOnX29O016LBK80twweC4xQ-Fn6k_His",
+      "IgHBvytdeeXzGo02Ejm1_wcsAI9TQn6ksEt1uof104k"
+    ]
+  },
+  "nodes": {
+    "game": "http://localhost:8737",
+    "hunt": "http://localhost:8737",
+    "market": "http://localhost:8737",
+    "venue": "http://localhost:8737",
+    "battle": "http://localhost:8737"
   },
   "wiring": {
-    "runeMinter": "kUIrz96cRRzaBrBVACkr8xXxulT3mzYMWFooNojZFmU",
-    "gameRuneToken": "3c2FKXXdz-gC15K_38W9jdwDCx_eSnpj-tTRCb2IdA0",
-    "ammPair": [
-      "3c2FKXXdz-gC15K_38W9jdwDCx_eSnpj-tTRCb2IdA0",
-      "7rUsU5Hs0EZFik5WQ9wmvHqK3tOaQpW1blKy-Q8OJX4"
-    ]
+    "runeMinter": "fIRBOzA0qH0RmHz2Ljx99K0_9qEL33T1MzJFvs6g3Lw",
+    "gameRuneToken": "qm6v_m_igHJKvHFLN3YrCveIXwt9mCYmN9GSzfe8UVQ",
+    "gameVenue": "i4X-1aJrTsCdENH12AKMr-lAce3RgNzNoNoDGFkU5Iw"
   },
   "build": "passed",
   "publicAccess": true,
@@ -24,6 +40,7 @@
   "testBots": {
     "enabled": true,
     "walletCount": 50,
-    "access": "public"
+    "access": "public",
+    "funding": "deferred"
   }
 }
