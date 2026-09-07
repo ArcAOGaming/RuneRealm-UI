@@ -96,6 +96,12 @@ function verify(runId) {
   const actions = events.filter((event) => event.type === 'action');
   const errors = events.filter((event) => event.type === 'error');
   const runEnd = [...events].reverse().find((event) => event.type === 'run.end');
+  // The contract mutation is visible at seed START; `complete` is the later
+  // exact-slot verification (about five minutes under load). Attribute holding
+  // jumps to the mutation timestamp, not to the verifier finishing.
+  const adminSeedAt = Date.parse(
+    events.find((event) => event.type === 'admin.seed.start')?.at ?? '',
+  );
   const coverage = livedInCoverage(actions.map((event) => event.action));
 
   if (runEnd?.coverageMode === 'lived-in' && !coverage.complete) {
@@ -190,14 +196,18 @@ function verify(runId) {
     if (!state || state.roster === undefined) continue;
     const held = (state.roster ?? 0) + (state.collection ?? 0);
     const last = holdings.get(event.wallet);
-    holdings.set(event.wallet, { held, action: event.action });
+    const at = Date.parse(event.at ?? '');
+    holdings.set(event.wallet, { held, action: event.action, at });
     if (!last) continue;
     const delta = held - last.held;
     if (delta === 0) continue;
     // Growing by one is a retrieve-from-nothing, a purchase, a gift received,
     // or an adoption. Shrinking by one is a sale, a gift given, or a mint.
     // More than one at a time is not something any single verb does.
-    if (Math.abs(delta) > 1) {
+    const crossedAdminSeed = Number.isFinite(adminSeedAt)
+      && Number.isFinite(last.at) && Number.isFinite(at)
+      && last.at <= adminSeedAt && adminSeedAt <= at && delta > 0;
+    if (Math.abs(delta) > 1 && !crossedAdminSeed) {
       finding('major', 'holding-jumped',
         `${event.wallet} went from ${last.held} companions to ${held} across one action `
         + `(${last.action} then ${event.action})`,

@@ -26,6 +26,24 @@ const api = await import(
     + `?wallet=${encodeURIComponent(workerData.profile.wallet)}&run=${workerData.runId}`
 );
 const profile = workerData.profile;
+const acceptedDelivery = (error) => error instanceof api.OutboxDeliveryError
+  || (error?.accepted === true && error?.durable === true);
+const missingListing = (error) => /no such listing/i.test(
+  error instanceof Error ? error.message : String(error),
+);
+const staleOrder = (error) => /no such order|that order has expired|post-only order may not cross|price is (?:below|above) the .*price band/i.test(
+  error instanceof Error ? error.message : String(error),
+);
+const staleShop = (error) => /shop stock cap reached|desk is out of stock|desk gold reserve exhausted|global 20-hour quantity limit reached|policy-epoch supply-flow limit reached/i.test(
+  error instanceof Error ? error.message : String(error),
+);
+async function settleOrAccept(call) {
+  try { return { value: await call(), accepted: false, slot: null }; }
+  catch (error) {
+    if (!acceptedDelivery(error)) throw error;
+    return { value: null, accepted: true, slot: error.slot ?? null };
+  }
+}
 
 /**
  * Phase timings for the signed writes this actor made, collected per command.
@@ -78,7 +96,7 @@ let tradePlan = null;
 const berryIds = ['fire_berry', 'water_berry', 'air_berry', 'rock_berry'];
 const goodsIds = [...berryIds, 'scroll', 'legendary_scroll', 'rune'];
 const canPayHuntEntry = (player) => berryIds.every((item) => (
-  (player.inventory?.[item] ?? 0) >= 5
+  (player.inventory?.[item] ?? 0) >= 2
 ));
 
 const ids = (record) => Object.keys(record ?? {});
@@ -656,7 +674,14 @@ async function economicAction(action, player, view, intel) {
     }
     const order = choose(intel.stale.length ? intel.stale : intel.ownOrders);
     if (!order) return result('idle.no-economic-opportunity', player, { requested: action });
-    const updated = await api.cancelGoldOrder(order.id);
+    let updated;
+    try { updated = await api.cancelGoldOrder(order.id); }
+    catch (error) {
+      if (!staleOrder(error)) throw error;
+      return result('idle.order-race', await refresh().catch(() => player), {
+        orderId: order.id, venue: 'game', outcome: 'order-cleared-before-cancel',
+      });
+    }
     return result('goods.order.cancel', updated, { orderId: order.id, item: order.item });
   }
 
@@ -674,8 +699,16 @@ async function economicAction(action, player, view, intel) {
     if (moving) {
       const size = Math.max(1, Math.min(Number(moving.live.remaining) || 1,
         quoteSize(moving, player, intel.gold) || Number(moving.live.remaining) || 1));
-      const updated = await api.amendGoldOrder(moving.live.id,
-        { price: moving.price, quantity: size });
+      let updated;
+      try {
+        updated = await api.amendGoldOrder(moving.live.id,
+          { price: moving.price, quantity: size });
+      } catch (error) {
+        if (!staleOrder(error)) throw error;
+        return result('idle.order-race', await refresh().catch(() => player), {
+          orderId: moving.live.id, venue: 'game', outcome: 'order-cleared-before-amend',
+        });
+      }
       return result('goods.order.amend', updated, {
         orderId: moving.live.id, item: moving.item, side: moving.side,
         from: moving.live.price, to: moving.price, quantity: size,
@@ -695,7 +728,14 @@ async function economicAction(action, player, view, intel) {
       const opportunity = choose(sellable);
       const quantity = Math.max(1, Math.min(3, opportunity.quantity,
         opportunity.desk.stockCap - opportunity.desk.stock));
-      const updated = await api.tradeGameShop('sell', opportunity.item, quantity);
+      let updated;
+      try { updated = await api.tradeGameShop('sell', opportunity.item, quantity); }
+      catch (error) {
+        if (!staleShop(error)) throw error;
+        return result('idle.shop-race', await refresh().catch(() => player), {
+          item: opportunity.item, side: 'sell', outcome: 'desk-moved-before-trade',
+        });
+      }
       return result('shop.sell', updated, { item: opportunity.item, quantity,
         expectedUnitPrice: opportunity.desk.bid, counterparty: 'NPC' });
     }
@@ -710,13 +750,27 @@ async function economicAction(action, player, view, intel) {
       // request for three outright rather than filling what it can.
       const quantity = Math.max(1, Math.min(3, opportunity.target - opportunity.held,
         Math.floor(intel.gold / Math.max(1, Number(desk.ask) || 1)), Number(desk.stock) || 1));
-      const updated = await api.tradeGameShop('buy', opportunity.item, quantity);
+      let updated;
+      try { updated = await api.tradeGameShop('buy', opportunity.item, quantity); }
+      catch (error) {
+        if (!staleShop(error)) throw error;
+        return result('idle.shop-race', await refresh().catch(() => player), {
+          item: opportunity.item, side: 'buy', outcome: 'desk-moved-before-trade',
+        });
+      }
       return result('shop.buy', updated, { item: opportunity.item, quantity,
         expectedUnitPrice: desk.ask, counterparty: 'NPC' });
     }
     const opportunity = sellable[0];
     if (opportunity) {
-      const updated = await api.tradeGameShop('sell', opportunity.item, 1);
+      let updated;
+      try { updated = await api.tradeGameShop('sell', opportunity.item, 1); }
+      catch (error) {
+        if (!staleShop(error)) throw error;
+        return result('idle.shop-race', await refresh().catch(() => player), {
+          item: opportunity.item, side: 'sell', outcome: 'desk-moved-before-trade',
+        });
+      }
       return result('shop.sell', updated, { item: opportunity.item, quantity: 1,
         expectedUnitPrice: opportunity.desk.bid, counterparty: 'NPC' });
     }
@@ -773,16 +827,33 @@ async function economicAction(action, player, view, intel) {
     if (quote) {
       const size = quoteSize(quote, player, intel.gold);
       if (quote.live) {
-        const updated = await api.amendGoldOrder(quote.live.id,
-          { price: quote.price, quantity: size });
+        let updated;
+        try {
+          updated = await api.amendGoldOrder(quote.live.id,
+            { price: quote.price, quantity: size });
+        } catch (error) {
+          if (!staleOrder(error)) throw error;
+          return result('idle.order-race', await refresh().catch(() => player), {
+            orderId: quote.live.id, venue: 'game', outcome: 'order-cleared-before-amend',
+          });
+        }
         return result('goods.order.amend', updated, {
           orderId: quote.live.id, item: quote.item, side: quote.side,
           from: quote.live.price, to: quote.price, quantity: size,
           strategy: 'requote-existing-side',
         });
       }
-      const updated = await api.placeGoldOrder(quote.side, quote.item, quote.price, size,
-        { tif: 'PostOnly' });
+      let updated;
+      try {
+        updated = await api.placeGoldOrder(quote.side, quote.item, quote.price, size,
+          { tif: 'PostOnly' });
+      } catch (error) {
+        if (!staleOrder(error)) throw error;
+        return result('idle.order-race', await refresh().catch(() => player), {
+          item: quote.item, side: quote.side, venue: 'game',
+          outcome: 'book-moved-before-post-only',
+        });
+      }
       return result(quote.side === 'sell' ? 'goods.order.sell' : 'goods.order.bid', updated, {
         item: quote.item, price: quote.price, quantity: size, tif: 'PostOnly',
         fair: Math.round(quote.fair), skew: quote.held - quote.target,
@@ -810,6 +881,42 @@ async function economicAction(action, player, view, intel) {
         return result('arbitrage.sell.p2p', updated, { ...plan, quantity, tif: 'IOC' });
       }
     }
+    // The ordinary maker stays inside the touch, so intentionally create the
+    // one real crossed quote the desk design permits: an NPC desk does not rest
+    // an order, and a P2P bid may sit one tick above its ask. Another actor can
+    // then buy from the house and sell into that bid.
+    if (!intel.arbitrage.length) {
+      const setup = goodsIds.map((item) => {
+        const stats = view.market?.[item] ?? {};
+        return { item, ask: Number(stats.houseAsk ?? 0),
+          high: Number(stats.band?.high ?? 0) };
+      }).find(({ ask, high }) => ask >= 10 && intel.gold > ask + 2
+        && (!high || ask + 1 <= high));
+      if (setup) {
+        const price = setup.ask + 1;
+        try {
+          const updated = await api.placeGoldOrder('buy', setup.item, price, 1,
+            { tif: 'PostOnly' });
+          return result('goods.order.bid', updated, {
+            item: setup.item, price, quantity: 1, tif: 'PostOnly',
+            purpose: 'arbitrage-liquidity-bootstrap',
+          });
+        } catch (error) {
+          if (!staleOrder(error)) throw error;
+          const message = error instanceof Error ? error.message : String(error);
+          if (/post-only order may not cross/i.test(message)) {
+            return result('arbitrage.prevented-cross', await refresh().catch(() => player), {
+              item: setup.item, side: 'buy', venue: 'game', price,
+              outcome: 'npc-desk-keeps-the-book-uncrossed', refusal: message,
+            });
+          }
+          return result('idle.order-race', await refresh().catch(() => player), {
+            item: setup.item, side: 'buy', venue: 'game',
+            outcome: 'arbitrage-bootstrap-book-moved',
+          });
+        }
+      }
+    }
     const opportunity = intel.arbitrage.sort((a, b) => (b.sell - b.buy) - (a.sell - a.buy))[0];
     if (opportunity) {
       const quantity = affordableOrderQuantity(opportunity.buy, 2, intel.gold);
@@ -833,6 +940,366 @@ async function economicAction(action, player, view, intel) {
     }
   }
   return result('idle.no-economic-opportunity', player, { requested: action });
+}
+
+// The two custody venues -----------------------------------------------------
+
+const venueProgress = { internal: new Set(), external: new Set() };
+const actorNumber = Number(profile.wallet.slice('burner-'.length)) || 1;
+const makerSide = actorNumber % 2 === 1 ? 'sell' : 'buy';
+const asAmount = (value) => {
+  try { return BigInt(String(value ?? '0')); } catch { return 0n; }
+};
+
+async function internalVenueAction(player) {
+  const process = api.INTERNAL_VENUE_PROCESS;
+  const [position, book] = await Promise.all([
+    api.readVenuePosition(process, address), api.readVenueBook(process),
+  ]);
+  const marketView = book?.['fire_berry/gold'];
+  if (!marketView || marketView.status !== 'open') {
+    return result('idle.venue-internal-closed', player);
+  }
+  const freeGold = Number(position.free?.gold ?? 0);
+  const freeBerry = Number(position.free?.fire_berry ?? 0);
+  const orders = position.orders ?? [];
+  const own = orders.find((order) => order.item === 'fire_berry' && order.side === makerSide);
+  const internalDistance = [0, 1, 2, 3, 4][actorNumber % 5];
+  const internalTargetPrice = makerSide === 'sell'
+    ? Math.min(15, Math.max(Number(marketView.bestBid ?? 0) + 1, 10 + internalDistance))
+    : Math.max(5, Math.min(
+      Number(marketView.bestAsk ?? 10) > 1 ? Number(marketView.bestAsk ?? 10) - 1 : 9,
+      9 - internalDistance,
+    ));
+
+  // A completed fill changes the other side's account too. Once it is visible,
+  // prove the exit path before putting that value back to work.
+  if ((position.fills?.length ?? 0) > 0 && !venueProgress.internal.has('withdraw')) {
+    const asset = makerSide === 'sell' ? 'gold' : 'fire_berry';
+    const available = Number(position.free?.[asset] ?? 0);
+    if (available > 0) {
+      venueProgress.internal.add('withdraw');
+      let receipt;
+      try {
+        receipt = await api.withdrawFromVenue(process, asset, Math.min(available, 2));
+      } catch (error) {
+        if (!acceptedDelivery(error)) throw error;
+        return result('venue.internal.withdraw', player, {
+          asset, quantity: Math.min(available, 2), deliveryState: 'accepted-delivery-unconfirmed',
+          slot: error.slot ?? null,
+        });
+      }
+      return result('venue.internal.withdraw', player, {
+        asset, quantity: Math.min(available, 2), withdrawal: receipt.withdrawal?.id ?? null,
+      });
+    }
+  }
+
+  // Custody first. Odd-numbered wallets supply berries; even-numbered wallets
+  // supply Gold, creating natural two-sided flow without one fifty-handed bot.
+  if (makerSide === 'sell' && freeBerry < 4) {
+    const held = Number(player.inventory?.fire_berry ?? 0);
+    if (held >= 4) {
+      let updated;
+      try {
+        updated = await api.sendToVenue('fire_berry', Math.min(8, held));
+      } catch (error) {
+        if (!acceptedDelivery(error)) throw error;
+        return result('venue.internal.deposit', player, {
+          asset: 'fire_berry', quantity: Math.min(8, held), side: makerSide,
+          deliveryState: 'accepted-delivery-unconfirmed', slot: error.slot ?? null,
+        });
+      }
+      return result('venue.internal.deposit', updated, {
+        asset: 'fire_berry', quantity: Math.min(8, held), side: makerSide,
+      });
+    }
+  }
+  if (makerSide === 'buy' && freeGold < 40) {
+    const held = Number(player.gold ?? 0);
+    if (held >= 40) {
+      let updated;
+      try {
+        updated = await api.sendToVenue('gold', Math.min(100, held));
+      } catch (error) {
+        if (!acceptedDelivery(error)) throw error;
+        return result('venue.internal.deposit', player, {
+          asset: 'gold', quantity: Math.min(100, held), side: makerSide,
+          deliveryState: 'accepted-delivery-unconfirmed', slot: error.slot ?? null,
+        });
+      }
+      return result('venue.internal.deposit', updated, {
+        asset: 'gold', quantity: Math.min(100, held), side: makerSide,
+      });
+    }
+  }
+
+  if (own && !venueProgress.internal.has('amend') && Number(own.remaining) > 0) {
+    venueProgress.internal.add('amend');
+    let receipt;
+    try {
+      receipt = await api.amendVenueOrder(process, own.id,
+        { price: internalTargetPrice, quantity: Math.max(1, Number(own.remaining) - 1) });
+    } catch (error) {
+      if (!staleOrder(error)) throw error;
+      return result('idle.order-race', player, {
+        orderId: own.id, venue: 'internal', outcome: 'order-cleared-before-amend',
+      });
+    }
+    return result('venue.internal.order.amend', player, {
+      orderId: own.id, side: own.side, price: internalTargetPrice,
+      quantity: Math.max(1, Number(own.remaining) - 1),
+      account: receipt.account?.account,
+    });
+  }
+  if (own && venueProgress.internal.has('amend')
+      && !venueProgress.internal.has('cancel') && actorNumber % 4 === 1) {
+    venueProgress.internal.add('cancel');
+    try { await api.cancelVenueOrder(process, own.id); }
+    catch (error) {
+      if (!staleOrder(error)) throw error;
+      return result('idle.order-race', player, {
+        orderId: own.id, venue: 'internal', outcome: 'order-cleared-before-cancel',
+      });
+    }
+    return result('venue.internal.order.cancel', player, { orderId: own.id, side: own.side });
+  }
+
+  const asks = marketView.depth?.asks ?? [];
+  const bids = marketView.depth?.bids ?? [];
+  // Some wallets cross, some provide depth. The former all crossed the same
+  // best ask, which proved fills but collapsed the entire book to 9/10.
+  if (makerSide === 'buy' && actorNumber % 4 === 0
+      && asks.length && freeGold >= Number(asks[0].price)) {
+    const price = Number(asks[0].price);
+    const receipt = await api.placeVenueOrder(process, 'buy', 'fire_berry', price, 1,
+      { tif: 'IOC' });
+    const fills = receipt.order?.fills ?? [];
+    return result(fills.length ? 'venue.internal.order.fill' : 'venue.internal.order.take-empty',
+      player, { side: 'buy', price, quantity: 1, fills: fills.length });
+  }
+  if (makerSide === 'sell' && actorNumber % 4 === 3 && bids.length && freeBerry >= 1) {
+    const price = Number(bids[0].price);
+    const receipt = await api.placeVenueOrder(process, 'sell', 'fire_berry', price, 1,
+      { tif: 'IOC' });
+    const fills = receipt.order?.fills ?? [];
+    return result(fills.length ? 'venue.internal.order.fill' : 'venue.internal.order.take-empty',
+      player, { side: 'sell', price, quantity: 1, fills: fills.length });
+  }
+
+  if (!own) {
+    const price = internalTargetPrice;
+    const quantity = makerSide === 'sell'
+      ? Math.min(4, freeBerry)
+      : Math.min(4, Math.floor(freeGold / Math.max(1, price)));
+    if (quantity > 0) {
+      let receipt;
+      try {
+        receipt = await api.placeVenueOrder(process, makerSide, 'fire_berry', price,
+          quantity, { tif: 'PostOnly' });
+      } catch (error) {
+        if (!staleOrder(error)) throw error;
+        return result('idle.order-race', player, {
+          side: makerSide, venue: 'internal', outcome: 'book-moved-before-post-only',
+        });
+      }
+      const orderId = receipt.order?.order?.id ?? null;
+      if (orderId && actorNumber % 4 === 1 && !venueProgress.internal.has('cancel')) {
+        await api.cancelVenueOrder(process, orderId);
+        venueProgress.internal.add('cancel');
+        return result('venue.internal.order.cancel', player, {
+          orderId, side: makerSide, placedForCancellation: true,
+        });
+      }
+      return result(`venue.internal.order.${makerSide === 'sell' ? 'ask' : 'bid'}`, player, {
+        side: makerSide, price, quantity, orderId,
+      });
+    }
+  }
+  return result('idle.venue-internal-waiting', player, {
+    side: makerSide, freeGold, freeBerry, orders: orders.length,
+  });
+}
+
+async function externalVenueAction(player) {
+  const process = api.EXTERNAL_VENUE_PROCESS;
+  const [position, book] = await Promise.all([
+    api.readVenuePosition(process, address), api.readVenueBook(process),
+  ]);
+  const marketView = book?.['rune/relic'];
+  if (!marketView || marketView.status !== 'open') {
+    return result('idle.venue-external-closed', player);
+  }
+  const freeRune = asAmount(position.free?.rune);
+  const freeRelic = asAmount(position.free?.relic);
+  const orders = position.orders ?? [];
+  const own = orders.find((order) => order.item === 'rune' && order.side === makerSide);
+  const externalDistance = [0, 10_000, 25_000, 50_000, 100_000, 175_000, 300_000, 500_000]
+    [actorNumber % 8];
+  const externalTargetPrice = makerSide === 'sell'
+    ? Math.min(3_000_000, Math.max(
+      Number(marketView.bestBid ?? 0) + 1_000, 2_000_000 + externalDistance,
+    ))
+    : Math.max(1_000_000, Math.min(
+      Number(marketView.bestAsk ?? 2_000_000) > 1_000
+        ? Number(marketView.bestAsk ?? 2_000_000) - 1_000 : 1_900_000,
+      1_900_000 - externalDistance,
+    ));
+
+  if ((position.fills?.length ?? 0) > 0 && !venueProgress.external.has('withdraw')) {
+    const asset = makerSide === 'sell' ? 'relic' : 'rune';
+    const available = asAmount(position.free?.[asset]);
+    const quantity = available > 1_000_000n ? 1_000_000n : available;
+    if (quantity > 0n) {
+      venueProgress.external.add('withdraw');
+      let receipt;
+      try {
+        receipt = await api.withdrawFromVenue(process, asset, quantity.toString());
+      } catch (error) {
+        if (!acceptedDelivery(error)) throw error;
+        return result('venue.external.withdraw', player, {
+          asset, quantity: quantity.toString(), deliveryState: 'accepted-delivery-unconfirmed',
+          slot: error.slot ?? null,
+        });
+      }
+      return result('venue.external.withdraw', player, {
+        asset, quantity: quantity.toString(), withdrawal: receipt.withdrawal?.id ?? null,
+      });
+    }
+  }
+
+  if (makerSide === 'sell' && freeRune < 2_000_000n) {
+    const walletRune = asAmount(await api.readTokenBalance(api.RUNE_PROCESS, address));
+    if (walletRune < 2_000_000n) {
+      const gameRune = Number(player.inventory?.rune ?? 0);
+      const reserve = targetHolding(player, 'rune');
+      if (gameRune > reserve + 2) {
+        const amount = Math.min(3, gameRune - reserve);
+        try {
+          const updated = await api.withdrawRune(amount);
+          return result('rune.withdraw', updated?.address ? updated : player, {
+            amount, purpose: 'external-venue', state: updated?.withdrawal?.state ?? 'pending',
+          });
+        } catch (error) {
+          if (!acceptedDelivery(error)) throw error;
+          return result('rune.withdraw', player, {
+            amount, purpose: 'external-venue', deliveryState: 'accepted-delivery-unconfirmed',
+            slot: error.slot ?? null,
+          });
+        }
+      }
+    } else {
+      const quantity = (walletRune > 4_000_000n ? 4_000_000n : walletRune).toString();
+      try {
+        await api.depositTokenToVenue(api.RUNE_PROCESS, process, quantity);
+      } catch (error) {
+        if (!acceptedDelivery(error)) throw error;
+        return result('venue.external.deposit.rune', player, {
+          asset: 'rune', quantity, deliveryState: 'accepted-delivery-unconfirmed',
+          slot: error.slot ?? null,
+        });
+      }
+      return result('venue.external.deposit.rune', player, { asset: 'rune', quantity });
+    }
+  }
+
+  if (makerSide === 'buy' && freeRelic < 4_000_000n) {
+    const walletRelic = asAmount(await api.readTokenBalance(api.QUOTE_PROCESS, address));
+    if (walletRelic < 4_000_000n) {
+      const receipt = await api.claimQuoteFaucet();
+      return result('venue.external.faucet', player, { balance: receipt?.Balance ?? null });
+    }
+    const quantity = (walletRelic > 5_000_000n ? 5_000_000n : walletRelic).toString();
+    try {
+      await api.depositTokenToVenue(api.QUOTE_PROCESS, process, quantity);
+    } catch (error) {
+      if (!acceptedDelivery(error)) throw error;
+      return result('venue.external.deposit.relic', player, {
+        asset: 'relic', quantity, deliveryState: 'accepted-delivery-unconfirmed',
+        slot: error.slot ?? null,
+      });
+    }
+    return result('venue.external.deposit.relic', player, { asset: 'relic', quantity });
+  }
+
+  if (own && !venueProgress.external.has('amend') && Number(own.remaining) > 0) {
+    venueProgress.external.add('amend');
+    try {
+      await api.amendVenueOrder(process, own.id, {
+        price: externalTargetPrice, quantity: Math.max(1, Number(own.remaining) - 1),
+      });
+    } catch (error) {
+      if (!staleOrder(error)) throw error;
+      return result('idle.order-race', player, {
+        orderId: own.id, venue: 'external', outcome: 'order-cleared-before-amend',
+      });
+    }
+    return result('venue.external.order.amend', player, {
+      orderId: own.id, side: own.side, price: externalTargetPrice,
+      quantity: Math.max(1, Number(own.remaining) - 1),
+    });
+  }
+  if (own && venueProgress.external.has('amend')
+      && !venueProgress.external.has('cancel') && actorNumber % 4 === 1) {
+    venueProgress.external.add('cancel');
+    try { await api.cancelVenueOrder(process, own.id); }
+    catch (error) {
+      if (!staleOrder(error)) throw error;
+      return result('idle.order-race', player, {
+        orderId: own.id, venue: 'external', outcome: 'order-cleared-before-cancel',
+      });
+    }
+    return result('venue.external.order.cancel', player, { orderId: own.id, side: own.side });
+  }
+
+  const asks = marketView.depth?.asks ?? [];
+  const bids = marketView.depth?.bids ?? [];
+  if (makerSide === 'buy' && actorNumber % 4 === 0 && asks.length) {
+    const price = Number(asks[0].price);
+    const required = BigInt(price) + ((BigInt(price) * 30n) / 10_000n) + 1n;
+    if (freeRelic >= required) {
+      const receipt = await api.placeVenueOrder(process, 'buy', 'rune', price, 1,
+        { tif: 'IOC' });
+      const fills = receipt.order?.fills ?? [];
+      return result(fills.length ? 'venue.external.order.fill' : 'venue.external.order.take-empty',
+      player, { side: 'buy', price, quantity: 1, fills: fills.length });
+    }
+  }
+  if (makerSide === 'sell' && actorNumber % 4 === 3
+      && bids.length && freeRune >= 1_000_000n) {
+    const price = Number(bids[0].price);
+    const receipt = await api.placeVenueOrder(process, 'sell', 'rune', price, 1,
+      { tif: 'IOC' });
+    const fills = receipt.order?.fills ?? [];
+    return result(fills.length ? 'venue.external.order.fill' : 'venue.external.order.take-empty',
+      player, { side: 'sell', price, quantity: 1, fills: fills.length });
+  }
+
+  if (!own) {
+    const price = externalTargetPrice;
+    const quantity = makerSide === 'sell'
+      ? Math.min(3, Number(freeRune / 1_000_000n))
+      : Math.min(2, Number(freeRelic / BigInt(Math.max(1, price))));
+    if (quantity > 0) {
+      let receipt;
+      try {
+        receipt = await api.placeVenueOrder(process, makerSide, 'rune', price, quantity,
+          { tif: 'PostOnly' });
+      } catch (error) {
+        if (!staleOrder(error)) throw error;
+        return result('idle.order-race', player, {
+          side: makerSide, venue: 'external', outcome: 'book-moved-before-post-only',
+        });
+      }
+      return result(`venue.external.order.${makerSide === 'sell' ? 'ask' : 'bid'}`, player, {
+        side: makerSide, price, quantity, orderId: receipt.order?.order?.id ?? null,
+      });
+    }
+  }
+  return result('idle.venue-external-waiting', player, {
+    side: makerSide, freeRune: freeRune.toString(), freeRelic: freeRelic.toString(),
+    orders: orders.length,
+  });
 }
 
 async function bootstrap() {
@@ -870,14 +1337,22 @@ async function bootstrap() {
     const stored = ids(player.collection);
     if (stored.length) {
       player = await api.retrieveMonster(stored[Math.floor(random() * stored.length)]);
-      return result('bootstrap.retrieved', player);
+      return result('monster.retrieve', player, { recovery: 'empty-roster' });
     }
     const runes = player.inventory?.rune ?? 0;
     const affordable = Object.values(await market())
       .filter((entry) => entry.seller !== address && Number(entry.price) <= runes);
     if (affordable.length) {
       const listing = affordable[Math.floor(random() * affordable.length)];
-      player = await api.buyListing(listing.id);
+      try {
+        player = await api.buyListing(listing.id);
+      } catch (error) {
+        if (!missingListing(error)) throw error;
+        player = await refresh().catch(() => player);
+        return result('idle.market-race', player, {
+          listingId: listing.id, outcome: 'listing-cleared-before-buy',
+        });
+      }
       const bought = ids(player.collection);
       if (bought.length) player = await api.retrieveMonster(bought[0]);
       return result('bootstrap.bought', player, { listingId: listing.id });
@@ -895,28 +1370,53 @@ async function botRound(player) {
     return result('idle.battle-state', player);
   }
   const move = chooseMove(battle);
-  const updated = await api.attack(battle.id, move, battle.round);
-  return result('battle.attack.bot', updated, { move });
+  const landed = await settleOrAccept(() => api.attack(battle.id, move, battle.round));
+  const refreshed = landed.value ?? await refresh().catch(() => player);
+  const updated = refreshed?.address ? refreshed : player;
+  return result('battle.attack.bot', updated, { move,
+    ...(landed.accepted ? { deliveryState: 'accepted-delivery-unconfirmed', slot: landed.slot } : {}) });
 }
 
 /** Drive a whole Hunt worker session instead of stopping after Hunt.Begin. */
-async function huntTick(player) {
+async function huntTick(player, prefer) {
   const route = player.hunt;
   if (!route) return result('idle.hunt-route', player);
-  const run = await api.readHunt(route);
-  if (!run) return result('idle.hunt-opening', player, { runId: route.runId });
+  let run;
+  try { run = await api.readHunt(route); }
+  catch (error) {
+    if (!/hunt not found/i.test(error instanceof Error ? error.message : String(error))) throw error;
+    run = null;
+  }
+  if (!run) {
+    // `Hunt.Begin` is explicitly idempotent while a route is opening: it does
+    // not charge twice and re-emits the same Hunt.Open. This is the safe retry
+    // for an accepted game write whose first downstream push never landed.
+    const landed = await settleOrAccept(() => api.beginHunt(route.monsterId));
+    return result('hunt.retry-open', landed.value?.address ? landed.value : player, {
+      runId: route.runId,
+      ...(landed.accepted ? { deliveryState: 'accepted-delivery-unconfirmed',
+        slot: landed.slot } : {}),
+    });
+  }
 
   if (run.status === 'opening') {
-    const updated = await api.beginHunt(route.monsterId);
-    return result('hunt.retry-open', updated, { runId: route.runId });
+    try {
+      const updated = await api.beginHunt(route.monsterId);
+      return result('hunt.retry-open', updated, { runId: route.runId });
+    } catch (error) {
+      if (!acceptedDelivery(error)) throw error;
+      return result('hunt.retry-open', player, { runId: route.runId,
+        deliveryState: 'accepted-delivery-unconfirmed', slot: error.slot ?? null });
+    }
   }
   if (run.status === 'roaming') {
     // Leave completed runs often enough to exercise release settlement, while
     // still allowing repeated encounters during longer soaks.
-    if ((run.encounterCount ?? 0) > 0 && random() < 0.35) {
-      await api.huntEnd(route);
+    if ((run.encounterCount ?? 0) > 0 && (prefer === 'hunt' || random() < 0.35)) {
+      const landed = await settleOrAccept(() => api.huntEnd(route));
       const updated = await refresh();
-      return result('hunt.end', updated, { runId: route.runId });
+      return result('hunt.end', updated, { runId: route.runId,
+        ...(landed.accepted ? { deliveryState: 'accepted-delivery-unconfirmed', slot: landed.slot } : {}) });
     }
     const cooldown = 3_000;
     if (run.lastSearchAt && run.lastSearchAt + cooldown > Date.now()) {
@@ -929,9 +1429,11 @@ async function huntTick(player) {
   }
   if (run.status === 'battle' && run.battle) {
     const move = chooseMove(run.battle);
-    const next = await api.huntAttack(route, move, run.battle.round);
+    const landed = await settleOrAccept(() => api.huntAttack(route, move, run.battle.round));
+    const next = landed.value ?? run;
     return result('hunt.attack', player, {
       runId: route.runId, move, round: run.battle.round, huntStatus: next.status,
+      ...(landed.accepted ? { deliveryState: 'accepted-delivery-unconfirmed', slot: landed.slot } : {}),
     });
   }
   if (run.status === 'defeated') {
@@ -954,34 +1456,115 @@ async function huntTick(player) {
       // The bid ceiling is 3, not 5. Bidding above it is refused by both the
       // worker and the game, so a stale 5 here is a run of wasted captures.
       const bid = Math.max(1, Math.min(3, spendableRune));
-      const next = await api.huntCapture(route, bid);
+      const landed = await settleOrAccept(() => api.huntCapture(route, bid));
+      const next = landed.value ?? run;
       return result('hunt.capture', player, {
         runId: route.runId, runes: bid, huntStatus: next.status,
         success: next.lastCapture?.success ?? null,
+        ...(landed.accepted ? { deliveryState: 'accepted-delivery-unconfirmed', slot: landed.slot } : {}),
       });
     }
-    const next = await api.huntDeclineCapture(route);
-    return result('hunt.decline', player, { runId: route.runId, huntStatus: next.status });
+    const landed = await settleOrAccept(() => api.huntDeclineCapture(route));
+    const next = landed.value ?? run;
+    return result('hunt.decline', player, { runId: route.runId, huntStatus: next.status,
+      ...(landed.accepted ? { deliveryState: 'accepted-delivery-unconfirmed', slot: landed.slot } : {}) });
   }
   if (run.status === 'settling') {
-    const next = await api.huntRetrySettlement(route);
+    // The Hunt -> Game half of capture can settle durably while the recursive
+    // Game -> Hunt acknowledgement misses the push deadline. The authority's
+    // published route proves that exact state: it is already `roaming` and
+    // carries the immutable settlement receipt, while the worker is still
+    // `settling`. Restart at the authority so only one idempotent hop remains.
+    if (player.hunt?.status === 'roaming' && player.hunt?.lastCapture?.settlementId) {
+      const landed = await settleOrAccept(() => api.retryHuntAcknowledgement());
+      const next = await api.readHunt(route).catch(() => run);
+      return result('hunt.retry-ack', player, {
+        runId: route.runId, huntStatus: next.status,
+        ...(landed.accepted ? { deliveryState: 'accepted-delivery-unconfirmed', slot: landed.slot } : {}),
+      });
+    }
+    const landed = await settleOrAccept(() => api.huntRetrySettlement(route));
+    const next = landed.value ?? run;
     return result('hunt.retry-settlement', player, {
       runId: route.runId, huntStatus: next.status,
+      ...(landed.accepted ? { deliveryState: 'accepted-delivery-unconfirmed', slot: landed.slot } : {}),
     });
   }
   if (run.status === 'lost' || run.status === 'ended') {
-    await api.huntEnd(route);
+    const landed = await settleOrAccept(() => api.huntEnd(route));
     const updated = await refresh();
-    return result('hunt.end', updated, { runId: route.runId, outcome: run.status });
+    return result('hunt.end', updated, { runId: route.runId, outcome: run.status,
+      ...(landed.accepted ? { deliveryState: 'accepted-delivery-unconfirmed', slot: landed.slot } : {}) });
   }
   return result(`idle.hunt-${run.status}`, player, { runId: route.runId });
 }
 
-async function tick({ prefer } = {}) {
+async function tradingTick(player, tickNumber) {
+  // Offset by wallet number so fifty actors do not all hammer the same venue
+  // on the same second. This focus deliberately excludes gameplay, monster
+  // listings and the Rune bridge: internal venue, external venue, NPC shop.
+  const walletNumber = Number(String(profile.wallet).match(/\d+/)?.[0] ?? 0);
+  const lane = (tickNumber + walletNumber) % 4;
+  if (lane === 0) return internalVenueAction(player);
+  if (lane === 1) return externalVenueAction(player);
+  if (lane === 2) {
+    const economyView = await economy();
+    const intelligence = tradeIntelligence(player, economyView);
+    return economicAction('shop_trade', player, economyView, intelligence);
+  }
+
+  // Monster exchange: cheap listings are meant to clear, and every operation
+  // is real custody. Prefer a purchase, then supply, then cancellation so the
+  // thousand-interaction run produces sales instead of a wall of fake quotes.
+  const listings = await market();
+  const all = Object.values(listings);
+  const affordable = all.filter((entry) => entry.seller !== address
+    && Number(entry.price) <= Number(player.inventory?.rune ?? 0));
+  const collection = ids(player.collection);
+  const mine = all.filter((entry) => entry.seller === address);
+  if (affordable.length) {
+    const listing = affordable[Math.floor(random() * affordable.length)];
+    try {
+      const updated = await api.buyListing(listing.id);
+      return result('market.buy', updated, {
+        listingId: listing.id, price: Number(listing.price), seller: listing.seller,
+      });
+    } catch (error) {
+      if (!missingListing(error)) throw error;
+      return result('idle.market-race', await refresh().catch(() => player), {
+        listingId: listing.id, outcome: 'listing-cleared-before-buy',
+      });
+    }
+  }
+  if (collection.length) {
+    const monsterId = collection[Math.floor(random() * collection.length)];
+    const price = 1 + ((walletNumber + tickNumber) % 20);
+    const updated = await api.listMonster(monsterId, price);
+    return result('market.list', updated, {
+      monsterId, price, listingId: updated.listing?.id ?? null,
+    });
+  }
+  if (mine.length) {
+    const listing = mine[Math.floor(random() * mine.length)];
+    try {
+      const updated = await api.cancelListing(listing.id);
+      return result('market.cancel', updated, { listingId: listing.id });
+    } catch (error) {
+      if (!missingListing(error)) throw error;
+      return result('idle.market-race', await refresh().catch(() => player), {
+        listingId: listing.id, outcome: 'listing-cleared-before-cancel',
+      });
+    }
+  }
+  return result('idle.market-no-inventory', player);
+}
+
+async function tick({ prefer, focus } = {}) {
   const tickNumber = ticks++;
   let player = await refresh();
   if (!player?.unlocked) return result('blocked.access', player, { blocked: true });
   if (!player.faction || !player.monster) return bootstrap();
+  if (focus === 'trading') return tradingTick(player, tickNumber);
 
   // Worship is a 20-hour opportunity and seeds the next care/economy loop
   // with a box. An intelligent player does not gamble it against a market
@@ -1001,7 +1584,7 @@ async function tick({ prefer } = {}) {
   const customized = await customizeIfDue(player, tickNumber);
   if (customized) return customized;
 
-  if (player.hunt) return huntTick(player);
+  if (player.hunt) return huntTick(player, prefer);
 
   const monster = player.monster;
   const status = monster.status.type;
@@ -1020,8 +1603,15 @@ async function tick({ prefer } = {}) {
     if (player.activeBattleId) return result('idle.pvp-managed', player);
     if (profile.role === 'duelist') return result('idle.awaiting-pvp', player);
     if ((player.battlesRemaining ?? 0) > 0 && (profile.weights.bot ?? 0) > 0) {
-      player = await api.startBotBattle(profile.botDifficulty);
-      return result('battle.start.bot', player, { difficulty: profile.botDifficulty });
+      try {
+        player = await api.startBotBattle(profile.botDifficulty);
+        return result('battle.start.bot', player, { difficulty: profile.botDifficulty });
+      } catch (error) {
+        if (!acceptedDelivery(error)) throw error;
+        const accepted = await refresh().catch(() => player);
+        return result('battle.start.bot', accepted, { difficulty: profile.botDifficulty,
+          deliveryState: 'accepted-delivery-unconfirmed', slot: error.slot ?? null });
+      }
     }
     player = await api.leaveArena();
     return result('arena.leave', player);
@@ -1057,8 +1647,8 @@ async function tick({ prefer } = {}) {
   // and the only thing `deposit` can burn back into the game.
   const tokenBalance = exchangeReady
     ? await api.readTokenBalance(api.RUNE_PROCESS, address)
-      .then((value) => Number(value) || 0).catch(() => 0)
-    : 0;
+      .then(asAmount).catch(() => 0n)
+    : 0n;
 
   add('daily', (player.dailyReadyAt ?? 0) <= Date.now());
   add('loot', (player.lootboxes?.length ?? 0) > 0 && status === 'Home');
@@ -1069,8 +1659,10 @@ async function tick({ prefer } = {}) {
   // testing a core free loop even though the shipped client could start it.
   add('quest', status === 'Home'
     && monster.energy >= 25 && monster.happiness >= 25);
+  // Economy v2 made arena entry free. Energy and happiness are the gate; Rune
+  // is advancement currency and must not stop a zero-Rune bot testing combat.
   add('bot', status === 'Home' && profile.role !== 'duelist'
-    && runes > runeReserve && monster.energy >= 25 && monster.happiness >= 25);
+    && monster.energy >= 25 && monster.happiness >= 25);
 
   // Hunting freezes the companion on a separate worker process and holds it
   // until the run settles, so it is gated like any other activity that takes
@@ -1086,14 +1678,20 @@ async function tick({ prefer } = {}) {
   // storage at all times is deliberate — an actor with an empty roster stops
   // being able to quest, feed or fight, and would drop out of every other
   // measurement this harness takes.
-  add('store', runes > runeReserve && idleInRoster.length > 1 && !player.activeBattleId);
+  // A one-slot roster can still exercise a reversible store: put the active
+  // companion into storage, then bootstrap retrieves one on the next tick.
+  // Require another stored companion for the directed one-slot case so the bot
+  // can never strand an already-adopted account with no recoverable creature.
+  add('store', !player.activeBattleId && status === 'Home'
+    && (idleInRoster.length > 1
+      || (idleInRoster.length === 1 && collection.length > 0)));
   add('retrieve', collection.length > 0 && roster.length < rosterMax);
   add('swap', collection.length > 0 && status === 'Home' && !player.activeBattleId);
 
   // The marketplace. A listing is custody, so only a stored companion can go
   // up, and an actor that has listed everything keeps at least one back.
   add('list', collection.length > 0);
-  add('cancel', mine.length > 0);
+  add('cancel', mine.length > 0 || collection.length > 0);
   add('buy', affordable.length > 0);
   add('give', collection.length > 0 && (workerData.peers?.length ?? 0) > 0);
   // Quoting is gated on having somewhere to quote, not on having spare stock.
@@ -1111,7 +1709,10 @@ async function tick({ prefer } = {}) {
   add('goods_cancel_all', (intelligence?.ownOrders.length ?? 0) >= 2);
   add('goods_maintain', (economyView?.orders?.length ?? 0) > 0);
   add('shop_trade', Boolean(intelligence?.excess.length || intelligence?.needs.length));
-  add('arbitrage', Boolean(tradePlan || intelligence?.arbitrage.length));
+  add('arbitrage', Boolean(tradePlan || intelligence?.arbitrage.length)
+    || prefer === 'arbitrage');
+  add('venue_internal', api.internalVenueConfigured());
+  add('venue_external', api.externalVenueConfigured() && exchangeReady);
 
   // The Rune bridge.
   //
@@ -1121,7 +1722,7 @@ async function tick({ prefer } = {}) {
   // `deposit` is gated on actually holding the token, which only a settled
   // withdrawal produces, so the pair naturally runs in order the first time.
   add('withdraw', runes > runeReserve + 1 && exchangeReady);
-  add('deposit', tokenBalance > 0 && exchangeReady);
+  add('deposit', tokenBalance >= 1_000_000n && exchangeReady);
 
   // Deliberately illegal. See `probe` below.
   add('probe', true);
@@ -1197,7 +1798,15 @@ async function tick({ prefer } = {}) {
     detail = boost ? { berry: boost } : {};
   } else if (action === 'hunt') {
     const target = player.activeId ?? roster[0];
-    player = await api.beginHunt(target);
+    try {
+      player = await api.beginHunt(target);
+    } catch (error) {
+      if (!acceptedDelivery(error)) throw error;
+      player = await refresh().catch(() => player);
+      detail = { monsterId: target, deliveryState: 'accepted-delivery-unconfirmed',
+        slot: error.slot ?? null };
+      return result('hunt.begin', player, detail);
+    }
     detail = { monsterId: target };
   } else if (action === 'store') {
     // Never the last idle companion: an actor with nothing active drops out of
@@ -1223,11 +1832,44 @@ async function tick({ prefer } = {}) {
     detail = { monsterId: id, price, listingId: player.listing?.id ?? null };
   } else if (action === 'cancel') {
     const listing = choose(mine);
-    player = await api.cancelListing(listing.id);
+    if (!listing) {
+      const id = choose(collection);
+      // Create the fixture and remove it in the SAME actor command. Leaving a
+      // million-Rune listing behind until a later random turn polluted the
+      // live marketplace with absurd prices for hours.
+      const protectedPrice = 1_000;
+      player = await api.listMonster(id, protectedPrice);
+      const listingId = player.listing?.id ?? null;
+      if (!listingId) throw new Error('protected cancellation fixture returned no listing id');
+      player = await api.cancelListing(listingId);
+      return result('market.cancel', player, {
+        monsterId: id, price: protectedPrice,
+        listingId,
+        purpose: 'protected-cancel-coverage',
+      });
+    }
+    try {
+      player = await api.cancelListing(listing.id);
+    } catch (error) {
+      if (!missingListing(error)) throw error;
+      player = await refresh().catch(() => player);
+      return result('idle.market-race', player, {
+        listingId: listing.id, outcome: 'listing-cleared-before-cancel',
+      });
+    }
     detail = { listingId: listing.id };
   } else if (action === 'buy') {
     const listing = choose(affordable);
-    player = await api.buyListing(listing.id);
+    try {
+      player = await api.buyListing(listing.id);
+    } catch (error) {
+      if (!missingListing(error)) throw error;
+      player = await refresh().catch(() => player);
+      return result('idle.market-race', player, {
+        listingId: listing.id, seller: listing.seller,
+        outcome: 'listing-cleared-before-buy',
+      });
+    }
     detail = { listingId: listing.id, price: Number(listing.price), seller: listing.seller };
   } else if (action === 'give') {
     const id = choose(collection);
@@ -1237,12 +1879,19 @@ async function tick({ prefer } = {}) {
   } else if (['goods_make', 'goods_amend', 'goods_take', 'goods_cancel', 'goods_cancel_all',
     'goods_maintain', 'shop_trade', 'arbitrage'].includes(action)) {
     return economicAction(action, player, economyView, intelligence);
+  } else if (action === 'venue_internal') {
+    return internalVenueAction(player);
+  } else if (action === 'venue_external') {
+    return externalVenueAction(player);
   } else if (action === 'withdraw') {
     // One at a time. A withdrawal is a queued mint, and the point is to watch
     // the queue drain rather than to move a large balance.
     return bridge.withdraw(player, Math.min(2, runes - runeReserve));
   } else if (action === 'deposit') {
-    return bridge.deposit(player, Math.min(2, tokenBalance));
+    // The token has six decimals while the game accepts whole Rune only.
+    // Burn one or two complete 1,000,000-atom units, never one or two atoms.
+    const atoms = tokenBalance >= 2_000_000n ? 2_000_000n : 1_000_000n;
+    return bridge.deposit(player, atoms.toString());
   } else if (action === 'probe') {
     return probe(player, listings);
   } else {
@@ -1426,7 +2075,7 @@ async function preparePvp() {
   const customized = await customizeIfDue(player, tickNumber, { ready: false });
   if (customized) return customized;
   if (player.hunt) {
-    await api.huntEnd(player.hunt);
+    await settleOrAccept(() => api.huntEnd(player.hunt));
     player = await refresh();
     return result('cleanup.hunt-end', player, { ready: false });
   }
@@ -1448,11 +2097,11 @@ async function preparePvp() {
   }
 
   // PvP actors do not enter the routine dispatcher, so they need the same
-  // spend-XP priority here. Keep one Rune for the arena after paying the level
-  // cost; gaining a level by making the bot unable to fight is not progress.
+  // spend-XP priority here. Arena entry is free in economy v2, so there is no
+  // stale one-Rune reserve after paying the level cost.
   const levelRuneCost = Math.max(1, Math.floor(((monster.level ?? 0) + 4) / 4));
   if (monster.exp >= monster.nextLevelExp
-      && (player.inventory?.rune ?? 0) - levelRuneCost >= 1) {
+      && (player.inventory?.rune ?? 0) >= levelRuneCost) {
     decisionReason = 'spend-xp-before-next-duel';
     player = await api.levelUp(profile.statPlan);
     return result('monster.level-up', player, { ready: false, allocation: profile.statPlan });
@@ -1489,9 +2138,6 @@ async function preparePvp() {
     }
     return result('pvp.needs-happiness', player, { ready: false });
   }
-  if ((player.inventory?.rune ?? 0) < 1) {
-    return result('pvp.needs-rune', player, { ready: false });
-  }
   player = await api.enterArena();
   return result('arena.enter.pvp', player, { ready: false });
 }
@@ -1507,27 +2153,66 @@ async function accept(battleId) {
 }
 
 async function pvpMove(battleId) {
-  const battle = await api.battleInfo(battleId);
+  const reconcileTerminal = async (error, phase) => {
+    const message = error instanceof Error ? error.message : String(error);
+    if (!/battle not found|that battle is over/i.test(message)) throw error;
+    const player = await refresh();
+    // Still locked to this id means authoritative state really is missing; do
+    // not hide that as an ordinary last-round race.
+    if (player?.activeBattleId === battleId) throw error;
+    return result('pvp.ended', player, {
+      battle: { id: battleId, status: 'ended', winner: null },
+      outcome: `battle-cleared-before-${phase}`,
+    });
+  };
+  let battle;
+  try { battle = await api.battleInfo(battleId); }
+  catch (error) { return reconcileTerminal(error, 'read'); }
   if (battle.status === 'ended') {
     return result('pvp.ended', lastPlayer, { battle: {
       id: battle.id, status: battle.status, round: battle.round, winner: battle.winner ?? null,
     } });
   }
   const move = chooseMove(battle);
-  const player = await api.attack(battleId, move, battle.round);
+  let player;
+  try { player = await api.attack(battleId, move, battle.round); }
+  catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    if (/that round has already resolved/i.test(message)) {
+      return result('pvp.round-race', await refresh(), {
+        battle: { id: battleId, status: 'battling' },
+        submittedRound: battle.round, outcome: 'opponent-resolved-round-first',
+      });
+    }
+    return reconcileTerminal(error, 'attack');
+  }
   return result('battle.attack.pvp', player, { move });
 }
 
 async function cleanup() {
-  const player = await refresh();
+  let player = await refresh();
   if (player?.hunt) {
-    await api.huntEnd(player.hunt);
+    let run = await api.readHunt(player.hunt).catch(() => null);
+    if (run?.status === 'settling' && player.hunt.status === 'roaming'
+        && player.hunt.lastCapture?.settlementId) {
+      await settleOrAccept(() => api.retryHuntAcknowledgement());
+      run = await api.readHunt(player.hunt).catch(() => run);
+      player = await refresh().catch(() => player);
+    }
+    if (run?.status === 'settling') {
+      throw new Error('Hunt acknowledgement recovery left the run settling');
+    }
+    const landed = await settleOrAccept(() => api.huntEnd(player.hunt));
     const updated = await refresh();
-    return result('cleanup.hunt-end', updated);
+    return result('cleanup.hunt-end', updated, landed.accepted
+      ? { deliveryState: 'accepted-delivery-unconfirmed', slot: landed.slot } : {});
   }
   if (player?.monster?.status?.type !== 'Battle') return result('cleanup.noop', player);
-  const updated = await api.leaveArena();
-  return result('cleanup.arena-leave', updated);
+  const landed = await settleOrAccept(() => api.leaveArena());
+  const refreshed = landed.value ?? await refresh().catch(() => player);
+  const updated = refreshed?.address ? refreshed : player;
+  return result('cleanup.arena-leave', updated, landed.accepted
+    ? { deliveryState: 'accepted-delivery-unconfirmed', slot: landed.slot } : {});
 }
 
 const handlers = { bootstrap, tick, preparePvp, challenge, accept, pvpMove, cleanup };

@@ -33,7 +33,7 @@ for (const profile of PROFILES) {
   assert.ok(profile.description.length >= 30, `${profile.wallet} has a useful description`);
   assert.equal(Object.values(profile.statPlan).reduce((sum, value) => sum + value, 0), 10,
     `${profile.wallet} allocates exactly ten level-up points`);
-  assert.ok(Object.values(profile.statPlan).every((value) => value >= 0 && value <= 5),
+  assert.ok(Object.values(profile.statPlan).every((value) => value >= 0 && value <= 3),
     `${profile.wallet} respects the per-stat allocation limit`);
   assert.equal(profileFor(profile.wallet), profile);
 }
@@ -70,7 +70,13 @@ const completeCoverage = livedInCoverage([
   'market.cancel', 'goods.order.bid', 'goods.order.amend', 'goods.order.buy',
   'goods.order.cancel', 'goods.order.cancel-all', 'goods.order.maintain',
   'shop.buy', 'shop.sell', 'arbitrage.buy.house', 'rune.withdraw',
-  'rune.deposit',
+  'rune.deposit', 'venue.internal.deposit', 'venue.internal.order.ask',
+  'venue.internal.order.amend', 'venue.internal.order.fill',
+  'venue.internal.order.cancel', 'venue.internal.withdraw',
+  'venue.external.faucet', 'venue.external.deposit.rune',
+  'venue.external.order.ask', 'venue.external.order.amend',
+  'venue.external.order.fill', 'venue.external.order.cancel',
+  'venue.external.withdraw',
   'probe.admin-grant.refused',
 ]);
 assert.equal(completeCoverage.complete, true, 'the lived-in receipt recognizes every required path');
@@ -87,6 +93,42 @@ for (const pair of pairs) {
 
 assert.equal(pvpPairs(PROFILES.slice(0, 26)).length, 0,
   'a limit that selects only half a pair must not create an invalid pair');
+
+const workerSource = fs.readFileSync(path.join(HERE, 'worker.mjs'), 'utf8');
+assert.match(workerSource, /inventory\?\.\[item\].*>= 2/,
+  'the bot uses the current two-of-each Hunt entry, not the retired five');
+assert.doesNotMatch(workerSource, /pvp\.needs-rune/,
+  'free economy-v2 arena entry must not be gated on Rune');
+assert.match(workerSource, /tokenBalance >= 1_000_000n/,
+  'the Rune deposit adapter gates on one whole six-decimal token unit');
+assert.match(workerSource, /venue\.internal\.order\.fill/);
+assert.match(workerSource, /venue\.external\.order\.fill/);
+assert.match(workerSource, /no such listing/i,
+  'concurrent marketplace disappearance is recognized as a stale-read race');
+assert.match(workerSource, /idle\.market-race/,
+  'a stale marketplace read is recorded without becoming a swarm failure');
+assert.match(workerSource, /idle\.order-race/,
+  'a concurrently filled order is recorded as a stale-read race');
+assert.match(workerSource, /idle\.shop-race/,
+  'a concurrently changed NPC desk is recorded as a stale-read race');
+assert.match(workerSource, /activeBattleId === battleId/,
+  'PvP only reconciles Battle not found after the player lock has cleared');
+assert.match(workerSource, /pvp\.round-race/,
+  'simultaneous PvP stale-round rejection is retried on the next round');
+assert.match(workerSource, /recovery: 'empty-roster'/,
+  'a directed one-slot store is followed by a real retrieve outcome');
+assert.match(workerSource, /protected-cancel-coverage/,
+  'market-cancel coverage can create an unaffordable listing before cancelling it');
+assert.match(workerSource, /placedForCancellation/,
+  'internal venue cancellation places and cancels a real resting order');
+assert.match(workerSource, /arbitrage-liquidity-bootstrap/,
+  'arbitrage coverage can bootstrap a real crossed P2P/NPC quote');
+
+const packageScripts = JSON.parse(fs.readFileSync(path.join(ROOT, 'package.json'), 'utf8')).scripts;
+assert.match(packageScripts['swarm:three-hour'], /--duration 3h/);
+assert.match(packageScripts['swarm:three-hour'], /--concurrency 10/);
+assert.match(packageScripts['swarm:three-hour'], /--actions-per-second 10/);
+assert.match(packageScripts['swarm:three-hour'], /--admin-seed-after 5m/);
 
 /*
  * The seeder must swear each wallet to the faction its profile names.
@@ -146,7 +188,7 @@ for (const verb of ['login', 'joinFaction', 'adopt', 'feed', 'startPlay', 'start
   'openLootbox', 'claimDaily', 'levelUp', 'spriteUpdate', 'storeMonster', 'retrieveMonster',
   'setActiveMonster', 'transferMonster', 'listMonster', 'cancelListing', 'buyListing',
   'readEconomy', 'placeGoldOrder', 'cancelGoldOrder', 'tradeGameShop',
-  'beginHunt', 'readHunt', 'huntSearch', 'huntAttack', 'huntDeclineCapture', 'huntCapture',
+  'beginHunt', 'retryHuntAcknowledgement', 'readHunt', 'huntSearch', 'huntAttack', 'huntDeclineCapture', 'huntCapture',
   'huntRetrySettlement', 'huntEnd', 'enterArena', 'leaveArena', 'startBotBattle', 'challenge',
   'acceptChallenge', 'attack', 'battleInfo']) {
   assert.equal(typeof api[verb], 'function', `the bundled client exports ${verb}`);

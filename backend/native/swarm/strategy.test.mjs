@@ -66,3 +66,18 @@ test('normal turns use progression utility but retain an exploration lane', () =
   assert.equal(exploration.action, 'bot');
   assert.equal(exploration.reason, 'role-weighted-exploration');
 });
+
+test('hunt and stored-companion utility paths are ranked', () => {
+  const hunt = chooseProgressionAction({
+    candidates: choices('hunt'), player: player(), profile,
+    random: () => 0.5,
+  });
+  assert.equal(hunt.action, 'hunt');
+
+  const swap = chooseProgressionAction({
+    candidates: choices('swap'),
+    player: player({ collection: { m2: { level: 9 } } }),
+    profile, random: () => 0.5,
+  });
+  assert.equal(swap.action, 'swap');
+});

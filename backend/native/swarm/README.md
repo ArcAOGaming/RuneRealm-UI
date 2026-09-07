@@ -92,6 +92,10 @@ npm run swarm -- --live --duration 2h --seed 20260828
 # Full-world acceptance: one hour and every major path must land.
 npm run swarm:lived-in
 
+# Requested release soak: 50 actors, 10 in flight, up to 10 command starts/s.
+# The testing-only admin seed lands five minutes into the measured window.
+npm run swarm:three-hour
+
 # Bring only the first eight actors online while developing the harness.
 npm run swarm -- --live --limit 8 --cycles 5
 
@@ -107,6 +111,15 @@ npm run swarm -- --live --mode stress --limit 50 --actions-per-second 5 --burst 
 # Reconcile every wallet and leave any active arena session without playing.
 npm run swarm -- --live --cleanup-only
 ```
+
+`swarm:three-hour` is the release-soak contract: all fifty actors, ten worker
+commands in flight, a token-bucket ceiling of ten command starts per second,
+and a five-minute delayed owner seed. With fifty actors the round-robin target
+is one start per wallet every five seconds; the summary records the achieved
+global start rate plus every wallet's mean and p90 interval, so node backpressure
+cannot be reported as though the target was met. The seed is one capped
+`Admin.Economy.FundTestBots` message and is a fatal run error if it does not
+settle.
 
 Without `--live`, `npm run swarm` prints the plan and performs no writes. Live
 runs default to `--mode soak`: concurrency is three and one new worker command
@@ -150,7 +163,7 @@ making self-defeating choices. Every event records the decision reason.
 Coverage also persists across runs in `.swarm/eventual-coverage.json`. It stores
 only successful action names and counts, never wallet keys. A later lived-in run
 puts paths never seen in the campaign ahead of paths already proven, while its
-own fresh-run 42-path gate still applies. The summary reports both numbers, so
+own fresh-run 51-path gate still applies. The summary reports both numbers, so
 "eventually" is a durable receipt rather than a claim based on probabilities.
 
 `--mode stress` (or the `--stress` shorthand) is the explicit overload mode. It
@@ -358,7 +371,8 @@ scheduling are free on the configured node; the wallet supplies identity and a
 signature, not payment. New accounts receive starter berries when they join.
 Rune is not a per-wallet starter or daily faucet: a contract deploy with bots
 uses the owner-only, testing-mode `Admin.Economy.FundTestBots` batch to establish
-a 100 Rune / 20 Scroll / 1,000 Gold minimum for these exact throwaway addresses.
+a 100 Rune / 20 Scroll / 1,000 Gold / 25-of-each-berry minimum, three tier-2
+boxes, and two stored companions for these exact throwaway addresses.
 That action is unavailable after economy activation and every unit appears in
 the issuance ledger.
 

@@ -60,6 +60,8 @@ function progressionMultiplier(name, player, profile) {
     case 'goods_amend': return Number(player?.gold ?? 0) >= 100 ? 2 : 0.8;
     case 'goods_cancel_all': return 0.7;
     case 'goods_maintain': return 0.6;
+    case 'venue_internal': return Number(player?.gold ?? 0) >= 100 ? 2.5 : 0.8;
+    case 'venue_external': return Number(player?.inventory?.rune ?? 0) > 20 ? 2.5 : 0.7;
     case 'withdraw': return Number(player?.inventory?.rune ?? 0) > 50 ? 2 : 0.6;
     case 'deposit': return Number(player?.inventory?.rune ?? 0) < 20 ? 3 : 1;
     case 'probe': return 0.45;

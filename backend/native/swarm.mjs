@@ -15,7 +15,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { ensureBurners, listBurners } from './burners.mjs';
+import { ensureBurners, fundBurners, listBurners } from './burners.mjs';
 import { Actor } from './swarm/actor.mjs';
 import { buildSwarmClient } from './swarm/build-client.mjs';
 import { failureEventFields } from './swarm/error-fields.mjs';
@@ -91,11 +91,15 @@ function configuredGraph({ requireComplete = false } = {}) {
       rune: option('rune-pid', undefined),
       quote: option('quote-pid', undefined),
       marketNode: option('market-node', undefined),
+      internalVenue: option('internal-venue-pid', undefined),
+      externalVenue: option('external-venue-pid', undefined),
+      venueNode: option('venue-node', undefined),
     },
   });
   return assertLiveGraph(graph, {
     requireHunt: requireComplete,
     requireExchange: requireComplete,
+    requireVenues: requireComplete,
     requireBattleFleet: requireComplete,
   });
 }
@@ -107,6 +111,8 @@ function printGraph(graph) {
     ['hunt', graph.hunt || '(not configured)', graph.huntNode || '-', graph.provenance.hunt],
     ['Rune', graph.rune || '(not configured)', graph.marketNode || '-', graph.provenance.rune],
     ['quote', graph.quote || '(not configured)', graph.marketNode || '-', graph.provenance.quote],
+    ['internal venue', graph.internalVenue || '(not configured)', graph.venueNode || '-', graph.provenance.internalVenue],
+    ['external venue', graph.externalVenue || '(not configured)', graph.venueNode || '-', graph.provenance.externalVenue],
   ].map(([part, process, node, source]) => ({ part, process, node, source })));
   console.log(`hunt workers    ${graph.huntWorkers.length}`);
   console.log(`battle workers  ${graph.battleWorkers.length}`);
@@ -361,6 +367,10 @@ async function runLive() {
     throw new Error('Use either --stress or --mode, not both');
   }
   const mode = flag('stress') ? 'stress' : option('mode', 'soak');
+  const focus = option('focus', 'full');
+  if (!['full', 'trading'].includes(focus)) {
+    throw new Error('--focus must be full or trading');
+  }
   const policy = resolveLoadPolicy({
     mode,
     walletCount: profiles.length,
@@ -371,14 +381,25 @@ async function runLive() {
   const { concurrency, actionsPerSecond, burst } = policy;
   const cycles = integerOption('cycles', 10, { min: 1, max: 1_000_000 });
   const runFor = durationMs(option('duration', null));
+  const adminSeedAfter = durationMs(option('admin-seed-after', null));
+  if (adminSeedAfter !== null && runFor === null) {
+    throw new Error('--admin-seed-after requires a timed --duration run');
+  }
+  if (adminSeedAfter !== null && adminSeedAfter >= runFor) {
+    throw new Error('--admin-seed-after must occur before the soak duration ends');
+  }
   // How often a long run prints its phase split. Only meaningful for a timed
   // run: a short cycle run finishes before the first interval would fire.
   const reportEvery = runFor === null && !option('report', null)
     ? null
     : durationMs(option('report', '5m'));
   const cleanupOnly = flag('cleanup-only');
+  const skipCleanup = flag('skip-cleanup');
   if (cleanupOnly && runFor !== null) {
     throw new Error('--cleanup-only cannot be combined with --duration');
+  }
+  if (cleanupOnly && skipCleanup) {
+    throw new Error('--cleanup-only cannot be combined with --skip-cleanup');
   }
   const tickMs = integerOption('tick-ms', 1_000, { min: 0, max: 3_600_000 });
   // Bootstrap may perform login, faction choice, and adoption sequentially;
@@ -406,6 +427,7 @@ async function runLive() {
   const graphAudit = coverageMode === 'lived-in'
     ? await verifyLiveGraph(graph, {
       requireHunt: true, requireExchange: true, requireBattleFleet: true,
+      requireVenues: true,
     })
     : null;
   if (graphAudit && !graphAudit.ok) {
@@ -437,6 +459,7 @@ async function runLive() {
   const byWallet = new Map(actors.map((actor) => [actor.profile.wallet, actor]));
   const timings = new Map();
   const successfulActions = [];
+  const commandStarts = [];
   // Every signed write's phase split, successes and failures alike, in the
   // order the transport reported them.
   const transportSamples = [];
@@ -464,6 +487,14 @@ async function runLive() {
   let interrupted = false;
   let fatalError = null;
   let deadline = null;
+  let soakStartedAt = null;
+  let adminSeedTimer = null;
+  let adminSeedPromise = null;
+  const adminSeed = {
+    requested: adminSeedAfter !== null,
+    afterMs: adminSeedAfter,
+    status: adminSeedAfter === null ? 'not-requested' : 'scheduled',
+  };
 
   const canDispatchGameplay = () => !stopping
     && (deadline === null || Date.now() < deadline);
@@ -514,7 +545,13 @@ async function runLive() {
     shouldStart = () => true, dispatchDeadline = null,
   } = {}) => {
     try {
-      const dispatched = await gate(() => actor.call(command, payload), {
+      const dispatched = await gate(() => {
+        const at = Date.now();
+        commandStarts.push({ at, wallet: actor.profile.wallet, phase, command });
+        record({ type: 'command.start', wallet: actor.profile.wallet,
+          callSign: actor.profile.callSign, phase, command });
+        return actor.call(command, payload);
+      }, {
         shouldStart, deadline: dispatchDeadline,
       });
       if (!dispatched.started) return null;
@@ -537,9 +574,11 @@ async function runLive() {
     { shouldStart: canDispatchGameplay, dispatchDeadline: deadline },
   );
 
-  const pairs = pvpPairs(profiles).map((pair) => ({ ...pair, stage: 'prepare', battleId: null, rounds: 0 }));
+  const pairs = focus === 'trading' ? []
+    : pvpPairs(profiles).map((pair) => ({ ...pair, stage: 'prepare', battleId: null, rounds: 0 }));
   const pairedWallets = new Set(pairs.flatMap((pair) => [pair.challenger.wallet, pair.accepter.wallet]));
-  const routineActors = actors.filter((actor) => !pairedWallets.has(actor.profile.wallet));
+  const routineActors = focus === 'trading'
+    ? actors : actors.filter((actor) => !pairedWallets.has(actor.profile.wallet));
 
   async function advancePair(pair, cycle) {
     if (!canDispatchGameplay()) return;
@@ -619,18 +658,21 @@ async function runLive() {
   // duration only after every actor has successfully bootstrapped.
   record({ type: 'run.start', runId, pid, node, graph: publicLiveGraph(graph),
     seed, mode, concurrency, coverageMode,
-    actionsPerSecond, burst,
+    actionsPerSecond, burst, adminSeedAfterMs: adminSeedAfter,
     cycles: runFor === null ? cycles : null, durationMs: runFor, wallets: manifestRows(profiles) });
   console.log(`Rune Realm swarm ${runId}`);
   console.log(`process     ${pid}`);
   console.log(`node        ${node}`);
   console.log(`hunt        ${graph.hunt || 'not configured'} (${graph.huntWorkers.length} workers)`);
   console.log(`exchange    ${graph.rune && graph.quote ? `${graph.rune} / ${graph.quote}` : 'not configured'}`);
+  console.log(`venues      ${graph.internalVenue && graph.externalVenue
+    ? `${graph.internalVenue} / ${graph.externalVenue}` : 'not configured'}`);
   console.log(`battle      ${graph.battleWorkers.length} worker(s)`);
   console.log(`actors      ${actors.length} (${pairs.length} fixed PvP pairs)`);
   console.log(`mode        ${mode}`);
   console.log(`concurrency ${concurrency}`);
   console.log(`start rate  ${actionsPerSecond === null ? 'unlimited' : `${actionsPerSecond} worker command(s)/s, burst ${burst}`}`);
+  console.log(`admin seed  ${adminSeedAfter === null ? 'not scheduled' : `after ${Math.round(adminSeedAfter / 1000)}s`}`);
   console.log(`seed        ${seed}`);
   console.log(`eventual    ${priorEventualCoverage.covered}/${priorEventualCoverage.total} paths seen before this run`);
   console.log(`events      ${eventsFile}\n`);
@@ -702,9 +744,41 @@ async function runLive() {
     }
 
     if (runFor !== null && !cleanupOnly) {
-      deadline = Date.now() + runFor;
+      soakStartedAt = Date.now();
+      deadline = soakStartedAt + runFor;
       record({ type: 'soak.start', durationMs: runFor, deadline: new Date(deadline).toISOString() });
       console.log(`\nSoak window started; running gameplay for ${Math.round(runFor / 60_000)} minute(s).`);
+      if (adminSeedAfter !== null) {
+        adminSeedTimer = setTimeout(() => {
+          adminSeed.status = 'running';
+          adminSeed.startedAt = new Date().toISOString();
+          console.log(`\n[${adminSeed.startedAt}] applying delayed owner seed to ${addresses.length} bots...`);
+          record({ type: 'admin.seed.start', afterMs: adminSeedAfter,
+            addresses: addresses.length });
+          adminSeedPromise = fundBurners(addresses, {
+            rune: 100, scroll: 20, gold: 1000, berries: 25,
+            boxes: 3, boxRarity: 2, extraMonsters: 2,
+            pid, node,
+          }).then((receipt) => {
+            adminSeed.status = 'completed';
+            adminSeed.completedAt = new Date().toISOString();
+            adminSeed.receipt = {
+              funded: receipt.funded, boxesAdded: receipt.boxesAdded,
+              monstersAdded: receipt.monstersAdded,
+            };
+            record({ type: 'admin.seed.complete', ...adminSeed.receipt });
+            console.log(`[${adminSeed.completedAt}] delayed owner seed complete.`);
+          }).catch((error) => {
+            adminSeed.status = 'failed';
+            adminSeed.error = error instanceof Error ? error.message : String(error);
+            failures.push({ wallet: 'system', callSign: 'Admin seed', phase: 'admin-seed',
+              error: adminSeed.error });
+            record({ type: 'admin.seed.error', error: adminSeed.error });
+            fatalError = fatalError ?? error;
+            stopping = true;
+          });
+        }, adminSeedAfter);
+      }
     }
 
     const cycleLimit = cleanupOnly
@@ -717,9 +791,11 @@ async function runLive() {
         ? assignCoveragePreferences(routineActors, successfulActions, { historicalActions })
         : new Map();
       const batches = [mapLimit(routineActors, routineActors.length, (actor) =>
-        invokeGameplay(actor, `cycle.${cycle}`, 'tick',
-          preferences.has(actor.profile.wallet)
-            ? { prefer: preferences.get(actor.profile.wallet) } : undefined), canDispatchGameplay)];
+        invokeGameplay(actor, `cycle.${cycle}`, 'tick', {
+          focus,
+          ...(preferences.has(actor.profile.wallet)
+            ? { prefer: preferences.get(actor.profile.wallet) } : {}),
+        }), canDispatchGameplay)];
       if (pairs.length && canDispatchGameplay()) batches.push(
         mapLimit(pairs, pairs.length, (pair) => advancePair(pair, cycle), canDispatchGameplay),
       );
@@ -761,11 +837,14 @@ async function runLive() {
     record({ type: 'error', ...entry });
   } finally {
     if (reportTimer) clearInterval(reportTimer);
+    if (adminSeedTimer) clearTimeout(adminSeedTimer);
+    if (adminSeedPromise) await adminSeedPromise;
+    else if (adminSeed.requested && adminSeed.status === 'scheduled') adminSeed.status = 'not-reached';
     // Timed runs have a definite stop, so leave no bot or PvP arena session
     // waiting for an actor that is no longer running. Cycle runs preserve bot
     // progress unless --cleanup-all is explicit, while PvP is always released.
     const cleanEveryArena = cleanupOnly || runFor !== null || flag('cleanup-all');
-    const cleanupActors = cleanEveryArena
+    const cleanupActors = skipCleanup ? [] : cleanEveryArena
       ? actors
       : actors.filter((actor) => pairedWallets.has(actor.profile.wallet));
     if (cleanupActors.length) {
@@ -803,6 +882,23 @@ async function runLive() {
       error: `lived-in coverage missed ${coverage.missing.length}: `
         + coverage.missing.map((row) => row.id).join(', ') });
   }
+  const measuredUntil = soakStartedAt === null ? null : Math.min(Date.now(), deadline ?? Date.now());
+  const gameplayStarts = soakStartedAt === null ? [] : commandStarts.filter((entry) =>
+    entry.at >= soakStartedAt && entry.at <= measuredUntil && entry.phase.startsWith('cycle.'));
+  const measuredSeconds = soakStartedAt === null ? 0 : Math.max(0.001,
+    (measuredUntil - soakStartedAt) / 1000);
+  const startsByWallet = Object.fromEntries(actors.map((actor) => {
+    const starts = gameplayStarts.filter((entry) => entry.wallet === actor.profile.wallet)
+      .map((entry) => entry.at);
+    const intervals = starts.slice(1).map((at, index) => at - starts[index]);
+    return [actor.profile.wallet, {
+      starts: starts.length,
+      meanIntervalMs: intervals.length
+        ? Math.round(intervals.reduce((sum, value) => sum + value, 0) / intervals.length)
+        : null,
+      p90IntervalMs: timingStats(intervals).p90Ms,
+    }];
+  }));
   const summary = {
     runId,
     pid,
@@ -812,10 +908,22 @@ async function runLive() {
     seed,
     walletCount: actors.length,
     mode,
+    focus,
+    skipCleanup,
     coverageMode,
     concurrency,
     actionsPerSecond,
     burst,
+    adminSeed,
+    load: {
+      requestedStartsPerSecond: actionsPerSecond,
+      requestedConcurrency: concurrency,
+      targetPerWalletIntervalMs: actionsPerSecond === 10 && actors.length === 50 ? 5_000 : null,
+      gameplayCommandStarts: gameplayStarts.length,
+      measuredSeconds,
+      achievedStartsPerSecond: gameplayStarts.length / measuredSeconds,
+      startsByWallet,
+    },
     actionCount,
     failureCount: failures.length,
     elapsedMs: Date.now() - startedAt,
@@ -847,6 +955,9 @@ async function runLive() {
   console.log(`coverage    ${coverage.covered}/${coverage.total}`
     + `${coverage.complete ? ' complete' : `; missing ${coverage.missing.map((row) => row.id).join(', ')}`}`);
   console.log(`eventual    ${eventualCoverage.covered}/${eventualCoverage.total} across ${coverageLedger.runs} run(s)`);
+  if (summary.load.gameplayCommandStarts) {
+    console.log(`start rate  ${summary.load.achievedStartsPerSecond.toFixed(2)} gameplay command(s)/s achieved`);
+  }
   if (summary.transport.writes) printTransport(summary.transport, 'Signed write, by phase');
   console.log(`summary     ${summaryFile}`);
   if (interrupted) process.exitCode = 130;

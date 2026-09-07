@@ -31,6 +31,8 @@ const big = (value) => {
 };
 
 export function makeBridge({ api, address, result, random }) {
+  const acceptedDelivery = (error) => error instanceof api.OutboxDeliveryError
+    || (error?.accepted === true && error?.durable === true);
   /**
    * Withdraw game Rune to the token.
    *
@@ -41,7 +43,15 @@ export function makeBridge({ api, address, result, random }) {
    * a single request, and only shows up as a queue that stops draining.
    */
   async function withdraw(player, amount) {
-    const updated = await api.withdrawRune(amount);
+    let updated;
+    try {
+      updated = await api.withdrawRune(amount);
+    } catch (error) {
+      if (!acceptedDelivery(error)) throw error;
+      return result('rune.withdraw', player, {
+        amount, deliveryState: 'accepted-delivery-unconfirmed', slot: error.slot ?? null,
+      });
+    }
     /*
       Keep the player we came in with when the reply does not carry one.
 
@@ -62,7 +72,16 @@ export function makeBridge({ api, address, result, random }) {
 
   /** Burn tokens back into the game balance. The other half of the bridge. */
   async function deposit(player, amount) {
-    const receipt = await api.depositRuneToGame(String(amount));
+    let receipt;
+    try {
+      receipt = await api.depositRuneToGame(String(amount));
+    } catch (error) {
+      if (!acceptedDelivery(error)) throw error;
+      return result('rune.deposit', player, {
+        amount: String(amount), deliveryState: 'accepted-delivery-unconfirmed',
+        slot: error.slot ?? null,
+      });
+    }
     return result('rune.deposit', player, {
       amount: String(amount),
       reference: receipt?.Reference ?? null,

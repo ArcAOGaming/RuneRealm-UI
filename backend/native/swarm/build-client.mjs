@@ -48,6 +48,14 @@ export async function buildSwarmClient({ root, graph, pid, node, outDir }) {
     '  readTokenInfo, readTokenBalance, claimQuoteFaucet, depositRuneToGame,',
     '  parseUnits, formatUnits }',
     `  from ${JSON.stringify(path.join(root, 'src', 'lib', 'marketplace.ts').replace(/\\/g, '/'))};`,
+    // Both custody venues. The worker uses these exact browser verbs for
+    // deposits, resting/taking orders, amendments, cancellation and exits.
+    'export { INTERNAL_VENUE_PROCESS, EXTERNAL_VENUE_PROCESS, VENUE_NODE,',
+    '  internalVenueConfigured, externalVenueConfigured, venuesConfigured,',
+    '  readVenueInfo, readVenueBook, readVenuePosition, placeVenueOrder,',
+    '  amendVenueOrder, cancelVenueOrder, cancelAllVenueOrders,',
+    '  maintainVenueOrders, withdrawFromVenue, depositTokenToVenue }',
+    `  from ${JSON.stringify(path.join(root, 'src', 'lib', 'venue.ts').replace(/\\/g, '/'))};`,
   ].join('\n');
   await esbuild.build({
     stdin: { contents: entry, resolveDir: root, sourcefile: 'swarm-client.ts', loader: 'ts' },

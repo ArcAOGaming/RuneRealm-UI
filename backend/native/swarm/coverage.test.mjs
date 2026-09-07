@@ -5,7 +5,8 @@ import path from 'node:path';
 import test from 'node:test';
 
 import {
-  livedInCoverage, loadCoverageLedger, missingCoveragePreferences, updateCoverageLedger,
+  assignCoveragePreferences, livedInCoverage, loadCoverageLedger,
+  missingCoveragePreferences, updateCoverageLedger,
 } from './coverage.mjs';
 
 test('the eventual ledger accumulates successful actions across runs', (t) => {
@@ -43,4 +44,38 @@ test('a corrupt ledger fails loudly instead of erasing campaign history', (t) =>
   const file = path.join(root, 'eventual-coverage.json');
   fs.writeFileSync(file, '{broken');
   assert.throws(() => loadCoverageLedger(file), /Cannot read eventual-coverage ledger/);
+});
+
+test('coverage assignment handles complete runs and roles with no eligible adapter', () => {
+  const all = [
+    'bootstrap', 'daily.claim', 'lootbox.open', 'monster.feed', 'activity.start.play',
+    'activity.start.quest', 'activity.claim.quest', 'monster.level-up', 'character.save',
+    'arena.enter', 'battle.attack.bot', 'pvp.challenge', 'pvp.accept', 'battle.attack.pvp',
+    'hunt.begin', 'hunt.search', 'hunt.attack', 'hunt.capture', 'hunt.end', 'monster.store',
+    'monster.retrieve', 'monster.set-active', 'monster.transfer', 'market.list', 'market.buy',
+    'market.cancel', 'goods.order.bid', 'goods.order.amend', 'goods.order.buy',
+    'goods.order.cancel', 'goods.order.cancel-all', 'goods.order.maintain', 'shop.buy',
+    'shop.sell', 'arbitrage.buy.house', 'venue.internal.deposit',
+    'venue.internal.order.ask', 'venue.internal.order.amend', 'venue.internal.order.fill',
+    'venue.internal.order.cancel', 'venue.internal.withdraw', 'venue.external.faucet',
+    'venue.external.deposit.rune', 'venue.external.order.ask',
+    'venue.external.order.amend', 'venue.external.order.fill',
+    'venue.external.order.cancel', 'venue.external.withdraw', 'rune.withdraw',
+    'rune.deposit', 'probe.refused',
+  ];
+  assert.equal(assignCoveragePreferences([], all).size, 0);
+  const assigned = assignCoveragePreferences([
+    { profile: { wallet: 'none', weights: {} } },
+    { profile: { wallet: 'daily', weights: { daily: 1 } } },
+  ], []);
+  assert.equal(assigned.has('none'), false);
+  assert.equal(assigned.get('daily'), 'daily');
+});
+
+test('a syntactically valid but unsupported ledger shape is rejected', (t) => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'runerealm-coverage-'));
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  const file = path.join(root, 'eventual-coverage.json');
+  fs.writeFileSync(file, JSON.stringify({ version: 2, actions: [] }));
+  assert.throws(() => loadCoverageLedger(file), /unsupported coverage ledger shape/);
 });
