@@ -1,7 +1,8 @@
 # Arena stakes — a conservative arena
 
-Status: **design, not built.** Written against the constants and code as they
-stand on 2026-09-06. Nothing here is deployed.
+Status: **built, 2026-09-07.** Not deployed — the process it lands in has to be
+redeployed, which mints a new id and resets state. §10 is what shipped, what
+deviated from this design, and what is still not built.
 
 The arena pays. Every version of "the arena pays" so far has been a faucet with
 a cap bolted on, and the cap is what stops it printing rather than anything
@@ -156,7 +157,35 @@ paid once on settle, and a pot that never pays out more than went in.
 - Bot: **shared pot per tier**, drained partially.
 - Losers **forgo** their stake.
 
-## 7. Still open
+## 7. Decided at build time
+
+These were the open parameters. They are now constants in `constants.lua`
+(`C.ARENA`) and published in `catalog.arena`, so moving one moves every sentence
+on the screen with it.
+
+- **The drain fraction `d` = 1/3.** Stored as `drainNum`/`drainDen` so the
+  payout stays in integers: `floor(pot * 1 / 3)`, capped at the pot. At a 50%
+  win rate a 10-stake tier settles near a 60 pot and a win pays about 20.
+- **The stake = 10 Gold, per BATTLE, flat across all four tiers.** Not per
+  session: charging at `Battle.Begin` would make leaving early forfeit a stake
+  for fights that never happened. Flat, because with one stake and four pots the
+  harder tier has the lower win rate, so its pot settles higher and `S / w` pays
+  more on its own — "harder is worth more" falls out of the arithmetic instead
+  of being a fifth constant to keep in step with the difficulty curve.
+- **Four tiers, bucketed from the numeric `Difficulty` the client already
+  sends** (`C.arenaTier`). The client cannot name a pot; it sends the number the
+  engine multiplies into the bot's stat budget and the process buckets it. A
+  value between two buttons still lands in exactly one pot.
+- **Onboarding: quest first.** A quest pays 15 Gold and costs the same energy
+  and happiness, so one quest buys one fight. `Battle.Begin` refuses a purse
+  under `minEntry` (one stake) and the refusal names the quest.
+- **The time gate stays.** `C.BATTLES_PER_SESSION` is untouched and so is the 25
+  happiness. The stake is a second bound, not a replacement — the trade in §7's
+  last bullet was taken deliberately: entering is still free, so a player with no
+  Gold can still reach the arena's door and be told, in the one place it matters,
+  what it costs and where to get it.
+
+## 8. Still open
 
 - **The drain fraction `d`.** It sets how fast the pot responds and how lumpy a
   win feels. Low `d` is a big slow-moving pot and rare large payouts; high `d`
@@ -178,7 +207,7 @@ paid once on settle, and a pot that never pays out more than went in.
 
 ---
 
-## 8. Showing a player whether a tier is worth it
+## 9. Showing a player whether a tier is worth it
 
 The payout is whatever is in the pot, so a headline rate would be a promise the
 design does not make. What a player needs instead is enough to judge for
@@ -275,3 +304,85 @@ Three reasons this is not just tidiness:
 The one thing the contract must publish that is NOT derivable: the pot **at
 settle**, on the battle result. A player needs to see what they were actually
 paid, not what the screen was advertising when they clicked.
+
+---
+
+## 10. What shipped, and where it deviates from the above
+
+Built 2026-09-07. Three files carry it and one is the whole of the arithmetic.
+
+**`constants.lua` — `C.ARENA`.** stake 10, drain 1/3, `minEntry` 10, the four
+tier thresholds, and `statsHalveAt`. `C.arenaTier(difficulty)` buckets a number
+into a pot; `C.arenaDrain(pot)` is the integer draw.
+
+**`economy.lua` — the pots and the Gold.** Two concerns kept apart:
+`escrowPlayerGold`/`releasePlayerGold` move Gold between `gold.player` and
+`gold.escrow`, and `arenaPotAdd`/`arenaPotRemove`/`arenaPotDrain` say which tier
+that escrow is sitting in. Escrow is on the accounted side of `goldInvariant`,
+so `issued − burned = player + escrow + shop + locked + venue` holds at every
+point in a fight, and the test suite asserts it after each of stake, settle,
+challenge, withdraw, accept and duel. PvP uses the first half only — a duel's
+pot is two stakes and lives on the battle record, so the ledger never has to
+know what a tier is. State cost: four rows of three integers, migration
+`normalisedVersion = 7`.
+
+**`game.lua` — where it is charged and paid.** The stake is taken in
+`Battle.Start` (both the in-process and the fleet path), in `Battle.Challenge`
+and in `Battle.Accept`. It is drawn in `settleBattle` and `fleetSettle`, both of
+which are already exactly-once — `b.settled` for the first, one authority effect
+per reservation for the second. A fleet cancellation refunds through
+`reservedCost`, which `authority.lua` already copies verbatim into every refund
+effect, so there is no second path that could pay it twice.
+
+### Four deviations, all deliberate
+
+1. **The base layer is the existing capped `winGold`, not a desk-bid
+   conversion.** §3 prices the base at the berry desk's live bid so a falling
+   berry price lowers the payout in step. That couples the arena to live market
+   state and is a much larger change; `C.ACTIVITIES.battle.winGold` against the
+   20-hour `rewardWindowCap` already bounds the faucet and is already bot-proof
+   (a wallet playing round the clock and a person playing two hours collect the
+   same 60 Gold). §3 remains the better answer and remains unbuilt.
+2. **The challenger's PvP stake is escrowed at POST, not at accept.** §5 escrows
+   both at accept so a loser cannot close the tab without paying. Taking the
+   challenger's half earlier is strictly stronger and removes a failure §5's
+   version has: a challenge posted an hour ago, by someone who has since spent
+   their Gold, would fail at the moment somebody accepted it — punishing the
+   accepter for the challenger's spending. Withdrawing refunds it whole.
+3. **There is no expiry on a posted challenge.** A pending challenge holds
+   `activeBattleId`, so its author can always recover the stake with one
+   `Battle.Leave`, and nothing else in the process can take it. §5's "refund on
+   expiry" is therefore not a correctness gap today; it becomes one the moment
+   challenges are made expirable.
+4. **`arenaLast` is on the player record, not on the reply.** §9's one
+   non-derivable number — the pot AT settle — is six fields, fixed size,
+   overwritten by the next battle, at about ninety bytes of a record that is
+   thousands. It has to be on the record rather than on a reply because the
+   LOSER of a PvP fight is settled by their opponent's message and never gets a
+   reply of their own; they read it on their next refresh.
+
+### The client half
+
+`arenatiers` publishes three integers a tier and nothing derived.
+`arenaTierMath` in `src/lib/format.ts` is §9 in one function — payout,
+break-even, observed win rate and the gap between the last two — and it is the
+only place any of them exists. Two details the arithmetic there gets right that
+a reading of §9 alone would not:
+
+- The payout is quoted off `pot + stake`, because the stake goes IN before the
+  draw. Quoting the bare pot understates every payout by exactly `stake/3`.
+- The observed win rate is withheld below ten attempts. A handful of battles is
+  not a rate, and printing one is precisely the misinformed-player failure the
+  display/payout split exists to avoid.
+
+`screens/Arena.tsx` renders the four pots as a table you pick a fight out of —
+tier, pot, what a win pays, break even, and how often the tier is actually being
+won — and `ENTRANCE_TOUR`, `LOBBY_TOUR` and `BATTLE_TOUR` were rewritten in the
+same commit, because every number they state moved.
+
+### Still not built
+
+- §3's desk-bid base layer (deviation 1).
+- Expiry and refund on an abandoned challenge (deviation 3).
+- Any use of `wins`/`attempts` beyond display. If that ever changes, the exploit
+  surface §2 closes reopens.

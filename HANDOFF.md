@@ -452,20 +452,219 @@ on the first swing**, and 12% of level-20 fights grinding past thirty rounds.
 
 | level | median rounds | 1-round KOs | >30 rounds |
 |---|---|---|---|
-| 0 | 5 | 0% | 2% |
-| 1 | 8 | 0% | 2% |
-| 3 | 5 | 0% | 0% |
-| 5 | 11 | 0% | 4% |
-| 10 | 9 | 0% | 6% |
-| 20 | 10 | 0% | 4% |
+| 0 | 7 | 2% | 4% |
+| 1 | 7 | 0% | 4% |
+| 3 | 6 | 0% | 0% |
+| 5 | 9 | 0% | 0% |
+| 10 | 8 | 0% | 0% |
+| 20 | 10 | 0% | 0% |
+
+Score 34, against 118 for what was deployed before this work.
 
 ```bash
-./backend/native/run-balance.sh          # report on the current tuning
-./backend/native/run-balance.sh sweep    # grid search (may exceed a node's
-                                         # gateway timeout; narrow the grid)
+./backend/native/run-balance.sh              # fight length, bot against bot
+./backend/native/run-balance.sh arena5       # a grown PLAYER against a bot
+./backend/native/run-balance.sh matrix5      # is each BUILD worth playing
+./backend/native/run-balance.sh rankfire5    # is each MOVE worth its slot
+./backend/native/run-balance.sh moves        # the catalog, no simulation
 ```
 
-**Re-run it after touching any number in `Battle.TUNING`.**
+**Re-run these after touching any number in `Battle.TUNING` or `C.MOVE_POOLS`.**
+Every mode is free and unsigned, and none of them needs a wallet. The mode is a
+PATH segment, so a name with an underscore in it is simply not found — see the
+separator note in CLAUDE.md.
+
+### The move system, rebuilt
+
+A companion carries **three** moves, not four, and every companion in the realm
+can **Rally** and **Mend** once each per battle without spending a slot on
+either. `C.MOVE_SLOTS` and `C.FREE_ACTIONS` in `constants.lua`.
+
+**Slot one is the species' own move.** The monster index has carried a
+`basicMove` and an `advancedMove` for every one of its ninety-three entries the
+whole time — published to the catalog, read by `BattleScene` to choose the
+signature attack animation — and the roller had never read either. A FireFox and
+any other fire creature drew from the same six moves and differed by artwork
+alone; a companion could go a whole fight without performing its own signature
+move, because it had no way to have drawn it. `Battle.signatureMove` fixes that,
+and `advancedMove` is weighted up rather than guaranteed.
+
+**Five pools, not seven.** `normal`, `boost` and `heal` merged into one
+eighteen-move `neutral` pool. The split *was* the problem: the old roll drew one
+move from each support pool by name, so the pool was the slot — every companion
+in the game had exactly one boost and exactly one heal, and the only thing a roll
+could say about a creature was which of six it got in each fixed category. Two
+slots drawn freely from one pool give three real archetypes instead: about a
+third of companions come out three attacks, a half two attacks and a support, a
+sixth one attack and two support.
+
+**Rarity is a draw weight now** (`C.MOVE_RARITY_WEIGHT`, 1/4/10 against tiers
+1/2/3). It was decoration: the pick inside a pool was uniform, so a rarity-1 move
+was exactly as likely as a rarity-3 one. It did not track power either. Measured
+before the rebuild with `run-balance.sh rank<pool>5`:
+
+| pool | ranked best first |
+|---|---|
+| water | Ice Spear **r2** 75% · Deep Current **r3** 66% · Tidal Wave **r1** 61% |
+| heal | Healing Winds **r3** 63% · … · Heal **r1** 24% |
+| normal | Quick Jab **r2** 72% · Momentum Shift **r3** 60% · Body Slam **r1** 60% |
+
+and the catalog spanned 12% to 75% — a drawn move decided more of a fight than
+the build did. All 42 moves were repriced against that measurement; the spread is
+now 45–82% and the rare tier tops five pools of seven and is within two points in
+the other two.
+
+**Every element move deals damage.** Four of them dealt none (Campfire, Ocean
+Mist, Breeze, Stone Wall) and measured 0–18%: a zero-damage move in a three-slot
+roster is a third of a companion spent on something that cannot win. Support
+lives in the neutral pool now, where it competes against other support.
+
+**A level-up OFFERS a move; it does not apply one.** It used to be
+`m.moves = Battle.rollMoves(...)` every third level — a silent, total, random
+replacement that could confiscate a rare move on a schedule and re-draw the
+species' own move along with it.
+
+Now, every `C.MOVE_RELEARN_LEVELS` levels (**five**: 5, 10, 15, 20), the
+companion is offered exactly one move, drawn by the same rarity-weighted draw
+and never one it already knows. `Monster.LearnMove` answers it: name a move to
+give up, or send nothing and turn it down. A decline is final — anything else
+makes it a slot machine.
+
+**The level-up commits by itself, and the offer hangs off the record
+afterwards.** That separation is the whole design. There is no half-levelled
+companion: the level, the points, the Rune and the evolution all land in the one
+`Monster.LevelUp` message, and an unanswered offer is an unopened envelope
+rather than an unfinished level. It blocks nothing — quest, battle and hunt with
+it outstanding for as long as you like.
+
+**It expires on the next level-up**, of any level, and that is what makes it a
+decision rather than a menu item. The expiry is deliberately an ACTION and not a
+clock: the only thing that spends an offer is a level-up the player signed and
+paid Rune for, so it cannot punish somebody for being away. Everything that can
+refuse a level-up returns before the expiry line, so a refused one — no Rune, an
+illegal allocation, not enough exp — leaves the envelope sealed; there is a test
+on both sides of that. `LevelUpDialog` warns before the one door it can happen
+behind, because a rule the player is only told about afterwards is a trap.
+
+The alternative, a two-step level-up that is not finished until the move is
+chosen, puts a partial companion on chain and lets an unanswered prompt block
+progression. Same UX, much worse state machine.
+
+**The species' own move cannot be given up**, so a three-slot roster has two
+swappable slots (`Battle.swappableMoves`). It is what makes a species mean
+something, it is what `BattleScene` matches to play the signature attack
+animation, it is the identity the card prints in its top row, and it is the
+guarantee that every companion has something that deals damage — a roster that
+can trade it away can end up unarmed. The handler guards the damage invariant
+separately anyway, for legacynet imports whose roster never contained it.
+
+Asking is also what let the "never downgrades" rule go. A player who chooses
+cannot be robbed, so the draw no longer has to protect them from itself, and an
+offer is free to be a commoner move they take anyway — a neutral attack is the
+right pick for a fire companion that keeps meeting water, and a monotone rule
+would have refused to offer it.
+
+And it is the only moment the rarity system is **visible**. The roster is drawn
+once at adoption, out of sight; this is where a one-in-twenty roll is something
+a player watches land, which is why the panel shows the offer and both
+candidates at full detail through the same `MoveButton` the battle grid uses —
+two components would be two sets of numbers.
+
+**The card and the move grid lead with the rarest move.** Purely how a roster is
+read — the engine has no slot order, a roster is a map keyed by name — but the
+one fact that makes a card worth keeping was previously wherever the alphabet
+put it. Rarity leads, element leads inside a tier because the art calls the top
+row the signature row, and the name breaks the rest. Every term is a fact about
+the move rather than about the fighter, which is what keeps a signed card's rows
+identical between the preview a player approved and the mint the worker writes;
+`npm run test:card` is the guard on that.
+
+A **rarity-1 move now plays the species' advanced attack animation**, alongside
+the index's own `advancedMove`. `moveRarity` already rides on every turn, so it
+costs no lookup. Making rarity mean something in the roll is undone if the rare
+move a player chased plays the same four frames as a common.
+
+`Battle.normaliseRoster` is the migration: every restore path — a legacynet
+export, a redeploy, an admin fixture — can be carrying four moves from pools that
+no longer exist, and they are trimmed on the way in, signature first, with a
+damaging move ahead of a support move at equal rarity.
+
+### Five engine defects the measurement turned up
+
+None of these were the move numbers, and none could be fixed by changing them.
+
+1. **Speed was a switch, not a stat.** `TUNING.speedSwing` was zero, so hit
+   chance used `diff * 0.08` up and `diff * 0.10` down — and *both* clamps are
+   reached at a gap of four points. One `+5 speed` rider pinned its user at the
+   0.95 ceiling and the opponent at the 0.30 floor: a 3.2× swing in landed
+   damage out of a single move, larger than any damage number in the game can
+   buy. The move ranking was not a ranking of moves, it was a ranking of speed
+   riders. Now 0.45, share-based, with no saturation point.
+
+2. **Riders were flat.** `+5 attack` was +250% of a level-0 companion and +10%
+   of a level-20 one, so every rider in the catalog was two different moves
+   depending on who used it. This is the same defect `healPerPoint` exists to fix
+   one field away, and nobody had carried the lesson across. Riders are now a
+   share of a quarter of the fighter's **budget** — deliberately not of the stat
+   they move, or the buff that answers a hole in a build would be worth least to
+   the build with the hole — and capped at one yardstick per stat, because they
+   are permanent for the rest of the fight and used to compound without limit.
+
+3. **The NPC picked uniformly among everything it could use.** On a three-slot
+   roster holding two support moves that is two turns in three spent not
+   attacking, which put every boost move in the game at 9–34% against a plain
+   attack. That is a statement about the bot, not about the move. It now filters
+   by what a move is *for* — anything that hits is an attack, anything that heals
+   is for being hurt, anything else is setup and is worth at most two turns.
+
+4. **A missed swing dropped the move's riders too.** Harmless while only
+   damaging moves could whiff; the moment boosts were given two damage to make
+   them worth a slot, every buff in the game became missable and a Power Up could
+   whiff and grant nothing. The roll gates the damage and nothing else now.
+
+5. **Defense mitigation read the live stat against a frozen budget.** So a
+   defense rider bought damage reduction the build never paid for, on top of the
+   shield it already added. It made `Stone Wall` — 3 damage, +4 defense — the
+   single best move in the game at 86.8%, above every signature.
+
+### And the arena was a fight nobody could lose
+
+`balance` plays `makeOpponent` against `makeOpponent`; the build matrix plays a
+grown player against a grown player. Neither of them is the **arena**, which is a
+grown player against `makeOpponent` and is the most common fight in the game —
+and nothing measured it until `run-balance.sh arena5` existed.
+
+A bot was built on `10 + level*2` while a player grows on `10 + level*10`. The
+comment said that was so "a level 12 pet is not handed a level 1 punching bag";
+it made the player the one holding it. Measured: **100% win rate for every build
+at every level, in two to five rounds.** `TUNING.botBudgetShare` puts a trainer
+on the player's own curve at 0.8 of it, and `difficulty` multiplies on top, so a
+harder trainer is a real choice again rather than a bigger walkover.
+
+| level | player win rate | median rounds |
+|---|---|---|
+| 1 | 60–87% | 8–12 |
+| 5 | 100% | 7–8 |
+| 10 | 88–100% | 4–7 |
+| 20 | 65–85% | 6–11 |
+
+### The per-stat level-up cap moved from five to three
+
+`C.LEVEL_UP_MAX_PER_STAT`. The August sweep had already found this and recorded
+it without applying it, on the grounds that balancing is a playtest decision. The
+move rebuild re-derived it from scratch and could not get past it: at a cap of
+five there is **no** pair of `hpPerHealth` and `attackPerStatPoint` that makes
+both mirrors work. Eighteen combinations, every one failing one or the other —
+low attack floor and the tank mirror runs to the 50-round cap in 70–100% of
+fights, high floor and the even mirror is over in two rounds. Run the same grid
+with builds a cap of three can reach (`run-balance.sh capgrowa`) and every cell
+is four to ten rounds with no grinds. The tank's identity was a stat left at 1,
+and nothing downstream of a dump stat can bridge that.
+
+What it costs is real: an all-in build is no longer free. Ten points cannot be
+spent on fewer than four stats, so the stat you skip is no longer a hole ten
+levels deep. A tank is still the build with the most defense; it is no longer the
+build with no attack.
 
 ## 6. The look, and why it is built the way it is
 

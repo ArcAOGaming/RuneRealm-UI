@@ -894,18 +894,22 @@ already exempt; `MANAGED_ACTIONS` names the venue verbs the same way, including
 in the Gold branch where `Admin.SettleVenueReturn` would otherwise have been
 funded out of the locked reserve on top of its own bucket move.
 
+### Client and soak wiring (2026-09-06)
+
+`src/lib/venue.ts` now speaks the shared order and custody protocol, and the
+Market screen renders both venue books with deposits, bids/asks, cancellation,
+and withdrawals. The fifty-wallet swarm drives deposits, resting orders,
+amends, fills, cancellations, and exits on both venues. Its lived-in receipt
+also keeps the original in-game Gold book and finite NPC shop as separate
+required paths.
+
 ### Still not built
 
 - `publicView` still publishes `orders` and `fills` in full (§4). Neither venue
   does, so the pattern to copy now exists in the repo.
 - `Economy.Order.Maintain` still pays its keeper nothing (§1.3).
 - The in-game order-creation cost is still 1 Gold (§7.3).
-- **No client.** `ExternalBook()` in `screens/Marketplace.tsx` still renders
-  "not deployed yet", and nothing in `src/` speaks to either venue.
-- The game has no UI for `Venue.Send`, so the internal venue can only be
-  reached by a signed message today.
-
-**Verified:** venue 101 on a live `~lua@5.3a` and offline, game 897, economy
+**Verified before the client wiring:** venue 101 on a live `~lua@5.3a` and offline, game 897, economy
 164, hunt 25+38, rune 85, marketplace 11, minify 17/17 including the deploy
 ceiling.
 
@@ -1054,4 +1058,3 @@ the split, deliberately.
 Steps 2-5 are all the same rule — publish state, never constants; publish a
 record once; bound at the point of append — and none of them is a new idea.
 They are the ones nobody has taken yet.
-

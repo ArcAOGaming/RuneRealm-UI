@@ -45,11 +45,11 @@ normal contract configuration. Legacy registry data remains readable only.
 deleted. It was spawned once, never configured, never held a reserve or an LP
 share, and this game does not trade on a curve. Two order books do the trading:
 the internal one on in-game goods priced in Gold, and an external one on the
-token pair. They are the same instrument and will be the same code; the only
+token pair. They are the same `orderbook.lua` engine; the only
 difference is what funds them.
 
-The external book's process does not exist yet. When it does, its custody is
-deposit-first -- transfer the token in, the token process emits a
+Both custody venues are implemented by `venue.lua`, deployed once in internal
+mode and once in external mode. External custody is deposit-first: transfer the token in, the token process emits a
 `Credit-Notice`, and only a notice attested as coming from a configured token
 process creates a credited balance -- and its payouts leave through
 `process-outbox@1.0`. That shape is modelled on `game.lua`'s `Burn-Notice`
@@ -76,12 +76,16 @@ path on the target node before configuring AO.
 - `backend/native/marketplace.lua` — parked minted-asset index source, not
   deployed or included in normal preflight; see the TODO above.
 - `backend/native/quote.lua` — faucet-backed `TEST-RELIC` token.
+- `backend/native/venue.lua` — the shared internal/external custody venue.
+- `backend/native/deploy-venue.mjs` — deploys, seals, and optionally launches
+  both order books.
 - `backend/native/deploy-marketplace.mjs` — spawns and configures the quote token
   external processes and writes their frontend ids; it never creates an index
   or companion collection.
 - `src/screens/Marketplace.tsx` — `/market`, monster trading, Rune bridge,
   Gold goods/P2P/NPC trading, TEST-RELIC faucet, liquidity, charts, and swaps.
 - `src/lib/marketplace.ts` — reads, signed actions and exact decimal conversion.
+- `src/lib/venue.ts` — shared order, custody, and published-position client.
 
 ## Test and deploy
 
@@ -89,6 +93,7 @@ The offline runner uses the checked-in aos WASM and needs no node or wallet:
 
 ```bash
 npm run test:marketplace:local
+npm run test:venue:local
 npm run build
 ```
 
@@ -97,11 +102,12 @@ device when one is reachable:
 
 ```bash
 npm run test:marketplace
+npm run test:venue
 ```
 
 The recommended deployment is the serialized full-stack command. It reads the
-current game from `live-process.txt`, migrates it, creates and wires Rune, then
-creates the quote process and performs the final build only after all ids are
+current game from `live-process.txt`, creates and wires Rune, creates the quote
+token and both venues, seals and launches all eight markets, and performs the final build only after all ids are
 written:
 
 ```bash
@@ -109,7 +115,7 @@ npm run deploy:all -- --plan
 npm run deploy:all
 ```
 
-The full command first exercises the game/economy, Rune, quote, and
+The full command first exercises the game/economy, Rune, quote, both venues, and
 recovered-player migration on a live unsigned `~lua@5.3a` endpoint. It only
 reads the deployment wallet after that preflight succeeds.
 
@@ -126,8 +132,8 @@ processes:
 HB_WALLET=/path/to/key.json npm run deploy:exchange
 ```
 
-The default deployment creates an empty Rune/`TEST-RELIC` pool and faucets test
-inventory to the owner. It no longer spawns a companion index. The deployment
+The default deployment creates a `TEST-RELIC` faucet token and both empty
+order-book venues. It no longer spawns a companion index. The deployment
 does not invent Rune supply: withdraw earned Rune, transfer both tokens into
 an exchange process. There is no pool to seed: liquidity is resting orders.
 
