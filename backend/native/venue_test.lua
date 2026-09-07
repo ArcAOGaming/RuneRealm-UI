@@ -601,6 +601,215 @@ local function run()
   ok("and never the raw order list", published.orders == nil, published.orders)
   ok("nor the raw fill list", published.fills == nil, published.fills)
 
+  -- The state export drops only what a restore can rebuild --------------------
+
+  local exported = json.decode(published.venuebookstate or "{}")
+  ok("the restore export carries no closed-order log",
+     exported.orderHistory == nil, published.venuebookstate)
+  ok("nor the refusal histogram", exported.rejected == nil, nil)
+  ok("nor the derived receipt order", exported.actionReceiptOrder == nil, nil)
+  ok("nor the hot index", exported.bookIndex == nil, nil)
+  ok("but it KEEPS the fills -- this venue has no desk, so the price band is "
+     .. "anchored on their median and nothing else republishes them",
+     type(exported.fills) == "table", nil)
+  ok("and the replay guard, whose loss would re-arm a double-place",
+     type(exported.actionReceipts) == "table", nil)
+  ok("and every id sequence, pool, fee and market",
+     exported.orderSeq ~= nil and exported.fillSeq ~= nil
+       and type(exported.pools) == "table" and type(exported.fees) == "table"
+       and type(exported.markets) == "table" and type(exported.orders) == "table"
+       and type(exported.marketDaily) == "table",
+     published.venuebookstate)
+
+  -- A resolved replay guard is published as its status and nothing more, and
+  -- `status` is the field that may never go: a compacted withdrawal that lost
+  -- it would read as `pending` and be refundable twice.
+  local depositState = json.decode(published.venuedepositstate or "{}")
+  local settled = depositState[RUNE .. ":t11"]
+  ok("a settled deposit is published compacted, not in full",
+     type(settled) == "table" and settled.status == "credited"
+       and settled.account == nil and settled.amount == nil,
+     published.venuedepositstate)
+  local withdrawalState = json.decode(published.venuewithdrawalstate or "{}")
+  ok("and so is a settled withdrawal, status intact",
+     type(withdrawalState.w1) == "table" and withdrawalState.w1.status == "settled"
+       and withdrawalState.w1.account == nil,
+     published.venuewithdrawalstate)
+
+  -- The clock is the ASSIGNMENT's, never the sender's -------------------------
+  --
+  -- `msg` is the caller's own signed data item, so a `Timestamp` TAG on it is
+  -- whatever they felt like -- and a browser signs exactly that spelling. It
+  -- used to win over `req.timestamp`. The venue's clock is not decoration: a
+  -- far-future stamp retires every resting order into the index's dead queue,
+  -- and `Order.Maintain` is unauthenticated housekeeping anybody may then call
+  -- to cancel them out from under their owners.
+
+  local before = send(ALICE, { Action = "Balance" })
+  local restingBefore = before and before.orders and #before.orders or 0
+  ok("Alice still has a resting order to lose", restingBefore > 0,
+     json.encode(before and before.orders))
+
+  local swept = send(MALLORY, { Action = "Order.Maintain",
+    Timestamp = "1900000000000" })
+  ok("a body Timestamp six years on expires nothing",
+     swept and num(swept.expired) == 0, json.encode(swept))
+
+  local after = send(ALICE, { Action = "Balance" })
+  ok("and the order is still resting",
+     after and after.orders and #after.orders == restingBefore,
+     json.encode(after and after.orders))
+  ok("with its expiry still measured from the assignment clock",
+     after and after.orders and after.orders[1]
+       and tonumber(after.orders[1].expiresAt) < 1900000000000,
+     after and after.orders and after.orders[1] and after.orders[1].expiresAt)
+
+  local futureSupply = send(MALLORY, { Action = "Supply" })
+  ok("and its escrow was never released",
+     futureSupply and futureSupply.rune and num(futureSupply.rune.escrow) > 0,
+     json.encode(futureSupply and futureSupply.rune))
+
+  -- Two signatures identify NOBODY -------------------------------------------
+  --
+  -- Not "whichever `pairs()` visited first". On a venue this is the gate in
+  -- front of `Credit-Notice`: `sourceProcess` believes `from-process` only
+  -- when the proven signer IS our scheduler, so winning table iteration order
+  -- by attaching a second signature would credit balance out of nothing.
+
+  local function sendTwice(a, b, tags)
+    T = T + 1000
+    local body = { commitments = {
+      sig1 = { committer = a, alg = "rsa-pss-sha512" },
+      sig2 = { committer = b, alg = "rsa-pss-sha512" },
+    } }
+    for k, v in pairs(tags) do body[k] = v end
+    local res = compute(baseOf(), { body = body, timestamp = T })
+    return json.decode(res.results.output.data), res
+  end
+
+  r = sendTwice(ALICE, MALLORY, { Action = "Order.Place", Side = "sell",
+    Item = "rune", Price = "2000000", Quantity = "1" })
+  ok("two signatures cannot trade", errOf(r) == "Unsigned messages cannot trade",
+     json.encode(r))
+
+  r = sendTwice(OWNER, MALLORY, { Action = "Admin.Pause", Reason = "mine now" })
+  ok("nor pass as the owner", errOf(r) == "Not authorised", json.encode(r))
+
+  -- The attack that matters: the scheduler's real signature, plus one more.
+  T = T + 1000
+  local forgedBody = {
+    commitments = {
+      sig1 = { committer = SCHED, alg = "rsa-pss-sha512" },
+      sig2 = { committer = MALLORY, alg = "rsa-pss-sha512" },
+    },
+    ["from-process"] = RUNE,
+    Action = "Credit-Notice", Sender = MALLORY, Quantity = "999000000",
+    Reference = "twosig",
+  }
+  local forgedRes = compute(baseOf(), { body = forgedBody, timestamp = T })
+  r = json.decode(forgedRes.results.output.data)
+  ok("a second signature beside the scheduler's credits nobody",
+     errOf(r) == "Not authorised", json.encode(r))
+  ok("and left no deposit row behind", Deposits[RUNE .. ":twosig"] == nil,
+     json.encode(Deposits[RUNE .. ":twosig"]))
+  ok("and paid Mallory nothing", Ledger[MALLORY] == nil
+     or num((Ledger[MALLORY] or {}).rune) ~= 999000000,
+     json.encode(Ledger[MALLORY]))
+
+  -- A stranger's address is not a published key ------------------------------
+  --
+  -- A published key, once created, stays in the process map forever, and every
+  -- message afterwards pays for the whole map five times over. `touched` used
+  -- to add `Account`, `Recipient` and `Sender` straight off the message, so
+  -- any wallet could mint one per message -- on the read-only `Info`, at that.
+
+  local STRANGER = "STRANGERsssssssssssssssssssssssssssssssssss"
+  local _, infoRaw = send(MALLORY, { Action = "Info", Account = STRANGER })
+  ok("an Info carrying a stranger's Account mints no key for them",
+     infoRaw["balance-" .. STRANGER] == nil, infoRaw["balance-" .. STRANGER])
+  ok("and Recipient and Sender are no route in either",
+     (select(2, send(MALLORY, { Action = "Info", Recipient = STRANGER,
+        Sender = STRANGER })))["balance-" .. STRANGER] == nil, nil)
+
+  -- BOB, not Mallory: Mallory's address is deliberately 42 characters, so
+  -- `validId` refuses it and it would prove nothing about the signer's key.
+  local answered, balRaw = send(BOB, { Action = "Balance", Account = STRANGER })
+  ok("Balance still ANSWERS for the account it was asked about",
+     answered and answered.account == STRANGER, json.encode(answered))
+  ok("but publishes no key for it", balRaw["balance-" .. STRANGER] == nil,
+     balRaw["balance-" .. STRANGER])
+  ok("while the signer's own key is still published",
+     balRaw["balance-" .. BOB] ~= nil, nil)
+
+  -- Housekeeping that released nothing costs nothing --------------------------
+  --
+  -- `Order.Maintain` is unauthenticated by design and is not read-only, so a
+  -- call that expired nothing used to rewrite the config, the ledger, the
+  -- book, the deposits and the withdrawals. A live node hands `compute` a base
+  -- that already carries `venuecommit`; the ordinary `send` starts from a bare
+  -- table, and a bare base publishes unconditionally, so a warm base is the
+  -- only way to see the publication decision at all.
+  local function warmSend(commit, from, tags)
+    T = T + 1000
+    local warm = baseOf()
+    warm.venuecommit = commit
+    local body = { commitments = { sig1 = { committer = from, alg = "rsa-pss-sha512" } } }
+    for k, v in pairs(tags) do body[k] = v end
+    local res = compute(warm, { body = body, timestamp = T })
+    return json.decode(res.results.output.data), res
+  end
+
+  local _, commitRes = send(OWNER, { Action = "Info" })
+  local quiet, quietRaw = warmSend(commitRes.venuecommit, MALLORY,
+    { Action = "Order.Maintain" })
+  ok("a Maintain with nothing to release expires nothing",
+     quiet and num(quiet.expired) == 0, json.encode(quiet))
+  ok("and does not rewrite one state key",
+     quietRaw.venueconfigstate == nil and quietRaw.venueledgerstate == nil
+       and quietRaw.venuebookstate == nil and quietRaw.venuedepositstate == nil
+       and quietRaw.venuewithdrawalstate == nil,
+     tostring(quietRaw.venuebookstate))
+  ok("while the read path is published as always",
+     quietRaw.venuebook ~= nil and quietRaw.supply ~= nil
+       and quietRaw.venuecommit ~= nil, nil)
+
+  -- But one that DID release escrow must republish: the money moved.
+  local shortLived = send(ALICE, { Action = "Order.Place", Side = "sell",
+    Item = "rune", Price = "2000000", Quantity = "1", ExpiresIn = "300000" })
+  ok("a short-lived order rests",
+     shortLived and shortLived.order and shortLived.order.open == true,
+     json.encode(shortLived))
+
+  local _, freshCommit = send(OWNER, { Action = "Info" })
+  T = T + 400000
+  local reaped, reapedRaw = warmSend(freshCommit.venuecommit, MALLORY,
+    { Action = "Order.Maintain" })
+  ok("past its expiry the sweep releases it", reaped and num(reaped.expired) == 1,
+     json.encode(reaped))
+  ok("and THAT one republishes every state key, because escrow moved",
+     reapedRaw.venueconfigstate ~= nil and reapedRaw.venueledgerstate ~= nil
+       and reapedRaw.venuebookstate ~= nil and reapedRaw.venuedepositstate ~= nil
+       and reapedRaw.venuewithdrawalstate ~= nil,
+     tostring(reapedRaw.venuebookstate))
+
+  -- A market fee is bounded on BOTH sides --------------------------------------
+
+  r = send(OWNER, { Action = "Admin.ListAsset", Asset = "shard", Name = "TEST-Shard",
+    Process = "SHARDtokennnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnn", Denomination = "0" })
+  ok("a third asset lists", r and r.asset and r.asset.id == "shard", json.encode(r))
+  r = send(OWNER, { Action = "Admin.CreateMarket", Base = "shard", Quote = "relic",
+    TakerBps = "1000000" })
+  ok("a hundredfold taker fee is refused",
+     errOf(r) == "TakerBps must be at most 1000", json.encode(r))
+  r = send(OWNER, { Action = "Admin.CreateMarket", Base = "shard", Quote = "relic",
+    BandBps = "10000000" })
+  ok("and a band wider than the whole scale is refused",
+     errOf(r) == "BandBps must be at most 10000", json.encode(r))
+  r = send(OWNER, { Action = "Admin.CreateMarket", Base = "shard", Quote = "relic",
+    TakerBps = "1000", BandBps = "10000" })
+  ok("the bounds themselves are allowed",
+     r and r.market and num(r.market.takerBps) == 1000, json.encode(r))
+
   out[#out + 1] = ""
   out[#out + 1] = string.format("%d passed, %d failed", passed, failed)
   return table.concat(out, "\n")
