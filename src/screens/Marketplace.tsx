@@ -1455,7 +1455,13 @@ function PriceChart({ points, from, to, bid, ask, mode, candleMs, published, uni
         ctx.beginPath(); ctx.moveTo(pad.left, py); ctx.lineTo(pad.left + plotW, py); ctx.stroke();
         if (values.length) {
           ctx.fillStyle = 'rgba(128,138,164,.72)';
-          ctx.fillText(format(top - ((top - bottom) / 3) * index), pad.left + plotW + 5, py);
+          /* Prices are integer quote atoms. The padded chart range and its
+             thirds are display geometry, so their interpolation is usually
+             fractional even though every real price is exact. Round the
+             synthetic tick back to an atom before the token formatter turns
+             it into a BigInt. */
+          const tickPrice = Math.round(top - ((top - bottom) / 3) * index);
+          ctx.fillText(format(tickPrice), pad.left + plotW + 5, py);
         }
       }
 
