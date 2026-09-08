@@ -36,7 +36,31 @@
 /** How long a connection may sit idle before the pool closes it. */
 const IDLE_MS = 60_000;
 
+/** Preserve the swarm's historical per-thread pool when no fan-out is given. */
+export const DEFAULT_CONNECTIONS = 8;
+/** Keep inferred fan-out from turning an accidental lane count into fd pressure. */
+export const MAX_INFERRED_CONNECTIONS = 256;
+
+export function connectionsForLanes(lanes) {
+  const count = Number(lanes);
+  if (!Number.isFinite(count) || count <= 1) return DEFAULT_CONNECTIONS;
+  return Math.min(MAX_INFERRED_CONNECTIONS, Math.ceil(count) * 2);
+}
+
+export function resolveConnections({ connections, lanes, env = process.env } = {}) {
+  const explicit = Number(connections);
+  if (Number.isFinite(explicit) && explicit > 0) return Math.floor(explicit);
+  const override = Number(env?.HB_CONNECTIONS);
+  if (Number.isFinite(override) && override > 0) return Math.floor(override);
+  return connectionsForLanes(lanes);
+}
+
 let applied = null;
+let configuredConnections = DEFAULT_CONNECTIONS;
+
+export function connectionLimit() {
+  return configuredConnections;
+}
 
 /**
  * Install the long-lived connection pool for THIS thread.
@@ -48,8 +72,9 @@ let applied = null;
  * Idempotent, so a module that is imported by both a tool and its library does
  * not install two pools and quietly halve the benefit.
  */
-export async function useKeepAlive({ quiet = true } = {}) {
+export async function useKeepAlive({ quiet = true, connections, lanes } = {}) {
   if (applied !== null) return applied;
+  configuredConnections = resolveConnections({ connections, lanes });
   try {
     const { Agent, setGlobalDispatcher } = await import('undici');
     setGlobalDispatcher(new Agent({
@@ -57,7 +82,7 @@ export async function useKeepAlive({ quiet = true } = {}) {
       keepAliveMaxTimeout: IDLE_MS * 2,
       // One wallet acts at a time inside a worker, but the parent runner and
       // the tools fan out across several keys at once.
-      connections: 8,
+      connections: configuredConnections,
     }));
     applied = true;
   } catch (error) {

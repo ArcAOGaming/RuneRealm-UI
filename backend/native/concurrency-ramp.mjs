@@ -71,6 +71,7 @@
  */
 import fs from 'node:fs';
 import path from 'node:path';
+import crypto from 'node:crypto';
 import { fileURLToPath } from 'node:url';
 import { sendMessage, pendingPushes, httpRequestCount, resetHttpRequestCount } from './hbclient.mjs';
 import { listBurners } from './burners.mjs';
@@ -83,6 +84,7 @@ const ROOT = path.resolve(HERE, '..', '..');
 const graph = assertLiveGraph(resolveLiveGraph({ root: ROOT }));
 const NODE = process.env.NODE_URL || graph.node;
 const PID = process.env.PID || graph.game;
+const BOX_IP = process.env.BOX_IP || null;
 const LEVELS = (process.env.LEVELS || '1,5,10,25,50,75,100')
   .split(',').map((n) => Number(n.trim())).filter((n) => Number.isFinite(n) && n > 0);
 const BUDGET_MS = Number(process.env.BUDGET_MS || 2000);
@@ -108,8 +110,49 @@ const OUTFIT = {
   Gloves: { style: 'Gloves', color: '#404040' },
   Shoes: { style: 'Shoes', color: '#20202a' },
 };
-const DATA = process.env.DATA
-  ?? (ACTION === 'Sprite.Update' ? JSON.stringify(OUTFIT) : undefined);
+const DATA_OVERRIDE = process.env.DATA;
+let mutationSerial = Date.now() & 0xffffff;
+
+function mutationPayload() {
+  if (ACTION !== 'Sprite.Update') {
+    return { data: DATA_OVERRIDE, expectedOutfit: null };
+  }
+  if (DATA_OVERRIDE !== undefined) {
+    let expectedOutfit = null;
+    try { expectedOutfit = JSON.parse(DATA_OVERRIDE); } catch { /* scored as a rejection */ }
+    return { data: DATA_OVERRIDE, expectedOutfit };
+  }
+  // Give every write a distinct, valid colour. Reusing one fixed recipe lets a
+  // successful reply prove assignment but not an observable state transition.
+  mutationSerial = (mutationSerial + 1) & 0xffffff;
+  const expectedOutfit = {
+    ...OUTFIT,
+    Hair: { ...OUTFIT.Hair, color: `#${mutationSerial.toString(16).padStart(6, '0')}` },
+  };
+  return { data: JSON.stringify(expectedOutfit), expectedOutfit };
+}
+
+function returnedChangedRecord(body, expectedOutfit) {
+  let value;
+  try { value = JSON.parse(body); } catch {
+    return { ok: false, error: 'reply was not JSON' };
+  }
+  if (value && typeof value === 'object' && typeof value.error === 'string') {
+    return { ok: false, rejected: true, error: JSON.stringify(value).slice(0, 160) };
+  }
+  if (ACTION !== 'Sprite.Update') return { ok: true };
+  if (!expectedOutfit || !value?.outfit) {
+    return { ok: false, error: 'Sprite.Update reply did not contain the changed outfit record' };
+  }
+  for (const category of Object.keys(OUTFIT)) {
+    const want = expectedOutfit?.[category];
+    const got = value.outfit?.[category];
+    if (!want || got?.style !== want.style || got?.color !== String(want.color).toLowerCase()) {
+      return { ok: false, error: `Sprite.Update reply did not echo changed ${category}` };
+    }
+  }
+  return { ok: true };
+}
 // Enough samples that a p95 means something, and enough per client that the
 // level reaches steady state rather than measuring fifty cold starts.
 const PER_LEVEL = Number(process.env.PER_LEVEL || 0);
@@ -237,13 +280,15 @@ let pollCount = 0;
 async function roundTrip(jwk, deadlineMs) {
   const started = performance.now();
   let slot = null;
+  const { data, expectedOutfit } = mutationPayload();
   try {
     const sent = await sendMessage({
-      node: NODE, jwk, process: PID, action: ACTION, data: DATA, push: PUSH,
+      node: NODE, jwk, process: PID, action: ACTION, data, push: PUSH,
     });
     slot = sent?.slot ?? null;
   } catch (error) {
-    return { ok: false, reason: 'post', status: error?.status ?? null,
+    return { ok: false, reason: error?.status === 429 ? 'rate-limited' : 'post',
+      status: error?.status ?? null,
       error: String(error?.message || error), totalMs: performance.now() - started };
   }
   if (slot === null || slot === undefined) {
@@ -265,9 +310,10 @@ async function roundTrip(jwk, deadlineMs) {
   let wait = PRE_POLL_MS;
   while (performance.now() - started < deadlineMs) {
     if (wait > 0) await new Promise((done) => setTimeout(done, wait));
+    const remainingMs = Math.max(1, Math.floor(deadlineMs - (performance.now() - started)));
     const response = await fetch(url, {
       headers: { accept: 'text/plain' },
-      signal: AbortSignal.timeout(Math.max(1000, deadlineMs)),
+      signal: AbortSignal.timeout(remainingMs),
     }).catch(() => null);
     pollCount += 1;
     reads += 1;
@@ -285,9 +331,10 @@ async function roundTrip(jwk, deadlineMs) {
         // accepted one, so a stale payload scored 100% ok while changing
         // nothing. A rejection is reported in its own column rather than
         // silently inflating the success rate.
-        const rejected = /^\{\s*"error"\s*:/.test(body);
-        return { ok: !rejected, reason: rejected ? 'rejected' : undefined,
-          error: rejected ? body.slice(0, 160) : undefined,
+        const verdict = returnedChangedRecord(body, expectedOutfit);
+        return { ok: verdict.ok,
+          reason: verdict.ok ? undefined : (verdict.rejected ? 'rejected' : 'invalid-reply'),
+          error: verdict.ok ? undefined : verdict.error,
           slot, reads, postMs: posted - started,
           readMs: performance.now() - posted, totalMs: performance.now() - started };
       }
@@ -305,6 +352,7 @@ async function runLevel(concurrency, wallets) {
   pollCount = 0;
   resetHttpRequestCount();
   const startedAt = Date.now();
+  const startedAtIso = new Date(startedAt).toISOString();
   const issueUntil = startedAt + LEVEL_MS;
   // When the last round trip was STARTED. Everything after that instant is the
   // level draining, not the level running.
@@ -365,6 +413,8 @@ async function runLevel(concurrency, wallets) {
   ];
   return {
     concurrency,
+    startedAt: startedAtIso,
+    endedAt: new Date().toISOString(),
     attempted: results.length,
     succeeded: ok.length,
     failed: results.length - ok.length,
@@ -417,12 +467,24 @@ if (!burners.length) throw new Error('no burner wallets: run `npm run swarm:wall
 const wallets = burners.map((b) => b.jwk);
 
 const LANES = Math.max(...LEVELS);
-await useKeepAlive({ quiet: true, connections: CONNECTIONS || undefined, lanes: LANES });
+const keepAliveApplied = await useKeepAlive({
+  quiet: true, connections: CONNECTIONS || undefined, lanes: LANES,
+});
+
+const digest = (file) => crypto.createHash('sha256').update(fs.readFileSync(file)).digest('hex');
+const sourceVersions = {
+  ramp: digest(fileURLToPath(import.meta.url)),
+  hbclient: digest(path.join(HERE, 'hbclient.mjs')),
+  keepalive: digest(path.join(HERE, 'keepalive.mjs')),
+};
+const rampStartedAt = new Date().toISOString();
 
 console.log(`concurrency ramp against ${PID}`);
 console.log(`node    ${NODE}`);
+if (BOX_IP) console.log(`box     ${BOX_IP}`);
 console.log(`action  ${ACTION}   wallets ${wallets.length}   budget p95 <= ${BUDGET_MS} ms\n`);
-console.log(`pool    ${connectionLimit()} connections   pre-poll ${PRE_POLL_MS} ms   `
+console.log(`version ${sourceVersions.ramp}`);
+console.log(`pool    ${connectionLimit()} connections (${keepAliveApplied ? 'active' : 'unavailable'})   pre-poll ${PRE_POLL_MS} ms   `
   + `push ${PUSH ? 'on' : 'off'}`);
 console.log('');
 console.log(`     |                       | ROUND TRIP, timeouts counted at >=${DEADLINE_MS} ms |       |       |`);
@@ -494,9 +556,10 @@ if (limited.length) {
 
 fs.mkdirSync(path.dirname(OUT), { recursive: true });
 fs.writeFileSync(OUT, `${JSON.stringify({
-  process: PID, node: NODE, action: ACTION, budgetMs: BUDGET_MS,
+  process: PID, node: NODE, boxIp: BOX_IP, action: ACTION, budgetMs: BUDGET_MS,
   deadlineMs: DEADLINE_MS, connections: connectionLimit(), prePollMs: PRE_POLL_MS,
-  push: PUSH, wallets: wallets.length, startedAt: new Date().toISOString(),
+  keepAliveApplied, push: PUSH, wallets: wallets.length, startedAt: rampStartedAt,
+  endedAt: new Date().toISOString(), sourceVersions,
   levels, verdict: { sustained: best, breaksAt: firstOver },
 }, null, 2)}\n`);
 console.log(`\nreport     ${OUT}`);

@@ -117,6 +117,8 @@ assert.match(workerSource, /tokenBalance >= 1_000_000n/,
   'the Rune deposit adapter gates on one whole six-decimal token unit');
 assert.match(workerSource, /venue\.internal\.order\.fill/);
 assert.match(workerSource, /venue\.external\.order\.fill/);
+assert.match(workerSource, /venue\.external\.order\.cancel[\s\S]*placedForCancellation: true/,
+  'external venue cancel is paired with its own PostOnly fixture in one worker command');
 assert.match(workerSource, /no such listing/i,
   'concurrent marketplace disappearance is recognized as a stale-read race');
 assert.match(workerSource, /idle\.market-race/,
@@ -125,6 +127,19 @@ assert.match(workerSource, /idle\.order-race/,
   'a concurrently filled order is recorded as a stale-read race');
 assert.match(workerSource, /idle\.shop-race/,
   'a concurrently changed NPC desk is recorded as a stale-read race');
+assert.match(workerSource, /\(\?:global\|per-account\) 20-hour quantity limit reached/,
+  'both global and per-account NPC desk windows are expected stale-shop outcomes');
+assert.match(workerSource, /moving\.price \* size < 10/,
+  'the amend adapter cannot submit an order below the ten-Gold value floor');
+assert.match(workerSource,
+  /shopProgress\.has\('buy-attempted'\)[\s\S]*tradeGameShop\('buy', opportunity\.item, 1\)[\s\S]*coverage-buy-before-sell/,
+  'generic shop coverage attempts one legal buy before inventory policy can sell forever');
+assert.match(workerSource,
+  /goodsProgress\.has\('take-attempted'\)[\s\S]*sweepLadder\(asks, \{ units: minimum \}\)[\s\S]*coverage-take-published-ask/,
+  'goods-take coverage can consume real published liquidity without an artificial inventory deficit');
+assert.match(workerSource,
+  /coverageTakeAvailable = prefer === 'goods_take'[\s\S]*add\('goods_take',[\s\S]*coverageTakeAvailable/,
+  'the candidate selector lets a coverage-directed published-liquidity take reach its adapter');
 assert.match(workerSource, /activeBattleId === battleId/,
   'PvP only reconciles Battle not found after the player lock has cleared');
 assert.match(workerSource, /pvp\.round-race/,
@@ -144,6 +159,16 @@ assert.match(runnerSource, /'withdrawPvp'/,
   'the pair coordinator invokes the pending-challenge refund adapter');
 assert.match(runnerSource, /outcome\.action === 'battle\.settle\.pvp'/,
   'an observed PvP receipt advances the pair into its next duel');
+const verifySource = fs.readFileSync(path.join(HERE, 'verify.mjs'), 'utf8');
+assert.match(verifySource, /postMs \+ readMs/,
+  'verification defines mutation latency as POST through changed reply');
+assert.match(verifySource, /phase.*startsWith\('cycle\.'\)/,
+  'verification excludes bootstrap and cleanup writes from soak latency');
+assert.match(verifySource, /last\.startedAt <= adminSeedAt/,
+  'delayed admin seeding is compared with the prior command start, not its stale reply time');
+assert.match(verifySource,
+  /candidate\.action === 'monster\.transfer'[\s\S]*candidate\.recipient === event\.address[\s\S]*allowedGrowth/,
+  'concurrent inbound transfers explain multi-companion growth between account observations');
 
 const packageScripts = JSON.parse(fs.readFileSync(path.join(ROOT, 'package.json'), 'utf8')).scripts;
 assert.match(packageScripts['swarm:three-hour'], /--duration 3h/);
@@ -808,6 +833,43 @@ try {
     enabled: true, protocol: 'runerealm-battle-fleet/1', node: 'https://worker.test',
     workers: [{ workerId: route.workerId, workerProcessId }],
   };
+
+  // Battle.Start has already mutated the authority when required outbox
+  // delivery raises OutboxDeliveryError. If the worker publication is still
+  // absent, the client must preserve that accepted/unconfirmed classification
+  // and, above all, must not schedule the game action a second time.
+  const unconfirmedStartRoute = {
+    ...route, battleId: 'unconfirmed-start-battle', reservationId: 'unconfirmed-start-reservation',
+    assignmentId: 'unconfirmed-start-assignment', ticket: 'unconfirmed-start-ticket',
+  };
+  computedReply = {
+    address: playerAddress, activeBattleId: unconfirmedStartRoute.battleId,
+    battleFleet: unconfirmedStartRoute,
+  };
+  publishedPlayerReply = computedReply;
+  publishedWorkerBattles.delete(unconfirmedStartRoute.battleId);
+  pushStatuses.push(503);
+  const signedBeforeUnconfirmedStart = signedItems.length;
+  const slotBeforeUnconfirmedStart = scheduledSlot;
+  const realSetTimeout = globalThis.setTimeout;
+  globalThis.setTimeout = (callback) => { callback(); return 0; };
+  try {
+    await assert.rejects(
+      api.startBotBattle(1),
+      (error) => error.name === 'OutboxDeliveryError'
+        && error.accepted === true
+        && error.action === 'battle.start'
+        && /do not retry the game action/i.test(error.message),
+    );
+  } finally {
+    globalThis.setTimeout = realSetTimeout;
+  }
+  assert.equal(signedItems.length, signedBeforeUnconfirmedStart + 1,
+    'an accepted Battle.Start is signed exactly once when worker publication is unavailable');
+  assert.equal(scheduledSlot, slotBeforeUnconfirmedStart + 1,
+    'an accepted Battle.Start is scheduled exactly once and never replayed');
+  const pushesAfterUnconfirmedStart = pushes.length;
+
   publishedPlayerReply = {
     address: playerAddress, activeBattleId: route.battleId, battleFleet: route,
   };
@@ -828,7 +890,7 @@ try {
   assert.equal(directTags.ticket, route.ticket);
   assert.equal(directTags.actionid, 'attack-reload-4');
   assert.equal(directTags.round, '4');
-  assert.equal(pushes.length, pushesBeforeUnreadFleetLeave + 1,
+  assert.equal(pushes.length, pushesAfterUnconfirmedStart,
     'a reload-hydrated non-terminal round still has no recursive push');
 
   const terminalRoute = { ...route, battleId: 'terminal-battle', reservationId: 'terminal-reservation' };

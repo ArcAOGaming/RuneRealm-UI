@@ -45,7 +45,7 @@ const missingListing = (error) => /no such listing/i.test(
 const staleOrder = (error) => /no such order|that order has expired|post-only order may not cross|price is (?:below|above) the .*price band/i.test(
   error instanceof Error ? error.message : String(error),
 );
-const staleShop = (error) => /shop stock cap reached|desk is out of stock|desk gold reserve exhausted|global 20-hour quantity limit reached|policy-epoch supply-flow limit reached/i.test(
+const staleShop = (error) => /shop stock cap reached|desk is out of stock|desk gold reserve exhausted|(?:global|per-account) 20-hour quantity limit reached|policy-epoch supply-flow limit reached/i.test(
   error instanceof Error ? error.message : String(error),
 );
 async function settleOrAccept(call) {
@@ -425,6 +425,12 @@ const MAKER_STYLE = {
 };
 
 const style = () => MAKER_STYLE[profile.role] ?? MAKER_STYLE.progression;
+// A coverage-directed `shop_trade` cannot distinguish the buy and sell paths.
+// Remember the first side this worker deliberately exercised so every fresh
+// run attempts a legal buy before the ordinary inventory policy prefers
+// selling surplus forever. This is local harness state, never game state.
+const shopProgress = new Set();
+const goodsProgress = new Set();
 
 /**
  * What this item is worth, from every source that has an opinion.
@@ -717,6 +723,12 @@ async function economicAction(action, player, view, intel) {
     if (moving) {
       const size = Math.max(1, Math.min(Number(moving.live.remaining) || 1,
         quoteSize(moving, player, intel.spendableGold) || Number(moving.live.remaining) || 1));
+      if (moving.price * size < 10) {
+        return result('idle.no-economic-opportunity', player, {
+          requested: action, orderId: moving.live.id,
+          outcome: 'amend-would-fall-below-order-value-floor',
+        });
+      }
       let updated;
       try {
         updated = await api.amendGoldOrder(moving.live.id,
@@ -740,6 +752,31 @@ async function economicAction(action, player, view, intel) {
        desk deliberately -- a fixed price, filled immediately, with none of the
        book's uncertainty. An actor uses it when it needs Gold now or wants to
        dump inventory the book is not bidding for. */
+    const coverageBuys = Object.entries(view.desks ?? {})
+      .filter(([, desk]) => desk && !desk.pause?.buy
+        && Number(desk.stock ?? 0) > 0
+        && Number(desk.ask ?? 0) > 0
+        && intel.spendableGold >= Number(desk.ask))
+      .map(([item, desk]) => ({ item, desk }));
+    if (!shopProgress.has('buy-attempted') && coverageBuys.length) {
+      shopProgress.add('buy-attempted');
+      const opportunity = choose(coverageBuys);
+      let updated;
+      try { updated = await api.tradeGameShop('buy', opportunity.item, 1); }
+      catch (error) {
+        if (!staleShop(error)) throw error;
+        return result('idle.shop-race', await refresh().catch(() => player), {
+          item: opportunity.item, side: 'buy', outcome: 'coverage-buy-desk-unavailable',
+        });
+      }
+      shopProgress.add('buy');
+      return result('shop.buy', updated, {
+        item: opportunity.item, quantity: 1,
+        expectedUnitPrice: opportunity.desk.ask, counterparty: 'NPC',
+        purpose: 'coverage-buy-before-sell',
+      });
+    }
+
     const sellable = intel.excess.filter(({ desk, quantity }) => desk && !desk.pause?.sell
       && quantity > 0 && desk.stock < desk.stockCap && desk.goldReserve > 0);
     if (intel.gold < 20 && sellable.length) {
@@ -821,6 +858,37 @@ async function economicAction(action, player, view, intel) {
           item: opportunity.item, price: opportunity.plan.limit, quantity, tif,
           fair: Math.round(opportunity.fair),
           strategy: opportunity.cheap ? 'take-below-fair' : 'take-to-cover-deficit',
+        });
+      }
+    }
+
+    // `goods_take` is also one coverage preference for one concrete outcome.
+    // A lived-in actor can be at or above every inventory target while the
+    // public ladder still has real asks. Exercise one affordable IOC against
+    // that published liquidity instead of waiting for an unrelated activity
+    // to manufacture a deficit. The contract remains the arbiter and the
+    // one-attempt marker prevents a stale ladder from becoming a retry loop.
+    if (!goodsProgress.has('take-attempted')) {
+      const coverageTakes = goodsIds.flatMap((item) => {
+        const asks = view.market?.[item]?.depth?.asks ?? [];
+        const firstPrice = Number(asks[0]?.price ?? 0);
+        if (firstPrice <= 0) return [];
+        const minimum = Math.max(1, Math.ceil(10 / firstPrice));
+        const plan = sweepLadder(asks, { units: minimum });
+        if (plan.units < minimum || plan.limit <= 0 || plan.cost + 1 >= intel.spendableGold) {
+          return [];
+        }
+        return [{ item, plan, quantity: minimum }];
+      });
+      if (coverageTakes.length) {
+        goodsProgress.add('take-attempted');
+        const take = choose(coverageTakes);
+        const updated = await api.placeGoldOrder('buy', take.item,
+          take.plan.limit, take.quantity, { tif: 'IOC' });
+        goodsProgress.add('take');
+        return result('goods.order.buy', updated, {
+          item: take.item, price: take.plan.limit, quantity: take.quantity, tif: 'IOC',
+          strategy: 'coverage-take-published-ask',
         });
       }
     }
@@ -1372,8 +1440,22 @@ async function externalVenueAction(player) {
           side: makerSide, venue: 'external', outcome: 'book-moved-before-post-only',
         });
       }
+      const orderId = receipt.order?.order?.id ?? null;
+      if (orderId && actorNumber % 4 === 1 && !venueProgress.external.has('cancel')) {
+        try { await api.cancelVenueOrder(process, orderId); }
+        catch (error) {
+          if (!staleOrder(error)) throw error;
+          return result('idle.order-race', player, {
+            orderId, venue: 'external', outcome: 'order-cleared-before-cancel',
+          });
+        }
+        venueProgress.external.add('cancel');
+        return result('venue.external.order.cancel', player, {
+          orderId, side: makerSide, placedForCancellation: true,
+        });
+      }
       return result(`venue.external.order.${makerSide === 'sell' ? 'ask' : 'bid'}`, player, {
-        side: makerSide, price, quantity, orderId: receipt.order?.order?.id ?? null,
+        side: makerSide, price, quantity, orderId,
       });
     }
   }
@@ -1475,26 +1557,16 @@ async function huntTick(player, prefer) {
     run = null;
   }
   if (!run) {
-    // `Hunt.Begin` is explicitly idempotent while a route is opening: it does
-    // not charge twice and re-emits the same Hunt.Open. This is the safe retry
-    // for an accepted game write whose first downstream push never landed.
-    const landed = await settleOrAccept(() => api.beginHunt(route.monsterId));
-    return result('hunt.retry-open', landed.value?.address ? landed.value : player, {
-      runId: route.runId,
-      ...(landed.accepted ? { deliveryState: 'accepted-delivery-unconfirmed',
-        slot: landed.slot } : {}),
-    });
+    // The authority action already landed. Re-sending it after an
+    // OutboxDeliveryError would turn an unconfirmed delivery into a second game
+    // action, which this soak must never do. Keep observing the published run;
+    // if the outbox really failed, that is a test result rather than permission
+    // to hide it with a retry.
+    return result('idle.hunt-open-unconfirmed', player, { runId: route.runId });
   }
 
   if (run.status === 'opening') {
-    try {
-      const updated = await api.beginHunt(route.monsterId);
-      return result('hunt.retry-open', updated, { runId: route.runId });
-    } catch (error) {
-      if (!acceptedDelivery(error)) throw error;
-      return result('hunt.retry-open', player, { runId: route.runId,
-        deliveryState: 'accepted-delivery-unconfirmed', slot: error.slot ?? null });
-    }
+    return result('idle.hunt-opening', player, { runId: route.runId });
   }
   if (run.status === 'roaming') {
     // Leave completed runs often enough to exercise release settlement, while
@@ -1820,7 +1892,17 @@ async function tick({ prefer, focus } = {}) {
   add('goods_make', Boolean(intelligence?.quotes.some((quote) => !quote.live))
     && (player.gold ?? 0) >= 1);
   add('goods_amend', Boolean(intelligence?.quotes.some((quote) => quote.live && quote.drift >= 1)));
-  add('goods_take', Boolean(intelligence?.needs.some(({ plan }) => plan.units > 0)));
+  const coverageTakeAvailable = prefer === 'goods_take' && goodsIds.some((item) => {
+    const asks = economyView?.market?.[item]?.depth?.asks ?? [];
+    const firstPrice = Number(asks[0]?.price ?? 0);
+    if (firstPrice <= 0) return false;
+    const minimum = Math.max(1, Math.ceil(10 / firstPrice));
+    const plan = sweepLadder(asks, { units: minimum });
+    return plan.units >= minimum && plan.limit > 0
+      && plan.cost + 1 < Number(intelligence?.spendableGold ?? 0);
+  });
+  add('goods_take', Boolean(intelligence?.needs.some(({ plan }) => plan.units > 0))
+    || coverageTakeAvailable);
   add('goods_cancel', Boolean(intelligence?.ownOrders.length));
   add('goods_cancel_all', (intelligence?.ownOrders.length ?? 0) >= 2);
   add('goods_maintain', (economyView?.orders?.length ?? 0) > 0);

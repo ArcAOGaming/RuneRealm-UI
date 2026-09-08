@@ -952,15 +952,10 @@ export async function startBotBattle(difficulty = 1): Promise<Player> {
       fleetPlayers.set(acceptedRoute.battleId, rendered);
       return rendered;
     } catch {
-      // The authority stored `StartId` with the reservation. Re-sending that
-      // exact id is the contract's idempotent recovery path: no second session
-      // credit is spent and the same Battle.Open is emitted again.
-      try {
-        authorityPlayer = await write<Player>(request, undefined, { requiredOutbox: true });
-      } catch (retryError) {
-        if (!(retryError instanceof OutboxDeliveryError)) throw retryError;
-        authorityPlayer = accepted;
-      }
+      // The game action landed. Do not replay it because its outbox confirmation
+      // timed out; surface the accepted-but-unconfirmed result so the caller can
+      // count and reconcile it separately from a real action failure.
+      throw error;
     }
   }
   const route = validateFleetRoute(authorityPlayer, config);

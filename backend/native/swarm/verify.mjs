@@ -286,21 +286,43 @@ function verify(runId) {
     const held = (state.roster ?? 0) + (state.collection ?? 0);
     const last = holdings.get(event.wallet);
     const at = Date.parse(event.at ?? '');
-    holdings.set(event.wallet, { held, action: event.action, at });
+    const durationMs = Number(event.durationMs ?? 0);
+    const startedAt = Number.isFinite(at) && Number.isFinite(durationMs) ? at - durationMs : at;
+    holdings.set(event.wallet, { held, action: event.action, at, startedAt });
     if (!last) continue;
     const delta = held - last.held;
     if (delta === 0) continue;
     // Growing by one is a retrieve-from-nothing, a purchase, a gift received,
     // or an adoption. Shrinking by one is a sale, a gift given, or a mint.
     // More than one at a time is not something any single verb does.
+    // The previous reply can finish after seeding began while still carrying
+    // the state captured when its command started. Compare that start time,
+    // not only the reply timestamp, or slow in-flight commands turn the
+    // deliberate delayed seed into a false unexplained-holdings jump.
     const crossedSeed = Number.isFinite(adminSeedAt)
-      && Number.isFinite(last.at) && Number.isFinite(at)
-      && last.at <= adminSeedAt && adminSeedAt <= at && delta > 0;
-    if (Math.abs(delta) > 1 && !crossedSeed) {
+      && Number.isFinite(last.startedAt) && Number.isFinite(at)
+      && last.startedAt <= adminSeedAt && adminSeedAt <= at && delta > 0;
+    // Another actor may transfer a companion into this wallet while its next
+    // command is in flight. If that command also buys/retrieves one, the next
+    // observed account can legitimately grow by two. Reconstruct those inbound
+    // transfers from the complete run log instead of treating completion-order
+    // concurrency as spontaneous creation.
+    const inboundTransfers = delta > 0 ? actions.filter((candidate) => {
+      const candidateAt = Date.parse(candidate.at ?? '');
+      return candidate.wallet !== event.wallet
+        && candidate.action === 'monster.transfer'
+        && candidate.recipient === event.address
+        && Number.isFinite(candidateAt) && candidateAt > last.at && candidateAt <= at;
+    }).length : 0;
+    const selfGain = new Set([
+      'market.buy', 'monster.retrieve', 'bootstrap.bought', 'hunt.capture',
+    ]).has(event.action) ? 1 : 0;
+    const allowedGrowth = Math.max(1, inboundTransfers + selfGain);
+    if ((delta > allowedGrowth || delta < -1) && !crossedSeed) {
       finding('major', 'holding-jumped',
         `${event.wallet} went from ${last.held} companions to ${held} across one action `
         + `(${last.action} then ${event.action})`,
-        { wallet: event.wallet, from: last.held, to: held });
+        { wallet: event.wallet, from: last.held, to: held, inboundTransfers, selfGain });
     }
     if (delta > 0 && event.action === 'monster.store') {
       finding('critical', 'store-created-a-companion',
@@ -346,22 +368,39 @@ function verify(runId) {
       { count: seen.count });
   }
 
-  // -- Compute -------------------------------------------------------------
-  const durations = actions
+  // -- Latency -------------------------------------------------------------
+  // Worker-command duration includes cached reads, deliberate idles, signing,
+  // and local strategy. It is useful harness telemetry but it is not contract
+  // latency. Contract latency is a successful, state-changing signed POST
+  // through the changed reply: postMs + readMs. Deliberately refused probes
+  // are excluded because they prove a rule, not a mutation.
+  const commandDurations = actions
     .map((event) => event.durationMs)
     .filter((value) => Number.isFinite(value));
-  const byAction = new Map();
+  const mutationSamples = [];
+  const byMutationAction = new Map();
   for (const event of actions) {
-    if (!Number.isFinite(event.durationMs)) continue;
-    const bucket = byAction.get(event.action) ?? [];
-    bucket.push(event.durationMs);
-    byAction.set(event.action, bucket);
+    // Bootstrap and cleanup sit outside the measured soak window. Keep their
+    // state checks above, but do not let their fast/no-load writes dilute the
+    // gameplay latency distribution.
+    if (event.probe || !String(event.phase ?? '').startsWith('cycle.')) continue;
+    for (const timing of event.transport ?? []) {
+      const postMs = Number(timing.postMs);
+      const readMs = Number(timing.readMs);
+      if (timing.ok !== true || !Number.isFinite(postMs) || !Number.isFinite(readMs)) continue;
+      const ms = postMs + readMs;
+      mutationSamples.push(ms);
+      const action = timing.action ?? event.action;
+      const bucket = byMutationAction.get(action) ?? [];
+      bucket.push(ms);
+      byMutationAction.set(action, bucket);
+    }
   }
   // Did it get slower? Compare the first and last thirds of the run, which is
   // the shape a compute queue that is falling behind actually makes.
-  const third = Math.floor(durations.length / 3);
-  const early = quantile(durations.slice(0, third), 0.5);
-  const late = quantile(durations.slice(-third), 0.5);
+  const third = Math.floor(mutationSamples.length / 3);
+  const early = third ? quantile(mutationSamples.slice(0, third), 0.5) : 0;
+  const late = third ? quantile(mutationSamples.slice(-third), 0.5) : 0;
   if (third > 20 && late > early * 2 && late - early > 1000) {
     finding('major', 'degrading-under-load',
       `median response went from ${early}ms early in the run to ${late}ms at the end`,
@@ -379,16 +418,26 @@ function verify(runId) {
     listings: { created: listed.size, settled: settled.size },
     coverage,
     latency: {
-      p50Ms: quantile(durations, 0.5),
-      p90Ms: quantile(durations, 0.9),
-      p99Ms: quantile(durations, 0.99),
-      maxMs: durations.length ? Math.max(...durations) : 0,
+      kind: 'successful non-probe signed mutation: POST through changed reply',
+      count: mutationSamples.length,
+      p50Ms: quantile(mutationSamples, 0.5),
+      p90Ms: quantile(mutationSamples, 0.9),
+      p99Ms: quantile(mutationSamples, 0.99),
+      maxMs: mutationSamples.length ? Math.max(...mutationSamples) : 0,
       earlyMedianMs: early,
       lateMedianMs: late,
-      slowest: [...byAction]
+      slowest: [...byMutationAction]
         .map(([action, values]) => ({ action, p99Ms: quantile(values, 0.99), count: values.length }))
         .sort((a, b) => b.p99Ms - a.p99Ms)
         .slice(0, 8),
+    },
+    commandLatency: {
+      kind: 'whole worker command (not contract latency)',
+      count: commandDurations.length,
+      p50Ms: quantile(commandDurations, 0.5),
+      p90Ms: quantile(commandDurations, 0.9),
+      p99Ms: quantile(commandDurations, 0.99),
+      maxMs: commandDurations.length ? Math.max(...commandDurations) : 0,
     },
     findings,
   };

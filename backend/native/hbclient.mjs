@@ -556,8 +556,21 @@ function splitSfDict(str) {
 /* ------------------------------------------------------------------ *
  * HTTP plumbing                                                        *
  * ------------------------------------------------------------------ */
+let httpRequests = 0;
+
+export function httpRequestCount() {
+  return httpRequests;
+}
+
+export function resetHttpRequestCount() {
+  const previous = httpRequests;
+  httpRequests = 0;
+  return previous;
+}
+
 async function send(node, path, method, headers, body) {
   const url = transportNode(node) + (path.startsWith('/') ? path : '/' + path);
+  httpRequests += 1;
   const res = await fetch(url, {
     method,
     headers: { ...headers, 'accept-bundle': 'true' },
@@ -759,7 +772,7 @@ async function scheduleProcess(node, jwk, proc) {
 const SCHEDULE_ROUTE = new Map();
 
 /** Schedule a signed message against an existing process. Returns its slot. */
-export async function sendMessage({ node, jwk, process: pid, action, tags = {}, data, path }) {
+export async function sendMessage({ node, jwk, process: pid, action, tags = {}, data, path, push = true }) {
   // Fields become HTTP headers, and header names are case-insensitive. So
   // `action` and `Action` are distinct object keys but the SAME header, and
   // sending both produces a duplicate that the node rejects with a bare
@@ -801,8 +814,10 @@ export async function sendMessage({ node, jwk, process: pid, action, tags = {}, 
     : candidates;
 
   const tried = [];
+  let lastResponse = null;
   for (const candidate of ordered) {
     const res = await postSigned(node, candidate, msg, jwk);
+    lastResponse = res;
     if (res.status === 200) {
       if (!path) SCHEDULE_ROUTE.set(node, candidate);
       const slot = res.headers['slot'];
@@ -825,7 +840,7 @@ export async function sendMessage({ node, jwk, process: pid, action, tags = {}, 
       // and replays one slot. See `pendingPushes` for the other half: a queued
       // push that never runs is a destroyed Rune, so a script must drain before
       // it exits.
-      if (slot !== undefined && slot !== null) {
+      if (push && slot !== undefined && slot !== null) {
         queuePush({ node, process: pid, slot });
       }
       return { slot, headers: res.headers };
@@ -833,7 +848,9 @@ export async function sendMessage({ node, jwk, process: pid, action, tags = {}, 
     tried.push(`${candidate} -> ${res.status} ${hbError(res)}`);
     if (res.status !== 404) break;
   }
-  throw new Error(`send failed on ${node}:\n  ${tried.join('\n  ')}`);
+  const error = new Error(`send failed on ${node}:\n  ${tried.join('\n  ')}`);
+  error.status = lastResponse?.status ?? null;
+  throw error;
 }
 
 /**

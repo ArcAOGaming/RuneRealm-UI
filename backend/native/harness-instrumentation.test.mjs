@@ -90,3 +90,17 @@ test('the ramp reports a censored percentile, not one over the survivors', () =>
   // that includes the post-level drain.
   assert.match(src, /throughputPerSec: Number\(\(ok\.length \/ \(issueWindowMs \/ 1000\)\)/);
 });
+
+test('the mutation reply must contain the exact outfit that was written', () => {
+  const src = fs.readFileSync(path.join(HERE, 'concurrency-ramp.mjs'), 'utf8');
+  assert.match(src, /returnedChangedRecord\(body, expectedOutfit\)/);
+  assert.match(src, /got\?\.style !== want\.style/);
+  assert.match(src, /got\?\.color !== String\(want\.color\)\.toLowerCase\(\)/);
+  assert.match(src, /reason: verdict\.ok \? undefined : \(verdict\.rejected \? 'rejected' : 'invalid-reply'\)/);
+});
+
+test('a late poll gets only the time remaining in the round-trip deadline', () => {
+  const src = fs.readFileSync(path.join(HERE, 'concurrency-ramp.mjs'), 'utf8');
+  assert.match(src, /const remainingMs = Math\.max\(1, Math\.floor\(deadlineMs - \(performance\.now\(\) - started\)\)\)/);
+  assert.match(src, /signal: AbortSignal\.timeout\(remainingMs\)/);
+});
