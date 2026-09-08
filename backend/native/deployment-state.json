@@ -1,37 +1,37 @@
 {
   "version": 2,
-  "deployedAt": "2026-09-07T09:56:15.501Z",
-  "node": "http://localhost:8737",
+  "deployedAt": "2026-09-07T20:08:47.328Z",
+  "node": "https://hyperbeam.tylerw.ai",
   "owner": "DA9qhP25ZPz6MHIhO-7aNHDN3LsTAL7yCKYIkqr13Z8",
   "processes": {
-    "game": "fIRBOzA0qH0RmHz2Ljx99K0_9qEL33T1MzJFvs6g3Lw",
-    "rune": "qm6v_m_igHJKvHFLN3YrCveIXwt9mCYmN9GSzfe8UVQ",
-    "quote": "7igIbzIxOyax3coasMVJV8tuqRIiGRrdoZjoKeQPOp8",
-    "internalVenue": "i4X-1aJrTsCdENH12AKMr-lAce3RgNzNoNoDGFkU5Iw",
-    "externalVenue": "0NEltc1z-wSzNEjpU90wPc23Ingn7F7d1Fi_COFEx6Y",
-    "hunt": "rThwpdM2HcbTLD402h6cTBC16072eKlh-wkPCWPYplE",
+    "game": "2xESlFS9AwACNgQQviiyp9krhhbr-d1gBLkVEkjMxow",
+    "rune": "hZYCgYlHtcSfbINuxkPc1bzXtrvf00INH4_82YYKv4Y",
+    "quote": "doIiaDEt_N20IZ12-YOvhYHarMCRSWaS1H3tILddGfo",
+    "internalVenue": "SBJt76EVICfsXTdSpLDlxmmLfc6dQZaeahhaG4bMTgk",
+    "externalVenue": "L66ueikf_HTmbRiXcoHNApVkIFkmHPGWOlrZvCiE_Vo",
+    "hunt": "WNRkor_93P2Wh1sfOicMN7hZhwW3dapYt-7yLFs5_Sk",
     "huntWorkers": [
-      "rThwpdM2HcbTLD402h6cTBC16072eKlh-wkPCWPYplE",
-      "T3gJsR4XhgKD8G2Wwn6_VmoEsvv93ctoyIMOa9ha5xw",
-      "ko7VuXuORuaORKujz153D7erguwNfwaXbzbAChYH4Vc"
+      "WNRkor_93P2Wh1sfOicMN7hZhwW3dapYt-7yLFs5_Sk",
+      "fnE12krIwjWbPHHQKthaKy6cMmbRKCwS9rZmsDhTf2s",
+      "7k0shwPylY5S86mGwAOcmlxwc3pTpNDDz7LXqBEL910"
     ],
     "battleWorkers": [
-      "jg8KTFH1uRQ9PvyuOw1PSrrM_dHf9IdrY0RA2Y3qiU4",
-      "7yCdB4dH4-wQOnX29O016LBK80twweC4xQ-Fn6k_His",
-      "IgHBvytdeeXzGo02Ejm1_wcsAI9TQn6ksEt1uof104k"
+      "JEQiNb0yalyPBTFsyyKcgmVcwlzDCQH-LcW8zg83fHU",
+      "ay8fImI69R29328yuOX3ZBz430KA5HviARajddaVgOo",
+      "HL1StM5UnwAyVcp8qP0ic4NukP64Mk4GUQpCpM_DDbs"
     ]
   },
   "nodes": {
-    "game": "http://localhost:8737",
-    "hunt": "http://localhost:8737",
-    "market": "http://localhost:8737",
-    "venue": "http://localhost:8737",
-    "battle": "http://localhost:8737"
+    "game": "https://hyperbeam.tylerw.ai",
+    "hunt": "https://hyperbeam.tylerw.ai",
+    "market": "https://hyperbeam.tylerw.ai",
+    "venue": "https://hyperbeam.tylerw.ai",
+    "battle": "https://hyperbeam.tylerw.ai"
   },
   "wiring": {
-    "runeMinter": "fIRBOzA0qH0RmHz2Ljx99K0_9qEL33T1MzJFvs6g3Lw",
-    "gameRuneToken": "qm6v_m_igHJKvHFLN3YrCveIXwt9mCYmN9GSzfe8UVQ",
-    "gameVenue": "i4X-1aJrTsCdENH12AKMr-lAce3RgNzNoNoDGFkU5Iw"
+    "runeMinter": "2xESlFS9AwACNgQQviiyp9krhhbr-d1gBLkVEkjMxow",
+    "gameRuneToken": "hZYCgYlHtcSfbINuxkPc1bzXtrvf00INH4_82YYKv4Y",
+    "gameVenue": "SBJt76EVICfsXTdSpLDlxmmLfc6dQZaeahhaG4bMTgk"
   },
   "build": "passed",
   "publicAccess": true,
@@ -41,6 +41,6 @@
     "enabled": true,
     "walletCount": 50,
     "access": "public",
-    "funding": "deferred"
+    "funding": "deployed"
   }
 }
