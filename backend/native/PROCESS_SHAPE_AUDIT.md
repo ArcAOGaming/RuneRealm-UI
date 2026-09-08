@@ -132,6 +132,67 @@ per stuck final), or riding ack and release on the next message to that worker �
 which the section above already lists as "still worth doing later, and cheap",
 and which would close this by removing hops 4-6 rather than delivering them.
 
+### 2026-09-08, later: the cause is one measured property of `push&slot=N`
+
+The entry above called the cause "transport, not protocol" and left it there.
+Driving it again put a number on it, and the number changes what the fix is.
+
+**A `push&slot=N` whose slot has a NON-EMPTY outbox does not return.** Measured
+on production (`hyperbeam.tylerw.ai`, BOX B 176.9.219.106), `curl`, no client
+involved:
+
+| slot | outbox | response |
+|---|---|---|
+| game 1907 | `acknowledgement` | none at **300 s** |
+| game 1908 | `release` | none at **180 s** |
+| worker-03 24 | `confirmation` | none at **120 s** |
+| worker-03 24 (`&max-depth=1`) | `confirmation` | none at **200 s**, delivered |
+| game 1906 | empty | **200 in 0.395 s** |
+| worker-03 25 | empty | **200 in 0.392 s** |
+
+The DELIVERY lands regardless — worker-03's head moved 23 -> 24 during the
+first, and the authority's tombstone reached `deliveryConfirmed` during the
+third. It is `dev_push`'s recursive `push_downstream_remote`
+(`dev_push.erl:386`), which re-enters this node over HTTP for the next hop, that
+never comes back. `&max-depth=0` returns in 0.44 s but schedules nothing, so it
+is not an escape.
+
+Two consequences, both live defects rather than housekeeping:
+
+1. **Every fleet battle ended by throwing at the player.** `deliverSlot` takes
+   its verdict from the push's HTTP status when no `confirm` read is supplied,
+   so the terminal `Battle.Attack` raised `OutboxDeliveryError`
+   (`pushStatus: null`) on a settlement that had already been applied.
+   Reproduced with `verify:battle-fleet --wallet burner-05`; battle `fb12`
+   settled at the authority in the same minute the client reported failure.
+2. **The same shape on the hunt, and there it strands a paid run.** Run `h3`:
+   the authority applied `h3-capture-1` (1 Rune and 1 Scroll spent, roll 83
+   against 50) and its `Hunt.Settled` ack sat undelivered in game slot 1956
+   while the worker held the run in `settling` — HUNT.md's failure, live. One
+   unsigned push of that slot cleared it in under 30 s.
+
+**So the verdict has to come from published state, never from the push.** That
+is now the rule on every leg: `src/lib/game.ts` and `src/lib/hunt.ts` pass a
+`confirm` read to `deliverSlot`, and `battle-fleet/handshake.mjs` fires each
+push without awaiting it and reads `battlefleetops` / `fleetstatus` /
+`hunt-run-<id>` for the answer. `reconcile-battle-fleet.mjs` used to
+`await fetch(push)` with no timeout, which hung the sweep on its FIRST job — so
+the tool written to repair this stall could not.
+
+**What is NOT fixed:** nothing in the deployment closes fleet hops 4-6 on its
+own. `verify:battle-fleet` drives them explicitly (200 s and 199 s over two
+runs) and `npm run reconcile:battle-fleet -- --apply` is the sweep; the three
+options above still stand and the owner still has to pick one. The hunt's
+equivalent hop IS closed automatically now, by `Hunt.RetryAck` at +1 authority
+slot per capture, because a stuck hunt costs a player their Rune.
+
+**And a planner bug this exposed:** `planFinalFleetRecovery` aged an
+UNCONFIRMED final out of the plan once the replay window passed. The authority
+never prunes an unconfirmed tombstone and the worker never releases its pending
+slot, so that turned a stall into a permanent one — `fc11` sat unconfirmed for
+5.9 hours with no job offering to repair it. The window now bounds confirmed
+finals only.
+
 ### PvP is still on the authority, and moving it is a protocol change
 
 `Battle.Attack` in `game.lua:5509` now serves exactly two callers: PvP, and the

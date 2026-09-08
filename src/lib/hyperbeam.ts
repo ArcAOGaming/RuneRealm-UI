@@ -53,7 +53,7 @@ export type Tag = { name: string; value: string };
 const env = (import.meta as any).env ?? {};
 
 /** Node to talk to. Override with VITE_HB_NODE. */
-export const HB_NODE: string = env.VITE_HB_NODE || 'http://localhost:8737';
+export const HB_NODE: string = env.VITE_HB_NODE || 'https://hyperbeam.tylerw.ai';
 
 /**
  * Fallback nodes.
@@ -73,11 +73,11 @@ export const HB_NODES: string[] = [
 
 /** The game process. Set VITE_GAME_PROCESS after a deploy. */
 export const GAME_PROCESS: string =
-  env.VITE_GAME_PROCESS || 'fIRBOzA0qH0RmHz2Ljx99K0_9qEL33T1MzJFvs6g3Lw';
+  env.VITE_GAME_PROCESS || 'DnM_Uy7MbKQXk-EJONp4g-jAsLiHnXTa-KOuv1tffPU';
 
 /** Separate roaming/battle authority. Empty until `deploy-hunt.mjs` wires it. */
-export const HUNT_PROCESS: string = env.VITE_HUNT_PROCESS || 'rThwpdM2HcbTLD402h6cTBC16072eKlh-wkPCWPYplE';
-export const HUNT_NODE: string = env.VITE_HUNT_NODE || 'http://localhost:8737';
+export const HUNT_PROCESS: string = env.VITE_HUNT_PROCESS || 'G3iJTMNr_AtK78UNAWMAFs96p6JRjzBs4vE1mfUrlms';
+export const HUNT_NODE: string = env.VITE_HUNT_NODE || 'https://hyperbeam.tylerw.ai';
 
 /**
  * Public address that owns `GAME_PROCESS`.

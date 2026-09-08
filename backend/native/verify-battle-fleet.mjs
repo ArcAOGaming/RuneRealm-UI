@@ -56,6 +56,7 @@ import { assertLiveGraph, resolveLiveGraph } from './live-config.mjs';
 import {
   decodePublished, deliveryHealth, finalConfirmed, recoveryHint,
 } from './battle-fleet/delivery-health.mjs';
+import { driveHandshake } from './battle-fleet/handshake.mjs';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.resolve(HERE, '..', '..');
@@ -225,6 +226,38 @@ async function pollConfirmed(timeoutMs = 180_000) {
   }
   return { ops, confirmed: false };
 }
+
+/*
+  Drive hops 4-6 before gating on them, and say plainly that this is the
+  script doing it rather than the deployment.
+
+  A `push&slot=N` whose slot holds an outbox does not answer on this node —
+  measured 2026-09-08 on production: 300 s, 200 s, 180 s and 120 s with no
+  response on four such slots against 0.39 s on a slot with an empty outbox —
+  because `dev_push` recurses into `push_downstream_remote` for the next hop and
+  that inner request never returns. So the cascade dies with whichever client
+  started it, one hop in, and NOTHING in the running deployment pushes the
+  authority's ACK, the worker's receipt or the authority's release.
+
+  `driveHandshake` is what closes them: it fires each producing slot's push
+  without waiting on it and takes its verdict from `battlefleetops` and
+  `fleetstatus`. `retryAck: null` keeps this leg free and unsigned — it pushes
+  only what is already sitting in an outbox and never emits a game action.
+
+  Until the deployment does this on its own (`PROCESS_SHAPE_AUDIT.md` lists the
+  three options), `npm run reconcile:battle-fleet -- --apply` is the sweep that
+  has to run, and this script is proving the protocol closes when it is driven.
+*/
+step('drive hops 4-6');
+const driven = await driveHandshake({
+  node,
+  game: pid,
+  workerProcessIds: (fleet.workers ?? []).map((w) => w.workerProcessId),
+  retryAck: null,
+  log: () => {},
+});
+done(driven.done ? `closed in ${(driven.ms / 1000).toFixed(1)}s`
+  : `${driven.finals.length} still unconfirmed after ${(driven.ms / 1000).toFixed(1)}s`);
 
 step('final acknowledged');
 const { ops, confirmed } = await pollConfirmed();

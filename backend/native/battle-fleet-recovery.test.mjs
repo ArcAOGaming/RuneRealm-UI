@@ -63,3 +63,16 @@ test('confirmed finals still recover a possibly lost Release within replay windo
   }, 201, 100), null);
   assert.equal(planFinalFleetRecovery({ ...row, kind: 'force' }, 150, 100), null);
 });
+
+test('an UNCONFIRMED final stays recoverable past the replay window', () => {
+  // Production 2026-09-08: `fc11` was finalized at 1788823367054 and read
+  // `deliveryConfirmed:false` 5.9 hours later, while `battle-worker-02`
+  // published `pendingFinals: 1`. The authority never prunes an unconfirmed
+  // tombstone and the worker never releases the slot, so a planner that ages
+  // this out leaves the stall in place with nothing offering to repair it.
+  const stale = planFinalFleetRecovery({
+    ...row, kind: 'cancellation', deliveryConfirmed: false, finalizedAt: 100,
+  }, 100_000, 100);
+  assert.equal(stale.action, 'Admin.RetryFleetAck');
+  assert.equal(stale.reason, 'final-ack-unconfirmed');
+});

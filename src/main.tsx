@@ -7,6 +7,7 @@ import { ToastProvider } from './ui/Toast';
 import { ErrorBoundary } from './ui/ErrorBoundary';
 import { AetherProvider } from './ui/Aether';
 import { Shell } from './ui/Shell';
+import { Gate } from './ui/Gate';
 import Landing from './screens/Landing';
 import Lore from './screens/Lore';
 import Factions from './screens/Factions';
@@ -38,6 +39,24 @@ registerPwa();
  * `/character` is the standalone character creator. The same editor opens as a
  * dialog from the Companion and Collection pages, which is how most people
  * reach it; the route exists so a deep link still lands somewhere.
+ *
+ * Three tiers, and `Gate` is where they are declared — see `ui/Gate.tsx`.
+ *
+ *   - PUBLIC: `/` and `/lore` are the front of the game and are for everyone.
+ *     `/recover` is public BECAUSE it is for people the process has no record
+ *     of yet — gating the door that lets a lost account back in behind having
+ *     an account is the one arrangement that cannot work. `/admin` is likewise
+ *     open, because the wallet that owns the process need not be a player; it
+ *     is hidden by being unlinked, and every action behind it is refused from
+ *     a non-owner by the process itself.
+ *   - SWORN: everything else, the faction hall included. Each of these screens
+ *     is about a companion, and a player without a faction does not have one.
+ *
+ * There is deliberately no tier in between. Choosing a faction is the one
+ * thing a member without an oath can do, and it happens on `/` — see
+ * `FactionChoice` in `screens/Factions.tsx`. Giving it a route of its own
+ * meant the game's chrome came with it: a rune count, an offering and a
+ * walkthrough, all belonging to a game the player had not joined yet.
  */
 function App() {
   return (
@@ -55,18 +74,18 @@ function App() {
                   <Routes>
                     <Route path="/" element={<Landing />} />
                     <Route path="/lore" element={<Lore />} />
-                    <Route path="/factions" element={<Factions />} />
-                    <Route path="/companion" element={<Companion />} />
-                    <Route path="/collection" element={<Collection />} />
-                    <Route path="/monster-index" element={<MonsterIndex />} />
+                    <Route path="/factions" element={<Gate><Factions /></Gate>} />
+                    <Route path="/companion" element={<Gate><Companion /></Gate>} />
+                    <Route path="/collection" element={<Gate><Collection /></Gate>} />
+                    <Route path="/monster-index" element={<Gate><MonsterIndex /></Gate>} />
                     <Route path="/bestiary" element={<Navigate to="/monster-index" replace />} />
-                    <Route path="/character" element={<Customiser />} />
+                    <Route path="/character" element={<Gate><Customiser /></Gate>} />
                     <Route path="/customize" element={<Navigate to="/character" replace />} />
                     <Route path="/party" element={<Navigate to="/collection" replace />} />
-                    <Route path="/arena" element={<Arena />} />
-                    <Route path="/hunt" element={<Hunt />} />
+                    <Route path="/arena" element={<Gate><Arena /></Gate>} />
+                    <Route path="/hunt" element={<Gate><Hunt /></Gate>} />
                     <Route path="/ranks" element={<Navigate to="/factions#ranks" replace />} />
-                    <Route path="/market" element={<Marketplace />} />
+                    <Route path="/market" element={<Gate><Marketplace /></Gate>} />
                     <Route path="/recover" element={<Recover />} />
                     <Route path="/admin" element={<Admin />} />
                     <Route path="*" element={<Navigate to="/" replace />} />

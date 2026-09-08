@@ -426,8 +426,23 @@ try {
     'the failed compute pull that puts this read into recovery must actually be served');
   assert.equal(headPolls, 1, 'cancellation interrupts recovery before another cached poll');
 
+  const playerAddress = 'Q'.repeat(43);
   const signedItems = [];
+  // A COMPLETE wallet, not just a signer. `restoreWallet` asks for permissions
+  // and an active address before it will sign anything, and it calls them
+  // straight -- `wallet.getPermissions().catch(...)` catches a rejected
+  // promise, not a TypeError from a method that is not there. A stub carrying
+  // only `signDataItem` therefore threw `wallet.getPermissions is not a
+  // function` at the first verb that needed an address (the fleet round at the
+  // end of this file), which failed `npm run test:swarm` on HEAD and forced
+  // `--skip-checks` on every deploy.
   globalThis.arweaveWallet = {
+    async connect() {},
+    async disconnect() {},
+    async getPermissions() {
+      return ['ACCESS_ADDRESS', 'ACCESS_PUBLIC_KEY', 'SIGN_TRANSACTION'];
+    },
+    async getActiveAddress() { return playerAddress; },
     async signDataItem(item) {
       signedItems.push(item);
       return Uint8Array.of(1, 2, 3).buffer;
@@ -775,7 +790,7 @@ try {
   // reads the assigned worker cache, and reconstructs player.battle. The next
   // round must be signed to that worker and never pass through the game.
   const workerProcessId = 'W'.repeat(43);
-  const playerAddress = 'Q'.repeat(43);
+  // Declared above, beside the wallet stub that answers with it.
   const route = {
     protocol: 'runerealm-battle-fleet/1', status: 'battling',
     battleId: 'reload-battle', reservationId: 'reload-reservation',

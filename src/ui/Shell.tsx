@@ -23,7 +23,7 @@ type Tab = { to: string; label: string; Icon: (p: any) => JSX.Element; menu?: 'm
 
 export function Shell({ children }: { children: React.ReactNode }) {
   const {
-    address, player, connect, connecting, walletProviderName,
+    address, player, member, sworn, connect, connecting, walletProviderName,
   } = useGame();
   const { pathname, search } = useLocation();
   const onHome = pathname === '/';
@@ -31,13 +31,42 @@ export function Shell({ children }: { children: React.ReactNode }) {
   const onMarket = pathname === '/market';
   const onCollection = pathname === '/collection';
 
+  /*
+    The nav is the gate, drawn.
+
+    Until the oath there are no tabs at all — not disabled ones, and not a
+    Factions tab, because the faction hall is not a route. It is what the front
+    page renders to a member who has not chosen yet, so the only place any of
+    this leads before the oath is the page they are already on.
+
+    Keyed on `sworn` rather than on `player.faction` so that a returning
+    player's chrome is right on the first paint: it answers from the membership
+    mark while the account read is still in flight, and a nav that filled in
+    three seconds late used to be the most visible part of that wait. Arena and
+    Hunt stay keyed on the record, because "is there a fight on" is not
+    something local storage can be trusted to remember.
+  */
   const tabs: Tab[] = [];
-  tabs.push({ to: '/factions', label: 'Factions', Icon: Users });
-  if (player?.faction) tabs.push({ to: '/companion', label: 'Companion', Icon: Berry });
-  if (player) tabs.push({ to: '/monster-index', label: 'Monster Index', Icon: Paw });
-  if (player?.monster) tabs.push({ to: '/arena', label: 'Arena', Icon: Sword });
-  if (player?.hunt) tabs.push({ to: '/hunt', label: 'Hunt', Icon: Map });
-  tabs.push({ to: '/market', label: 'Market', Icon: Exchange, menu: 'market' });
+  if (sworn) {
+    tabs.push({ to: '/factions', label: 'Factions', Icon: Users });
+    tabs.push({ to: '/companion', label: 'Companion', Icon: Berry });
+    tabs.push({ to: '/monster-index', label: 'Monster Index', Icon: Paw });
+    if (player?.monster) tabs.push({ to: '/arena', label: 'Arena', Icon: Sword });
+    if (player?.hunt) tabs.push({ to: '/hunt', label: 'Hunt', Icon: Map });
+    tabs.push({ to: '/market', label: 'Market', Icon: Exchange, menu: 'market' });
+  }
+
+  /*
+    Whether the phone navigation is on screen at all.
+
+    Below `lg` — and in short landscape, where it becomes a rail down the left
+    edge — the layout RESERVES that strip. With one tab there is no strip to
+    reserve (the bar needs somewhere to go before it is worth showing), and
+    reserving it anyway leaves a blank column beside the faction hall. That
+    case only started existing when the hall became the whole of what an
+    unsworn member can reach.
+  */
+  const hasTabbar = !onPublicStory && tabs.length > 1;
 
   const element = player?.monster?.elementType;
 
@@ -99,6 +128,7 @@ export function Shell({ children }: { children: React.ReactNode }) {
       className={cx(
         'app-shell flex min-h-full flex-col',
         !onPublicStory && 'app-shell--game',
+        !hasTabbar && 'app-shell--norail',
         onCollection && 'h-dvh min-h-0 overflow-hidden',
         fitted && 'lg:h-dvh lg:min-h-0 lg:overflow-hidden',
         headerHidden && 'app-shell--bare',
@@ -117,7 +147,7 @@ export function Shell({ children }: { children: React.ReactNode }) {
             <Wordmark size={26} className="select-none" />
           </NavLink>
 
-          {!onPublicStory && (
+          {!onPublicStory && tabs.length > 0 && (
             <nav aria-label="Primary" className="ml-4 hidden items-center gap-1 lg:flex">
               {tabs.map(({ to, label, Icon, menu }) => (
                 menu === 'market'
@@ -141,14 +171,19 @@ export function Shell({ children }: { children: React.ReactNode }) {
           )}
 
           <div className="ml-auto flex items-center gap-2">
-            {!onPublicStory && player && <SessionChips />}
+            {/* Runes, the guide and the offering are the game's furniture, and
+                they only belong to somebody who is in it. To a wallet the
+                process does not know they are three controls that either read
+                zero or do nothing, and the connect button they DO need is
+                harder to find with all of them in the way. */}
+            {!onPublicStory && member && player && <SessionChips />}
             {/* One row, and it stays one row. The guide is a 32px icon in the
                 cluster that is already here — not a bar of its own, and not a
                 control that appears only on pages that have a walkthrough,
                 which would slide the rune count and the address sideways every
                 time you changed page. See `TourChip`. */}
-            {!onPublicStory && <TourChip />}
-            {!onPublicStory && <Worship />}
+            {!onPublicStory && member && <TourChip />}
+            {!onPublicStory && member && <Worship />}
             {/* No link to /admin. It is reachable by typing the path, which is
                 the point: the controls behind it change every player in the
                 game, and a cog in the header is something you can happen upon.
@@ -224,7 +259,7 @@ export function Shell({ children }: { children: React.ReactNode }) {
       </main>
 
       {/* Bottom bar, phones only. Same tabs, thumb-reachable. */}
-      {!onPublicStory && tabs.length > 1 && (
+      {hasTabbar && (
         <nav aria-label="Primary" className="app-tabbar fixed inset-x-0 bottom-0 z-30 border-t border-edge/70 bg-void/90 backdrop-blur-xl lg:hidden">
           <div className="app-tabbar-inner mx-auto flex max-w-md items-stretch">
             {tabs.map(({ to, label, Icon }) => {

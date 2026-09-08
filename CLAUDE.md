@@ -144,6 +144,32 @@ a tuning change**, and remember that a mode name is a PATH segment: separators d
 not survive, and an absent key is answered with the node's HTML landing page
 rather than an error.
 
+## Latency means ROUND TRIP, and nothing else
+
+The only number that describes this game is: **sign a message, and have the
+contract's changed state back in your hands.** Send, land, compute, read the
+result. That is what a player waits through and it is the single figure any
+harness, report, log line or status update leads with.
+
+One-way numbers are not latency and must never be reported as though they were.
+The POST that hands a message to the scheduler is ~140 ms and stays ~140 ms
+while the round trip goes to ninety seconds, so quoting it says the system is
+healthy at exactly the moment it is not. The same goes for build time, signing
+time and any "send subtotal": they are components, they belong in a JSON
+report for diagnosis, and they do not go in the table, the summary or the
+sentence that answers "how fast is it".
+
+This applies to every surface: `concurrency-ramp.mjs`, `lane1-ramp.mjs`, the
+swarm's interval reports, and anything written later. If a tool prints a phase
+split, round trip is the headline and the phases are demoted below it or behind
+a flag.
+
+A corollary about what you measure with. A read-only action still costs a whole
+slot and a whole round trip, so it measures the message path honestly -- but it
+proves nothing landed. When the question is "how fast does the contract
+change", the probe has to be a MUTATION whose reply is the changed record.
+`Sprite.Update` is the cheap repeatable one; `Stats` is not.
+
 ## Process shape is decided by three measured numbers
 
 Measured on a local node from HyperBEAM's own `computed_slot` log; reproduce

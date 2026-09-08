@@ -1240,8 +1240,63 @@ pre,
 /* The header's surface extends behind a notch; its contents begin below it. */
 .app-header { padding-top: env(safe-area-inset-top); }
 
+/*
+  The hall runs up behind the header rather than starting below it on a seam,
+  so it is pulled up by exactly the distance its host puts above it.
+
+  On a game route that is the header, its rule, and `main`'s 1.5rem of top
+  padding — 89px. On the FRONT page, which hosts the same hall as the
+  onboarding flow, `main` has no padding at all, so it is the header and its
+  rule and nothing else. Two hosts, two offsets, and getting one wrong is a
+  one-pixel scrollbar on a page that is meant to be exactly one screen.
+*/
 .faction-hall-offset {
   margin-top: calc(-89px - env(safe-area-inset-top));
+}
+
+.faction-hall-offset--bare {
+  margin-top: calc(-1 * (var(--app-header-height) + 1px) - env(safe-area-inset-top));
+}
+
+/*
+  The faction hall as the WHOLE page — set by `Factions` while there is nothing
+  else on it (see `singleScreen` there).
+
+  The hall was always one viewport tall. What made the page scroll was
+  everything around it: `main` reserves 7rem under itself for the phone tab bar,
+  and the shell is `min-h-full` rather than a box, so the document came out
+  100dvh plus that padding and the browser offered a scrollbar for a strip of
+  empty ground. Here the shell becomes exactly the viewport, the padding goes,
+  and the hall's `min-h-[520px]` floor is lifted — on a window shorter than that
+  the floor is what overflowed, and a hall you have to scroll to see the foot of
+  is worse than a slightly squat one.
+
+  The scroller is stopped on `html` and NOT on `body`: `overflow: hidden` there
+  would make the body a scroll container and unstick the header, which is the
+  same trap `overflow-x: clip` in the base layer exists to avoid. Killing the
+  overscroll as well, because on iOS a document that fits still rubber-bands,
+  and the page sliding under a scene meant to be fixed reads as a bug.
+*/
+html[data-hall-only] {
+  overflow: hidden;
+  overscroll-behavior: none;
+}
+
+html[data-hall-only] .app-shell {
+  height: 100dvh;
+  min-height: 0;
+  overflow: hidden;
+}
+
+/* The 89px the offset above cancels is the header plus this padding-top, so it
+   stays; only the space underneath goes. */
+html[data-hall-only] .game-main {
+  padding-bottom: 0;
+}
+
+html[data-hall-only] .faction-hall-offset {
+  height: 100dvh;
+  min-height: 0;
 }
 
 /* Portals do not inherit Shell spacing, so each shared portal owns safe areas. */
@@ -2512,6 +2567,10 @@ pre,
   transition: background-color .14s ease;
 }
 .market-depth-row:hover { background: rgb(var(--raised) / .8); }
+/* The bid column reads outward from the spread, so its price sits against the
+   gap and its depth bar grows away from it. The two columns are then one
+   butterfly around the middle instead of two lists pointing the same way. */
+.market-depth-row.is-bid { flex-direction: row-reverse; }
 
 .market-depth-mountain {
   border: 1px solid rgb(var(--arcane) / .15);
@@ -2535,7 +2594,61 @@ pre,
 .market-depth-caption { top: .45rem; color: rgb(var(--faint)); text-transform: uppercase; }
 .market-depth-axis { bottom: .35rem; color: rgb(var(--faint)); }
 .market-depth-axis span:nth-child(2) { color: rgb(var(--arcane)); text-transform: uppercase; }
+/* The tape. Three columns on one baseline -- price, size, when -- so a run of
+   trades reads as three vertical rules rather than twenty-four separate rows,
+   and the taker's colour is the only thing that varies down the price column. */
+.market-tape { scrollbar-width: thin; scrollbar-color: rgb(var(--arcane) / .35) transparent; }
+.market-tape-legend {
+  color: rgb(var(--faint) / .7);
+  font-family: 'JetBrains Mono', ui-monospace, monospace;
+  font-size: 7px;
+  letter-spacing: 0;
+  text-transform: none;
+}
+.market-tape-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, auto) minmax(0, auto);
+  gap: .75rem;
+  border-radius: 2px;
+  padding: .12rem .5rem;
+  font-family: 'JetBrains Mono', ui-monospace, monospace;
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+}
+.market-tape-row:nth-child(odd) { background: rgb(var(--void) / .3); }
+.market-tape-row > :nth-child(2),
+.market-tape-row > :nth-child(3) { text-align: right; }
+
+/* Balance now, then what the trade leaves it at. The arrow is the separator,
+   so it is spaced and dimmed rather than sitting in the number's colour. */
+.market-ticket-arrow { margin-inline: .3rem; color: rgb(var(--faint) / .7); }
+
 .market-depth-ladders { scrollbar-width: thin; scrollbar-color: rgb(var(--arcane) / .35) transparent; }
+
+
+/* Top of book: bid, the gap, ask. The middle cell is narrower than the two it
+   separates -- it is the relationship between them, not a third price. */
+.market-spread-cell {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  justify-content: center;
+  gap: .1rem;
+  background: rgb(var(--void) / .45);
+  padding: .5rem .7rem;
+  text-align: center;
+}
+.market-spread-value {
+  color: rgb(var(--arcane));
+  font-family: 'JetBrains Mono', ui-monospace, monospace;
+  font-size: 13px;
+  line-height: 1;
+}
+.market-spread-bps {
+  color: rgb(var(--faint));
+  font-family: 'JetBrains Mono', ui-monospace, monospace;
+  font-size: 8px;
+}
 
 /* Floor tiles ------------------------------------------------------------ */
 
@@ -2586,7 +2699,8 @@ pre,
   text-transform: uppercase;
   transition: border-color .14s ease, background-color .14s ease, color .14s ease;
 }
-.market-chart-control:hover { color: rgb(var(--ink)); border-color: rgb(var(--arcane) / .42); }
+.market-chart-control:hover:not(:disabled) { color: rgb(var(--ink)); border-color: rgb(var(--arcane) / .42); }
+.market-chart-control:disabled { opacity: .3; pointer-events: none; }
 .market-chart-control.is-active { color: rgb(var(--arcane)); border-color: rgb(var(--arcane) / .62); background: rgb(var(--arcane) / .1); }
 .market-chart-divider { width: 1px; min-height: 1.4rem; margin-inline: .15rem; background: rgb(var(--edge)); }
 
@@ -2650,6 +2764,34 @@ pre,
   font-size: 11px;
 }
 .market-amend-input:focus { outline: none; border-color: rgb(var(--arcane) / .6); }
+/* Said over the plot rather than instead of it: the grid, the bid rule and the
+   ask rule are all still true and still worth reading when nothing filled. */
+.market-chart-empty {
+  position: absolute;
+  inset: 0;
+  z-index: 3;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: .5rem;
+  padding: 1.5rem;
+  background: rgb(var(--void) / .55);
+  text-align: center;
+}
+.market-chart-empty p {
+  max-width: 26rem;
+  color: rgb(var(--faint));
+  font-size: 11px;
+  line-height: 1.5;
+}
+
+.market-candle-readout i {
+  color: rgb(var(--faint) / .8);
+  font-style: normal;
+  letter-spacing: .12em;
+  text-transform: uppercase;
+}
 .market-candle-readout {
   position: absolute;
   top: .45rem;
@@ -2831,6 +2973,20 @@ pre,
   .app-shell--game .full-bleed {
     width: calc(100vw - var(--mobile-rail-width));
     max-width: calc(100vw - var(--mobile-rail-width));
+  }
+
+  /* No rail to make room for. One tab is not a navigation bar, so it is not
+     rendered — and the strip these two rules reserve for it would otherwise be
+     a blank column down the side of a screen with nothing in it. */
+  .app-shell--game.app-shell--norail .game-main {
+    width: 100%;
+    margin-left: 0;
+    padding-left: max(1rem, env(safe-area-inset-left));
+  }
+
+  .app-shell--game.app-shell--norail .full-bleed {
+    width: 100vw;
+    max-width: 100vw;
   }
 
   .app-shell--game .faction-hall-offset {

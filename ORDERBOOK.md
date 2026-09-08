@@ -1058,3 +1058,67 @@ the split, deliberately.
 Steps 2-5 are all the same rule — publish state, never constants; publish a
 record once; bound at the point of append — and none of them is a new idea.
 They are the ones nobody has taken yet.
+
+## 14. Built: the public tape (2026-09-07)
+
+Step 2 above named "a bounded per-market trade tape — 30 rows, compact" as a
+prerequisite. It is built, as `venuetape`, and it differs from that sketch in
+one way that is worth writing down: **the bound is venue-wide, not per market.**
+
+The cost of a published key is the key, not the market. A per-market bound
+multiplies by however many markets a venue lists — the internal venue lists six
+— and it does so silently, because nobody revisits a constant when they add a
+market. One ring for the venue is a number that stays the number.
+
+### What it is
+
+`OrderBook.tapeView` walks the tail of `state.fills` and returns the last
+`C.ECONOMY.orderbook.tapeLimit` trades, grouped by market id, each one a
+positional tuple:
+
+    { "fire_berry/gold": [ [ at, price, quantity, takerBought ], ... ] }
+
+- `at` is **seconds**. `filledAt` is milliseconds and the last three digits are
+  three bytes a row that no bar boundary can see.
+- `takerBought` is 1 when the buy side took and 0 when the sell side did. It is
+  the one fact a printed price does not carry, and it is what colours a tape row
+  everywhere else.
+- Positional, because the names would be 15 of the 40 bytes. The tuple order is
+  the contract with `src/lib/venue.ts` and it is asserted on the **raw**
+  published text in `venue_test.lua` — decoding through `json` floats every one
+  of those integers, so `math.type` on a decoded value proves nothing.
+- No address, no order id, no fee, no fill id. A tape is public; a fill's
+  parties are not.
+
+### What it cost, measured
+
+Measured on a live `~lua@5.3a` through `jsonenc.lua`, which is the encoder the
+venue actually publishes with. The Luerl half only — `hb_cache:ensure_all_loaded`
+and `hb_cache:write` scale with bytes too — so these are floors:
+
+| | KB | bytes/row | ms per encode pass |
+|---|---|---|---|
+| `state.fills`, 500 rows (published today, inside `venuebookstate`) | **138** | 282 | 367 |
+| `venuetape`, 128 rows | **4.8** | 38 | 2.4 |
+| `venuetape`, 64 rows | 2.4 | 38 | ~0 |
+
+For scale, a venue's whole published map is **9.4 KB** today (measured on the
+internal venue: six markets, empty book).
+
+So the tape at 96 rows is ~3.6 KB and about 4 ms of the marshalling every slot
+pays five times over. **It publishes no trade the venue was not already paying
+for** — `state.fills` rides in the state export regardless — it publishes the
+readable, address-free quarter of one.
+
+### The finding this turned up
+
+`historyLimit = 500` is the largest single line in a busy venue's published
+state: 500 rows × 282 bytes = **138 KB**, marshalled on every message, which is
+~700 ms of Luerl work a slot before anything else happens. That is 38× the
+tape's cost and it buys nothing a reader can see.
+
+It is not a free knob. `state.fills` reseeds the per-account fill rings after a
+redeploy (`orderbook.lua`, `ACCOUNT_FILL_RING`), so cutting it shortens how far
+back a player's own history survives a deploy, and it anchors the price band's
+median on a venue with no desk. Cutting it to ~150 would save ~100 KB and is
+worth its own decision — it is not part of this change.

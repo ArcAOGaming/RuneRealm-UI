@@ -59,3 +59,6 @@ backend/native/battle-fleet/hblab/soak-*.json
 
 # End-to-end hunt verification scratch
 .verify/
+
+# Harness scratch output (ramp JSON, generated probe clients)
+.test-tmp/

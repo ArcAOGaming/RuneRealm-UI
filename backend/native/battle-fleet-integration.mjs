@@ -203,6 +203,25 @@ const processNotice = (fromProcess, action, data, extras = {}) => ({
   kind: 'process', fromProcess, tags: { Action: action }, data, timestamp: at(), ...extras,
 });
 
+/**
+ * One message, as the WIRE hands it to the receiver.
+ *
+ * Tag names become HTTP headers and header names are lowercased, so `Action`,
+ * `SettlementId` and `ConfirmationId` do not reach a handler with the case the
+ * sender wrote. Every cross-process leg of this protocol is delivered through
+ * this, because a handshake test that keeps the sender's own casing is testing
+ * a message no receiver ever sees — which is the exact reason the last
+ * settlement bug survived a passing suite (HUNT.md: the old test sent
+ * `SettlementId`, a spelling no real sender emits, against a process that could
+ * not read one real message).
+ *
+ * Envelope fields (`commitments`, `data`, `from-process`) are already lowercase
+ * on the wire, so folding the whole map is exactly what the transport does.
+ */
+const onTheWire = (tags) => Object.fromEntries(
+  Object.entries(tags ?? {}).map(([name, value]) => [String(name).toLowerCase(), value]),
+);
+
 async function seedArena(game) {
   await game.call('TEST_GAME', wallet(OWNER, { Action: 'Stats' }));
   await game.call('TEST_GAME', wallet(OWNER, { Action: 'Admin.Unlock', Addresses: ALICE }));
@@ -234,7 +253,7 @@ async function completeFinalHandshake({
   assert.equal(acknowledgement?.target, WORKER);
 
   const ackedAtWorker = await worker.call('TEST_WORKER', {
-    kind: 'process', fromProcess: GAME, tags: acknowledgement,
+    kind: 'process', fromProcess: GAME, tags: onTheWire(acknowledgement),
     battleId: route.battleId, timestamp: at(),
   });
   assert.equal(ackedAtWorker.output.acknowledged, true);
@@ -250,7 +269,7 @@ async function completeFinalHandshake({
   assert.equal(confirmation.battleId, route.battleId);
 
   const duplicateAck = await worker.call('TEST_WORKER', {
-    kind: 'process', fromProcess: GAME, tags: acknowledgement,
+    kind: 'process', fromProcess: GAME, tags: onTheWire(acknowledgement),
     battleId: route.battleId, timestamp: at(),
   });
   assert.equal(duplicateAck.output.duplicate, true);
@@ -291,7 +310,7 @@ async function completeFinalHandshake({
   );
 
   const releasedAtWorker = await worker.call('TEST_WORKER', {
-    kind: 'process', fromProcess: GAME, tags: confirmedAtGame.outbox.release,
+    kind: 'process', fromProcess: GAME, tags: onTheWire(confirmedAtGame.outbox.release),
     battleId: route.battleId, timestamp: at(),
   });
   assert.equal(releasedAtWorker.output.released, true);
@@ -301,7 +320,7 @@ async function completeFinalHandshake({
   assert.equal(releasedAtWorker.status.accepting, true);
 
   const duplicateRelease = await worker.call('TEST_WORKER', {
-    kind: 'process', fromProcess: GAME, tags: confirmedAtGame.outbox.release,
+    kind: 'process', fromProcess: GAME, tags: onTheWire(confirmedAtGame.outbox.release),
     battleId: route.battleId, timestamp: at(),
   });
   assert.equal(duplicateRelease.output.duplicate, true);
@@ -535,7 +554,7 @@ assert.equal(
 assert.equal(retryAck.outbox.acknowledgement.target, WORKER);
 const workerAcked = await worker.call('TEST_WORKER', {
   kind: 'process', fromProcess: GAME,
-  tags: retryAck.outbox.acknowledgement,
+  tags: onTheWire(retryAck.outbox.acknowledgement),
   battleId: route.battleId,
   timestamp: at(),
 });
@@ -568,7 +587,7 @@ const retryConfirmedAck = await game.call('TEST_GAME', wallet(OWNER, {
   Action: 'Admin.RetryFleetAck', ReservationId: route.reservationId,
 }));
 const retryConfirmedAtWorker = await worker.call('TEST_WORKER', {
-  kind: 'process', fromProcess: GAME, tags: retryConfirmedAck.outbox.acknowledgement,
+  kind: 'process', fromProcess: GAME, tags: onTheWire(retryConfirmedAck.outbox.acknowledgement),
   battleId: route.battleId, timestamp: at(),
 });
 assert.equal(retryConfirmedAtWorker.output.duplicate, true);
@@ -589,7 +608,7 @@ assert.equal(workerReleased.output.released, true);
 assert.equal(workerReleased.output.duplicate, false);
 const replayWorkerAck = await worker.call('TEST_WORKER', {
   kind: 'process', fromProcess: GAME,
-  tags: settled.outbox.acknowledgement,
+  tags: onTheWire(settled.outbox.acknowledgement),
   battleId: route.battleId,
   timestamp: at(),
 });

@@ -280,7 +280,12 @@ async function journey(api, { address, faction, pid, node }) {
         player.monster.status.type);
       check('quest grants experience', player.monster.exp > expBefore,
         `${expBefore} -> ${player.monster.exp}`);
-      check('quest grants a loot box', player.lootboxes.length === boxesBefore + 1,
+      // A quest pays experience and Gold, NOT a loot box. The 2026-09-06
+      // economy rework deleted every per-action loot reward (constants.lua:708)
+      // because a tier-2 crate hourly is a shape a machine beats. Asserting the
+      // old reward here fails against a contract that is behaving correctly.
+      check('quest grants no loot box -- the economy pays Gold now',
+        player.lootboxes.length === boxesBefore,
         `${boxesBefore} -> ${player.lootboxes.length}`);
     }
   } else {
@@ -294,12 +299,29 @@ async function journey(api, { address, faction, pid, node }) {
     const before = { level: player.monster.level, attack: player.monster.attack };
     await expectRefused('an allocation that is not exactly ten points is refused',
       () => api.levelUp({ attack: 3, defense: 3, speed: 3, health: 0 }));
-    await expectRefused('more than five into one stat is refused',
-      () => api.levelUp({ attack: 6, defense: 2, speed: 1, health: 1 }));
-    player = await api.levelUp({ attack: 4, defense: 2, speed: 2, health: 2 });
+    // The cap and the point budget come from the catalog, not from a literal.
+    // `LEVEL_UP_MAX_PER_STAT` moved from 5 to 3 and this harness kept spending
+    // 4 on attack, so the journey THREW on a correct refusal and every step
+    // after it -- arena, battle, market, hunt -- stopped being exercised at all.
+    const points = catalog?.levelUp?.points ?? 10;
+    const cap = catalog?.levelUp?.maxPerStat ?? 3;
+    await expectRefused(`more than ${cap} into one stat is refused`,
+      () => api.levelUp({ attack: cap + 1, defense: points - cap - 1, speed: 0, health: 0 }));
+    // Spend the whole budget without exceeding the cap on any one stat, and
+    // put as much of it into attack as the cap allows so the assertion below
+    // is checking a stat that actually moved.
+    const spend = { attack: 0, defense: 0, speed: 0, health: 0 };
+    let left = points;
+    for (const stat of ['attack', 'defense', 'speed', 'health']) {
+      const take = Math.min(cap, left);
+      spend[stat] = take;
+      left -= take;
+    }
+    check('the whole budget fits under the cap', left === 0, `${points} across 4 stats, cap ${cap}`);
+    player = await api.levelUp(spend);
     check('levelling advances the level', player.monster.level === before.level + 1,
       `${before.level} -> ${player.monster.level}`);
-    check('levelling applies the points', player.monster.attack === before.attack + 4,
+    check('levelling applies the points', player.monster.attack === before.attack + spend.attack,
       `${before.attack} -> ${player.monster.attack}`);
   } else {
     console.log(`  \x1b[90mskipped: ${player.monster.exp}/${player.monster.nextLevelExp} exp\x1b[0m`);
@@ -495,9 +517,13 @@ async function pvp(graph, a, b) {
   });
 
   await asPlayer(b, async (api) => {
-    const open = await api.listChallenges();
-    check('the challenge is visible to others', open.some((c) => c.id === battleId),
-      `${open.length} open`);
+    // `readChallenges` is what the client exports and what the Arena screen
+    // calls; `listChallenges` never existed, so this whole PvP path threw
+    // before it reached a single round.
+    const open = (await api.readChallenges()) ?? [];
+    const rows = Array.isArray(open) ? open : Object.values(open);
+    check('the challenge is visible to others', rows.some((c) => c.id === battleId),
+      `${rows.length} open`);
     const p = await api.acceptChallenge(battleId);
     check('the challenge is accepted', p.battle?.status === 'battling', p.battle?.status);
   });

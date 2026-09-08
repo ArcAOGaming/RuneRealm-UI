@@ -162,6 +162,30 @@ local function restoreOperationalState(base)
   end
 end
 
+--- A tag name, reduced to what actually survives the trip.
+---
+--- Tag names become HTTP headers and headers are lowercased, so case never
+--- survives. Neither do SEPARATORS: a sender that writes `RunId` and a process
+--- that emits `run-id` are the same name by the time either is read, and a
+--- handler matching case-insensitively still misses one of them. That exact
+--- mismatch cost a live deployment every hunt capture -- the game spent the
+--- Rune and granted the companion, the worker refused the acknowledgement, and
+--- the run stuck in `settling` permanently (HUNT.md). This worker sits on the
+--- same seam: it EMITS `battle-id`/`reservation-id` and is SENT `battleId`,
+--- `SettlementId`, `CancelId` and `ConfirmationId`, so both spellings of every
+--- id it handles are already on the wire in production.
+local function canonicalTag(name)
+  return (string.gsub(string.lower(tostring(name)), "[-_]", ""))
+end
+
+--- Read a tag whatever the sender spelled it.
+---
+--- Exact first, then lowercase, then separator-insensitive -- in that order, so
+--- an exact key can never be shadowed by a looser match. The separator pass is
+--- a LAST resort and deliberately does not stop at the first hit: if two keys
+--- collapse to the same canonical name it prefers a non-nil value and is
+--- otherwise arbitrary, which is the same guarantee the case pass already
+--- gives, because HTTP would have collapsed them anyway.
 local function field(t, wanted)
   if type(t) ~= "table" then return nil end
   local exact = t[wanted]
@@ -169,6 +193,10 @@ local function field(t, wanted)
   local lower = string.lower(wanted)
   for k, v in pairs(t) do
     if type(k) == "string" and string.lower(k) == lower then return v end
+  end
+  local canonical = canonicalTag(wanted)
+  for k, v in pairs(t) do
+    if type(k) == "string" and v ~= nil and canonicalTag(k) == canonical then return v end
   end
   return nil
 end

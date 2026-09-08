@@ -182,10 +182,31 @@ local function compactFinal(state, reservation, kind, finalId, effect, timestamp
 end
 
 local reservationForNotice
+--- The ACK each kind of final gets, and the two tag names its id rides on.
+---
+--- TWO names, deliberately. A tag name becomes an HTTP header and its
+--- separators do not survive the trip -- a sender writing `SettlementId` and a
+--- process emitting `settlement-id` are the same name by the time a handler
+--- reads either, and a handler comparing case-insensitively still misses one.
+--- That is what stuck every hunt capture in `settling` permanently (HUNT.md),
+--- and this handshake is the same seam: the worker EMITS `battle-id` and
+--- `reservation-id` while the authority sends it `SettlementId`. `reference`
+--- carries the id a third time, which is what `worker.lua` falls back to.
+---
+--- The redundancy is not belt-and-braces for its own sake: `worker.lua`'s
+--- `field()` now normalises separators away, so either spelling resolves -- and
+--- a future worker built before or after that change reads the same message
+--- correctly either way.
 local ACK_ACTIONS = {
-  settlement = { action = "Fleet.Settlement.Ack", field = "SettlementId" },
-  cancellation = { action = "Fleet.Cancellation.Ack", field = "CancelId" },
-  rejection = { action = "Fleet.OpenRejected.Ack", field = "RejectionId" },
+  settlement = {
+    action = "Fleet.Settlement.Ack", field = "SettlementId", alias = "settlement-id",
+  },
+  cancellation = {
+    action = "Fleet.Cancellation.Ack", field = "CancelId", alias = "cancel-id",
+  },
+  rejection = {
+    action = "Fleet.OpenRejected.Ack", field = "RejectionId", alias = "rejection-id",
+  },
 }
 
 function Authority.deliveryAck(state, reservationId)
@@ -207,6 +228,7 @@ function Authority.deliveryAck(state, reservationId)
     playerId = final.playerId,
   }
   ack[route.field] = final.finalId
+  ack[route.alias] = final.finalId
   return ack
 end
 
@@ -240,6 +262,7 @@ function Authority.confirmDelivery(state, payload, sourceWorkerProcessId, timest
         protocol = PROTOCOL,
         reference = final.confirmationId,
         ConfirmationId = final.confirmationId,
+        ["confirmation-id"] = final.confirmationId,
       },
     }, true
   end
@@ -261,6 +284,7 @@ function Authority.confirmDelivery(state, payload, sourceWorkerProcessId, timest
       protocol = PROTOCOL,
       reference = final.confirmationId,
       ConfirmationId = final.confirmationId,
+      ["confirmation-id"] = final.confirmationId,
     },
   }, false
 end

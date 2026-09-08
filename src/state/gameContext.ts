@@ -47,6 +47,25 @@ export type Ctx = {
   loginError: unknown;
   refresh: () => Promise<void>;
 
+  /**
+   * This wallet is a player — the gate every screen past the front door reads.
+   *
+   * True from the process's own answer once it lands, and before that from the
+   * membership mark in local storage (see `lib/access.ts`), so a reload of a
+   * deep link paints the game instead of a spinner or a bounce home. False with
+   * no wallet connected, and false the moment the process says the wallet has
+   * no account.
+   */
+  member: boolean;
+  /**
+   * This wallet has sworn to a faction.
+   *
+   * Same two sources as `member`, and the second half of the gate: a member who
+   * has not sworn can reach the faction hall and nothing else, because every
+   * other screen is about a companion they do not have yet.
+   */
+  sworn: boolean;
+
   factions: Faction[] | null;
   leaderboard: LeaderboardRow[] | null;
   catalog: Catalog | null;

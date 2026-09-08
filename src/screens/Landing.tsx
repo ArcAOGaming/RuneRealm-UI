@@ -5,8 +5,10 @@
  * companion cards, and the conflict. The longer chronicle lives at /lore and
  * is deliberately not linked while that canon is still being shaped.
  */
-import { lazy, Suspense, useEffect, useRef, useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import {
+  createContext, lazy, Suspense, useContext, useEffect, useRef, useState,
+} from 'react';
+import { useLocation, useNavigate } from 'react-router-dom';
 import { useGame } from '../state/gameContext';
 import { Element, ItemId, Monster, Move } from '../lib/types';
 import { Button, cx } from '../ui/primitives';
@@ -19,6 +21,7 @@ import {
 import { Mark } from '../ui/Mark';
 import { CardPreview } from '../ui/CardPreview';
 import { ScrollReveal } from '../ui/ScrollReveal';
+import { FactionChoice } from './Factions';
 
 const RealmVista = lazy(() => import('../ui/RealmVista'));
 const Monolith = lazy(() => import('../ui/Monolith'));
@@ -132,15 +135,104 @@ function exampleMonster(record: Showcase): Monster {
   };
 }
 
+/**
+ * How the faction hall is opened from here.
+ *
+ * The two controls that can open it — the button and the quiet link beside it
+ * — are several levels down, and a context is the cheapest way to hand them
+ * the switch without threading a prop through four layouts that do not care.
+ */
+const OpenChoice = createContext<() => void>(() => {});
+
+/**
+ * The hall is a SEARCH PARAM on the front page, not a component's `useState`.
+ *
+ * It stayed a page — `/` is still the only address involved, so the shell
+ * still treats it as public and none of the game's chrome appears — but the
+ * step is now something the URL knows about, and that buys the two things
+ * local state could not:
+ *
+ *   - the wordmark works. It is a link to `/`, and from a hall held in
+ *     component state that is a navigation to the page you are already on:
+ *     nothing changes, the state survives, and the one control in the header
+ *     does nothing when clicked. Clearing the search is a real navigation.
+ *   - back works, for the same reason.
+ *
+ * Not a route, though. A route would need its own entry in `main.tsx` and its
+ * own line in the gate, and it would be an address a half-onboarded wallet
+ * could be sent to, typed at, or bounced out of — see the note on `Landing`.
+ */
+const CHOOSE = 'choose';
+
+/**
+ * The front page — and, once you ask for it, the faction hall.
+ *
+ * Everyone sees the same page first: the visitor with no wallet, the wallet
+ * the process has never heard of, the member who has not sworn, and the player
+ * coming back to the front door. It is the one thing on the site that explains
+ * what the site is, and skipping past it for somebody mid-onboarding meant a
+ * player who connected a wallet never saw the game they were joining.
+ *
+ * Choosing a faction then happens IN this page rather than at a route of its
+ * own, and that is not a layout preference:
+ *
+ *   - the shell treats `/` as public, so the nav, the rune count, the offering
+ *     and the walkthrough are absent by construction rather than by four more
+ *     conditions. A player who has not joined the game is not shown the game's
+ *     furniture — a rune count reading zero is not information, it is a
+ *     question the player cannot answer yet;
+ *   - every OTHER route in the app requires an oath (see `main.tsx`), so there
+ *     is no second address the half-onboarded state can be reached at, typed
+ *     at, or bounced out of.
+ *
+ * The hall closes itself by leaving: swearing ends on `/companion`. The flag
+ * is dropped if the wallet stops qualifying underneath it — a disconnect
+ * mid-choice puts the front page back rather than leaving a hall nobody is
+ * standing in.
+ */
 export default function Landing() {
+  const { member } = useGame();
+  const { search } = useLocation();
+  const navigate = useNavigate();
+  const choosing = new URLSearchParams(search).get(CHOOSE) === '1';
+
+  /*
+    Open until the hall itself leaves — and deliberately NOT `&& !sworn`.
+
+    Swearing happens inside the hall, and the reveal that follows it is the
+    payoff for the one irreversible decision in the game: the oath lands, the
+    companion is named, and the player watches it arrive before being handed
+    to `/companion`. Tying the hall's life to "has not sworn" tore it down at
+    exactly that moment — the reply set the faction, this line went false, the
+    hall unmounted mid-write, and the player was dropped back on the marketing
+    page with no idea what had just happened to them.
+
+    So the hall owns the page from the moment it opens, and closes itself by
+    navigating: to `/companion` when the reveal finishes, or to `/` when the
+    wordmark is clicked. The only other way to this URL is typing it, and a
+    sworn player who does gets a hall that will not swear them again
+    (`canJoin` in `Factions`) — a curiosity, not a state to defend against.
+  */
+  if (choosing && member) return <FactionChoice />;
+
   return (
-    <div className="landing-shell">
-      <Hero />
-      <CompanionShowcase />
-      <AltarShowcase />
-      <VaultShowcase />
-      <FinalCall />
-    </div>
+    /*
+      The oath is an ARRIVAL at the hall, and the hall introduces itself to
+      somebody arriving — one altar at a time, left to right, then the
+      companions. That beat rides on the navigation, exactly as it does when a
+      sworn player is sent to `/factions` from elsewhere, and it is consumed on
+      arrival so a reload is not a second first time. See `Hall` in
+      `screens/Factions.tsx`.
+    */
+    <OpenChoice.Provider value={() => navigate(`/?${CHOOSE}=1`, { state: { intro: true } })}>
+      <div className="landing-shell">
+        <Hero />
+        <CompanionShowcase />
+        <AltarShowcase />
+        <VaultShowcase />
+        <FinalCall />
+      </div>
+    </OpenChoice.Provider>
   );
 }
 
@@ -384,24 +476,27 @@ function FinalCall() {
 function useEntry() {
   const { player } = useGame();
   const navigate = useNavigate();
+  const openChoice = useContext(OpenChoice);
 
+  /** The account has been read and it is allowed in. */
   const ready = !!player?.unlocked;
   /** Connected, allowed in, and has never sworn. The onboarding case. */
   const needsFaction = ready && !player!.faction;
-  const destination = !ready ? null : player!.faction ? '/companion' : '/factions';
 
   /*
-    Arriving at the hall for the first time is an introduction.
+    Do the next thing — and note that the next thing is not always a page.
 
-    A player with no faction has never seen these four, so the hall fills itself
-    in — one altar at a time, left to right, then the companions — before it
-    hands over the choice. It rides on the navigation and only from here: coming
-    to the same screen from the nav, or with a faction already sworn, walks into
-    a room that is already standing. See `Factions`.
+    With no faction sworn it is the hall, which opens HERE, over the front page.
+    It used to be a route, and putting it back on one would bring the game's
+    chrome with it; see the note on `Landing`. With a faction it is the
+    companion, which is a page like any other.
   */
-  const go = (to: string) => navigate(to, needsFaction ? { state: { intro: true } } : undefined);
+  const enter = () => {
+    if (needsFaction) openChoice();
+    else if (ready && player!.faction) navigate('/companion');
+  };
 
-  return { destination, needsFaction, go };
+  return { ready, needsFaction, enter };
 }
 
 /**
@@ -413,11 +508,11 @@ function useEntry() {
  * as the calm way in, since not everybody clicks the loud button.
  */
 function HeroSecondary() {
-  const { needsFaction, go } = useEntry();
+  const { needsFaction, enter } = useEntry();
 
   if (needsFaction) {
     return (
-      <button type="button" className="landing-secondary-link" onClick={() => go('/factions')}>
+      <button type="button" className="landing-secondary-link" onClick={enter}>
         Pick a faction <Arrow className="h-4 w-4" />
       </button>
     );
@@ -454,18 +549,19 @@ function EntryButton() {
     loginError,
     refresh,
   } = useGame();
-  const { destination, go } = useEntry();
+  const { ready, enter } = useEntry();
   const [entering, setEntering] = useState(false);
 
-  // The hand-off waits for the record, not for the wallet: an address arrives
+  // The hand-off waits for the RECORD, not for the wallet: an address arrives
   // milliseconds after the signature and the account read takes seconds, and
-  // navigating on the address alone would guess the destination wrong.
+  // acting on the address alone would guess the next step wrong — the hall and
+  // the companion are two different answers to the same click.
   useEffect(() => {
-    if (!entering || !destination) return;
+    if (!entering || !ready) return;
     setEntering(false);
-    go(destination);
+    enter();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [entering, destination]);
+  }, [entering, ready]);
 
   if (!address) {
     return (
@@ -527,7 +623,7 @@ function EntryButton() {
     <Button
       size="lg"
       variant="primary"
-      onClick={() => go(player.faction ? '/companion' : '/factions')}
+      onClick={enter}
       icon={<Arrow className="h-4 w-4" />}
     >
       {label}
