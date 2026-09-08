@@ -11,10 +11,10 @@ import {
 } from '../lib/marketplace';
 import {
   EXTERNAL_VENUE_PROCESS, INTERNAL_VENUE_PROCESS, VenueBook, VenueMarketBook,
-  VenueLevel, VenueMarketConfig, VenuePosition,
+  VenueLevel, VenueMarketConfig, VenuePosition, VenueTape, VenueTrade,
   amendVenueOrder, cancelAllVenueOrders, cancelVenueOrder, depositTokenToVenue,
-  externalVenueConfigured, internalVenueConfigured, placeVenueOrder, readVenueBook,
-  readVenueMarkets, readVenuePosition, withdrawFromVenue,
+  externalVenueConfigured, internalVenueConfigured, marketTrades, placeVenueOrder,
+  readVenueBook, readVenueMarkets, readVenuePosition, readVenueTape, withdrawFromVenue,
 } from '../lib/venue';
 import {
   EconomyCandle, EconomyDesk, EconomyMarketStats, EconomyOrder, EconomyView, Element,
@@ -65,7 +65,7 @@ const MARKET_TOUR: TourStep[] = [
   {
     target: '[data-tour="market-book"]',
     title: 'Two books, one shape',
-    body: 'Both books draw the same chart, the same ladder and the same ticket, so what you learn on one you already know on the other. They are the same instrument: resting bids and asks, matched by price then time. The only difference is what funds them — game goods and Gold on the internal one, wallet tokens on the external one. Under the ladder is custody: a venue holds what it matches, so deposit the asset you mean to spend before you quote it. Neither book has a pool behind it, so nothing fills until someone is on the other side.',
+    body: 'Both books draw the same chart, the same ladder, the same tape and the same ticket, so what you learn on one you already know on the other. They are the same instrument: resting bids and asks, matched by price then time. The only difference is what funds them — game goods and Gold on the internal one, wallet tokens on the external one. Recent trades under the ladder are the venue’s most recent, everybody’s and not just yours; a colour there is the side that took, not the way the price moved. A venue holds what it matches, so deposit the asset you mean to spend before you quote it. Neither book has a pool behind it, so nothing fills until someone is on the other side.',
   },
   {
     target: '[data-tour="market-desks"]',
@@ -329,15 +329,16 @@ function GoodsMarket({ onOpenFloor }: { onOpenFloor: (order: FloorPrefill) => vo
 
   const gold = player?.gold ?? 0;
 
+  /* No health strip over the shop.
+     It carried two numbers -- the purse and whether the market is stable --
+     over a counter that has one ticket on it, and both of them are things you
+     read WHILE pricing a trade, not before deciding to. They are in the ticket
+     now: the purse folded into the row that already said what it would be
+     afterwards, and the market's state as a badge on the ticket's own heading.
+     The strip stays on the two books, where it also carries the pair, the
+     custody popover and the refresh. */
   return (
     <div className="market-goods">
-      <MarketHealthStrip
-        stats={[
-          { label: 'Gold', value: formatInteger(gold), tone: 'text-rune' },
-          { label: 'Market', value: economy.invariants.ok ? 'Stable' : 'Paused',
-            tone: economy.invariants.ok ? 'text-good' : 'text-bad' },
-        ]} />
-
       {error !== null && <ErrorNote error={error} onRetry={() => void load()} />}
 
       <RealmShop economy={economy} venueBook={venueBook} gold={gold} inventory={player?.inventory}
@@ -556,7 +557,7 @@ function RealmShop({
                     onItem={onItem} />
 
       <ShopTradeTicket item={item} desk={desk} p2p={venueMarketStats(venueBook?.[`${item}/gold`])} plan={plan}
-                       held={held} gold={gold}
+                       held={held} gold={gold} stable={economy.invariants.ok}
                        count={count} onCount={onCount}
                        side={side} onSide={onSide} connected={connected}
                        connecting={connecting} onConnect={onConnect}
@@ -573,7 +574,12 @@ function ShopShowcase({ item, plan, side, count, sceneInventory, onItem }: {
   onItem: (item: GoldMarketItemId) => void;
 }) {
   return (
-    <Panel data-element={ITEM_ELEMENT[item]} className="market-shop-showcase flex min-h-0 flex-col overflow-hidden p-0">
+    /* The walkthrough's "the shop is a different counterparty" step used to
+       point at the health strip, which the shop no longer has -- and a step
+       whose target is missing is dropped in silence. It points at the realm's
+       own stock instead, which is what the sentence is actually about. */
+    <Panel data-tour="market-desks" data-element={ITEM_ELEMENT[item]}
+           className="market-shop-showcase flex min-h-0 flex-col overflow-hidden p-0">
       <div className="market-shop-showcase-art relative grid min-h-[13rem] flex-1 place-items-center overflow-hidden">
         <div className="market-diorama-fallback absolute inset-0" aria-hidden="true">
           <div className="market-shop-room-backdrop" />
@@ -591,7 +597,7 @@ function ShopShowcase({ item, plan, side, count, sceneInventory, onItem }: {
 }
 
 function ShopTradeTicket({
-  item, desk, p2p, plan, held, gold, count, onCount, side, onSide,
+  item, desk, p2p, plan, held, gold, stable, count, onCount, side, onSide,
   connected, connecting, onConnect, busy, onTrade, onRefresh, onOpenFloor,
 }: {
   item: GoldMarketItemId; desk: EconomyDesk | undefined;
@@ -599,6 +605,8 @@ function ShopTradeTicket({
   p2p: EconomyMarketStats | undefined;
   plan: DeskFillPlan;
   held: number; gold: number;
+  /** `economy.invariants.ok` -- the whole market's state, not this desk's. */
+  stable: boolean;
   count: number; onCount: (value: number) => void; side: GoldOrderSide; onSide: (side: GoldOrderSide) => void;
   connected: boolean; connecting: boolean; onConnect: () => void; busy: boolean;
   onTrade: () => void; onRefresh: () => void; onOpenFloor: (order: FloorPrefill) => void;
@@ -645,8 +653,14 @@ function ShopTradeTicket({
           <div className="eyebrow">Instant trade</div>
           <h3 className="mt-1 text-sm font-semibold">Deal ticket</h3>
         </div>
-        <Button size="sm" variant="quiet" title="Refresh shop" onClick={onRefresh}
-                icon={<Refresh className="h-3.5 w-3.5" />}>Refresh</Button>
+        <div className="flex flex-wrap items-center justify-end gap-1.5">
+          {/* The whole market's state, which is a different thing from this
+              desk's pause below -- the desk closes one side of one good, this
+              says the process stopped honouring its own invariants. */}
+          <Badge tone={stable ? 'plain' : 'bad'}>{stable ? 'Market stable' : 'Market paused'}</Badge>
+          <Button size="sm" variant="quiet" title="Refresh shop" onClick={onRefresh}
+                  icon={<Refresh className="h-3.5 w-3.5" />}>Refresh</Button>
+        </div>
       </div>
       <div className="flex min-h-0 flex-1 flex-col p-3.5">
         <div className="grid grid-cols-2 gap-1.5">
@@ -722,8 +736,19 @@ function ShopTradeTicket({
             <dd>{unitPrice ? `${rateMoves ? average.toFixed(1) : formatInteger(unitPrice)} Gold` : '--'}</dd>
           </div>
           <div><dt>{side === 'buy' ? 'Total cost' : 'You receive'}</dt><dd className="text-element">{unitPrice ? `${formatInteger(total)} Gold` : '--'}</dd></div>
-          <div><dt>Gold after</dt><dd>{canTrade ? formatInteger(goldAfter) : formatInteger(gold)}</dd></div>
-          <div><dt>Held after</dt><dd>{canTrade ? formatInteger(heldAfter) : formatInteger(held)}</dd></div>
+          {/* Balance now, and what the trade leaves. Two numbers in one row,
+              because "Gold after" alone answered half a question and the other
+              half was in a strip above the whole screen. */}
+          <div>
+            <dt>Gold</dt>
+            <dd>{formatInteger(gold)}{canTrade && <><span className="market-ticket-arrow">&rarr;</span>
+              <span className="text-element">{formatInteger(goldAfter)}</span></>}</dd>
+          </div>
+          <div>
+            <dt>{ITEM_NAME[item]}</dt>
+            <dd>{formatInteger(held)}{canTrade && <><span className="market-ticket-arrow">&rarr;</span>
+              <span className="text-element">{formatInteger(heldAfter)}</span></>}</dd>
+          </div>
         </dl>
         {plan.unpriced > 0 && unitPrice > 0 && (
           <p className="mt-2 text-[10px] leading-relaxed text-faint">
@@ -820,7 +845,7 @@ function sweepLadder(
 }
 
 function TradingFloor({
-  book, candles, points, config, unit, ticks, lead, actions, extraStats,
+  book, candles, points, trades, config, unit, ticks, lead, actions, extraStats,
   address, quoteBalance, baseBalance, item, range, onRange,
   chartMode, onChartMode, candleInterval, onCandleInterval, side, onSide, tif, onTif,
   price, onPrice, quantity, onQuantity, ownOrders, recentFills, connecting, onConnect,
@@ -836,6 +861,8 @@ function TradingFloor({
      either way, which is the point. */
   book: EconomyMarketStats | undefined;
   candles: EconomyCandle[];
+  /** The venue's public tape for this market, oldest first. */
+  trades: VenueTrade[];
   points: PricePoint[];
   config: { minValue: number; takerBps: number; creationCost: number };
   unit: FloorUnit;
@@ -925,6 +952,7 @@ function TradingFloor({
   const killShort = tif === 'FOK' && swept.units < parsedQuantity;
   const orderReady = validOrder && !belowMinimum && !shortQuote && !shortItems
     && !outsideBand && !postOnlyCrosses && !nothingToTake && !killShort;
+  const ladderPeak = ladderScale(book?.depth.bids ?? [], book?.depth.asks ?? []);
   const pickDepth = (nextSide: GoldOrderSide, nextPrice: number) => {
     onSide(nextSide);
     onPrice(String(nextPrice));
@@ -954,28 +982,58 @@ function TradingFloor({
           <PriceChart className="mt-2.5 min-h-[15rem] flex-1 lg:min-h-0" points={points} from={from} to={now}
                       bid={book?.bestBid} ask={book?.bestAsk} mode={chartMode}
                       candleMs={CANDLE_MS[candleInterval]} published={publishedBars}
-                      unit={unit.quote} format={unit.format} />
-          {publishedBars !== undefined && publishedBars.length > 0 && (
-            <p className="mt-1.5 text-[10px] text-faint">
-              Daily candles come from the process and are kept for 30 days. The venue
-              publishes no public fill tape at all, so this is the only history there is.
-            </p>
-          )}
+                      unit={unit.quote} format={unit.format}
+                      emptyAction={publishedBars === undefined && candles.length > 0
+                        ? {
+                          note: `Nothing traded here in the last ${range}. The tape holds the venue's
+                                 last few trades and no more, so a quiet market runs off the end of it —
+                                 the daily bars go back thirty days.`,
+                          label: 'Show the daily bars',
+                          onClick: () => { onChartMode('candles'); onCandleInterval('1d'); onRange('30d'); },
+                        }
+                        : undefined} />
+          <p className="mt-1.5 text-[10px] text-faint">
+            {publishedBars !== undefined
+              ? 'Daily candles come from the process and are kept for 30 days.'
+              : `Built from the venue's public tape — every trade, whoever made it, back as far as the
+                 last ${formatInteger(trades.length)} on this book. Older than that, the daily bars.`}
+          </p>
         </Panel>
 
         <Panel className="market-depth-panel flex min-h-0 flex-col overflow-hidden p-3.5">
-          <div className="grid grid-cols-2 gap-px overflow-hidden rounded-[3px] border border-arcane/15 bg-arcane/12 p-px">
+          {/* Top of book, and the spread with it. The spread used to be a bare
+              difference in the tape strip and a caption under the depth chart,
+              in different units, neither next to the two prices it is the gap
+              between. It is one number about these two, so it goes between
+              them, in the quote unit and in basis points -- bps being the only
+              form comparable across a Gold book and a token book. */}
+          <div className="market-top-of-book grid grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)] gap-px overflow-hidden rounded-[3px] border border-arcane/15 bg-arcane/12 p-px">
             <BookPrice label="Best bid" value={book?.bestBid} tone="good" unit={unit.quoteShort} format={unit.format} />
+            <BookSpread bid={book?.bestBid} ask={book?.bestAsk} format={unit.format} />
             <BookPrice label="Best ask" value={book?.bestAsk} tone="bad" unit={unit.quoteShort} format={unit.format} />
           </div>
+          {/* Capped, and deliberately. Cumulative depth is a SHAPE -- which side
+              is heavier and how far out it reaches -- and a shape does not get
+              truer with more pixels. Left on `flex-1` it grew to five hundred
+              of them on a book with three levels a side, which read as a wall
+              of colour and pushed the ladder, the part with numbers in it,
+              off the bottom of the panel. */}
           <DepthMountain bids={book?.depth.bids ?? []} asks={book?.depth.asks ?? []}
-                         unit={unit.quoteShort} format={unit.format} className="mt-3 min-h-[9rem] flex-1" />
-          <div className="market-depth-ladders mt-3 grid max-h-44 grid-cols-2 gap-4 overflow-y-auto">
+                         unit={unit.quoteShort} format={unit.format}
+                         className="mt-3 min-h-[10rem] max-h-64 flex-1" />
+          {/* Bids mirrored, asks not, so the two columns open away from the
+              spread between them and the pair reads as one shape. Both bars are
+              on one scale -- see `ladderScale`. */}
+          <div className="market-depth-ladders mt-3 grid min-h-0 flex-1 grid-cols-2 content-start gap-4 overflow-y-auto">
             <DepthList label="Bids" tone="good" rows={book?.depth.bids ?? []} unit={unit.quote} format={unit.format}
+                       scale={ladderPeak}
                        onPick={(value) => pickDepth('sell', value)} action="Sell into bid" />
             <DepthList label="Asks" tone="bad" rows={book?.depth.asks ?? []} unit={unit.quote} format={unit.format}
+                       scale={ladderPeak}
                        onPick={(value) => pickDepth('buy', value)} action="Buy from ask" />
           </div>
+          <RecentTrades trades={trades} unit={unit} />
+
           {/* No house row, and no note saying there is one. The venue holds
               custody and matches players against players; nothing quotes into
               this ladder that is not somebody's resting order. The shop is a
@@ -1211,11 +1269,43 @@ function TradingFloor({
  * screen's JSX is a toolbar the other screen grows a slightly different copy
  * of, and then the two stop being the same instrument.
  */
+const CANDLE_INTERVALS: CandleInterval[] = ['5m', '30m', '1h', '4h', '1d'];
+const FLOOR_RANGES: FloorRange[] = ['12h', '24h', '7d', '30d'];
+
+/**
+ * Which windows an interval can actually be drawn in.
+ *
+ * The two controls used to be independent, and they are not independent
+ * questions: 5m over 30d is 8,640 bars in seven hundred pixels, which is a
+ * solid block, and 1d over 12h is half a bar, which is nothing. Every book
+ * elsewhere couples them and this one now does too -- between three bars and
+ * four hundred, and the range snaps into that band when the interval moves.
+ */
+const MIN_BARS = 3;
+const MAX_BARS = 400;
+const rangesFor = (interval: CandleInterval) => FLOOR_RANGES.filter((value) => {
+  const bars = RANGE_MS[value] / CANDLE_MS[interval];
+  return bars >= MIN_BARS && bars <= MAX_BARS;
+});
+
 function BookChartToolbar({ chartMode, onChartMode, candleInterval, onCandleInterval, range, onRange }: {
   chartMode: ChartMode; onChartMode: (mode: ChartMode) => void;
   candleInterval: CandleInterval; onCandleInterval: (interval: CandleInterval) => void;
   range: FloorRange; onRange: (range: FloorRange) => void;
 }) {
+  const allowed = chartMode === 'candles' ? rangesFor(candleInterval) : FLOOR_RANGES;
+  /* Moving the interval moves the window with it, to the nearest one it can be
+     drawn in, so the chart never lands on a combination it has to refuse. */
+  const pickInterval = (next: CandleInterval) => {
+    onCandleInterval(next);
+    const valid = rangesFor(next);
+    if (valid.includes(range) || !valid.length) return;
+    const wanted = FLOOR_RANGES.indexOf(range);
+    onRange(valid.reduce((best, value) =>
+      Math.abs(FLOOR_RANGES.indexOf(value) - wanted) < Math.abs(FLOOR_RANGES.indexOf(best) - wanted)
+        ? value : best));
+  };
+
   return (
     <div className="market-chart-toolbar flex flex-wrap justify-end gap-1">
       {(['line', 'candles'] as ChartMode[]).map((value) => (
@@ -1224,24 +1314,31 @@ function BookChartToolbar({ chartMode, onChartMode, candleInterval, onCandleInte
         </ChartControl>
       ))}
       <span className="market-chart-divider" aria-hidden="true" />
-      {chartMode === 'candles' && (['5m', '30m', '1h', '4h', '1d'] as CandleInterval[]).map((value) => (
-        <ChartControl key={value} active={candleInterval === value} onClick={() => onCandleInterval(value)}>
+      {chartMode === 'candles' && CANDLE_INTERVALS.map((value) => (
+        <ChartControl key={value} active={candleInterval === value} onClick={() => pickInterval(value)}
+                      title={value === '1d'
+                        ? 'Daily bars, published by the venue and kept for 30 days'
+                        : `${value} bars, built from your own fills — the venue publishes no public tape`}>
           {value}
         </ChartControl>
       ))}
       {chartMode === 'candles' && <span className="market-chart-divider" aria-hidden="true" />}
-      {(['12h', '24h', '7d', '30d'] as FloorRange[]).map((value) => (
-        <ChartControl key={value} active={range === value} onClick={() => onRange(value)}>{value}</ChartControl>
+      {FLOOR_RANGES.map((value) => (
+        <ChartControl key={value} active={range === value} disabled={!allowed.includes(value)}
+                      title={allowed.includes(value) ? undefined
+                        : `${value} of ${candleInterval} bars does not draw`}
+                      onClick={() => onRange(value)}>{value}</ChartControl>
       ))}
     </div>
   );
 }
 
-function ChartControl({ active, onClick, children }: {
+function ChartControl({ active, onClick, children, disabled, title }: {
   active: boolean; onClick: () => void; children: React.ReactNode;
+  disabled?: boolean; title?: string;
 }) {
   return (
-    <button type="button" aria-pressed={active} onClick={onClick}
+    <button type="button" aria-pressed={active} onClick={onClick} disabled={disabled} title={title}
             className={cx('market-chart-control', active && 'is-active')}>
       {children}
     </button>
@@ -1268,8 +1365,14 @@ function candleBars(points: PricePoint[], interval: number): CandleBar[] {
   return [...buckets.values()].sort((a, b) => a.t - b.t);
 }
 
-function PriceChart({ points, from, to, bid, ask, mode, candleMs, published, unit, format, className }: {
+function PriceChart({ points, from, to, bid, ask, mode, candleMs, published, unit, format,
+                     className, emptyAction }: {
   points: PricePoint[]; from: number; to: number; mode: ChartMode; candleMs: number;
+  /* What to offer when this window has nothing in it. The venue publishes one
+     bar a day and no fill tape, so "empty" is the normal state of every
+     intraday interval on a wallet that has not traded -- and a bare "no fills"
+     over a live book reads as a dead market. */
+  emptyAction?: { label: string; note: string; onClick: () => void };
   /* The quote asset's name and how to print a price in it. A book quoted in
      Gold prints whole numbers; one quoted in a six-decimal token does not, and
      `formatInteger` rounded every external price to the same integer. */
@@ -1304,7 +1407,7 @@ function PriceChart({ points, from, to, bid, ask, mode, candleMs, published, uni
       if (!ctx) return;
       ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
       const width = rect.width; const height = rect.height;
-      const pad = { left: 7, right: 46, top: 18, bottom: 20 };
+      const pad = { left: 7, right: 58, top: 18, bottom: 20 };
       const plotW = Math.max(1, width - pad.left - pad.right);
       const plotH = Math.max(1, height - pad.top - pad.bottom);
       const priceH = mode === 'candles' ? plotH * .76 : plotH;
@@ -1320,14 +1423,18 @@ function PriceChart({ points, from, to, bid, ask, mode, candleMs, published, uni
       const margin = (high - low) * .15 || Math.max(1, high * .15);
       const top = high + margin; const bottom = Math.max(0, low - margin);
       const y = (value: number) => pad.top + (1 - (value - bottom) / (top - bottom || 1)) * priceH;
-      const x = (time: number) => pad.left + ((time - from) / (to - from || 1)) * plotW;
+      /* Half a candle of right margin, because the newest bar is centred on the
+         middle of its own interval and `to` is now: without it the bar being
+         formed is drawn half outside the plot, sliced by the price axis. */
+      const edge = mode === 'candles' ? to + candleMs / 2 : to;
+      const x = (time: number) => pad.left + ((time - from) / (edge - from || 1)) * plotW;
 
-      const span = to - from;
+      const span = edge - from;
       const hour = 3600_000; const day = 24 * hour;
       const gridMs = span <= 13 * hour ? 2 * hour : span <= 25 * hour ? 4 * hour : span <= 8 * day ? day : 5 * day;
       ctx.font = '9px "JetBrains Mono", ui-monospace, monospace';
       ctx.textBaseline = 'top';
-      for (let tick = Math.ceil(from / gridMs) * gridMs; tick <= to; tick += gridMs) {
+      for (let tick = Math.ceil(from / gridMs) * gridMs; tick <= edge; tick += gridMs) {
         const px = x(tick);
         ctx.strokeStyle = 'rgba(150,122,255,.14)'; ctx.lineWidth = 1;
         ctx.beginPath(); ctx.moveTo(px, pad.top); ctx.lineTo(px, pad.top + plotH); ctx.stroke();
@@ -1337,30 +1444,52 @@ function PriceChart({ points, from, to, bid, ask, mode, candleMs, published, uni
           : new Date(tick).toLocaleDateString(undefined, { day: 'numeric', month: 'short' });
         ctx.fillText(label, px, pad.top + plotH + 4);
       }
+      /* A price axis, which the chart went without: four gridlines and no
+         number on any of them, so the only readable price was whatever the bid
+         and ask rules happened to land on. Every reading taken off a price
+         chart is "how far is this from that", and that needs a scale. */
+      ctx.textBaseline = 'middle'; ctx.textAlign = 'left';
       for (let index = 0; index <= 3; index += 1) {
         const py = pad.top + (priceH / 3) * index;
         ctx.strokeStyle = 'rgba(214,200,162,.07)';
         ctx.beginPath(); ctx.moveTo(pad.left, py); ctx.lineTo(pad.left + plotW, py); ctx.stroke();
+        if (values.length) {
+          ctx.fillStyle = 'rgba(128,138,164,.72)';
+          ctx.fillText(format(top - ((top - bottom) / 3) * index), pad.left + plotW + 5, py);
+        }
       }
 
-      const rule = (value: number | undefined, colour: string, label: string) => {
+      /* Bid, ask and last, each with its own tag painted over the axis rather
+         than beside it -- an unpainted label sat on top of the scale numbers
+         and the two colours read as one string. */
+      const rule = (value: number | undefined, colour: string, label: string, dash: number[]) => {
         if (!value) return;
         const py = y(value);
         ctx.save();
-        ctx.setLineDash([3, 3]); ctx.strokeStyle = colour; ctx.lineWidth = 1;
+        ctx.setLineDash(dash); ctx.strokeStyle = colour; ctx.lineWidth = 1;
         ctx.beginPath(); ctx.moveTo(pad.left, py); ctx.lineTo(pad.left + plotW, py); ctx.stroke();
         ctx.restore();
+        const text = `${label} ${format(value)}`;
+        const boxW = Math.min(pad.right - 4, ctx.measureText(text).width + 8);
+        ctx.fillStyle = 'rgba(10,12,20,.92)';
+        ctx.fillRect(pad.left + plotW + 3, py - 6.5, boxW, 13);
         ctx.fillStyle = colour; ctx.textAlign = 'left'; ctx.textBaseline = 'middle';
-        ctx.fillText(`${label} ${format(value)}`, pad.left + plotW + 5, py);
+        ctx.fillText(text, pad.left + plotW + 7, py);
       };
-      rule(bid, 'rgb(74,210,149)', 'B');
-      rule(ask, 'rgb(255,94,105)', 'A');
+      const lastTrade = mode === 'candles' ? bars.at(-1)?.close : points.at(-1)?.v;
+      rule(lastTrade, 'rgb(214,200,162)', 'L', [1, 0]);
+      rule(bid, 'rgb(74,210,149)', 'B', [3, 3]);
+      rule(ask, 'rgb(255,94,105)', 'A', [3, 3]);
 
       if (mode === 'candles' && bars.length) {
         const maxVolume = Math.max(1, ...bars.map((bar) => bar.volume));
         const volumeBottom = pad.top + plotH;
         const volumeHeight = plotH - priceH - 5;
-        const bodyWidth = Math.max(2, Math.min(16, plotW * (candleMs / Math.max(1, span)) * .72));
+        /* A 5m bar in a 24h window is 2.4 px of slot. Below ~120 bars keep a
+           body findable at 3 px; above it let them go thin rather than
+           overlapping into one solid block. */
+        const slot = plotW * (candleMs / Math.max(1, span));
+        const bodyWidth = Math.max(bars.length > 120 ? 1 : 3, Math.min(16, slot * .72));
         ctx.strokeStyle = 'rgba(214,200,162,.08)';
         ctx.beginPath(); ctx.moveTo(pad.left, pad.top + priceH + 3); ctx.lineTo(pad.left + plotW, pad.top + priceH + 3); ctx.stroke();
         for (const bar of bars) {
@@ -1394,9 +1523,6 @@ function PriceChart({ points, from, to, bid, ask, mode, candleMs, published, uni
         }
         ctx.fillStyle = 'rgb(150,122,255)';
         plotted.forEach((point) => ctx.fillRect(point.x - 2.5, point.y - 2.5, 5, 5));
-      } else {
-        ctx.fillStyle = 'rgba(128,138,164,.95)'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-        ctx.fillText('No fills in this window', pad.left + plotW / 2, pad.top + priceH / 2);
       }
 
       if (pointer && pointer.x >= pad.left && pointer.x <= pad.left + plotW
@@ -1446,27 +1572,46 @@ function PriceChart({ points, from, to, bid, ask, mode, candleMs, published, uni
     };
   }, [points, bars, from, to, bid, ask, mode, candleMs, unit, format]);
 
+  const empty = mode === 'candles' ? bars.length === 0 : points.length === 0;
+
   return (
     <div ref={host} className={cx('market-price-chart relative overflow-hidden rounded-[3px]', className)}>
       {mode === 'candles' && latestBar && (
         <div className="market-candle-readout" aria-hidden="true">
+          <i>Last bar</i>
           <span>O {format(latestBar.open)}</span><span>H {format(latestBar.high)}</span>
           <span>L {format(latestBar.low)}</span><span>C {format(latestBar.close)}</span>
         </div>
       )}
       <canvas ref={canvas} className="absolute inset-0 h-full w-full cursor-crosshair"
               role="img" aria-label={`${mode === 'candles' ? 'Candlestick' : 'Line'} price chart with ${points.length} fills`} />
+      {empty && (
+        <div className="market-chart-empty">
+          <p>{emptyAction?.note ?? 'No fills in this window.'}</p>
+          {emptyAction && (
+            <button type="button" className="market-chart-control" onClick={emptyAction.onClick}>
+              {emptyAction.label}
+            </button>
+          )}
+        </div>
+      )}
     </div>
   );
 }
 
 /**
- * The strip that says this half is a market: last, spread, volume, traders.
+ * The strip that says this half is a market: what it last traded at, where it
+ * sits now, and how much of it there has been.
  *
- * It takes rows rather than a book, because the external venue has all eight
- * of these numbers and not one of them comes out of an `EconomyMarketStats`.
- * Both books use the same eight labels in the same order on purpose — that
- * repetition is the whole point of the strip.
+ * It takes rows rather than a book, because the external venue has every one of
+ * these numbers and not one of them comes out of an `EconomyMarketStats`. Both
+ * books use the same labels in the same order on purpose — that repetition is
+ * the whole point of the strip.
+ *
+ * What is deliberately NOT in it is the bid and the ask. They are in the
+ * top-of-book tiles, drawn across the chart as rules, and printed on the pair
+ * trigger; a fourth copy on the same screen is what made a six-item strip read
+ * as a wall.
  */
 function BookTicker({ rows }: {
   rows: Array<{ label: string; value: string; tone?: 'good' | 'bad' }>;
@@ -1478,18 +1623,23 @@ function BookTicker({ rows }: {
   );
 }
 
-/* The book's eight.
+/* The tape strip's numbers.
 
    A venue publishes no public fill tape -- the raw fills are the largest thing
    a book could publish and every message would pay for them five times over --
    so the last price, the day's volume and the week's come off the daily bars
-   the process does publish, and `Fills` counts this trader's own. The eight
-   labels are the same on both venues on purpose; only `unit` differs. */
+   the process does publish. The labels are the same on both venues on purpose;
+   only `unit` differs. */
 function bookTicks(
   book: EconomyMarketStats | undefined, candles: EconomyCandle[],
   points: PricePoint[], unit: FloorUnit,
 ) {
-  const spread = book?.bestBid && book?.bestAsk ? book.bestAsk - book.bestBid : undefined;
+  /* Not bid and ask: they are two inches away in the top-of-book tiles, drawn
+     across the chart as rules, and printed on the pair trigger. Three copies of
+     the same two numbers is what made this strip hard to read. The mid is the
+     one price nothing else was showing. */
+  const twoSided = Boolean(book?.bestBid && book?.bestAsk);
+  const mid = twoSided ? (book!.bestAsk! + book!.bestBid!) / 2 : undefined;
   const today = Math.floor(Date.now() / 86_400_000);
   const week = candles.filter((bar) => today - bar.d < 7);
   const last = points.at(-1)?.v ?? candles.at(-1)?.c;
@@ -1497,9 +1647,7 @@ function bookTicks(
   const median = closes.length ? closes[Math.floor(closes.length / 2)] : undefined;
   return [
     { label: 'Last', value: last ? unit.format(last) : '--' },
-    { label: 'Bid', tone: 'good' as const, value: book?.bestBid ? unit.format(book.bestBid) : '--' },
-    { label: 'Ask', tone: 'bad' as const, value: book?.bestAsk ? unit.format(book.bestAsk) : '--' },
-    { label: 'Spread', value: spread === undefined ? '--' : unit.format(spread) },
+    { label: 'Mid', value: mid ? unit.format(mid) : '--' },
     { label: 'Med 7d', value: median ? unit.format(median) : '--' },
     { label: 'Vol today', value: formatInteger(candles.find((bar) => bar.d === today)?.v ?? 0) },
     { label: 'Vol 7d', value: formatInteger(week.reduce((sum, bar) => sum + bar.v, 0)) },
@@ -1560,6 +1708,31 @@ function BookPrice({ label, value, tone, unit, format }: {
   );
 }
 
+/**
+ * The gap, between the two prices it is the gap between.
+ *
+ * Absolute and in basis points, because neither one alone travels: 2 Gold is
+ * wide on a berry and invisible on a Rune, and 40 bps means the same thing on
+ * both books and on the token book quoted in six decimals.
+ */
+function BookSpread({ bid, ask, format }: {
+  bid?: number; ask?: number; format: (value: number) => string;
+}) {
+  const open = Boolean(bid && ask && ask > bid);
+  const spread = open ? ask! - bid! : undefined;
+  const mid = open ? (ask! + bid!) / 2 : undefined;
+  const bps = spread && mid ? Math.round((spread / mid) * 10_000) : undefined;
+  return (
+    <div className="market-spread-cell" title={mid ? `Mid ${format(mid)}` : 'One side of the book is empty'}>
+      <div className="eyebrow">Spread</div>
+      <div className={cx('market-spread-value', !open && 'text-faint')}>
+        {spread === undefined ? '--' : format(spread)}
+      </div>
+      <div className="market-spread-bps">{bps === undefined ? 'one-sided' : `${formatInteger(bps)} bps`}</div>
+    </div>
+  );
+}
+
 type MarketDepthRow = { price: number; quantity: number; orders?: number; house?: number };
 
 function aggregateDepth(rows: MarketDepthRow[], tone: 'good' | 'bad') {
@@ -1594,6 +1767,8 @@ function VenueUnavailable() {
 
 /** Half the depth chart's narrowest price window, as a fraction of mid. */
 const DEPTH_MIN_HALF_WINDOW = .15;
+/** And its widest. Past this a level is clamped to the edge, not drawn to. */
+const DEPTH_MAX_HALF_WINDOW = .75;
 
 /** Cumulative market depth: bid liquidity grows left, ask liquidity grows right. */
 function DepthMountain({ bids: rawBids, asks: rawAsks, unit, format, className }: {
@@ -1611,35 +1786,64 @@ function DepthMountain({ bids: rawBids, asks: rawAsks, unit, format, className }
      minPrice === best bid and maxPrice === best ask, so fitting puts EVERY
      spread edge to edge and 1.9 against 2.0 draws the same as 1 against 1000.
      The window is a fraction of mid instead, so width on screen means distance
-     in price, and it only widens to take in levels further out. */
+     in price, and it only widens to take in levels further out.
+
+     But not without limit: one ask parked at fifty times mid used to stretch
+     the window to fifty times mid, collapsing every level anybody can actually
+     trade against into a hairline at the centre. Past the cap a level is
+     CLAMPED to the edge instead -- which is what a far-out order really is,
+     depth beyond the window -- and the axis says the edge is a bound. */
   const mid = bids.length && asks.length
     ? (bids[0].price + asks[0].price) / 2 : (minPrice + maxPrice) / 2;
-  const half = Math.max(maxPrice - mid, mid - minPrice, mid * DEPTH_MIN_HALF_WINDOW);
+  const wanted = Math.max(maxPrice - mid, mid - minPrice, mid * DEPTH_MIN_HALF_WINDOW);
+  const half = Math.min(wanted, mid * DEPTH_MAX_HALF_WINDOW) || 1;
+  const clipped = wanted > half;
   const lowPrice = Math.max(0, mid - half);
   const highPrice = mid + half;
   const priceSpan = highPrice - lowPrice || 1;
-  const x = (price: number) => 5 + ((price - lowPrice) / priceSpan) * 90;
-  const spread = bids.length && asks.length ? asks[0].price - bids[0].price : 0;
-  const spreadBps = spread > 0 && mid > 0 ? Math.round((spread / mid) * 10_000) : 0;
+  const x = (price: number) =>
+    Math.max(5, Math.min(95, 5 + ((price - lowPrice) / priceSpan) * 90));
   const bidTotal = bids.reduce((sum, row) => sum + row.quantity, 0);
   const askTotal = asks.reduce((sum, row) => sum + row.quantity, 0);
   const maxDepth = Math.max(1, bidTotal, askTotal);
   const y = (quantity: number) => 88 - (quantity / maxDepth) * 72;
 
-  let cumulative = 0;
-  const bidPoints = bids.map((row) => ({ x: x(row.price), y: y(cumulative += row.quantity) })).sort((a, b) => a.x - b.x);
-  cumulative = 0;
-  const askPoints = asks.map((row) => ({ x: x(row.price), y: y(cumulative += row.quantity) })).sort((a, b) => a.x - b.x);
-  const steppedArea = (points: Array<{ x: number; y: number }>) => {
-    if (!points.length) return '';
-    let path = `M${points[0].x.toFixed(2)} 88 L${points[0].x.toFixed(2)} ${points[0].y.toFixed(2)}`;
-    for (let index = 1; index < points.length; index += 1) {
-      path += ` H${points[index].x.toFixed(2)} V${points[index].y.toFixed(2)}`;
-    }
-    return `${path} L${points.at(-1)!.x.toFixed(2)} 88 Z`;
+  /* One step per LEVEL, spanning the price band that level is the answer for.
+     `bids` runs best-price-first, so the cumulative at bids[i] is the depth
+     available at or above bids[i].price -- and that number holds from that
+     price up to the level in front of it, the innermost one running all the
+     way to the mid. Walking the levels the other way and drawing a step
+     between consecutive prices dropped the whole staircase one place: the best
+     bid's own size was never drawn at all, so the bid mountain fell to zero at
+     the exact price the eye goes to, and the ask mountain -- mirrored, so the
+     omission landed on its outermost level -- did not. That asymmetry was the
+     lopsided shape, not the book. */
+  const midX = x(mid);
+  const steps = (levels: typeof bids, side: 'bid' | 'ask') => {
+    let cumulative = 0;
+    return levels.map((row, index) => {
+      cumulative += row.quantity;
+      const inner = index === 0 ? midX : x(levels[index - 1].price);
+      const outer = x(row.price);
+      return {
+        from: Math.min(inner, outer), to: Math.max(inner, outer),
+        y: y(cumulative), side,
+      };
+    });
   };
-  const bestBidX = bids.length ? x(bids[0].price) : 50;
-  const bestAskX = asks.length ? x(asks[0].price) : 50;
+  const steppedArea = (rows: ReturnType<typeof steps>) => {
+    if (!rows.length) return '';
+    const ordered = [...rows].sort((a, b) => a.from - b.from);
+    let path = `M${ordered[0].from.toFixed(2)} 88`;
+    for (const row of ordered) {
+      path += ` L${row.from.toFixed(2)} ${row.y.toFixed(2)} L${row.to.toFixed(2)} ${row.y.toFixed(2)}`;
+    }
+    return `${path} L${ordered.at(-1)!.to.toFixed(2)} 88 Z`;
+  };
+  const bidSteps = steps(bids, 'bid');
+  const askSteps = steps(asks, 'ask');
+  const bestBidX = bids.length ? x(bids[0].price) : midX;
+  const bestAskX = asks.length ? x(asks[0].price) : midX;
 
   return (
     <div className={cx('market-depth-mountain relative overflow-hidden rounded-[3px]', className)}
@@ -1648,20 +1852,57 @@ function DepthMountain({ bids: rawBids, asks: rawAsks, unit, format, className }
       <svg className="absolute inset-0 h-full w-full" viewBox="0 0 100 100" preserveAspectRatio="none" aria-hidden="true">
         {[28, 48, 68, 88].map((line) => <path key={line} d={`M5 ${line}H95`} stroke="rgb(var(--rune) / .07)" vectorEffect="non-scaling-stroke" />)}
         {bestAskX > bestBidX && <rect x={bestBidX} y="10" width={bestAskX - bestBidX} height="78" fill="rgb(var(--arcane) / .055)" />}
-        {bidPoints.length > 0 && <path d={steppedArea(bidPoints)} fill="rgb(var(--good) / .15)" stroke="rgb(var(--good) / .78)" strokeWidth="1.3" vectorEffect="non-scaling-stroke" />}
-        {askPoints.length > 0 && <path d={steppedArea(askPoints)} fill="rgb(var(--bad) / .14)" stroke="rgb(var(--bad) / .78)" strokeWidth="1.3" vectorEffect="non-scaling-stroke" />}
+        {bidSteps.length > 0 && <path d={steppedArea(bidSteps)} fill="rgb(var(--good) / .15)" stroke="rgb(var(--good) / .78)" strokeWidth="1.3" vectorEffect="non-scaling-stroke" />}
+        {askSteps.length > 0 && <path d={steppedArea(askSteps)} fill="rgb(var(--bad) / .14)" stroke="rgb(var(--bad) / .78)" strokeWidth="1.3" vectorEffect="non-scaling-stroke" />}
         <path d={`M${bestBidX} 10V88 M${bestAskX} 10V88`} stroke="rgb(var(--arcane) / .28)" strokeDasharray="2 3" vectorEffect="non-scaling-stroke" />
+        {/* The mid, solid, because it is the price both staircases are measured
+            out from and the only line on here that is not somebody's order. */}
+        <path d={`M${midX} 8V88`} stroke="rgb(var(--arcane) / .5)" vectorEffect="non-scaling-stroke" />
       </svg>
-      <div className="market-depth-axis"><span>{format(lowPrice)}{unit}</span><span>{spread > 0 ? `spread ${format(spread)}${unit} · ${formatInteger(spreadBps)} bps` : 'spread'}</span><span>{format(highPrice)}{unit}</span></div>
+      <div className="market-depth-axis">
+        <span>{clipped ? '≤ ' : ''}{format(lowPrice)} {unit}</span>
+        <span>mid {format(mid)} {unit}</span>
+        <span>{clipped ? '≥ ' : ''}{format(highPrice)} {unit}</span>
+      </div>
     </div>
   );
 }
 
-/** Price ladder beneath the cumulative depth view. */
-function DepthList({ label, rows, tone, onPick, action, unit, format, formatSize, houseNote }: {
+/** How many levels a ladder column shows. */
+const DEPTH_LADDER_ROWS = 8;
+
+/**
+ * The tallest cumulative either side reaches, over the rows both will show.
+ *
+ * One scale for the pair, because the bars are read against each other. Each
+ * column normalising to its own peak drew a five-unit bid and a five-hundred
+ * unit ask as the same bar, which says the book is balanced when it is a
+ * hundred to one.
+ */
+function ladderScale(bids: MarketDepthRow[], asks: MarketDepthRow[]): number {
+  const side = (rows: MarketDepthRow[], tone: 'good' | 'bad') =>
+    aggregateDepth(rows, tone).slice(0, DEPTH_LADDER_ROWS)
+      .reduce((sum, row) => sum + row.quantity, 0);
+  return Math.max(1, side(bids, 'good'), side(asks, 'bad'));
+}
+
+/**
+ * Price ladder beneath the cumulative depth view.
+ *
+ * The bar behind a row is CUMULATIVE depth to that price, not the level's own
+ * size, and it is scaled against the other side as well as this one -- so the
+ * two columns form one shape around the touch and a long bar means "a lot
+ * rests between here and the top of the book", which is the reading everybody
+ * takes off a ladder. A per-level bar normalised per column, which is what was
+ * here, says nothing the size text does not already say, and says it in a unit
+ * that changes between the two columns.
+ */
+function DepthList({ label, rows, tone, onPick, action, unit, format, formatSize, houseNote, scale }: {
   label: string; tone: 'good' | 'bad'; rows: MarketDepthRow[];
   onPick: (price: number) => void; action: string;
   unit: string; format: (value: number) => string; formatSize?: (value: number) => string;
+  /** The shared cumulative scale from `ladderScale`. */
+  scale?: number;
   /* The venue supplies the sentence for a level's size, so a ladder can say
      what its own levels mean rather than assuming resting player orders. */
   houseNote?: (row: { quantity: number; orders: number; house: number }) => string;
@@ -1669,8 +1910,10 @@ function DepthList({ label, rows, tone, onPick, action, unit, format, formatSize
   /* The deployed view may still publish one row per order. Collapse it here so
      the ladder always reads as price levels while the process moves to the
      smaller aggregated contract described in ORDERBOOK.md. */
-  const shown = aggregateDepth(rows, tone).slice(0, 8);
-  const peak = Math.max(1, ...shown.map((row) => row.quantity));
+  const levels = aggregateDepth(rows, tone).slice(0, DEPTH_LADDER_ROWS);
+  let running = 0;
+  const shown = levels.map((row) => ({ ...row, cumulative: running += row.quantity }));
+  const peak = scale ?? Math.max(1, ...shown.map((row) => row.cumulative));
   const size = formatSize ?? formatInteger;
   const note = houseNote ?? ((row: { quantity: number; orders: number; house: number }) =>
     (row.house >= row.quantity
@@ -1684,11 +1927,13 @@ function DepthList({ label, rows, tone, onPick, action, unit, format, formatSize
         <ul className="space-y-1">
           {shown.map((row, index) => (
             <li key={`${row.price}-${index}`}>
-              <button type="button" title={`${action} at ${format(row.price)} ${unit}`}
-                      onClick={() => onPick(row.price)} className="market-depth-row">
+              <button type="button"
+                      title={`${action} at ${format(row.price)} ${unit} — ${size(row.cumulative)} cumulative to here`}
+                      onClick={() => onPick(row.price)}
+                      className={cx('market-depth-row', tone === 'good' && 'is-bid')}>
                 <span aria-hidden="true"
-                      className={cx('absolute inset-y-0 left-0', tone === 'good' ? 'bg-good/10' : 'bg-bad/10')}
-                      style={{ width: `${(row.quantity / peak) * 100}%` }} />
+                      className={cx('absolute inset-y-0', tone === 'good' ? 'right-0 bg-good/10' : 'left-0 bg-bad/10')}
+                      style={{ width: `${Math.min(100, (row.cumulative / peak) * 100)}%` }} />
                 <span className={cx('relative', tone === 'good' ? 'text-good' : 'text-bad')}>{format(row.price)}</span>
                 <span className="relative text-faint" title={note(row)}>
                   &times; {size(row.quantity)}
@@ -1705,6 +1950,47 @@ function DepthList({ label, rows, tone, onPick, action, unit, format, formatSize
     </div>
   );
 }
+/**
+ * The tape: what actually traded, newest first.
+ *
+ * The book has never had one, for a good reason -- a venue publishing its raw
+ * fills would pay 282 bytes a row, five times over, on every message it ever
+ * receives, and most of that is two addresses nobody may see. `venuetape`
+ * publishes the readable quarter instead: when, at what price, how many, and
+ * which side took, as four integers.
+ *
+ * Colour is the TAKER's side, which is the convention everywhere and is the
+ * one thing a printed price does not tell you: green means somebody lifted an
+ * ask, red means somebody hit a bid. It is not "the price went up".
+ */
+function RecentTrades({ trades, unit }: { trades: VenueTrade[]; unit: FloorUnit }) {
+  const rows = [...trades].reverse().slice(0, 24);
+  return (
+    <div className="market-tape mt-3 flex min-h-0 flex-1 flex-col">
+      <div className="eyebrow mb-2 flex items-baseline justify-between gap-2">
+        <span>Recent trades</span>
+        <span className="market-tape-legend">taker side</span>
+      </div>
+      {rows.length ? (
+        <ol className="min-h-0 flex-1 space-y-px overflow-y-auto">
+          {rows.map(([at, price, quantity, takerBought], index) => (
+            <li key={`${at}-${index}`} className="market-tape-row">
+              <span className={takerBought ? 'text-good' : 'text-bad'}>{unit.format(price)}</span>
+              <span className="text-muted">{formatInteger(quantity)}</span>
+              <time dateTime={new Date(at * 1000).toISOString()} className="text-faint">
+                {new Date(at * 1000).toLocaleTimeString(undefined,
+                  { hour: '2-digit', minute: '2-digit' })}
+              </time>
+            </li>
+          ))}
+        </ol>
+      ) : (
+        <p className="text-xs text-faint">Nothing has traded on this book yet.</p>
+      )}
+    </div>
+  );
+}
+
 // Monster market ------------------------------------------------------------
 
 /**
@@ -2035,6 +2321,7 @@ function VenueFloor({ mode, prefill }: {
   const configured = mode === 'internal' ? internalVenueConfigured() : externalVenueConfigured();
 
   const [venueBook, setVenueBook] = useState<VenueBook | null>(null);
+  const [venueTape, setVenueTape] = useState<VenueTape | null>(null);
   const [venueMarkets, setVenueMarkets] = useState<Record<string, VenueMarketConfig>>({});
   const [position, setPosition] = useState<VenuePosition | null>(null);
   const [quoteInfo, setQuoteInfo] = useState<TokenInfo | null>(null);
@@ -2043,13 +2330,15 @@ function VenueFloor({ mode, prefill }: {
   const [error, setError] = useState<unknown>(null);
 
   const [side, setSide] = useState<GoldOrderSide>('buy');
-  /* Candles, daily, a month back -- because that IS the venue's history. The
-     line chart plots this trader's own fills, so on a book somebody else has
-     been trading all day it opens on "no fills in this window" and looks
-     broken. The published bars are there from the first paint. */
-  const [range, setRange] = useState<FloorRange>('30d');
+  /* Five-minute candles over a day, which is what a book opens on everywhere
+     else. It is not free here: the venue publishes ONE bar a day and no public
+     fill tape at all, so every interval except `1d` is drawn from this
+     trader's own fills and a wallet that has not traded opens on an empty
+     plot. `PriceChart` says so in the empty state and offers the daily bars in
+     one tap rather than leaving the reader to guess the book is dead. */
+  const [range, setRange] = useState<FloorRange>('24h');
   const [chartMode, setChartMode] = useState<ChartMode>('candles');
-  const [candleInterval, setCandleInterval] = useState<CandleInterval>('1d');
+  const [candleInterval, setCandleInterval] = useState<CandleInterval>('5m');
   const [price, setPrice] = useState('');
   const [quantity, setQuantity] = useState('5');
   const [tif, setTif] = useState<GoldOrderTif>('GTC');
@@ -2065,13 +2354,21 @@ function VenueFloor({ mode, prefill }: {
     if (!configured) return;
     setError(null);
     try {
-      const [nextBook, nextPosition] = await Promise.all([
+      const [nextBook, nextPosition, nextTape] = await Promise.all([
         readVenueBook(process),
         address ? readVenuePosition(process, address) : Promise.resolve(null),
+        /* A venue deployed before `venuetape` existed publishes no such key,
+           and an absent key is answered with the node's HTML landing page at
+           status 200 (see CLAUDE.md). That is "no tape", not a failed read --
+           the ladder, the band and the daily candles are all still there, and
+           failing the whole load over a missing chart would take the book down
+           with it. */
+        readVenueTape(process).catch(() => null),
       ]);
       if (signal?.aborted) return;
       setVenueBook(nextBook);
       setPosition(nextPosition);
+      setVenueTape(nextTape);
     } catch (caught) {
       if (isAbort(caught)) return;
       setError(caught);
@@ -2153,11 +2450,15 @@ function VenueFloor({ mode, prefill }: {
   const tradedLots = candles.reduce((sum, row) => sum + Number(row.v || 0), 0);
   const ownOrders = useMemo(() => venueOwnOrders(position, market?.id), [position, market?.id]);
   const recentFills = useMemo(() => venueOwnFills(position, market?.id), [position, market?.id]);
-  /* The line chart's points. A venue publishes no public tape, so this is the
-     trader's own tape; the 7d and 30d views are drawn from published bars. */
-  const points = useMemo<PricePoint[]>(() => [...recentFills]
-    .sort((a, b) => a.filledAt - b.filledAt)
-    .map((fill) => ({ t: fill.filledAt, v: fill.price, q: fill.quantity })), [recentFills]);
+  /* The chart's points, and they are PUBLIC now.
+     `venuetape` is the venue's last ninety-six trades, four integers each,
+     grouped by market -- so an intraday candle is everybody's candle rather
+     than a redrawing of whatever this one wallet happened to do. The seconds
+     come back as seconds and the rest of the screen works in milliseconds. */
+  const trades = useMemo<VenueTrade[]>(() => marketTrades(venueTape, market?.id),
+    [venueTape, market?.id]);
+  const points = useMemo<PricePoint[]>(() => trades
+    .map(([at, price, quantity]) => ({ t: at * 1000, v: price, q: quantity })), [trades]);
 
   const free = (asset: string | undefined) => Number(position?.free?.[asset ?? ''] ?? 0);
   /* The other side of the custody boundary: the satchel on the internal venue,
@@ -2339,7 +2640,7 @@ function VenueFloor({ mode, prefill }: {
     <div className="market-goods">
       {error !== null && <ErrorNote error={error} onRetry={() => void loadBook()} />}
       <TradingFloor
-        book={book} candles={candles} points={points} unit={unit}
+        book={book} candles={candles} points={points} trades={trades} unit={unit}
         ticks={bookTicks(book, candles, points, unit)}
         config={{
           minValue: venueMarkets[market.id]?.minValue ?? 1,
@@ -2350,7 +2651,12 @@ function VenueFloor({ mode, prefill }: {
              defaults it for a venue too old to publish the key. */
           creationCost: venueMarkets[market.id]?.creationCost ?? 0,
         }}
-        lead={markets.length > 1 ? (
+        /* Always, even at one market. The picker is where the pair, its bid
+           and its ask are written down; hiding it on a one-market venue moved
+           that line off the screen and made the external book look like a
+           different product from the internal one. `MarketPicker` returns null
+           only when there is genuinely nothing listed. */
+        lead={(
           <MarketPicker value={market.id} onPick={setMarketId} format={unit.format}
                         glyph={(id) => (
                           <ItemGlyph item={(venueBook?.[id]?.base ?? 'rune') as GoldMarketItemId}
@@ -2360,7 +2666,7 @@ function VenueFloor({ mode, prefill }: {
                           id: row.id, label: marketLabel(row),
                           bestBid: row.bestBid, bestAsk: row.bestAsk,
                         }))} />
-        ) : undefined}
+        )}
         /* Between the pair and the refresh, on both books. */
         actions={<>
           <CustodyMenu

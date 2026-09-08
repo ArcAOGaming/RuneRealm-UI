@@ -35,8 +35,68 @@ const AltarHall = lazy(() => import('../ui/Altars'));
 const CompanionAcquisition = lazy(() => import('../ui/CompanionAcquisition'));
 import type { AltarInfo } from '../ui/Altars';
 
+/**
+ * The route. The hall, and under it the standings.
+ *
+ * Only a SWORN player ever gets here — see `main.tsx`. Choosing a faction is
+ * onboarding, and onboarding happens on the front page, in `FactionChoice`
+ * below: routing a half-onboarded wallet to a page of its own meant the game
+ * chrome came with it, and a rune count reading zero next to a worship button
+ * and a walkthrough is three pieces of furniture belonging to a game the
+ * player has not joined yet. This page is what a member comes BACK to — to
+ * read a roster, or to see where they stand.
+ */
 export default function Factions() {
-  const { factions, player, run, isPending } = useGame();
+  const { sworn } = useGame();
+  return (
+    <>
+      <Hall />
+      {/*
+        The standings, and only once you are standing in them.
+
+        Unreachable while unsworn as the route is gated, but the condition
+        stays: it is the rule, not a consequence of who happens to be allowed
+        through the door this month.
+      */}
+      {sworn && (
+        <section
+          id="ranks"
+          className="full-bleed scroll-mt-24 border-t border-rune/12 px-4 pt-12 sm:px-6 lg:px-7"
+        >
+          <Ranks embedded />
+        </section>
+      )}
+    </>
+  );
+}
+
+/**
+ * The same hall, hosted by the front page as the onboarding flow.
+ *
+ * A member with no oath has exactly one thing to do and this is it, so it is
+ * rendered INSIDE `/` rather than at a route of its own. That is not a layout
+ * preference: `/` is the one page the shell treats as public, so the nav, the
+ * rune count, the offering and the guide are all absent by construction, and
+ * the player is left with a hall and a wallet button. It also means there is
+ * no second URL to defend — every route in the app now requires an oath, and
+ * the flow cannot be reached by typing at it or bounced out of by a redirect.
+ */
+export function FactionChoice() {
+  return <Hall standalone />;
+}
+
+/**
+ * The hall itself: four altars, the detail, the oath, and the reveal.
+ *
+ * `standalone` says the front page is hosting it. The two hosts sit at
+ * different heights — the game's `main` adds 1.5rem above the content and the
+ * landing's adds nothing — and the hall is pulled up behind the header by
+ * exactly that distance, so the offset is the host's to declare. It also
+ * fixes the page to one screen unconditionally, because on the front page
+ * there is provably nothing underneath it.
+ */
+function Hall({ standalone = false }: { standalone?: boolean }) {
+  const { factions, player, sworn, run, isPending } = useGame();
   const [confirming, setConfirming] = useState<Faction | null>(null);
   const [acquired, setAcquired] = useState<Monster | null>(null);
   /**
@@ -71,27 +131,62 @@ export default function Factions() {
   /*
     The arrival, and who gets it.
 
-    A player sent here by the front door with no faction yet is meeting these
-    four for the first time, and the hall introduces itself: one altar at a
-    time, left to right, then the companions. Anyone else — the nav, a link, a
-    reload, a sworn player coming back to read a roster — walks into the room
-    already standing. It is an onboarding beat, not the screen's behaviour.
+    A player meeting these four for the first time gets an introduction: the
+    hall fills itself in, one altar at a time, left to right, then the
+    companions. Anyone else — the nav, a link, a reload, a sworn player coming
+    back to read a roster — walks into a room already standing. It is an
+    onboarding beat, not the screen's behaviour.
 
-    The flag rides on the navigation and is consumed on arrival, so it survives
-    exactly one entrance: refreshing the page is not a second first time.
+    ONE mechanism for both hosts, and it is the navigation that opened the
+    hall: pressing "Choose a faction" on the front page is a navigation
+    (`/?choose=1`) for exactly this reason, so the beat does not need a second
+    way of remembering itself depending on where the hall is standing. It used
+    to, and the tab-scoped flag that stood in on the front page was already
+    spent by an earlier mount — the introduction then never played for the one
+    player it exists for.
+
+    Consumed on arrival, so it survives exactly one entrance: refreshing is not
+    a second first time. The replacement keeps the SEARCH as well as the path,
+    because on the front page the search is what is holding the hall open and
+    dropping it would close it mid-animation.
   */
   const location = useLocation();
   const [introRequested] = useState(
     () => Boolean((location.state as { intro?: boolean } | null)?.intro),
   );
   useEffect(() => {
-    if (introRequested) navigate(location.pathname, { replace: true, state: null });
+    if (introRequested) {
+      navigate(`${location.pathname}${location.search}`, { replace: true, state: null });
+    }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
   /** The faction whose detail is open. Set by choosing an altar or a card. */
   const [detail, setDetail] = useState<Faction | null>(null);
   /** False when the hall could not render, and the cards have to carry it. */
   const [hallLive, setHallLive] = useState(true);
+
+  /*
+    One screen, and no scrollbar on it.
+
+    Before the oath this page is the hall and nothing else — the standings only
+    appear once you are in them — so there is nothing below the fold to scroll
+    TO, and a page that scrolls anyway is a page that can be nudged off its own
+    composition. The hall is already exactly `100dvh`; the scroll came from the
+    document being taller than it, so the flag below turns the shell into a
+    fixed box and drops the padding underneath. See `[data-hall-only]` in
+    index.css.
+
+    Three conditions, and all of them have to hold. Without WebGL the hall is
+    four cards that genuinely do not fit, and while the factions are still
+    loading it is four skeletons that do not either — clipping those would hide
+    content rather than remove empty space, which is the one thing a
+    no-scroll rule must never do.
+  */
+  const singleScreen = (standalone || !sworn) && !!factions && hallLive;
+  useEffect(() => {
+    document.documentElement.toggleAttribute('data-hall-only', singleScreen);
+    return () => document.documentElement.removeAttribute('data-hall-only');
+  }, [singleScreen]);
 
   const open = (faction: Faction) => {
     setFocused(faction.element);
@@ -186,7 +281,7 @@ export default function Factions() {
               exactly one screen tall. Miss the border and the page is one pixel
               too long, which is a scrollbar on a screen that should not have one.
             */
-            className="faction-hall-offset"
+            className={cx('faction-hall-offset', standalone && 'faction-hall-offset--bare')}
           />
         </Suspense>
       )}
@@ -267,12 +362,6 @@ export default function Factions() {
         </Suspense>
       )}
 
-      <section
-        id="ranks"
-        className="full-bleed scroll-mt-24 border-t border-rune/12 px-4 pt-12 sm:px-6 lg:px-7"
-      >
-        <Ranks embedded />
-      </section>
     </div>
   );
 }

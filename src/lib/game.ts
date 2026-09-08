@@ -25,6 +25,7 @@ import {
   AdminPlayerSummary, AdminSnapshot, Battle, BattleFleetConfig, BattleFleetRoute, BerryItemId,
   MonsterIndexEntry, MonsterIndexLifecycle, MonsterIndexView, Catalog, CharacterOutfit, EconomyPolicyChange, EconomyView, Element, Faction,
   GoldMarketItemId, GoldOrderSide, GoldOrderStp, GoldOrderTif,
+  HuntRoute,
   ArenaTiers, GameError, ItemId, LeaderboardRow, Listing, Move, OpenChallenge, Player,
   PlayerFill, PlayerOpenOrder,
   RegistryAsset, Reply, RuneWithdrawal, Sale,
@@ -788,15 +789,112 @@ export const openLootbox = (rarity?: number) =>
 
 // Hunt ----------------------------------------------------------------------
 
+/**
+ * Has `Hunt.Begin`'s outbox actually reached the Hunt process?
+ *
+ * The push cannot say. A `push&slot=N` whose slot holds an outbox does not
+ * answer on this node (measured 2026-09-08 on production: no response at 300 s,
+ * 200 s, 180 s and 120 s on four such slots, against 0.39 s on a slot with an
+ * empty outbox), so `deliverSlot` falling back to `res.ok` reports a socket
+ * aborted at 90 s as a delivery failure. Live: `verify:hunt` threw
+ * `OutboxDeliveryError` at `hunt.begin` with `pushStatus: null` on a run whose
+ * route the reply had already returned.
+ *
+ * The Hunt process's own published run is the proof, and it is free: the
+ * authority publishes the route on the account, and `hunt-run-<runId>` exists
+ * on the hunt process only once `Hunt.Open` was delivered and computed there.
+ * Read as an unsigned published key, so this costs no slot on either process.
+ */
+const huntRunOpened = async () => {
+  const address = await activeAddress();
+  if (!address) return false;
+  const account = await readAuthorityPlayer(address).catch(() => null);
+  const route = account?.hunt;
+  if (!route?.runId || !route?.processId) return false;
+  const run = await readJSON<{ runId?: string }>(`hunt-run-${route.runId}`, {
+    process: route.processId, node: route.node || HB_NODE,
+  }).catch(() => null);
+  return !!run;
+};
+
 /** Freeze a chosen roster companion and open its run on the Hunt process. */
 export const beginHunt = (monsterId: string) =>
   write<Player>({ Action: 'Hunt.Begin', MonsterId: monsterId }, undefined, {
     requiredOutbox: true,
+    deliveryOptions: { confirm: huntRunOpened },
   });
 
-/** Re-deliver the game authority's fixed acknowledgement for a paid capture. */
-export const retryHuntAcknowledgement = () =>
-  write<Player>({ Action: 'Hunt.RetryAck' }, undefined, { requiredOutbox: true });
+/**
+ * Confirmation reads for the two Hunt actions whose outbox runs the OTHER way —
+ * worker to authority. `hunt.ts` owns those messages; the proof of delivery is
+ * on the account, which only this file reads.
+ *
+ * `huntSettlementApplied` is the honest verdict for a capture: the authority
+ * spends the Rune and the Scroll and writes `hunt.lastCapture` in the same
+ * action, so a receipt naming this run is the ledger saying it heard. Measured
+ * live 2026-09-08: run `h3` settled at the authority (`h3-capture-1`, 1 Rune
+ * and 1 Scroll spent) while the client threw `OutboxDeliveryError` with
+ * `pushStatus: null` — a false failure over an applied capture, which is
+ * exactly the state a player would have retried and paid for twice.
+ */
+export const huntSettlementApplied = (runId: string) => async () => {
+  const address = await activeAddress();
+  if (!address) return false;
+  const account = await readAuthorityPlayer(address).catch(() => null);
+  // The route on the account is this run's, and it now carries a settlement
+  // receipt. `settlementId` is `<runId>-capture-<n>`, so it also pins the run
+  // when a record predates the receipt carrying `runId` itself.
+  const route = account?.hunt;
+  const capture = route?.lastCapture;
+  return !!route && route.runId === runId
+    && !!capture?.settlementId && capture.settlementId.startsWith(`${runId}-`);
+};
+
+/** The authority released the frozen companion and dropped the route. */
+export const huntRouteReleased = (runId: string) => async () => {
+  const address = await activeAddress();
+  if (!address) return false;
+  const account = await readAuthorityPlayer(address).catch(() => null);
+  return !account?.hunt || account.hunt.runId !== runId;
+};
+
+/**
+ * Re-deliver the game authority's fixed acknowledgement for a paid capture, and
+ * only return when the worker has actually taken it.
+ *
+ * THIS IS THE HOP THAT STRANDS A RUN, and it is stranded by transport rather
+ * than by the protocol. The authority's `Hunt.Settled` is written into the
+ * outbox of the slot that computed `Hunt.Settle`, and a process cannot send
+ * anything by itself — somebody has to push that slot. The push that would have
+ * carried it is the worker's own terminal push, and on this node that request
+ * does not return (measured 2026-09-08: no response at 300 s, 200 s, 180 s and
+ * 120 s on four outbox-bearing slots, 0.39 s on an empty one), so the cascade
+ * dies one hop in and the ack sits there.
+ *
+ * Live proof, same day: run `h3`'s ack sat undelivered in game slot 1956 —
+ * `{action: "Hunt.Settled", "run-id": "h3", "settlement-id": "h3-capture-1"}` —
+ * while the worker held the run in `settling`. A single unsigned push of that
+ * slot moved it to `roaming` with its receipt in under 30 s. That is the exact
+ * shape HUNT.md documents: the game spent the Rune and granted nothing back,
+ * and the run stuck permanently.
+ *
+ * `Hunt.RetryAck` re-emits that same fixed acknowledgement at a slot THIS
+ * client knows the number of, so its own push carries it. Nothing is rolled or
+ * charged again — the worker deduplicates on `settlement-id`.
+ */
+export const retryHuntAcknowledgement = (route?: HuntRoute) =>
+  write<Player>({ Action: 'Hunt.RetryAck' }, undefined, {
+    requiredOutbox: true,
+    ...(route ? { deliveryOptions: { confirm: huntAcknowledgementTaken(route) } } : {}),
+  });
+
+/** The worker took the acknowledgement: its published run has left `settling`. */
+export const huntAcknowledgementTaken = (route: HuntRoute) => async () => {
+  const run = await readJSON<{ status?: string }>(`hunt-run-${route.runId}`, {
+    process: route.processId, node: route.node || HB_NODE,
+  }).catch(() => null);
+  return !!run && run.status !== 'settling';
+};
 
 // Arena ---------------------------------------------------------------------
 
@@ -938,6 +1036,38 @@ export async function attack(
   */
   const claimedRound = round ?? fleetPlayers.get(battleId)?.battle?.round ?? 0;
 
+  /*
+    Whether the terminal round's outbox reached the authority — read from the
+    AUTHORITY, never from the push's HTTP status.
+
+    A `push&slot=N` on this deployment does not answer when the slot has a
+    non-empty outbox. Measured on production 2026-09-08 (`hyperbeam.tylerw.ai`,
+    BOX B 176.9.219.106): four pushes of slots holding a handshake message gave
+    no response at 300 s, 200 s, 180 s and 120 s, while a push of a slot with an
+    EMPTY outbox returned 200 in 0.39 s. The delivery lands within seconds
+    regardless — it is `dev_push`'s recursive `push_downstream_remote` re-entering
+    this node for the next hop that never comes back.
+
+    Without this closure `deliverSlot` falls back to `res.ok`, which for the
+    terminal attack is a socket aborted at 90 s: EVERY fleet battle ended by
+    throwing `OutboxDeliveryError` at the player on the winning blow, with the
+    settlement already applied. Reproduced live with
+    `verify-battle-fleet.mjs --wallet burner-05`, whose battle `fb12` settled at
+    the authority in the same minute the client reported the delivery failed.
+
+    The authority's own account record is the proof: `Battle.Fleet.Settle`
+    applies the reward and clears `activeBattleId` in one action, and
+    `readPlayer` reads that from published state for free. `deliverSlot` returns
+    the moment this is true and deliberately leaves the push socket running, so
+    nothing here shortens the delivery it is observing.
+  */
+  const settledAtAuthority = async () => {
+    const who = fleetPlayers.get(battleId)?.address ?? await activeAddress();
+    if (!who) return false;
+    const settled = await readPlayer(who).catch(() => null);
+    return !!settled && settled.activeBattleId !== battleId;
+  };
+
   let battle: Battle | null = null;
   try {
     battle = unwrap<Battle>(await send<Reply<Battle>>([
@@ -953,6 +1083,7 @@ export async function attack(
       // Ordinary rounds have no outbox. Only terminal settlement is pushed.
       requiredOutbox: (reply) => !!reply && typeof reply === 'object'
         && !('error' in reply) && reply.status === 'ended',
+      deliveryOptions: { confirm: settledAtAuthority },
     }));
   } catch (error) {
     if (error instanceof AcceptedWriteError) {
@@ -964,6 +1095,7 @@ export async function attack(
         const delivery = await deliverSlot(error.slot, {
           process: route.workerProcessId,
           node: route.node || HB_NODE,
+          confirm: settledAtAuthority,
         });
         if (!delivery.delivered) {
           throw new OutboxDeliveryError({

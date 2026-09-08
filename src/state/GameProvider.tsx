@@ -34,6 +34,9 @@ import {
   connectWallet, disconnectWallet, restoreWallet, withWritePhase,
   GAME_PROCESS, HB_NODE, type WritePhase,
 } from '../lib/hyperbeam';
+import {
+  clearMemberMark, readMemberMark, writeMemberMark, type MemberMark,
+} from '../lib/access';
 import { type WalletConnection, type WalletProviderId } from '../lib/wallet';
 import { ArenaTiers, MonsterIndexView, Catalog, Faction, LeaderboardRow, OpenChallenge, Player, Tuning } from '../lib/types';
 import { useToast } from '../ui/toastContext';
@@ -113,6 +116,16 @@ export function GameProvider({ children }: { children: React.ReactNode }) {
   const [challenges, setChallenges] = useState<OpenChallenge[] | null>(null);
   const [arenaTiers, setArenaTiers] = useState<ArenaTiers | null>(null);
   const [publicAccess, setPublicAccess] = useState(false);
+  /**
+   * The membership verdict from the last visit, read once at mount.
+   *
+   * This is what lets a reload of `/companion` paint the companion rather than
+   * a spinner: the wallet extension answers in milliseconds and the account
+   * read takes seconds, so between those two moments the mark is the only
+   * thing that knows whether this browser belongs in the game. It is replaced
+   * by the process's own answer as soon as one arrives.
+   */
+  const [mark, setMark] = useState<MemberMark | null>(() => readMemberMark());
   // A set, not a single slot: two writes in flight used to cross wires, the
   // second clearing the first button's spinner and the first's cleanup clearing
   // the second's.
@@ -247,7 +260,30 @@ export function GameProvider({ children }: { children: React.ReactNode }) {
     setWalletProvider(null);
     setWalletProviderName(null);
     setLoadingPlayer(false);
+    // Walking away closes the door behind you. Leaving the mark would let the
+    // next load render the game chrome for a wallet that is no longer there.
+    clearMemberMark();
+    setMark(null);
   }, []);
+
+  /*
+    Keep the membership mark level with the process's own answer.
+
+    Only a READ record may write it — `player` is set from `refresh`, from the
+    signed fallback, and from every write's reply, and all three are the
+    process speaking. A wallet the process disowns has its mark removed rather
+    than left to expire, because the whole point of the mark is that it is
+    believed before anything is asked.
+  */
+  useEffect(() => {
+    if (!address) return;
+    if (!player || player.address !== address) return;
+    if (player.unlocked) setMark(writeMemberMark(address, player.faction ?? null));
+    else {
+      clearMemberMark();
+      setMark(null);
+    }
+  }, [address, player]);
 
   /**
    * Pull this wallet's account.
@@ -614,10 +650,26 @@ export function GameProvider({ children }: { children: React.ReactNode }) {
     (key: string) => phases.get(key) ?? null, [phases],
   );
 
+  /*
+    The gate, in two flags.
+
+    The process's answer wins whenever there is one. Before that — the seconds
+    between the wallet restoring and the account read landing — the mark stands
+    in, but only for the wallet it was written for: a different address in the
+    extension is a different player, and inheriting the last one's access is
+    exactly the bug the address check exists to prevent.
+
+    With no wallet at all there is no member, whatever storage says.
+  */
+  const trusted = address && mark?.address === address ? mark : null;
+  const knownPlayer = player && player.address === address ? player : null;
+  const member = !!address && (knownPlayer ? knownPlayer.unlocked : !!trusted);
+  const sworn = member && (knownPlayer ? !!knownPlayer.faction : !!trusted?.faction);
+
   const value = useMemo<Ctx>(() => ({
     address, connecting, connect, disconnect, hasWallet,
     walletProvider, walletProviderName, publicAccess,
-    player,
+    player, member, sworn,
     // Connected but nothing known yet is still loading, however briefly the
     // request itself has been running.
     loadingPlayer: loadingPlayer || (!!address && !player && !loginError),
@@ -631,7 +683,7 @@ export function GameProvider({ children }: { children: React.ReactNode }) {
   }), [
     address, connecting, connect, disconnect, hasWallet,
     walletProvider, walletProviderName, publicAccess,
-    player, loadingPlayer, loginError, refresh,
+    player, member, sworn, loadingPlayer, loginError, refresh,
     factions, leaderboard, catalog, monsterIndex, challenges, refreshChallenges,
     arenaTiers, refreshArenaTiers,
     pending, isPending, writePhase, run,

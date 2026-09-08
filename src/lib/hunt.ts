@@ -1,6 +1,8 @@
 /** Client for the separate Hunt process. Account ownership stays in game.ts. */
 import { HB_NODE, readJSON, send } from './hyperbeam';
-import { joined } from './game';
+import {
+  huntRouteReleased, huntSettlementApplied, joined, retryHuntAcknowledgement,
+} from './game';
 import {
   GameError, HuntRoute, HuntRun, Reply,
 } from './types';
@@ -30,6 +32,7 @@ const write = async (
   action: string,
   extra: Record<string, string> = {},
   requiredOutbox: boolean | ((reply: Reply<HuntRun>) => boolean) = false,
+  confirm?: () => Promise<boolean>,
 ) => unwrap<HuntRun>(await send<Reply<HuntRun>>([
   { name: 'Action', value: action },
   ...tags(route, extra),
@@ -37,6 +40,7 @@ const write = async (
   process: route.processId,
   node: route.node || HB_NODE,
   requiredOutbox,
+  ...(confirm ? { deliveryOptions: { confirm } } : {}),
 }));
 
 /**
@@ -61,13 +65,62 @@ export const attack = (route: HuntRoute, move: string, round: number) =>
 
 export const declineCapture = (route: HuntRoute) => write(route, 'Hunt.Decline');
 
-export const capture = (route: HuntRoute, runes: number) =>
-  write(route, 'Hunt.Capture', {
+/*
+  The three actions whose outbox crosses back to the game authority take a
+  CONFIRMATION READ, because the push cannot answer for them.
+
+  A `push&slot=N` whose slot holds an outbox does not return on this node:
+  measured 2026-09-08 on production, no response at 300 s, 200 s, 180 s and
+  120 s across four such slots on two processes, against 0.39 s for a slot with
+  an empty outbox — `dev_push` recurses into `push_downstream_remote` for the
+  next hop and that inner request never comes back. With no `confirm`,
+  `deliverSlot` falls back to the push's HTTP status, which is an abort, and
+  every one of these threw `OutboxDeliveryError` over work that had landed.
+
+  Live, on run `h3`: the authority applied the capture (`h3-capture-1`, 1 Rune
+  and 1 Scroll spent, roll 83 against 50) and the client reported the delivery
+  had failed. A player looking at that error retries and pays twice — which is
+  precisely what `OutboxDeliveryError` exists to stop, and it cannot do that
+  while it fires on every successful capture.
+
+  The reads are free published state on the game process, and `deliverSlot`
+  leaves the push socket running once they answer, so nothing here shortens the
+  delivery it is observing.
+*/
+/**
+ * A capture, all the way back.
+ *
+ * Two hops, and the second one is the one HUNT.md is about. The worker's
+ * `Hunt.Settle` reaches the authority on this action's own push; the
+ * authority's `Hunt.Settled` back to the worker rides a slot NOBODY pushes,
+ * because the push that was supposed to cascade into it does not return on this
+ * node. Left alone the run sits in `settling` forever with the Rune already
+ * spent — measured live on run `h3`, 2026-09-08.
+ *
+ * So drive it: once the authority's receipt is on the account, ask it to
+ * re-emit the acknowledgement at a slot this client can push, and wait for the
+ * worker's own published run to leave `settling`. That costs one extra
+ * authority slot per capture and it is the difference between a settled run and
+ * a permanently stuck one.
+ */
+async function settleCapture(route: HuntRoute, run: HuntRun): Promise<HuntRun> {
+  if (run.status !== 'settling') return run;
+  try { await retryHuntAcknowledgement(route); } catch { /* the read below decides */ }
+  return (await readHunt(route).catch(() => null)) ?? run;
+}
+
+export const capture = async (route: HuntRoute, runes: number) => settleCapture(
+  route,
+  await write(route, 'Hunt.Capture', {
     Runes: String(runes), ActionId: actionId('capture'),
-  }, true);
+  }, true, huntSettlementApplied(route.runId)),
+);
 
 /** Re-push a fixed capture result; it never rolls or charges a second time. */
-export const retrySettlement = (route: HuntRoute) =>
-  write(route, 'Hunt.RetrySettlement', {}, true);
+export const retrySettlement = async (route: HuntRoute) => settleCapture(
+  route,
+  await write(route, 'Hunt.RetrySettlement', {}, true, huntSettlementApplied(route.runId)),
+);
 
-export const end = (route: HuntRoute) => write(route, 'Hunt.End', {}, true);
+export const end = (route: HuntRoute) =>
+  write(route, 'Hunt.End', {}, true, huntRouteReleased(route.runId));

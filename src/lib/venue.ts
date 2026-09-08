@@ -96,6 +96,23 @@ export interface VenueCandle {
 
 export type VenueBook = Record<string, VenueMarketBook>;
 
+/**
+ * One public trade, as four numbers: `[at, price, quantity, takerBought]`.
+ *
+ * The tuple order is the contract with `tapeView` in `backend/native/orderbook.lua`
+ * and is asserted on the raw published text in `venue_test.lua`. It is
+ * positional because the names would be 15 of the 40 bytes and there are
+ * ninety-six rows, and every byte of published state is marshalled five times
+ * on every message the venue ever receives.
+ *
+ * `at` is SECONDS, not the millisecond `filledAt` the private ring carries.
+ * `takerBought` is 1 when the buy side took and 0 when the sell side did.
+ */
+export type VenueTrade = [at: number, price: number, quantity: number, takerBought: number];
+
+/** The tape, grouped by market id. Bounded venue-wide, newest last. */
+export type VenueTape = Record<string, VenueTrade[]>;
+
 export interface VenueInfo {
   Name: string;
   Mode: 'internal' | 'external' | '';
@@ -124,6 +141,34 @@ const readVenueJSON = <T>(process: string, key: string) =>
 
 export const readVenueInfo = (process: string) => readVenueJSON<VenueInfo>(process, 'venueinfo');
 export const readVenueBook = (process: string) => readVenueJSON<VenueBook>(process, 'venuebook');
+
+/**
+ * The public trade tape.
+ *
+ * A separate key from `venuebook` because it is a separate answer, and reads
+ * are free: published state costs a GET, not a slot. Read on the same timer as
+ * the book.
+ *
+ * A venue that has never traded publishes `{}` — `venue.lua` wraps it in
+ * `jsonObject` for exactly that reason — but a venue deployed before this key
+ * existed publishes nothing at all, and the node answers an absent key with
+ * its own HTML landing page at status 200. `readJSON` rejects that; the caller
+ * treats a rejection as an empty tape rather than an error, because a book
+ * with no tape is still a book.
+ */
+export const readVenueTape = (process: string) => readVenueJSON<VenueTape>(process, 'venuetape');
+
+/** The tape for one market, oldest first, tolerant of every absent shape. */
+export function marketTrades(tape: VenueTape | null, marketId: string | undefined): VenueTrade[] {
+  if (!tape || !marketId || Array.isArray(tape)) return [];
+  const rows = tape[marketId];
+  if (!Array.isArray(rows)) return [];
+  return rows
+    .filter((row): row is VenueTrade => Array.isArray(row) && row.length >= 4)
+    .map((row) => [Number(row[0]), Number(row[1]), Number(row[2]), Number(row[3])] as VenueTrade)
+    .filter((row) => row.every((value) => Number.isFinite(value)) && row[0] > 0)
+    .sort((a, b) => a[0] - b[0]);
+}
 
 /**
  * The market registry: fees, tick, lot, the minimum and the band width.
