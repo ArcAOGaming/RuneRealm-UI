@@ -5,7 +5,7 @@ This repository was extracted from Rune Realm commit
 tree were checked for RSA JWK markers; none were found. Wallet files,
 environment overrides, and JWKs remain ignored.
 
-`npm ci` reported inherited production dependency findings at extraction time:
+`npm ci` reported inherited dependency findings at extraction time:
 18 low, 36 moderate, 10 high, and 3 critical. This split does not claim to
 remediate them. They come from the existing application dependency graph and
 must be triaged through focused dependency upgrades with browser-wallet,
