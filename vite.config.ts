@@ -1,7 +1,6 @@
 import { defineConfig, loadEnv } from 'vite';
 import react from '@vitejs/plugin-react';
 import { nodePolyfills } from 'vite-plugin-node-polyfills';
-import { studioPlugin } from './tools/studio-plugin';
 
 /**
  * Node polyfills, scoped to what actually needs them.
@@ -20,17 +19,10 @@ import { studioPlugin } from './tools/studio-plugin';
  * that quietly grows and each one is code shipped to every visitor.
  */
 export default defineConfig(({ mode }) => {
-  // Empty prefix is intentional here: this runs in Node, and the local studio
-  // needs the two private generation keys. They are passed only to a dev-server
-  // plugin; Vite still exposes only VITE_* variables to browser code.
-  const local = loadEnv(mode, process.cwd(), '');
+  const buildEnv = loadEnv(mode, process.cwd(), 'BUILD_');
   return {
     plugins: [
       react(),
-      studioPlugin(process.cwd(), {
-        PIXELLAB_API_KEY: local.PIXELLAB_API_KEY,
-        RETRO_DIFFUSION_API_KEY: local.RETRO_DIFFUSION_API_KEY,
-      }),
       nodePolyfills({
         include: ['crypto', 'buffer', 'stream', 'util'],
         globals: { Buffer: true, global: true, process: true },
@@ -41,6 +33,6 @@ export default defineConfig(({ mode }) => {
     // bundle to Arweave permanently: shipping them means publishing unminified
     // source forever and paying four times over for the privilege, on every
     // deploy. Opt in with BUILD_SOURCEMAP=true when debugging a built bundle.
-    build: { target: 'es2022', sourcemap: local.BUILD_SOURCEMAP === 'true' },
+    build: { target: 'es2022', sourcemap: buildEnv.BUILD_SOURCEMAP === 'true' },
   };
 });
