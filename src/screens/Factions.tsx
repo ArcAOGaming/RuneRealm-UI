@@ -96,20 +96,19 @@ export function FactionChoice() {
  * there is provably nothing underneath it.
  */
 function Hall({ standalone = false }: { standalone?: boolean }) {
-  const { factions, player, sworn, run, isPending } = useGame();
+  const { factions, player, sworn, run, isPending, transaction } = useGame();
   const [confirming, setConfirming] = useState<Faction | null>(null);
   const [acquired, setAcquired] = useState<Monster | null>(null);
   /**
    * The faction whose oath is being written right now.
    *
-   * `ConfirmJoin` used to stay up with a busy spinner for the whole signed
-   * write, so the moment after you swore was the oath dialog's PARTIAL dim
-   * over the hall — several seconds of it — and only then the full-screen
-   * reveal. Two different backdrops for one continuous moment. This carries
-   * the element through so the veil can be the same opaque full-screen ground
-   * the reveal lands on, and the seam disappears.
+   * The dialog stays until the wallet answers. Once signed, it clears and this
+   * carries the chosen element into the acquisition ceremony. The ceremony
+   * starts on the settling boundary, holds before naming or drawing a creature,
+   * and receives the authoritative monster when the oath is confirmed.
    */
   const [swearing, setSwearing] = useState<Faction | null>(null);
+  const oath = transaction('join');
   const navigate = useNavigate();
 
   const mine = player?.faction ?? null;
@@ -226,20 +225,35 @@ function Hall({ standalone = false }: { standalone?: boolean }) {
       .catch(() => {});
   }, [confirming]);
 
-  const join = async (faction: Faction) => {
-    // Straight to the full-screen veil: the dialog has done its job the moment
-    // the oath is confirmed, and leaving it up is what produced the half-dim.
+  /*
+    The wallet has answered: move the furniture out of the way and leave the
+    charged altar itself on screen.  Until this exact phase the confirmation
+    remains visible, because a click is not an oath and a wallet rejection must
+    not make the hall act as though one was sent.
+  */
+  useEffect(() => {
+    if (!swearing || oath?.stage !== 'settling') return;
     setConfirming(null);
+    setDetail(null);
+  }, [oath?.stage, swearing]);
+
+  const join = async (faction: Faction) => {
     setSwearing(faction);
     const reply = await run('join', () => api.joinFaction(faction.name));
-    setSwearing(null);
     if (reply?.monster) {
+      setConfirming(null);
       setDetail(null);
       setAcquired(reply.monster);
     } else if (reply) {
       // Compatibility with a process from before Faction.Join returned the
       // adopted monster. The current process always takes the reveal path.
+      setSwearing(null);
       navigate('/companion');
+    } else {
+      // The selected altar is still the player's choice. Return to its facts
+      // after the failed pending animation; the toast carries the error.
+      setSwearing(null);
+      setDetail(faction);
     }
   };
 
@@ -330,22 +344,12 @@ function Hall({ standalone = false }: { standalone?: boolean }) {
         />
       )}
 
-      {swearing && !acquired && (
-        <div
-          role="status"
-          data-element={swearing.element}
-          className="fixed inset-0 z-[70] grid place-items-center bg-void"
-        >
-          <Spinner className="h-8 w-8 text-element" />
-        </div>
-      )}
-
-      {acquired && (
+      {swearing && (oath?.stage === 'settling' || oath?.stage === 'confirmed' || acquired) && (
         <Suspense
           fallback={(
             <div
               role="status"
-              data-element={acquired.elementType}
+              data-element={acquired?.elementType ?? swearing.element}
               className="fixed inset-0 z-[70] grid place-items-center bg-void"
             >
               <Spinner className="h-8 w-8 text-element" />
@@ -354,8 +358,10 @@ function Hall({ standalone = false }: { standalone?: boolean }) {
         >
           <CompanionAcquisition
             monster={acquired}
+            pendingElement={swearing.element}
             onComplete={() => {
               setAcquired(null);
+              setSwearing(null);
               navigate('/companion');
             }}
           />

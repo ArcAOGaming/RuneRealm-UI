@@ -128,8 +128,9 @@ export function Shell({ children }: { children: React.ReactNode }) {
       className={cx(
         'app-shell flex min-h-full flex-col',
         !onPublicStory && 'app-shell--game',
+        onArena && 'app-shell--arena',
         !hasTabbar && 'app-shell--norail',
-        onCollection && 'h-dvh min-h-0 overflow-hidden',
+        (onCollection || onArena) && 'h-dvh min-h-0 overflow-hidden',
         fitted && 'lg:h-dvh lg:min-h-0 lg:overflow-hidden',
         headerHidden && 'app-shell--bare',
       )}
@@ -252,6 +253,7 @@ export function Shell({ children }: { children: React.ReactNode }) {
           // usual margin and none of its width cap.
           (onArena || onHunt) && 'lg:px-2 lg:pb-2 lg:pt-2',
           onCollection && 'flex min-h-0 max-w-none flex-col overflow-hidden px-2 pb-24 pt-2 sm:px-3 lg:px-4 lg:pb-3 lg:pt-3',
+          onArena && 'arena-main flex min-h-0 flex-col overflow-hidden',
           onMarket || onArena || onHunt || onCollection ? 'max-w-none' : 'max-w-[92rem]',
         ),
       )}>
@@ -284,7 +286,7 @@ export function Shell({ children }: { children: React.ReactNode }) {
 /**
  * Market, and which counter.
  *
- * The market is the one route with four rooms behind it, and picking a room is
+ * The market is the one route with five rooms behind it, and picking a room is
  * the same gesture as picking a page — so it is in the same strip, one tab
  * along from Arena, rather than a second row of tabs inside the screen. The
  * label carries where you are standing once you are standing there; clicking a

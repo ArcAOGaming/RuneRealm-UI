@@ -17,12 +17,10 @@
  *   - and it must be visibly reversible, because a rejected write rolls it back
  *     under a toast that says why.
  *
- * That admits Feed and Play — deterministic costs, a capped energy change and a
- * status flip, all of which the player can see undo. It does NOT admit
- * anything that rolls dice or moves value: quests, battles, hunts, captures,
- * loot, Rune, gold or the marketplace are authoritative-only, and faking any of
- * them would be showing a player a reward the process has not agreed to. Do not
- * add one here because it would feel faster.
+ * That admits Feed, Play and the START of a Quest: deterministic costs and a
+ * status flip, all of which the player can see undo. It does NOT admit a quest
+ * claim or anything else that rolls dice or moves value: battles, hunts,
+ * captures, loot, Rune, gold and the marketplace are authoritative-only.
  */
 import { BerryItemId, ItemId, Monster, Player } from '../lib/types';
 
@@ -33,6 +31,10 @@ const FEED_ENERGY_GAIN = 10;
 /** `C.ACTIVITIES.play` — 10 energy, 15 minutes away. */
 const PLAY_ENERGY_COST = 10;
 const PLAY_DURATION_MS = 900 * 1000;
+/** `C.ACTIVITIES.quest`: 25 energy, 25 happiness, one hour away. */
+const QUEST_ENERGY_COST = 25;
+const QUEST_HAPPINESS_COST = 25;
+const QUEST_DURATION_MS = 3600 * 1000;
 
 const spend = (inventory: Player['inventory'], item: ItemId, amount: number) => ({
   ...inventory,
@@ -90,6 +92,23 @@ export const projectPlay = (monster: Monster, item: ItemId, now = Date.now()) =>
       ...m,
       energy: Math.max(0, m.energy - PLAY_ENERGY_COST),
       status: { type: 'Play', since: now, until_time: now + PLAY_DURATION_MS },
+    }),
+  );
+
+/**
+ * `Monster.Quest` starts a timer and spends care, but pays nothing yet.
+ * Experience and Gold remain behind `Monster.Claim`, where the process owns
+ * both the eligibility clock and the reward allowance.
+ */
+export const projectQuest = (monster: Monster, now = Date.now()) =>
+  (player: Player): Player => withMonster(
+    player,
+    monster.id,
+    (m) => ({
+      ...m,
+      energy: Math.max(0, m.energy - QUEST_ENERGY_COST),
+      happiness: Math.max(0, m.happiness - QUEST_HAPPINESS_COST),
+      status: { type: 'Quest', since: now, until_time: now + QUEST_DURATION_MS },
     }),
   );
 

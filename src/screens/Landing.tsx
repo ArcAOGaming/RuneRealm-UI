@@ -259,7 +259,7 @@ function Hero() {
             </p>
           </div>
           <h1 className="hero-title">
-            Choose your <span>element.</span>
+            Choose your <span>element</span>
           </h1>
           <p className="mt-7 max-w-xl text-base leading-7 text-muted sm:text-lg sm:leading-8">
             Raise a companion. Battle for the Realm.

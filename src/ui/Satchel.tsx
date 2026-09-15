@@ -40,7 +40,7 @@ const LootVault = lazy(() => import('./LootVault').then((m) => ({ default: m.Loo
  * whole point is that dropping this anywhere is complete.
  */
 export function SatchelDrawer({ className }: { className?: string }) {
-  const { player, run } = useGame();
+  const { player, run, writePhase } = useGame();
   const [open, setOpen] = useState(false);
   /*
     The ceremony starts on the click, not on the reply — see `LootVault`.
@@ -103,6 +103,7 @@ export function SatchelDrawer({ className }: { className?: string }) {
             key={opening.id}
             rarity={opening.rarity}
             result={opening.result}
+            anticipating={writePhase(`box:${opening.rarity}`) === 'settling'}
             onClose={() => setOpening(null)}
           />
         </Suspense>

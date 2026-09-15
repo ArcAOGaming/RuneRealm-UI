@@ -1,11 +1,11 @@
 /**
  * moves.mjs — which plate supplies the icon for each move.
  *
- * The forty move plates in `assets/Monsters/cards/5-moves/` are full 648x1065
+ * The forty source move plates are full 648x1065
  * sheets, each carrying ONE badge and its name, pre-positioned into one of the
  * four slots of the moves panel. Every badge measured 78x75 at exactly one of
- * four origins, which is what makes them reusable: crop the badge, drop it in
- * whichever slot the card needs, and draw the name separately.
+ * four origins. The explicit freeze command crops each once into its committed
+ * 78x75 runtime icon; normal rendering never reads the source plate or origin.
  *
  * The names on the plates are NOT this game's move names. Sixteen match, and
  * the art carries icons for moves that no longer exist ("Fire Ball", "Rock
@@ -46,65 +46,64 @@ const SRC = {
   'regular-right': [504, 891],
 };
 
-/** move name -> [plate file under 5-moves/, which origin it sits at] */
+/** move name -> [stable icon/source key, source-only crop origin] */
 const PLATE = {
   // fire
-  Firenado: ['signature/Fire Nado.png', 'signature-left'],
-  Campfire: ['signature/Fire Firecamp.png', 'signature-right'],
-  Inferno: ['signature/Fire Inferno.png', 'signature-left'],
-  'Flame Shield': ['signature/Fire Shield.png', 'signature-right'],
-  'Scorching Ash': ['signature/Fire Ball.png', 'signature-left'],
-  'Phoenix Burst': ['signature/Heal Regen Fire.png', 'signature-right'],
+  Firenado: ['fire-nado', 'signature-left'],
+  Campfire: ['fire-firecamp', 'signature-right'],
+  Inferno: ['fire-inferno', 'signature-left'],
+  'Flame Shield': ['fire-shield', 'signature-right'],
+  'Scorching Ash': ['fire-ball', 'signature-left'],
+  'Phoenix Burst': ['heal-regen-fire', 'signature-right'],
 
-  // water. Three of these filenames carry a trailing space before `.png`; it is
-  // in the upstream art repo and STYLE.md flags it as a known trap. Keep them
-  // byte-exact or the lookup silently falls through to no icon.
-  'Tidal Wave': ['signature/Tidal Wave .png', 'signature-left'],
-  Whirlpool: ['signature/Whirl Pool .png', 'signature-right'],
-  'Ice Spear': ['signature/Ice Spear .png', 'signature-left'],
-  'Ocean Mist': ['signature/Ocean Mist.png', 'signature-right'],
-  Frostbite: ['signature/Water Ball.png', 'signature-left'],
-  'Deep Current': ['signature/Water Heal Water.png', 'signature-right'],
+  // water. The old authoring filenames carried trailing spaces; normalized
+  // runtime keys keep that historical accident out of every lookup.
+  'Tidal Wave': ['tidal-wave', 'signature-left'],
+  Whirlpool: ['whirl-pool', 'signature-right'],
+  'Ice Spear': ['ice-spear', 'signature-left'],
+  'Ocean Mist': ['ocean-mist', 'signature-right'],
+  Frostbite: ['water-ball', 'signature-left'],
+  'Deep Current': ['water-heal-water', 'signature-right'],
 
   // air
-  Tornado: ['signature/Tornado.png', 'signature-right'],
-  'Wind Slash': ['signature/Wind Slash.png', 'signature-left'],
-  'Storm Cloud': ['signature/Storm Cloud.png', 'signature-left'],
-  Breeze: ['signature/Breeze.png', 'signature-right'],
-  'Lightning Bolt': ['signature/Wind Attack Air.png', 'signature-left'],
-  'Gale Force': ['signature/Tornado Kick Air.png', 'signature-right'],
+  Tornado: ['tornado', 'signature-right'],
+  'Wind Slash': ['wind-slash', 'signature-left'],
+  'Storm Cloud': ['storm-cloud', 'signature-left'],
+  Breeze: ['breeze', 'signature-right'],
+  'Lightning Bolt': ['wind-attack-air', 'signature-left'],
+  'Gale Force': ['tornado-kick-air', 'signature-right'],
 
   // rock
-  'Boulder Crush': ['signature/Boulder Crush.png', 'signature-left'],
-  'Stone Wall': ['signature/Stone Wall.png', 'signature-right'],
-  'Rock Slide': ['signature/Rock Slide.png', 'signature-left'],
-  'Earth Shield': ['signature/Earth Shield.png', 'signature-right'],
-  'Seismic Slam': ['signature/Rock Missile Earth.png', 'signature-left'],
-  'Stone Barrier': ['signature/Rock Barrier Earth.png', 'signature-right'],
+  'Boulder Crush': ['boulder-crush', 'signature-left'],
+  'Stone Wall': ['stone-wall', 'signature-right'],
+  'Rock Slide': ['rock-slide', 'signature-left'],
+  'Earth Shield': ['earth-shield', 'signature-right'],
+  'Seismic Slam': ['rock-missile-earth', 'signature-left'],
+  'Stone Barrier': ['rock-barrier-earth', 'signature-right'],
 
   // boost
-  'Power Up': ['regular/Power Up.png', 'regular-left'],
-  'Iron Skin': ['regular/Iron Skin.png', 'regular-right'],
-  'Swift Wind': ['regular/Swift Wind.png', 'regular-left'],
-  'Battle Cry': ['regular/Battle Cry.png', 'regular-right'],
-  "Iron Will": ['regular/Taunt Enemy.png', 'regular-left'],
-  'Adrenal Rush': ['regular/Double Damage.png', 'regular-right'],
+  'Power Up': ['power-up', 'regular-left'],
+  'Iron Skin': ['iron-skin', 'regular-right'],
+  'Swift Wind': ['swift-wind', 'regular-left'],
+  'Battle Cry': ['battle-cry', 'regular-right'],
+  "Iron Will": ['taunt-enemy', 'regular-left'],
+  'Adrenal Rush': ['double-damage', 'regular-right'],
 
   // heal
-  Heal: ['regular/Heal.png', 'regular-left'],
-  Regenerate: ['regular/Regenerate.png', 'regular-right'],
-  'Life Surge': ['regular/Life Surge.png', 'regular-left'],
-  Recovery: ['regular/Recovery.png', 'regular-right'],
-  'Vital Essence': ['regular/Slow Heal.png', 'regular-right'],
-  'Healing Winds': ['regular/Team Shield.png', 'regular-left'],
+  Heal: ['heal', 'regular-left'],
+  Regenerate: ['regenerate', 'regular-right'],
+  'Life Surge': ['life-surge', 'regular-left'],
+  Recovery: ['recovery', 'regular-right'],
+  'Vital Essence': ['slow-heal', 'regular-right'],
+  'Healing Winds': ['team-shield', 'regular-left'],
 
   // normal
-  'Body Slam': ['regular/Burn Effect.png', 'regular-left'],
-  'Quick Jab': ['regular/Speed Up.png', 'regular-left'],
-  'Heavy Strike': ['regular/Defense Up.png', 'regular-right'],
-  'Guard Break': ['regular/Dodge Up.png', 'regular-right'],
-  'Frenzy Blows': ['regular/Double Damage.png', 'regular-right'],
-  'Momentum Shift': ['regular/Swift Wind.png', 'regular-left'],
+  'Body Slam': ['burn-effect', 'regular-left'],
+  'Quick Jab': ['speed-up', 'regular-left'],
+  'Heavy Strike': ['defense-up', 'regular-right'],
+  'Guard Break': ['dodge-up', 'regular-right'],
+  'Frenzy Blows': ['double-damage', 'regular-right'],
+  'Momentum Shift': ['swift-wind', 'regular-left'],
 };
 
 /**
@@ -133,12 +132,22 @@ const RENAMED = {
 export function moveIcon(name) {
   const entry = PLATE[name] ?? PLATE[RENAMED[name]];
   if (!entry) return null;
-  const [file, origin] = entry;
-  const [sx, sy] = SRC[origin];
-  return { asset: `Monsters/cards/5-moves/${file}`, sx, sy, sw: ICON_W, sh: ICON_H };
+  const [file] = entry;
+  return { asset: `cards/move-icons/${file}.png`, sw: ICON_W, sh: ICON_H };
 }
 
 /** Every plate this module can reference, for the preloader. */
 export function allMovePlates() {
-  return [...new Set(Object.values(PLATE).map(([file]) => `Monsters/cards/5-moves/${file}`))];
+  return [...new Set(Object.values(PLATE).map(([file]) => `cards/move-icons/${file}.png`))];
+}
+
+/** Source-only crop map used by the explicit card-art freezing command. */
+export function allMoveSourceCrops() {
+  const crops = new Map();
+  for (const [file, origin] of Object.values(PLATE)) {
+    if (crops.has(file)) continue;
+    const [sx, sy] = SRC[origin];
+    crops.set(file, { file, sx, sy, sw: ICON_W, sh: ICON_H });
+  }
+  return [...crops.values()];
 }

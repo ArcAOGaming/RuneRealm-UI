@@ -15,14 +15,16 @@ import { article, countdown, LOOTBOX_TIER } from '../lib/format';
 import { Button, cx } from './primitives';
 import { Clock, Gift, Sparkle } from './icons';
 import { Dialog } from './Dialog';
+import { Divining } from './Divining';
 
 export function Worship() {
-  const { player, run, isPending } = useGame();
+  const { player, run, isPending, writePhase } = useGame();
   const [now, setNow] = useState(() => Date.now());
   const [reward, setReward] = useState<Player['dailyClaimed'] | null>(null);
 
   const readyAt = player?.dailyReadyAt ?? 0;
   const ready = readyAt === 0 || now >= readyAt;
+  const settling = writePhase('daily') === 'settling';
 
   useEffect(() => {
     if (ready) return;
@@ -63,6 +65,15 @@ export function Worship() {
           <Clock className="h-3.5 w-3.5 text-faint" />
           <span className="font-mono tabular-nums">{countdown(readyAt - now)}</span>
         </span>
+      )}
+
+      {settling && !reward && (
+        <Dialog title="Daily worship" onClose={() => {}} busy size="sm" className="text-center">
+          <Divining size={116} caption={false} className="mt-4" />
+          <p className="mt-3 text-sm text-muted">
+            Your signature is at the altar. The offering is being read.
+          </p>
+        </Dialog>
       )}
 
       {reward && (

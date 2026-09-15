@@ -61,7 +61,13 @@ export function mountGame(
   baseW: number,
   baseH: number,
   scenes: Phaser.Types.Scenes.SceneType[],
-  opts: { data?: object; maxZoom?: number; onScale?: (zoom: number) => void } = {},
+  opts: {
+    data?: object;
+    maxZoom?: number;
+    onScale?: (zoom: number) => void;
+    /** Snap a nearly whole-number FIT scale to that integer and clip the tiny excess. */
+    snapZoomWithin?: number;
+  } = {},
 ): Mounted {
   LIVE.get(parent)?.destroy(true);
   /*
@@ -134,7 +140,25 @@ export function mountGame(
     // which is the single most visible thing that separates pixel art from a
     // photograph of pixel art.
     game.canvas.style.imageRendering = 'pixelated';
-    opts.onScale?.(cw / baseW);
+    const fit = Math.min(cw / baseW, ch / baseH, opts.maxZoom ?? Number.POSITIVE_INFINITY);
+    const whole = Math.max(1, Math.round(fit));
+    const zoom = opts.snapZoomWithin !== undefined
+      && Math.abs(fit - whole) <= opts.snapZoomWithin
+      ? whole : fit;
+    if (zoom !== fit) {
+      // The companion desktop plate commonly lands at 1.984x. Letting the
+      // browser resample every moving frame at that scale makes vertical
+      // edges pulse. At 2x the canvas exceeds the clipped plate by only a few
+      // pixels and every art pixel stays an exact screen-pixel block.
+      game.canvas.style.setProperty('--game-snapped-width', `${baseW * zoom}px`);
+      game.canvas.style.setProperty('--game-snapped-height', `${baseH * zoom}px`);
+      game.canvas.classList.add('game-canvas-snapped');
+    } else {
+      game.canvas.classList.remove('game-canvas-snapped');
+      game.canvas.style.removeProperty('--game-snapped-width');
+      game.canvas.style.removeProperty('--game-snapped-height');
+    }
+    opts.onScale?.(zoom);
   };
 
   // ResizeObserver rather than a window listener: the panel changes width when

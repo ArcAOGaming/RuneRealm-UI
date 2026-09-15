@@ -200,6 +200,27 @@ Rules that came out of building them, the hard way:
   and you get the flat mark and a plain dark background. Nothing in the
   graphics layer is load-bearing.
 
+### Signed-action motion
+
+Every transaction animation has the same four beats, even when its renderer is
+different:
+
+1. **Signing:** keep the existing choice on screen. A click is not a committed
+   action, and rejecting the wallet prompt must not make the world move.
+2. **Settling:** the signature is away. Start a reversible anticipation and let
+   it loop at a bounded hold point for as long as the process needs.
+3. **Confirmed:** hand the authoritative reply to the climax. This is the first
+   moment a lid may open, a fighter may hit, or a reward may be named.
+4. **Failed:** stop or unwind the anticipation and show the handler/transport
+   error. Never play a success beat over a failed or ambiguous write.
+
+`GameProvider.run(key, action)` is the shared harness. `writePhase(key)` exposes
+the signing/settling boundary; `transaction(key)` also retains `confirmed` or
+`failed` long enough for a renderer to observe the verdict. Use
+`TransactionHold` for a form with no scene of its own. Only deterministic,
+discardable state belongs in `state/optimistic.ts`; rolls, rewards, market fills
+and balances remain authoritative even when their anticipation begins early.
+
 ---
 
 ## 7. The renderers, and what each screen gets
@@ -251,11 +272,11 @@ is a table; a board of marks is a roster.
 
 ---
 
-## 8. Still to build
+## 8. Scene direction
 
 ### The arena — Phaser, not three.js
 
-The fight is 2D: pixel sprite sheets exchanging blows. Phaser gives sprite state
+The fight is 2D and shipped: pixel sprite sheets exchanging blows. Phaser gives sprite state
 machines, tween chains, particle emitters, camera shake and a pixel-art pipeline
 as first-class things; three.js would mean billboarding sprites into a 3D scene
 to fake what Phaser does natively. ~300kB gzipped on a lazy route.
@@ -265,17 +286,36 @@ altars, cards, the vault, the seal.
 
 ### Other places considered
 
-### The companion's room in 3D — `ui/Room.tsx`
+### The companion's room — `ui/Room.tsx`
 
-Today: a 192×96 pixel backdrop with a sprite walking left and right in front of
-it. Keep the sprite exactly as it is — a billboarded plane, `NearestFilter`,
-never smoothed — and put it in a real box: perspective walls, a shadow-catching
-floor so the contact shadow is cast rather than drawn as an ellipse, an element
-light from below, drifting dust, and a shallow depth of field so the backdrop
-sits behind. Parallax on pointer.
+Today: one accepted 384×192 Cottage plate is both Home and Play. The companion
+walks the room through the production Phaser rig; Play adds the player's
+composited character. Candidate rooms stay in RuneRealm-Assets until the game
+has a real unlock rule for them.
 
-*Risk:* the pixel art must stay pixel-exact. Snap the camera so one sprite pixel
-lands on a whole number of screen pixels.
+The pixel art stays native and is enlarged only by whole-number nearest-neighbor
+scales. A new room is not in use until its walkable floor survives the scene
+viewer.
+
+### Quest routes
+
+A route is three horizontally seamless textures: opaque sky, transparent far
+distance, and a transparent middle layer that owns the walking ground. The
+Admin Visualize tab runs accepted and pending three-layer sets through the real
+`QuestScene`; raw layers are never approved independently of that composite.
+
+The middle texture has one geometric contract: row 152 of its 176 rows is scene
+row 168, and rows 152–159 are the solid walk strip. Every walking frame keeps
+its lowest grounded paw on that same baseline. The top eight rows stay clear so
+tall trees are contained rather than visibly sliced by the layer boundary.
+Layer preparation hardens alpha, removes detached foreground flecks, and closes
+the repeat seam; scene-asset checks refuse drift from those invariants.
+
+Quest scenery and its 64×64 companion remain on the same native 1× art grid;
+the complete scene is rendered at 2× so half-art-pixel travel becomes one real
+render pixel. Enlarging the source layers into artificial 2×2 blocks makes the
+scenery look processed rather than authored, while isolated floating pixels and
+fine dithering still do not belong in an accepted route.
 
 ### The leaderboard as a sigil constellation — `screens/Ranks.tsx`
 

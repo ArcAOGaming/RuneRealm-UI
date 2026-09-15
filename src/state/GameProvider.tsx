@@ -28,11 +28,11 @@ import {
   useCallback, useEffect, useMemo, useRef, useState,
 } from 'react';
 import * as api from '../lib/game';
-import { type Ctx, GameContext } from './gameContext';
+import { type Ctx, GameContext, type TransactionState } from './gameContext';
 import { isAbort, usePoll } from './usePoll';
 import {
   connectWallet, disconnectWallet, restoreWallet, withWritePhase,
-  GAME_PROCESS, HB_NODE, type WritePhase,
+  GAME_PROCESS, HB_NODE,
 } from '../lib/hyperbeam';
 import {
   clearMemberMark, readMemberMark, writeMemberMark, type MemberMark,
@@ -137,7 +137,17 @@ export function GameProvider({ children }: { children: React.ReactNode }) {
    * because that is what stops a second click, but nothing that ANIMATES may
    * start until the wallet has actually been signed.
    */
-  const [phases, setPhases] = useState<ReadonlyMap<string, WritePhase>>(() => new Map());
+  const [transactions, setTransactions] = useState<ReadonlyMap<string, TransactionState>>(
+    () => new Map(),
+  );
+  /** A fresh identity for every attempt, including repeated actions under one key. */
+  const transactionSequence = useRef(0);
+  /** Terminal states live just long enough for a renderer/effect to observe them. */
+  const transactionTimers = useRef(new Map<string, ReturnType<typeof setTimeout>>());
+  useEffect(() => () => {
+    for (const timer of transactionTimers.current.values()) clearTimeout(timer);
+    transactionTimers.current.clear();
+  }, []);
   // Mirrored into a ref for the visibility listener: it is registered once per
   // connected wallet, so it cannot close over `pending` and still see it.
   //
@@ -155,9 +165,8 @@ export function GameProvider({ children }: { children: React.ReactNode }) {
   // compute one — React may call an updater more than once.
   const playerRef = useRef<Player | null>(null);
   useEffect(() => { playerRef.current = player; }, [player]);
-  // The wallet the signed fallback below has already been spent on, so it is
-  // asked for at most once per connected address per session.
-  const signedFallbackFor = useRef<string | null>(null);
+  const addressRef = useRef<string | null>(null);
+  addressRef.current = address;
   /**
    * Which read is the current one.
    *
@@ -239,7 +248,6 @@ export function GameProvider({ children }: { children: React.ReactNode }) {
       const connection = await connectWallet(provider);
       setLoadingPlayer(true);
       setPlayer(null);
-      signedFallbackFor.current = null;
       setAddress(connection.address);
       setWalletProvider(connection.provider);
       setWalletProviderName(connection.providerName);
@@ -292,20 +300,15 @@ export function GameProvider({ children }: { children: React.ReactNode }) {
    * nothing — which is why it is safe to call on connect, on a retry, and every
    * time the tab comes back to the foreground.
    *
-   * A null answer means the process has no record under that key — normally
-   * "no Eternal Pass", because unlocking a wallet mints a record for it.
+   * A null answer means the process has no record under that key. On an open
+   * deployment that is the normal shape of a wallet which has not joined yet;
+   * on a closed deployment it means no Eternal Pass. The published `access`
+   * flag distinguishes those cases with another unsigned GET.
    *
-   * Normally. A process deployed before per-address keys existed publishes NONE
-   * of them, so on one of those every wallet reads as null and the whole game
-   * tells every pass holder they do not have a pass. That is exactly what
-   * happened between this change landing in the client and the process being
-   * redeployed. So a null falls back to the signed `User.Login`, which is
-   * authoritative on any process ever deployed.
-   *
-   * It costs a signature, and only ever in the case that would otherwise be
-   * answered wrongly: a wallet with a pass never reaches it. Signing to be told
-   * "you have no account" is a fair price for never telling a paying player
-   * that by mistake.
+   * Do not fall back to `User.Login` here. A refresh is observation, never a
+   * game action, and a transient missing read must not turn into a wallet
+   * signature prompt. Processes old enough not to publish player/access keys
+   * are intentionally outside the browser's compatibility path.
    *
    * A network error is different again, and sets `loginError` so the screen can
    * offer a retry instead of a verdict.
@@ -335,26 +338,14 @@ export function GameProvider({ children }: { children: React.ReactNode }) {
       if (!isCurrent()) return;
       if (published) {
         setPlayer(published);
-      } else if (publicAccess || (await api.readAccess({ signal }).catch(() => null))?.publicAccess) {
-        if (!isCurrent()) return;
-        // In an open deployment an unknown wallet deliberately has no
-        // published player key yet. It becomes a durable account on its first
-        // signed action; showing the blank unlocked shape here preserves the
-        // rule that merely connecting signs nothing.
-        setPublicAccess(true);
-        setPlayer(blankPlayer(address, true));
-      } else if (signedFallbackFor.current === address) {
-        // Already asked once for this wallet. Refresh runs on every return to
-        // the tab, and a prompt each time somebody switches windows would be
-        // worse than the wrong answer it is guarding against.
-        setPlayer((current) => current ?? blankPlayer(address));
       } else {
-        signedFallbackFor.current = address;
-        // The wallet may refuse and the process may be unreachable; either way a
-        // blank player is a better answer than a spinner that never resolves.
-        const signed = await api.login().catch(() => blankPlayer(address));
+        const access = publicAccess ? { publicAccess: true } : await api.readAccess({ signal });
         if (!isCurrent()) return;
-        setPlayer(signed);
+        const unlocked = access?.publicAccess === true;
+        // An unknown wallet becomes durable only when it chooses a real signed
+        // action. Until then this is a local view over published access policy.
+        if (unlocked) setPublicAccess(true);
+        setPlayer(blankPlayer(address, unlocked));
       }
     } catch (err) {
       if (isCurrent() && !isAbort(err)) setLoginError(err);
@@ -560,13 +551,62 @@ export function GameProvider({ children }: { children: React.ReactNode }) {
     if (pots) setArenaTiers(pots);
   }, []);
 
-  const run = useCallback(async function run<T extends Player>(
+  const run = useCallback(async function run<T>(
     key: string, fn: () => Promise<T>, success?: string,
     optimistic?: (player: Player) => Player,
   ): Promise<T | null> {
+    // The transport phase sink is scoped to one high-level write, and game
+    // actions also depend on the player record returned by the one before it.
+    // Refuse overlap synchronously even on surfaces (notably the market) where
+    // two controls can remain mounted while another wallet dialog is open.
+    if (pendingRef.current > 0) {
+      toast.info('Another signed action is already in progress.');
+      return null;
+    }
+    const attempt = ++transactionSequence.current;
+    const previousTimer = transactionTimers.current.get(key);
+    if (previousTimer) clearTimeout(previousTimer);
+    transactionTimers.current.delete(key);
+
+    /** Only this attempt may move or clear this key. */
+    const publish = (state: TransactionState) => {
+      setTransactions((all) => {
+        const current = all.get(key);
+        if (current && current.attempt > attempt) return all;
+        // A high-level action may sign more than one process message (a Hunt
+        // capture's acknowledgement is the current example). Once its first
+        // signature is away, a later wallet step must not rewind the scene to
+        // `signing` and make its anticipation disappear mid-transaction.
+        if (current?.attempt === attempt && current.stage === 'settling'
+            && state.stage === 'signing') return all;
+        return new Map(all).set(key, state);
+      });
+    };
+    const finish = (stage: 'confirmed' | 'failed', error?: unknown) => {
+      publish({
+        attempt,
+        stage,
+        ...(stage === 'failed'
+          ? { error: error instanceof Error ? error.message : String(error) }
+          : {}),
+      });
+      const timer = setTimeout(() => {
+        setTransactions((all) => {
+          if (all.get(key)?.attempt !== attempt) return all;
+          const next = new Map(all);
+          next.delete(key);
+          return next;
+        });
+        if (transactionTimers.current.get(key) === timer) {
+          transactionTimers.current.delete(key);
+        }
+      }, stage === 'failed' ? 1_800 : 1_000);
+      transactionTimers.current.set(key, timer);
+    };
+
     pendingRef.current += 1;
     setPending((all) => new Set(all).add(key));
-    setPhases((all) => new Map(all).set(key, 'signing'));
+    publish({ attempt, stage: 'signing' });
 
     /*
       Paint the expected result on the SIGNATURE, keep what it replaced.
@@ -609,25 +649,35 @@ export function GameProvider({ children }: { children: React.ReactNode }) {
 
     try {
       const reply = await withWritePhase((phase) => {
-        setPhases((all) => new Map(all).set(key, phase));
+        publish({ attempt, stage: phase });
         if (phase === 'settling') paint();
       }, fn);
       // Every player-facing handler answers with the whole player record, so
       // one assignment keeps every screen current. Passing whole records around
       // rather than hand-picked fields is deliberate — the Dumverse port traced
       // three separate crashes to a view that dropped them.
-      if (reply && typeof reply === 'object' && 'address' in reply) {
-        playerRef.current = reply as Player;
-        setPlayer(reply as Player);
+      if (reply && typeof reply === 'object' && 'address' in reply && 'inventory' in reply) {
+        const playerReply = reply as unknown as Player;
+        if (playerReply.address === addressRef.current) {
+          playerRef.current = playerReply;
+          setPlayer(playerReply);
+        } else {
+          // Admin tooling can return somebody else's complete Player. It still
+          // uses the lifecycle harness, but must never replace the connected
+          // controller's own header/account state with its subject.
+          rollback();
+        }
       } else {
         // A verb that does not answer with a record leaves the projection
         // standing on nothing. Drop it and let the next read decide.
         rollback();
       }
+      finish('confirmed');
       if (success) toast.success(success);
       return reply;
     } catch (err) {
       rollback();
+      finish('failed', err);
       toast.error(err instanceof Error ? err.message : String(err));
       return null;
     } finally {
@@ -637,17 +687,18 @@ export function GameProvider({ children }: { children: React.ReactNode }) {
         next.delete(key);
         return next;
       });
-      setPhases((all) => {
-        const next = new Map(all);
-        next.delete(key);
-        return next;
-      });
     }
   }, [toast]);
 
   const isPending = useCallback((key: string) => pending.has(key), [pending]);
   const writePhase = useCallback(
-    (key: string) => phases.get(key) ?? null, [phases],
+    (key: string) => {
+      const stage = transactions.get(key)?.stage;
+      return stage === 'signing' || stage === 'settling' ? stage : null;
+    }, [transactions],
+  );
+  const transaction = useCallback(
+    (key: string) => transactions.get(key) ?? null, [transactions],
   );
 
   /*
@@ -678,7 +729,7 @@ export function GameProvider({ children }: { children: React.ReactNode }) {
     tuning: catalog?.tuning ?? FALLBACK_TUNING,
     challenges, refreshChallenges,
     arenaTiers, refreshArenaTiers,
-    busy: pending.size > 0, isPending, writePhase, run,
+    busy: pending.size > 0, isPending, writePhase, transaction, run,
     processId: GAME_PROCESS, node: HB_NODE,
   }), [
     address, connecting, connect, disconnect, hasWallet,
@@ -686,7 +737,7 @@ export function GameProvider({ children }: { children: React.ReactNode }) {
     player, member, sworn, loadingPlayer, loginError, refresh,
     factions, leaderboard, catalog, monsterIndex, challenges, refreshChallenges,
     arenaTiers, refreshArenaTiers,
-    pending, isPending, writePhase, run,
+    pending, isPending, writePhase, transaction, run,
   ]);
 
   return (

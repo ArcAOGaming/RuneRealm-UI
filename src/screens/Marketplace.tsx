@@ -11,28 +11,33 @@ import {
 } from '../lib/marketplace';
 import {
   EXTERNAL_VENUE_PROCESS, INTERNAL_VENUE_PROCESS, VenueBook, VenueMarketBook,
-  VenueLevel, VenueMarketConfig, VenuePosition, VenueTape, VenueTrade,
+  VenueIntradayCandle, VenueIntradayCandles, VenueLevel, VenueMarketConfig,
+  VenuePosition, VenueTape, VenueTrade,
   amendVenueOrder, cancelAllVenueOrders, cancelVenueOrder, depositTokenToVenue,
-  externalVenueConfigured, internalVenueConfigured, marketTrades, placeVenueOrder,
-  readVenueBook, readVenueMarkets, readVenuePosition, readVenueTape, withdrawFromVenue,
+  externalVenueConfigured, internalVenueConfigured, marketTrades, marketVenueCandles,
+  mergeVenueTapes, placeVenueOrder, readVenueBook, readVenueCandles,
+  readVenueHistoryTape, readVenueMarkets, readVenuePosition, readVenueTape,
+  withdrawFromVenue,
 } from '../lib/venue';
 import {
   EconomyCandle, EconomyDesk, EconomyMarketStats, EconomyOrder, EconomyView, Element,
   GoldMarketItemId, GoldOrderSide, GoldOrderTif, Listing, Monster, PlayerFill, Sale,
 } from '../lib/types';
 import { ELEMENT_LABEL, ITEM_NAME, formatInteger, shortAddress } from '../lib/format';
-import { Badge, Button, Empty, ErrorNote, Panel, Skeleton, cx } from '../ui/primitives';
+import {
+  Badge, Button, Empty, ErrorNote, Panel, Skeleton, TransactionHold, cx,
+} from '../ui/primitives';
 import { Dialog } from '../ui/Dialog';
 import { CardPreview } from '../ui/CardPreview';
 import { CardViewer } from '../ui/CardViewer';
 import { ITEM_ART } from '../ui/art';
-import { useToast } from '../ui/toastContext';
 import { useTourSteps, type TourStep } from '../ui/tourContext';
 import { Arrow, ELEMENT_ICON, Exchange, Refresh, Rune, Sparkle, Wallet } from '../ui/icons';
 import { MarketVenue, MarketVenuePicker, usePopover, venueFromSearch } from '../ui/marketVenues';
 import { MarketDiorama } from '../ui/MarketDiorama';
 import type { MarketDioramaStockItem } from '../gfx/marketDiorama';
 import { economyPreview } from '../lib/economy-preview';
+import { buildChartLab } from '../lib/market-chart-lab';
 
 type MonsterSort = 'recent' | 'price-low' | 'price-high' | 'level' | 'attack' | 'defense';
 
@@ -56,26 +61,26 @@ const inputClass = 'h-11 w-full rounded-[3px] border border-edge bg-void/35 px-3
 const MARKET_TOUR: TourStep[] = [
   {
     /* The header tab on desktop, the screen's own picker on a phone. Both
-       carry the same four rows; whichever is on screen is the one pointed at.
+       carry the same five rows; whichever is on screen is the one pointed at.
        See `findTarget` in `ui/Tour.tsx`. */
     target: '[data-tour-to="/market"], .market-venue-trigger',
-    title: 'Four counters, one list',
-    body: 'Market opens onto four counters. The shop sells at a price the realm sets and cannot be haggled with. The internal book is players trading goods for Gold. The external book is that same instrument on real tokens in your wallet. Monsters is companions changing hands.',
+    title: 'Five counters, one list',
+    body: 'Market opens onto five counters. The shop sells at a price the realm sets and cannot be haggled with. The internal book is players trading goods for Gold. The external book is that same instrument on real tokens in your wallet. Chart Lab uses clearly marked synthetic markets to exercise every chart state without a wallet or contract. Monsters is companions changing hands.',
   },
   {
     target: '[data-tour="market-book"]',
     title: 'Two books, one shape',
-    body: 'Both books draw the same chart, the same ladder, the same tape and the same ticket, so what you learn on one you already know on the other. They are the same instrument: resting bids and asks, matched by price then time. The only difference is what funds them — game goods and Gold on the internal one, wallet tokens on the external one. Recent trades under the ladder are the venue’s most recent, everybody’s and not just yours; a colour there is the side that took, not the way the price moved. A venue holds what it matches, so deposit the asset you mean to spend before you quote it. Neither book has a pool behind it, so nothing fills until someone is on the other side.',
+    body: 'Both live books and Chart Lab draw the same chart, ladder, tape and ticket, so what you learn on one carries to the others. Chart Lab is synthetic and never signs. The live books are the same instrument: resting bids and asks, matched by price then time. Only their funding differs — game goods and Gold internally, wallet tokens externally. Recent trades under the ladder are the venue’s most recent, everybody’s and not just yours; a colour there is the side that took, not the way the price moved. A live venue holds what it matches, so deposit the asset you mean to spend before you quote it. Neither live book has a pool behind it, so nothing fills until someone is on the other side.',
   },
   {
     target: '[data-tour="market-desks"]',
     title: 'The shop is a different counterparty',
-    body: 'The shop fills immediately from finite realm stock and reserves. Both books fill only against player orders: the internal venue holds deposited game goods and Gold, while the external venue holds deposited wallet tokens. Internal trading is free; the external taker pays 0.30%, and makers pay nothing.',
+    body: 'The shop fills immediately from finite realm stock and reserves. Both live books fill only against player orders: the internal venue holds deposited game goods and Gold, while the external venue holds deposited wallet tokens. Internal trading is free; the external taker pays 0.30%, and makers pay nothing. Chart Lab only previews those mechanics with local fixtures.',
   },
   {
     target: '[data-tour="market-ticket"]',
     title: 'Read the trade ticket',
-    body: 'Limit rests at your price; Market takes what the ladder has now and cancels the rest; All-or-none does the whole size or nothing; Maker-only refuses to cross. Market and All-or-none never go in unpriced — the limit shown is the worst price the sweep needs. The published band rejects a fat-finger price once the market has a reference. Move re-prices a quote in one message, Cancel frees its escrow immediately, and Withdraw returns only the balance no live order is holding.',
+    body: 'Limit trades at your price or better and rests any remainder; Market takes what the ladder has now and cancels the rest; Fill all now does the whole size immediately or nothing; Maker-only refuses to cross. Market and Fill all never go in unpriced — the limit shown is the worst price the sweep needs. The published band rejects a fat-finger price once the market has a reference. Move re-prices a quote in one message, Cancel frees its escrow immediately, and Withdraw returns only the balance no live order is holding.',
   },
 ];
 
@@ -105,6 +110,7 @@ export default function Marketplace() {
               navigate(`/market?${prefillSearch(order)}`, { replace: true })} />
           : venue === 'internal' ? <VenueFloor mode="internal" prefill={readPrefill(params)} />
           : venue === 'external' ? <ExternalBook />
+          : venue === 'lab' ? <ChartLab />
           : <MonsterMarket />}
       </div>
     </div>
@@ -218,17 +224,19 @@ const tokenUnit = (ticker: string, denomination: number): FloorUnit => ({
   placeholder: '0.000',
 });
 
-type FloorRange = '12h' | '24h' | '7d' | '30d';
+type FloorRange = '30m' | '1h' | '3h' | '12h' | '24h' | '7d' | '30d';
 type ChartMode = 'line' | 'candles';
-type CandleInterval = '5m' | '30m' | '1h' | '4h' | '1d';
+type CandleInterval = '30s' | '1m' | '5m' | '15m' | '30m' | '1h' | '4h' | '1d';
 
 const RANGE_MS: Record<FloorRange, number> = {
+  '30m': 30 * 60_000, '1h': 3600_000, '3h': 3 * 3600_000,
   '12h': 12 * 3600_000, '24h': 24 * 3600_000,
   '7d': 7 * 24 * 3600_000, '30d': 30 * 24 * 3600_000,
 };
 
 const CANDLE_MS: Record<CandleInterval, number> = {
-  '5m': 5 * 60_000, '30m': 30 * 60_000, '1h': 3600_000,
+  '30s': 30_000, '1m': 60_000, '5m': 5 * 60_000,
+  '15m': 15 * 60_000, '30m': 30 * 60_000, '1h': 3600_000,
   '4h': 4 * 3600_000, '1d': 24 * 3600_000,
 };
 
@@ -250,7 +258,9 @@ function shopPauseCopy(reason: string): string {
 }
 
 function GoodsMarket({ onOpenFloor }: { onOpenFloor: (order: FloorPrefill) => void }) {
-  const { address, player, connect, connecting, run, isPending, refresh } = useGame();
+  const {
+    address, player, connect, connecting, run, isPending, writePhase, refresh,
+  } = useGame();
   const [economy, setEconomy] = useState<EconomyView | null>(null);
   /* The shop's "player exchange" column, read from the venue the button
      actually navigates to. It used to come off `economy.market`, which is
@@ -340,6 +350,11 @@ function GoodsMarket({ onOpenFloor }: { onOpenFloor: (order: FloorPrefill) => vo
   return (
     <div className="market-goods">
       {error !== null && <ErrorNote error={error} onRetry={() => void load()} />}
+      {writePhase(`npc-${side}-${item}`) === 'settling' && (
+        <TransactionHold className="mb-2">
+          The trade is signed. The goods stay on the counter until the desk confirms the fill.
+        </TransactionHold>
+      )}
 
       <RealmShop economy={economy} venueBook={venueBook} gold={gold} inventory={player?.inventory}
                  item={item} onItem={setItem} side={side} onSide={setSide}
@@ -802,14 +817,21 @@ function ShopTradeTicket({
  */
 const TIF_CHOICES: Array<{ value: GoldOrderTif; label: string; blurb: string }> = [
   { value: 'GTC', label: 'Limit',
-    blurb: 'Rests on the book at your price until it fills or you withdraw it.' },
+    blurb: 'Trades at your limit or better now; any remainder rests until it fills or you withdraw it.' },
   { value: 'IOC', label: 'Market',
     blurb: 'Takes whatever the ladder offers right now and cancels the rest. Nothing rests.' },
-  { value: 'FOK', label: 'All or none',
-    blurb: 'Fills the whole quantity at once or does nothing at all, and costs nothing when it does nothing.' },
+  { value: 'FOK', label: 'Fill all now',
+    blurb: 'Fills the whole quantity right now or does nothing at all, and costs nothing when it does nothing.' },
   { value: 'PostOnly', label: 'Maker only',
     blurb: 'Refused rather than allowed to cross, so this can only ever add liquidity.' },
 ];
+
+const TIF_TERMS: Record<GoldOrderTif, string> = {
+  GTC: 'Good for 30 days · price-time priority · partial fills allowed',
+  IOC: 'Executes now · unfilled quantity cancels · nothing rests',
+  FOK: 'Executes now · full quantity only · nothing rests',
+  PostOnly: 'Good for 30 days · adds liquidity only · partial fills allowed',
+};
 
 const TIF_RECEIPT: Record<GoldOrderTif, (side: GoldOrderSide, count: number, item: GoldMarketItemId) => string> = {
   GTC: (side, count, item) => `${side === 'buy' ? 'Bid' : 'Ask'} entered for ${formatInteger(count)} ${ITEM_NAME[item]}.`,
@@ -845,11 +867,11 @@ function sweepLadder(
 }
 
 function TradingFloor({
-  book, candles, points, trades, config, unit, ticks, lead, actions, extraStats,
+  book, candles, publishedCandles, points, trades, config, unit, ticks, lead, actions, extraStats,
   address, quoteBalance, baseBalance, item, range, onRange,
   chartMode, onChartMode, candleInterval, onCandleInterval, side, onSide, tif, onTif,
   price, onPrice, quantity, onQuantity, ownOrders, recentFills, connecting, onConnect,
-  isPending, onSubmit, onCancel, onCancelAll, onAmend,
+  isPending, onSubmit, onCancel, onCancelAll, onAmend, demo = false,
 }: {
   /* The ladder, the band and the bars, and nothing else about the venue.
 
@@ -861,7 +883,9 @@ function TradingFloor({
      either way, which is the point. */
   book: EconomyMarketStats | undefined;
   candles: EconomyCandle[];
-  /** The venue's public tape for this market, oldest first. */
+  /** Durable venue bars, keyed by display interval. The trade tail remains the fallback. */
+  publishedCandles?: Partial<Record<CandleInterval, CandleBar[]>>;
+  /** Address-free chart history for this market, oldest first. */
   trades: VenueTrade[];
   points: PricePoint[];
   config: { minValue: number; takerBps: number; creationCost: number };
@@ -886,19 +910,29 @@ function TradingFloor({
   isPending: (key: string) => boolean; onSubmit: () => void; onCancel: (orderId: string) => void;
   onCancelAll: (item?: GoldMarketItemId) => void;
   onAmend: (orderId: string, changes: { price?: number; quantity?: number }) => Promise<unknown>;
+  /** Exercises every control locally but never signs, sends, or mutates a book. */
+  demo?: boolean;
 }) {
   const now = Date.now();
   const from = now - RANGE_MS[range];
-  /* Daily bars come from the process. A venue publishes no public tape at all
-     -- the raw fills are the single largest thing a book could publish, and
-     every message would pay for them five times over -- so the line chart is
-     drawn from this trader's own fills and the month view is drawn from bars
-     the process keeps for thirty days. A published candle is permanent. */
+  const zoomChart = useCallback((direction: ChartZoom) => {
+    const allowed = chartMode === 'candles' ? rangesFor(candleInterval) : FLOOR_RANGES;
+    const next = adjacentRange(range, direction, allowed);
+    if (next !== range) onRange(next);
+  }, [chartMode, candleInterval, range, onRange]);
+  /* Daily bars and the optional intraday map come from the process and survive
+     beyond the bounded fill ring. A venue can publish two compact source
+     intervals and let the browser fold them into every wider chart interval. */
   const dailyBars = useMemo<CandleBar[]>(() => candles
     .filter((bar) => bar.d * 86_400_000 >= from - 86_400_000)
-    .map((bar) => ({ t: bar.d * 86_400_000, open: bar.o, high: bar.h, low: bar.l, close: bar.c, volume: bar.v })),
+    .map((bar) => ({
+      t: bar.d * 86_400_000, open: bar.o, high: bar.h, low: bar.l,
+      close: bar.c, volume: bar.v, trades: bar.n,
+    })),
   [candles, from]);
-  const publishedBars = chartMode === 'candles' && candleInterval === '1d' ? dailyBars : undefined;
+  const publishedBars = chartMode === 'candles'
+    ? publishedCandles?.[candleInterval] ?? (candleInterval === '1d' ? dailyBars : undefined)
+    : undefined;
 
   const [amending, setAmending] = useState<{ id: string; price: string; quantity: string } | null>(null);
   const [spend, setSpend] = useState('');
@@ -921,14 +955,16 @@ function TradingFloor({
   const parsedQuantity = spending ? swept.units : Math.floor(Number(quantity));
   const validOrder = Number.isSafeInteger(parsedPrice) && parsedPrice > 0
     && Number.isSafeInteger(parsedQuantity) && parsedQuantity > 0;
-  const notional = validOrder ? parsedPrice * parsedQuantity : 0;
+  const rawNotional = validOrder ? parsedPrice * parsedQuantity : 0;
+  const unsafeNotional = validOrder && !Number.isSafeInteger(rawNotional);
+  const notional = unsafeNotional ? 0 : rawNotional;
   /* Read the fee off the market, never a constant.
      The process charges the TAKER, at a per-market rate that is 0 on every
      internal market and 30 bps on the external one. A hardcoded number here
      describes a rule the process may not have, which is worse than showing
      nothing. See ORDERBOOK.md paragraph 7.3. */
   const minimumOrder = config.minValue;
-  const belowMinimum = validOrder && notional < minimumOrder;
+  const belowMinimum = validOrder && !unsafeNotional && notional < minimumOrder;
   const creationCost = config.creationCost;
   const takerBps = config.takerBps;
   const crossesBook = validOrder && (side === 'buy'
@@ -950,7 +986,7 @@ function TradingFloor({
   const postOnlyCrosses = tif === 'PostOnly' && crossesBook;
   const nothingToTake = immediate && swept.units <= 0;
   const killShort = tif === 'FOK' && swept.units < parsedQuantity;
-  const orderReady = validOrder && !belowMinimum && !shortQuote && !shortItems
+  const orderReady = validOrder && !unsafeNotional && !belowMinimum && !shortQuote && !shortItems
     && !outsideBand && !postOnlyCrosses && !nothingToTake && !killShort;
   const ladderPeak = ladderScale(book?.depth.bids ?? [], book?.depth.asks ?? []);
   const pickDepth = (nextSide: GoldOrderSide, nextPrice: number) => {
@@ -965,7 +1001,7 @@ function TradingFloor({
         ...extraStats ?? [],
         { label: `${unit.quote} here`, value: unit.format(quoteBalance), tone: 'text-rune' },
         { label: `${ITEM_NAME[item] ?? item} here`, value: formatInteger(baseBalance), tone: 'text-arcane' },
-        { label: 'Your orders', value: formatInteger(ownOrders.length) },
+        { label: demo ? 'Sample orders' : 'Your orders', value: formatInteger(ownOrders.length) },
       ]} />
 
       <div data-tour="market-book" className="market-book-body grid min-h-0 flex-1 gap-2.5">
@@ -976,28 +1012,20 @@ function TradingFloor({
             </h3>
             <BookChartToolbar chartMode={chartMode} onChartMode={onChartMode}
                               candleInterval={candleInterval} onCandleInterval={onCandleInterval}
-                              range={range} onRange={onRange} />
+                              range={range} onRange={onRange} onZoom={zoomChart} />
           </div>
           <BookTicker rows={ticks} />
           <PriceChart className="mt-2.5 min-h-[15rem] flex-1 lg:min-h-0" points={points} from={from} to={now}
                       bid={book?.bestBid} ask={book?.bestAsk} mode={chartMode}
                       candleMs={CANDLE_MS[candleInterval]} published={publishedBars}
-                      unit={unit.quote} format={unit.format}
+                      unit={unit.quote} format={unit.format} onZoom={zoomChart}
                       emptyAction={publishedBars === undefined && candles.length > 0
                         ? {
-                          note: `Nothing traded here in the last ${range}. The tape holds the venue's
-                                 last few trades and no more, so a quiet market runs off the end of it —
-                                 the daily bars go back thirty days.`,
+                          note: `No trades fall inside this ${range} window.`,
                           label: 'Show the daily bars',
                           onClick: () => { onChartMode('candles'); onCandleInterval('1d'); onRange('30d'); },
                         }
                         : undefined} />
-          <p className="mt-1.5 text-[10px] text-faint">
-            {publishedBars !== undefined
-              ? 'Daily candles come from the process and are kept for 30 days.'
-              : `Built from the venue's public tape — every trade, whoever made it, back as far as the
-                 last ${formatInteger(trades.length)} on this book. Older than that, the daily bars.`}
-          </p>
         </Panel>
 
         <Panel className="market-depth-panel flex min-h-0 flex-col overflow-hidden p-3.5">
@@ -1049,6 +1077,7 @@ function TradingFloor({
             <div><div className="eyebrow">Order ticket</div>
               <h3 className="mt-1 text-sm font-semibold">{ITEM_NAME[item]}</h3></div>
             <div className="flex flex-wrap justify-end gap-1">
+              {demo && <Badge tone="element">Synthetic</Badge>}
               {validOrder && !immediate && (
                 <Badge tone={crossesBook ? 'good' : 'plain'}>{crossesBook ? 'Crosses' : 'Rests'}</Badge>
               )}
@@ -1066,7 +1095,7 @@ function TradingFloor({
           {/* Time in force. Everything else a book does is a special case of
               these four, and the only difference between them is what happens
               to the part that did not trade. */}
-          <div className="market-tif mt-2 grid grid-cols-4 gap-1" role="group" aria-label="Time in force">
+          <div className="market-tif mt-2 grid grid-cols-2 gap-1" role="group" aria-label="Time in force">
             {TIF_CHOICES.map((choice) => (
               <button key={choice.value} type="button" title={choice.blurb}
                       aria-pressed={tif === choice.value}
@@ -1139,7 +1168,7 @@ function TradingFloor({
           </dl>
 
           <p className="mt-3 border-t border-edge/60 pt-2 text-[10px] leading-relaxed text-faint">
-            Good for 30 days &middot; price-time priority &middot; partial fills allowed
+            {TIF_TERMS[tif]}
           </p>
           {crossesBook && side === 'buy' && !immediate && (
             <p className="mt-1 text-[10px] leading-relaxed text-good">The resting ask sets the fill price; unused bid escrow returns.</p>
@@ -1152,13 +1181,21 @@ function TradingFloor({
           )}
           {postOnlyCrosses && <p className="mt-2 text-[11px] text-warn">A maker-only order may not cross. Move the price, or switch to Limit.</p>}
           {nothingToTake && <p className="mt-2 text-[11px] text-warn">Nothing is resting on that side to take.</p>}
-          {killShort && !nothingToTake && <p className="mt-2 text-[11px] text-warn">Only {formatInteger(swept.units)} available, and an all-or-none order would do nothing.</p>}
+          {killShort && !nothingToTake && <p className="mt-2 text-[11px] text-warn">Only {formatInteger(swept.units)} available, and a fill-all order would do nothing.</p>}
+          {unsafeNotional && <p className="mt-2 text-[11px] text-warn">This order is too large for the client to quote exactly. Reduce its price or quantity.</p>}
           {belowMinimum && <p className="mt-2 text-[11px] text-warn">Minimum order value is {unit.format(minimumOrder)} {unit.quote}.</p>}
           {Boolean(shortQuote) && <p className="mt-2 text-[11px] text-warn">
             Need {unit.format(shortQuote)} more {unit.quote} deposited at this venue.</p>}
           {Boolean(shortItems) && <p className="mt-2 text-[11px] text-warn">
             Need {formatInteger(shortItems)} more {ITEM_NAME[item]} deposited at this venue.</p>}
-          {!address
+          {demo
+            ? <>
+              <p className="mt-2 text-[10px] leading-relaxed text-arcane">
+                Preview only. Change the ticket to test totals and depth; nothing here signs or reaches a process.
+              </p>
+              <Button className="mt-2.5 w-full" variant="primary" disabled>Chart Lab · no order sent</Button>
+            </>
+            : !address
             ? <Button className="mt-2.5 w-full" variant="primary" busy={connecting} onClick={onConnect}
                       icon={<Wallet className="h-4 w-4" />}>Connect to trade</Button>
             : <Button className="mt-2.5 w-full" variant="primary" busy={isPending('gold-order')}
@@ -1167,11 +1204,11 @@ function TradingFloor({
               </Button>}
 
           <div className="mt-4 flex items-center justify-between gap-2">
-            <div className="eyebrow">Your open orders</div>
+            <div className="eyebrow">{demo ? 'Sample open orders' : 'Your open orders'}</div>
             {/* One message to step away from every quote in this market. The
                 alternative is one message per order, which is two seconds of
                 being unable to withdraw a price that has gone wrong. */}
-            {mineHere.length > 1 && (
+            {!demo && mineHere.length > 1 && (
               <button type="button" className="market-ticket-link"
                       disabled={isPending('gold-cancel-all')}
                       onClick={() => onCancelAll(item)}>
@@ -1181,7 +1218,9 @@ function TradingFloor({
           </div>
           <ul className="mt-1.5 space-y-1 overflow-y-auto">
             {ownOrders.length === 0
-              ? <li className="py-2 text-[11px] text-faint">Nothing of yours on the book.</li>
+              ? <li className="py-2 text-[11px] text-faint">
+                {demo ? 'This fixture has no sample orders.' : 'Nothing of yours on the book.'}
+              </li>
               : ownOrders.map((order) => (
                 <li key={order.id} className="rounded-[2px] border border-edge/70 px-2 py-1.5">
                   <div className="flex items-center gap-2">
@@ -1190,13 +1229,15 @@ function TradingFloor({
                       <b className={order.side === 'buy' ? 'text-good' : 'text-bad'}>{order.side === 'buy' ? 'BID' : 'ASK'}</b>{' '}
                       {order.remaining}/{order.quantity} @ {unit.format(order.price)}
                     </span>
-                    <button type="button" className="market-ticket-link"
-                            aria-expanded={amending?.id === order.id}
-                            onClick={() => setAmending(amending?.id === order.id ? null : {
-                              id: order.id, price: unit.edit(order.price), quantity: String(order.remaining),
-                            })}>Move</button>
-                    <Button size="sm" variant="quiet" busy={isPending(`gold-cancel-${order.id}`)}
-                            onClick={() => onCancel(order.id)}>&times;</Button>
+                    {!demo && <>
+                      <button type="button" className="market-ticket-link"
+                              aria-expanded={amending?.id === order.id}
+                              onClick={() => setAmending(amending?.id === order.id ? null : {
+                                id: order.id, price: unit.edit(order.price), quantity: String(order.remaining),
+                              })}>Move</button>
+                      <Button size="sm" variant="quiet" busy={isPending(`gold-cancel-${order.id}`)}
+                              onClick={() => onCancel(order.id)}>&times;</Button>
+                    </>}
                   </div>
                   {amending?.id === order.id && (
                     <>
@@ -1229,10 +1270,12 @@ function TradingFloor({
           {/* A trader's own fills. The global list is a 500-row ring shared by
               every market, so hunting through it for your own trades is both
               the wrong shape and, past five hundred trades, wrong. */}
-          <div className="eyebrow mt-4">Your recent fills</div>
+          <div className="eyebrow mt-4">{demo ? 'Sample account fills' : 'Your recent fills'}</div>
           <ul className="mt-1.5 min-h-0 flex-1 space-y-1 overflow-y-auto">
             {!recentFills?.length
-              ? <li className="py-2 text-[11px] text-faint">Nothing filled yet.</li>
+              ? <li className="py-2 text-[11px] text-faint">
+                {demo ? 'This fixture has no sample fills.' : 'Nothing filled yet.'}
+              </li>
               : recentFills.slice(0, 12).map((fill) => (
                 <li key={fill.id} className="flex items-center gap-2 px-1 py-1 font-mono text-[10px]">
                   <ItemGlyph item={fill.item} className="h-3.5 w-3.5" />
@@ -1254,13 +1297,15 @@ function TradingFloor({
 }
 
 /**
- * The floor's price history, over real time rather than over an index.
+ * The line is elapsed time; candles are traded intervals.
  *
- * Fills are sparse and unevenly spaced — two trades an hour apart then nothing
- * for a day — so plotting them evenly would draw a busy market that does not
- * exist. The x axis is the chosen window with a rule per day, and the current
- * best bid and ask are dashed across it, because where the last trade sits
- * relative to the live book is the only reading anybody takes from this.
+ * A thin market can print twice, sit idle for hours, then print again. Leaving
+ * every empty interval on the candle axis turns those three useful bars into a
+ * few pixels separated by an empty canvas. Filling the hole with synthetic
+ * OHLC rows would be worse: it would draw activity that never happened.
+ * Candles therefore pack only intervals that traded and mark every internal
+ * break with its real idle duration. The selected window still decides which
+ * trades are eligible, and the toolbar says how much wall-clock time it covers.
  */
 /**
  * Line or candles, which candle, and how far back.
@@ -1269,8 +1314,18 @@ function TradingFloor({
  * screen's JSX is a toolbar the other screen grows a slightly different copy
  * of, and then the two stop being the same instrument.
  */
-const CANDLE_INTERVALS: CandleInterval[] = ['5m', '30m', '1h', '4h', '1d'];
-const FLOOR_RANGES: FloorRange[] = ['12h', '24h', '7d', '30d'];
+const CANDLE_INTERVALS: CandleInterval[] = ['30s', '1m', '5m', '15m', '30m', '1h', '4h', '1d'];
+const FLOOR_RANGES: FloorRange[] = ['30m', '1h', '3h', '12h', '24h', '7d', '30d'];
+type ChartZoom = 'in' | 'out';
+
+/** One discrete time-window step, shortest to longest. */
+function adjacentRange(range: FloorRange, direction: ChartZoom, allowed: FloorRange[]): FloorRange {
+  const windows = FLOOR_RANGES.filter((value) => allowed.includes(value));
+  const at = windows.indexOf(range);
+  if (at < 0 || !windows.length) return range;
+  const next = direction === 'in' ? Math.max(0, at - 1) : Math.min(windows.length - 1, at + 1);
+  return windows[next] ?? range;
+}
 
 /**
  * Which windows an interval can actually be drawn in.
@@ -1288,57 +1343,78 @@ const rangesFor = (interval: CandleInterval) => FLOOR_RANGES.filter((value) => {
   return bars >= MIN_BARS && bars <= MAX_BARS;
 });
 
-function BookChartToolbar({ chartMode, onChartMode, candleInterval, onCandleInterval, range, onRange }: {
+function BookChartToolbar({
+  chartMode, onChartMode, candleInterval, onCandleInterval, range, onRange, onZoom,
+}: {
   chartMode: ChartMode; onChartMode: (mode: ChartMode) => void;
   candleInterval: CandleInterval; onCandleInterval: (interval: CandleInterval) => void;
   range: FloorRange; onRange: (range: FloorRange) => void;
+  onZoom: (direction: ChartZoom) => void;
 }) {
   const allowed = chartMode === 'candles' ? rangesFor(candleInterval) : FLOOR_RANGES;
-  /* Moving the interval moves the window with it, to the nearest one it can be
-     drawn in, so the chart never lands on a combination it has to refuse. */
-  const pickInterval = (next: CandleInterval) => {
-    onCandleInterval(next);
-    const valid = rangesFor(next);
+  const zoomedIn = adjacentRange(range, 'in', allowed);
+  const zoomedOut = adjacentRange(range, 'out', allowed);
+  const nearestRange = (valid: FloorRange[]) => {
     if (valid.includes(range) || !valid.length) return;
     const wanted = FLOOR_RANGES.indexOf(range);
     onRange(valid.reduce((best, value) =>
       Math.abs(FLOOR_RANGES.indexOf(value) - wanted) < Math.abs(FLOOR_RANGES.indexOf(best) - wanted)
         ? value : best));
   };
+  /* Moving the interval moves the window with it, to the nearest one it can be
+     drawn in, so the chart never lands on a combination it has to refuse. */
+  const pickInterval = (next: CandleInterval) => {
+    onCandleInterval(next);
+    nearestRange(rangesFor(next));
+  };
+  /* Line accepts every window. Coming back to candles must apply the same
+     coupling as changing the interval, or a 30-day line can leave a 30-second
+     candle view selected even though its range button is disabled. */
+  const pickMode = (next: ChartMode) => {
+    onChartMode(next);
+    if (next === 'candles') nearestRange(rangesFor(candleInterval));
+  };
 
   return (
     <div className="market-chart-toolbar flex flex-wrap justify-end gap-1">
       {(['line', 'candles'] as ChartMode[]).map((value) => (
-        <ChartControl key={value} active={chartMode === value} onClick={() => onChartMode(value)}>
+        <ChartControl key={value} active={chartMode === value} onClick={() => pickMode(value)}>
           {value === 'line' ? 'Line' : 'Candles'}
         </ChartControl>
       ))}
       <span className="market-chart-divider" aria-hidden="true" />
+      {chartMode === 'candles' && <span className="market-chart-group-label">Bar</span>}
       {chartMode === 'candles' && CANDLE_INTERVALS.map((value) => (
-        <ChartControl key={value} active={candleInterval === value} onClick={() => pickInterval(value)}
-                      title={value === '1d'
-                        ? 'Daily bars, published by the venue and kept for 30 days'
-                        : `${value} bars, built from your own fills — the venue publishes no public tape`}>
-          {value}
-        </ChartControl>
-      ))}
+          <ChartControl key={value} active={candleInterval === value} onClick={() => pickInterval(value)}
+                        title={value === '1d'
+                          ? 'Daily bars, published by the venue and kept for 30 days'
+                          : `${value} bars, aggregated from the venue's recent public trades`}>
+            {value}
+          </ChartControl>
+        ))}
       {chartMode === 'candles' && <span className="market-chart-divider" aria-hidden="true" />}
+      <span className="market-chart-group-label">Window</span>
       {FLOOR_RANGES.map((value) => (
         <ChartControl key={value} active={range === value} disabled={!allowed.includes(value)}
                       title={allowed.includes(value) ? undefined
                         : `${value} of ${candleInterval} bars does not draw`}
                       onClick={() => onRange(value)}>{value}</ChartControl>
       ))}
+      <ChartControl active={false} disabled={zoomedOut === range} ariaLabel="Zoom out"
+                    title="Zoom out to a longer time window" onClick={() => onZoom('out')}>−</ChartControl>
+      <ChartControl active={false} disabled={zoomedIn === range} ariaLabel="Zoom in"
+                    title="Zoom in to a shorter time window" onClick={() => onZoom('in')}>+</ChartControl>
     </div>
   );
 }
 
-function ChartControl({ active, onClick, children, disabled, title }: {
+function ChartControl({ active, onClick, children, disabled, title, ariaLabel }: {
   active: boolean; onClick: () => void; children: React.ReactNode;
-  disabled?: boolean; title?: string;
+  disabled?: boolean; title?: string; ariaLabel?: string;
 }) {
   return (
-    <button type="button" aria-pressed={active} onClick={onClick} disabled={disabled} title={title}
+    <button type="button" aria-pressed={active} aria-label={ariaLabel}
+            onClick={onClick} disabled={disabled} title={title}
             className={cx('market-chart-control', active && 'is-active')}>
       {children}
     </button>
@@ -1346,7 +1422,20 @@ function ChartControl({ active, onClick, children, disabled, title }: {
 }
 
 interface PricePoint { t: number; v: number; q: number }
-interface CandleBar { t: number; open: number; high: number; low: number; close: number; volume: number }
+interface CandleBar {
+  t: number;
+  open: number;
+  high: number;
+  low: number;
+  close: number;
+  volume: number;
+  trades: number;
+}
+
+interface CandleGap {
+  after: number;
+  duration: number;
+}
 
 function candleBars(points: PricePoint[], interval: number): CandleBar[] {
   const buckets = new Map<number, CandleBar>();
@@ -1354,24 +1443,75 @@ function candleBars(points: PricePoint[], interval: number): CandleBar[] {
     const start = Math.floor(point.t / interval) * interval;
     const row = buckets.get(start);
     if (!row) {
-      buckets.set(start, { t: start, open: point.v, high: point.v, low: point.v, close: point.v, volume: point.q });
+      buckets.set(start, {
+        t: start, open: point.v, high: point.v, low: point.v, close: point.v,
+        volume: point.q, trades: 1,
+      });
     } else {
       row.high = Math.max(row.high, point.v);
       row.low = Math.min(row.low, point.v);
       row.close = point.v;
       row.volume += point.q;
+      row.trades += 1;
     }
   }
   return [...buckets.values()].sort((a, b) => a.t - b.t);
 }
 
+/**
+ * Fold the venue's durable tuple feed into any supported display interval.
+ * One-minute and five-minute rows retain their exact OHLC; wider bars preserve
+ * the first open, last close, extrema, volume and fill count of their inputs.
+ */
+function venueCandleBars(rows: VenueIntradayCandle[], interval: number): CandleBar[] {
+  const buckets = new Map<number, CandleBar>();
+  for (const [at, open, high, low, close, baseVolume, , fillCount] of rows) {
+    const start = Math.floor((at * 1000) / interval) * interval;
+    const row = buckets.get(start);
+    if (!row) {
+      buckets.set(start, {
+        t: start, open, high, low, close,
+        volume: baseVolume, trades: fillCount,
+      });
+    } else {
+      row.high = Math.max(row.high, high);
+      row.low = Math.min(row.low, low);
+      row.close = close;
+      row.volume += baseVolume;
+      row.trades += fillCount;
+    }
+  }
+  return [...buckets.values()].sort((a, b) => a.t - b.t);
+}
+
+/** Empty intervals between real bars. Nothing synthetic is added to the chart. */
+function candleGaps(bars: CandleBar[], interval: number): CandleGap[] {
+  const gaps: CandleGap[] = [];
+  for (let index = 1; index < bars.length; index += 1) {
+    const elapsed = bars[index].t - bars[index - 1].t;
+    const missing = Math.max(0, Math.round(elapsed / interval) - 1);
+    if (missing > 0) gaps.push({ after: index - 1, duration: missing * interval });
+  }
+  return gaps;
+}
+
+function chartDuration(value: number): string {
+  const minutes = Math.max(1, Math.round(value / 60_000));
+  if (minutes < 60) return `${minutes}m`;
+  const hours = Math.floor(minutes / 60);
+  const remainder = minutes % 60;
+  if (hours < 24) return remainder ? `${hours}h ${remainder}m` : `${hours}h`;
+  const days = Math.floor(hours / 24);
+  const extraHours = hours % 24;
+  return extraHours ? `${days}d ${extraHours}h` : `${days}d`;
+}
+
 function PriceChart({ points, from, to, bid, ask, mode, candleMs, published, unit, format,
-                     className, emptyAction }: {
+                     className, emptyAction, onZoom }: {
   points: PricePoint[]; from: number; to: number; mode: ChartMode; candleMs: number;
-  /* What to offer when this window has nothing in it. The venue publishes one
-     bar a day and no fill tape, so "empty" is the normal state of every
-     intraday interval on a wallet that has not traded -- and a bare "no fills"
-     over a live book reads as a dead market. */
+  /* What to offer when this window has nothing in it. The venue's retained
+     history is bounded by trade count, so a quiet market can still run off its
+     end; a bare "no fills" over a live book reads as a dead market. */
   emptyAction?: { label: string; note: string; onClick: () => void };
   /* The quote asset's name and how to print a price in it. A book quoted in
      Gold prints whole numbers; one quoted in a six-decimal token does not, and
@@ -1384,12 +1524,41 @@ function PriceChart({ points, from, to, bid, ask, mode, candleMs, published, uni
      permanent. */
   published?: CandleBar[];
   bid?: number; ask?: number; className?: string;
+  onZoom?: (direction: ChartZoom) => void;
 }) {
   const canvas = useRef<HTMLCanvasElement>(null);
   const host = useRef<HTMLDivElement>(null);
-  const derived = useMemo(() => candleBars(points, candleMs), [points, candleMs]);
-  const bars = published?.length ? published : derived;
+  const lastWheelZoom = useRef(0);
+  /* A selected window is a data boundary, not only an x-axis label. The old
+     renderer kept every tape row in its price scale and empty-state count,
+     even when the row was outside the window, which could flatten the visible
+     bars or claim a window had trades while drawing none. */
+  const visiblePoints = useMemo(() => points.filter((point) => point.t >= from && point.t <= to),
+    [points, from, to]);
+  const visiblePublished = useMemo(() => published?.filter((bar) =>
+    bar.t <= to && bar.t + candleMs > from), [published, from, to, candleMs]);
+  const derived = useMemo(() => candleBars(visiblePoints, candleMs), [visiblePoints, candleMs]);
+  const bars = visiblePublished?.length ? visiblePublished : derived;
+  const gaps = useMemo(() => candleGaps(bars, candleMs), [bars, candleMs]);
   const latestBar = bars.at(-1);
+  const plottedTrades = mode === 'candles'
+    ? bars.reduce((sum, bar) => sum + bar.trades, 0)
+    : visiblePoints.length;
+  /* Gold prices are whole quote atoms. A diagonal between 8 and 9 implies
+     tradeable prices that cannot exist, so line mode holds the last real print
+     until the timestamp of the next one. Divisible token books keep the
+     continuous line. */
+  const steppedLine = mode === 'line' && unit === 'Gold';
+  const visiblePriceLevels = useMemo(() => new Set(visiblePoints.map((point) => point.v)).size,
+    [visiblePoints]);
+  const windowIntervals = Math.max(1,
+    Math.floor(to / candleMs) - Math.floor(from / candleMs) + 1);
+  const emptyIntervals = Math.max(0, windowIntervals - bars.length);
+  const emptyNote = emptyAction?.note ?? ((bid || ask)
+    ? `${[
+      bid ? `bid ${format(bid)}` : '', ask ? `ask ${format(ask)}` : '',
+    ].filter(Boolean).join(' / ')} ${unit} is live. Price history starts with a fill.`
+    : 'No resting quotes or fills in this window.');
 
   useEffect(() => {
     const element = canvas.current;
@@ -1407,7 +1576,9 @@ function PriceChart({ points, from, to, bid, ask, mode, candleMs, published, uni
       if (!ctx) return;
       ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
       const width = rect.width; const height = rect.height;
-      const pad = { left: 7, right: 58, top: 18, bottom: 20 };
+      /* The OHLC strip wraps on a phone. Give its second line real plot space
+         instead of letting it sit over the high wick. */
+      const pad = { left: 7, right: 58, top: width < 520 ? 32 : 18, bottom: 20 };
       const plotW = Math.max(1, width - pad.left - pad.right);
       const plotH = Math.max(1, height - pad.top - pad.bottom);
       const priceH = mode === 'candles' ? plotH * .76 : plotH;
@@ -1415,34 +1586,153 @@ function PriceChart({ points, from, to, bid, ask, mode, candleMs, published, uni
 
       const priceValues = mode === 'candles'
         ? bars.flatMap((bar) => [bar.high, bar.low])
-        : points.map((point) => point.v);
-      const values = [...priceValues, bid, ask]
+        : visiblePoints.map((point) => point.v);
+      const historyValues = priceValues
         .filter((value): value is number => typeof value === 'number' && value > 0);
-      const low = values.length ? Math.min(...values) : 0;
-      const high = values.length ? Math.max(...values) : 1;
-      const margin = (high - low) * .15 || Math.max(1, high * .15);
-      const top = high + margin; const bottom = Math.max(0, low - margin);
+      const quoteValues = [bid, ask]
+        .filter((value): value is number => typeof value === 'number' && value > 0);
+      /* Candles own the historical price scale. The live bid and ask are
+         overlays, not observations: including a wide current spread in the
+         domain squeezed every real candle into the strip between those two
+         rules. With no history, quotes still provide a useful empty scale. */
+      const scaleValues = historyValues.length ? historyValues : quoteValues;
+      const low = scaleValues.length ? Math.min(...scaleValues) : 0;
+      const high = scaleValues.length ? Math.max(...scaleValues) : 1;
+      /* A one-Gold move on an 8-Gold berry is one discrete tick, not an 80%
+         chart crash. Autoscaling only to observed high/low made real 8/9 data
+         fill the entire panel while the broad synthetic fixture looked calm.
+         Give coarse Gold markets at least four units of vertical context; a
+         wider real range still owns the scale. Token markets use a percentage
+         floor because their quote atoms are divisible. */
+      const observedSpan = high - low;
+      const minimumSpan = unit === 'Gold'
+        ? Math.max(4, high * .08)
+        : Math.max(1, high * .06);
+      const priceSpan = Math.max(observedSpan * 1.24, minimumSpan);
+      const centre = (high + low) / 2;
+      let bottom = Math.max(0, centre - priceSpan / 2);
+      let top = bottom + priceSpan;
+      if (top < high) { top = high + priceSpan * .06; bottom = Math.max(0, top - priceSpan); }
       const y = (value: number) => pad.top + (1 - (value - bottom) / (top - bottom || 1)) * priceH;
-      /* Half a candle of right margin, because the newest bar is centred on the
-         middle of its own interval and `to` is now: without it the bar being
-         formed is drawn half outside the plot, sliced by the price axis. */
-      const edge = mode === 'candles' ? to + candleMs / 2 : to;
-      const x = (time: number) => pad.left + ((time - from) / (edge - from || 1)) * plotW;
+      const span = to - from;
+      const x = (time: number) => pad.left + ((time - from) / (span || 1)) * plotW;
+      /* Candle x is activity-based, not wall-clock based. Each real interval
+         owns one slot; absent intervals own no pixels and are called out by a
+         break marker below. This is the same convention used to omit closed
+         sessions on an exchange chart, made explicit because this venue is
+         open continuously and its breaks are inactivity rather than closure. */
+      const candleSlot = plotW / Math.max(1, bars.length);
+      const candleX = (index: number) => pad.left + candleSlot * (index + .5);
+      const rawLine = visiblePoints.map((point) => ({
+        t: point.t, v: point.v, x: x(point.t), y: y(point.v),
+      }));
+      /* Thousands of trades can land in the same few screen pixels on a long
+         window. Painting each one produces a solid purple column at the right
+         edge, which is neither a price line nor useful density. A line is the
+         closing print, so each eight-pixel time column keeps its last trade; the
+         candle view remains the place that preserves highs and lows. */
+      let plottedLine = rawLine;
+      if (rawLine.length > Math.max(120, Math.floor(plotW / 8))) {
+        plottedLine = [];
+        let bucket = -1;
+        let group: typeof rawLine = [];
+        const flush = () => {
+          if (!group.length) return;
+          plottedLine.push(group[group.length - 1]);
+        };
+        for (const row of rawLine) {
+          const nextBucket = Math.floor((row.x - pad.left) / 8);
+          if (nextBucket !== bucket) { flush(); group = []; bucket = nextBucket; }
+          group.push(row);
+        }
+        flush();
+      }
+      const deltas = visiblePoints.slice(1).map((point, index) => point.t - visiblePoints[index].t)
+        .filter((value) => value > 0).sort((a, b) => a - b);
+      const medianDelta = deltas.length ? deltas[Math.floor(deltas.length / 2)] : span;
+      /* Downsampling increases the ordinary distance between kept points.
+         Count that bucket width as continuity or a narrow/mobile chart turns
+         every retained point into a one-point "segment" and the line vanishes. */
+      const sampledBucketTime = span * 8 / Math.max(1, plotW);
+      const lineBreakAfter = Math.max(60_000, span / 100, medianDelta * 4,
+        sampledBucketTime * 1.5);
+      const lineSegments: typeof plottedLine[] = [];
+      for (const point of plottedLine) {
+        const segment = lineSegments.at(-1);
+        const previous = segment?.at(-1);
+        if (!segment || (previous && point.t - previous.t > lineBreakAfter)) {
+          lineSegments.push([point]);
+        } else {
+          segment.push(point);
+        }
+      }
 
-      const span = edge - from;
       const hour = 3600_000; const day = 24 * hour;
-      const gridMs = span <= 13 * hour ? 2 * hour : span <= 25 * hour ? 4 * hour : span <= 8 * day ? day : 5 * day;
       ctx.font = '9px "JetBrains Mono", ui-monospace, monospace';
       ctx.textBaseline = 'top';
-      for (let tick = Math.ceil(from / gridMs) * gridMs; tick <= edge; tick += gridMs) {
-        const px = x(tick);
-        ctx.strokeStyle = 'rgba(150,122,255,.14)'; ctx.lineWidth = 1;
-        ctx.beginPath(); ctx.moveTo(px, pad.top); ctx.lineTo(px, pad.top + plotH); ctx.stroke();
-        ctx.fillStyle = 'rgba(128,138,164,.88)'; ctx.textAlign = 'center';
-        const label = span <= 25 * hour
-          ? new Date(tick).toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' })
-          : new Date(tick).toLocaleDateString(undefined, { day: 'numeric', month: 'short' });
-        ctx.fillText(label, px, pad.top + plotH + 4);
+      if (mode === 'candles' && bars.length) {
+        const maxLabels = Math.max(2, Math.floor(plotW / 105));
+        const labelCount = Math.min(bars.length, maxLabels);
+        const indices = new Set<number>();
+        for (let slot = 0; slot < labelCount; slot += 1) {
+          indices.add(labelCount === 1 ? 0
+            : Math.round(slot * (bars.length - 1) / (labelCount - 1)));
+        }
+        for (const index of [...indices].sort((a, b) => a - b)) {
+          const px = candleX(index);
+          ctx.strokeStyle = 'rgba(150,122,255,.12)'; ctx.lineWidth = 1;
+          ctx.beginPath(); ctx.moveTo(px, pad.top); ctx.lineTo(px, pad.top + plotH); ctx.stroke();
+          ctx.fillStyle = 'rgba(128,138,164,.88)'; ctx.textAlign = 'center';
+          const label = candleMs >= day
+            ? new Date(bars[index].t).toLocaleDateString(undefined, { day: 'numeric', month: 'short' })
+            : new Date(bars[index].t).toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' });
+          ctx.fillText(label, px, pad.top + plotH + 4);
+        }
+        /* An omitted interval is shown, never silently squeezed out. The cut
+           occupies the seam between two real bar slots and says how much
+           wall-clock time is missing when there is room for the label. */
+        for (const gap of gaps) {
+          const px = (candleX(gap.after) + candleX(gap.after + 1)) / 2;
+          ctx.fillStyle = 'rgba(150,122,255,.035)';
+          ctx.fillRect(px - 8, pad.top, 16, plotH);
+          ctx.save();
+          ctx.setLineDash([2, 4]); ctx.strokeStyle = 'rgba(150,159,184,.28)';
+          ctx.beginPath(); ctx.moveTo(px, pad.top + 14); ctx.lineTo(px, pad.top + plotH - 14); ctx.stroke();
+          ctx.restore();
+          ctx.strokeStyle = 'rgba(214,200,162,.45)'; ctx.lineWidth = 1;
+          for (const offset of [-3, 3]) {
+            ctx.beginPath();
+            ctx.moveTo(px - 4, pad.top + priceH / 2 + offset + 3);
+            ctx.lineTo(px + 4, pad.top + priceH / 2 + offset - 3);
+            ctx.stroke();
+          }
+          if (plotW >= 420 && gaps.length <= 4) {
+            const label = `${chartDuration(gap.duration)} idle`;
+            ctx.font = '8px "JetBrains Mono", ui-monospace, monospace';
+            const labelW = ctx.measureText(label).width + 8;
+            ctx.fillStyle = 'rgba(10,12,20,.9)';
+            ctx.fillRect(px - labelW / 2, pad.top + priceH / 2 + 11, labelW, 13);
+            ctx.fillStyle = 'rgba(150,159,184,.82)'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+            ctx.fillText(label, px, pad.top + priceH / 2 + 17.5);
+          }
+        }
+      } else {
+        const gridMs = span <= 45 * 60_000 ? 5 * 60_000
+          : span <= 90 * 60_000 ? 15 * 60_000
+          : span <= 4 * hour ? 30 * 60_000
+          : span <= 13 * hour ? 2 * hour
+          : span <= 25 * hour ? 4 * hour
+          : span <= 8 * day ? day : 5 * day;
+        for (let tick = Math.ceil(from / gridMs) * gridMs; tick <= to; tick += gridMs) {
+          const px = x(tick);
+          ctx.strokeStyle = 'rgba(150,122,255,.14)'; ctx.lineWidth = 1;
+          ctx.beginPath(); ctx.moveTo(px, pad.top); ctx.lineTo(px, pad.top + plotH); ctx.stroke();
+          ctx.fillStyle = 'rgba(128,138,164,.88)'; ctx.textAlign = 'center';
+          const label = span <= 25 * hour
+            ? new Date(tick).toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' })
+            : new Date(tick).toLocaleDateString(undefined, { day: 'numeric', month: 'short' });
+          ctx.fillText(label, px, pad.top + plotH + 4);
+        }
       }
       /* A price axis, which the chart went without: four gridlines and no
          number on any of them, so the only readable price was whatever the bid
@@ -1453,7 +1743,7 @@ function PriceChart({ points, from, to, bid, ask, mode, candleMs, published, uni
         const py = pad.top + (priceH / 3) * index;
         ctx.strokeStyle = 'rgba(214,200,162,.07)';
         ctx.beginPath(); ctx.moveTo(pad.left, py); ctx.lineTo(pad.left + plotW, py); ctx.stroke();
-        if (values.length) {
+        if (scaleValues.length) {
           ctx.fillStyle = 'rgba(128,138,164,.72)';
           /* Prices are integer quote atoms. The padded chart range and its
              thirds are display geometry, so their interpolation is usually
@@ -1470,20 +1760,26 @@ function PriceChart({ points, from, to, bid, ask, mode, candleMs, published, uni
          and the two colours read as one string. */
       const rule = (value: number | undefined, colour: string, label: string, dash: number[]) => {
         if (!value) return;
-        const py = y(value);
+        const exactY = y(value);
+        const above = exactY < pad.top;
+        const below = exactY > pad.top + priceH;
+        const py = Math.max(pad.top, Math.min(pad.top + priceH, exactY));
         ctx.save();
         ctx.setLineDash(dash); ctx.strokeStyle = colour; ctx.lineWidth = 1;
         ctx.beginPath(); ctx.moveTo(pad.left, py); ctx.lineTo(pad.left + plotW, py); ctx.stroke();
         ctx.restore();
-        const text = `${label} ${format(value)}`;
+        /* Keep an off-scale live quote visible without letting it rescale the
+           history. The arrow says which direction the actual price lies. */
+        const text = `${label}${above ? '↑' : below ? '↓' : ''} ${format(value)}`;
         const boxW = Math.min(pad.right - 4, ctx.measureText(text).width + 8);
         ctx.fillStyle = 'rgba(10,12,20,.92)';
         ctx.fillRect(pad.left + plotW + 3, py - 6.5, boxW, 13);
         ctx.fillStyle = colour; ctx.textAlign = 'left'; ctx.textBaseline = 'middle';
         ctx.fillText(text, pad.left + plotW + 7, py);
       };
-      const lastTrade = mode === 'candles' ? bars.at(-1)?.close : points.at(-1)?.v;
-      rule(lastTrade, 'rgb(214,200,162)', 'L', [1, 0]);
+      const lastTrade = mode === 'candles' ? bars.at(-1)?.close : visiblePoints.at(-1)?.v;
+      rule(lastTrade, mode === 'candles' ? 'rgba(214,200,162,.58)' : 'rgb(214,200,162)',
+        'L', mode === 'candles' ? [2, 3] : [1, 0]);
       rule(bid, 'rgb(74,210,149)', 'B', [3, 3]);
       rule(ask, 'rgb(255,94,105)', 'A', [3, 3]);
 
@@ -1491,55 +1787,78 @@ function PriceChart({ points, from, to, bid, ask, mode, candleMs, published, uni
         const maxVolume = Math.max(1, ...bars.map((bar) => bar.volume));
         const volumeBottom = pad.top + plotH;
         const volumeHeight = plotH - priceH - 5;
-        /* A 5m bar in a 24h window is 2.4 px of slot. Below ~120 bars keep a
-           body findable at 3 px; above it let them go thin rather than
-           overlapping into one solid block. */
-        const slot = plotW * (candleMs / Math.max(1, span));
-        const bodyWidth = Math.max(bars.length > 120 ? 1 : 3, Math.min(16, slot * .72));
+        const bodyWidth = Math.max(bars.length > 120 ? 1 : 4, Math.min(16, candleSlot * .56));
         ctx.strokeStyle = 'rgba(214,200,162,.08)';
         ctx.beginPath(); ctx.moveTo(pad.left, pad.top + priceH + 3); ctx.lineTo(pad.left + plotW, pad.top + priceH + 3); ctx.stroke();
-        for (const bar of bars) {
-          const px = x(bar.t + candleMs / 2);
+        for (const [index, bar] of bars.entries()) {
+          const px = candleX(index);
           const rising = bar.close >= bar.open;
           const colour = rising ? 'rgb(74,210,149)' : 'rgb(255,94,105)';
           ctx.strokeStyle = colour; ctx.lineWidth = 1;
           ctx.beginPath(); ctx.moveTo(px, y(bar.high)); ctx.lineTo(px, y(bar.low)); ctx.stroke();
-          const bodyTop = Math.min(y(bar.open), y(bar.close));
-          const bodyHeight = Math.max(1.5, Math.abs(y(bar.open) - y(bar.close)));
-          ctx.fillStyle = rising ? 'rgba(74,210,149,.78)' : 'rgba(255,94,105,.78)';
-          ctx.fillRect(px - bodyWidth / 2, bodyTop, bodyWidth, bodyHeight);
+          const openY = y(bar.open); const closeY = y(bar.close);
+          const bodyHeight = Math.abs(openY - closeY);
+          if (bodyHeight < 1.5) {
+            /* A flat OHLC interval is a doji, not an invisible one-pixel body.
+               Centre it on the exact price so it does not lean down from it. */
+            ctx.lineWidth = 2;
+            ctx.beginPath(); ctx.moveTo(px - bodyWidth / 2, openY); ctx.lineTo(px + bodyWidth / 2, openY); ctx.stroke();
+          } else {
+            ctx.fillStyle = rising ? 'rgba(74,210,149,.78)' : 'rgba(255,94,105,.78)';
+            ctx.fillRect(px - bodyWidth / 2, Math.min(openY, closeY), bodyWidth, bodyHeight);
+          }
           const volume = (bar.volume / maxVolume) * Math.max(1, volumeHeight);
           ctx.fillStyle = rising ? 'rgba(74,210,149,.18)' : 'rgba(255,94,105,.18)';
           ctx.fillRect(px - bodyWidth / 2, volumeBottom - volume, bodyWidth, volume);
         }
-      } else if (points.length) {
-        const plotted = points.map((point) => ({ x: x(point.t), y: y(point.v) }));
-        if (plotted.length > 1) {
-          const gradient = ctx.createLinearGradient(0, pad.top, 0, pad.top + priceH);
-          gradient.addColorStop(0, 'rgba(150,122,255,.3)');
-          gradient.addColorStop(1, 'rgba(150,122,255,0)');
-          ctx.beginPath();
-          plotted.forEach((point, index) => index ? ctx.lineTo(point.x, point.y) : ctx.moveTo(point.x, point.y));
-          ctx.lineTo(plotted[plotted.length - 1].x, pad.top + priceH);
-          ctx.lineTo(plotted[0].x, pad.top + priceH);
-          ctx.closePath(); ctx.fillStyle = gradient; ctx.fill();
-          ctx.beginPath();
-          plotted.forEach((point, index) => index ? ctx.lineTo(point.x, point.y) : ctx.moveTo(point.x, point.y));
-          ctx.strokeStyle = 'rgb(214,200,162)'; ctx.lineWidth = 1.6; ctx.stroke();
+      } else if (plottedLine.length) {
+        const gradient = ctx.createLinearGradient(0, pad.top, 0, pad.top + priceH);
+        gradient.addColorStop(0, 'rgba(150,122,255,.3)');
+        gradient.addColorStop(1, 'rgba(150,122,255,0)');
+        const trace = (segment: typeof plottedLine) => {
+          segment.forEach((point, index) => {
+            if (index === 0) {
+              ctx.moveTo(point.x, point.y);
+            } else if (steppedLine) {
+              ctx.lineTo(point.x, segment[index - 1].y);
+              ctx.lineTo(point.x, point.y);
+            } else {
+              ctx.lineTo(point.x, point.y);
+            }
+          });
+        };
+        for (const segment of lineSegments) {
+          if (segment.length > 1) {
+            ctx.beginPath();
+            trace(segment);
+            ctx.lineTo(segment[segment.length - 1].x, pad.top + priceH);
+            ctx.lineTo(segment[0].x, pad.top + priceH);
+            ctx.closePath(); ctx.fillStyle = gradient; ctx.fill();
+            ctx.beginPath();
+            trace(segment);
+            ctx.strokeStyle = 'rgb(214,200,162)'; ctx.lineWidth = 1.6; ctx.stroke();
+          }
         }
         ctx.fillStyle = 'rgb(150,122,255)';
-        plotted.forEach((point) => ctx.fillRect(point.x - 2.5, point.y - 2.5, 5, 5));
+        if (plottedLine.length <= 80) {
+          plottedLine.forEach((point) => ctx.fillRect(point.x - 1.5, point.y - 1.5, 3, 3));
+        } else {
+          for (const segment of lineSegments) {
+            const point = segment.at(-1);
+            if (point) ctx.fillRect(point.x - 2, point.y - 2, 4, 4);
+          }
+        }
       }
 
       if (pointer && pointer.x >= pad.left && pointer.x <= pad.left + plotW
           && pointer.y >= pad.top && pointer.y <= pad.top + plotH) {
         const candidates = mode === 'candles'
-          ? bars.map((bar) => ({ t: bar.t + candleMs / 2, v: bar.close, bar }))
-          : points.map((point) => ({ t: point.t, v: point.v, bar: undefined }));
+          ? bars.map((bar, index) => ({ t: bar.t + candleMs / 2, v: bar.close, bar, px: candleX(index) }))
+          : plottedLine.map((point) => ({ t: point.t, v: point.v, bar: undefined, px: point.x }));
         if (candidates.length) {
-          const hoverTime = from + ((pointer.x - pad.left) / plotW) * span;
-          const nearest = candidates.reduce((best, row) => Math.abs(row.t - hoverTime) < Math.abs(best.t - hoverTime) ? row : best);
-          const px = x(nearest.t); const py = y(nearest.v);
+          const pointerX = pointer.x;
+          const nearest = candidates.reduce((best, row) => Math.abs(row.px - pointerX) < Math.abs(best.px - pointerX) ? row : best);
+          const px = nearest.px; const py = y(nearest.v);
           ctx.save(); ctx.setLineDash([2, 3]); ctx.strokeStyle = 'rgba(214,200,162,.42)';
           ctx.beginPath(); ctx.moveTo(px, pad.top); ctx.lineTo(px, pad.top + plotH); ctx.stroke();
           ctx.beginPath(); ctx.moveTo(pad.left, py); ctx.lineTo(pad.left + plotW, py); ctx.stroke(); ctx.restore();
@@ -1566,8 +1885,20 @@ function PriceChart({ points, from, to, bid, ask, mode, candleMs, published, uni
       draw();
     };
     const onLeave = () => { pointer = null; draw(); };
+    const onWheel = (event: WheelEvent) => {
+      /* Ordinary wheel motion keeps scrolling the page. Ctrl/Command-wheel is
+         deliberate chart zoom (and what trackpad pinch reports), so a reader
+         merely passing over the plot is never trapped. */
+      if (!onZoom || (!event.ctrlKey && !event.metaKey)) return;
+      event.preventDefault();
+      const now = Date.now();
+      if (now - lastWheelZoom.current < 220) return;
+      lastWheelZoom.current = now;
+      onZoom(event.deltaY < 0 ? 'in' : 'out');
+    };
     element.addEventListener('mousemove', onMove);
     element.addEventListener('mouseleave', onLeave);
+    element.addEventListener('wheel', onWheel, { passive: false });
     draw();
     const observer = new ResizeObserver(draw);
     observer.observe(frame);
@@ -1575,25 +1906,42 @@ function PriceChart({ points, from, to, bid, ask, mode, candleMs, published, uni
       observer.disconnect();
       element.removeEventListener('mousemove', onMove);
       element.removeEventListener('mouseleave', onLeave);
+      element.removeEventListener('wheel', onWheel);
     };
-  }, [points, bars, from, to, bid, ask, mode, candleMs, unit, format]);
+  }, [visiblePoints, bars, gaps, from, to, bid, ask, mode, candleMs, unit, format, onZoom, steppedLine]);
 
-  const empty = mode === 'candles' ? bars.length === 0 : points.length === 0;
+  const empty = mode === 'candles' ? bars.length === 0 : visiblePoints.length === 0;
 
   return (
     <div ref={host} className={cx('market-price-chart relative overflow-hidden rounded-[3px]', className)}>
       {mode === 'candles' && latestBar && (
         <div className="market-candle-readout" aria-hidden="true">
-          <i>Last bar</i>
+          <i>{bars.length} traded / {formatInteger(emptyIntervals)} empty</i>
           <span>O {format(latestBar.open)}</span><span>H {format(latestBar.high)}</span>
           <span>L {format(latestBar.low)}</span><span>C {format(latestBar.close)}</span>
+          <span>V {formatInteger(latestBar.volume)}</span><span>N {formatInteger(latestBar.trades)}</span>
+        </div>
+      )}
+      {steppedLine && visiblePoints.length > 0 && (
+        <div className="market-line-readout" aria-hidden="true">
+          Exact Gold steps · {formatInteger(visiblePriceLevels)} price {visiblePriceLevels === 1 ? 'level' : 'levels'}
         </div>
       )}
       <canvas ref={canvas} className="absolute inset-0 h-full w-full cursor-crosshair"
-              role="img" aria-label={`${mode === 'candles' ? 'Candlestick' : 'Line'} price chart with ${points.length} fills`} />
+              tabIndex={0} title="Ctrl/Command-wheel or use + and − to zoom the time window"
+              onKeyDown={(event) => {
+                if ((event.key === '+' || event.key === '=') && onZoom) {
+                  event.preventDefault(); onZoom('in');
+                } else if ((event.key === '-' || event.key === '_') && onZoom) {
+                  event.preventDefault(); onZoom('out');
+                }
+              }}
+              role="img" aria-label={mode === 'candles'
+                ? `Candlestick price chart with ${bars.length} traded intervals covering ${plottedTrades} trades. ${emptyIntervals} empty intervals are omitted and ${gaps.length} internal gap${gaps.length === 1 ? '' : 's'} ${gaps.length === 1 ? 'is' : 'are'} marked.`
+                : `${steppedLine ? 'Stepped' : 'Line'} price chart with ${plottedTrades} recent trades across ${visiblePriceLevels} price levels`} />
       {empty && (
         <div className="market-chart-empty">
-          <p>{emptyAction?.note ?? 'No fills in this window.'}</p>
+          <p>{emptyNote}</p>
           {emptyAction && (
             <button type="button" className="market-chart-control" onClick={emptyAction.onClick}>
               {emptyAction.label}
@@ -1631,11 +1979,10 @@ function BookTicker({ rows }: {
 
 /* The tape strip's numbers.
 
-   A venue publishes no public fill tape -- the raw fills are the largest thing
-   a book could publish and every message would pay for them five times over --
-   so the last price, the day's volume and the week's come off the daily bars
-   the process does publish. The labels are the same on both venues on purpose;
-   only `unit` differs. */
+   The address-free history projection supplies last price while daily bars
+   supply the durable day/week totals. Raw fill parties never reach this
+   component. The labels are the same on both venues on purpose; only `unit`
+   differs. */
 function bookTicks(
   book: EconomyMarketStats | undefined, candles: EconomyCandle[],
   points: PricePoint[], unit: FloorUnit,
@@ -1788,24 +2135,19 @@ function DepthMountain({ bids: rawBids, asks: rawAsks, unit, format, className }
 
   const minPrice = Math.min(...prices);
   const maxPrice = Math.max(...prices);
-  /* Never fit the axis to the levels. A book with one price a side has
-     minPrice === best bid and maxPrice === best ask, so fitting puts EVERY
-     spread edge to edge and 1.9 against 2.0 draws the same as 1 against 1000.
-     The window is a fraction of mid instead, so width on screen means distance
-     in price, and it only widens to take in levels further out.
-
-     But not without limit: one ask parked at fifty times mid used to stretch
-     the window to fifty times mid, collapsing every level anybody can actually
-     trade against into a hairline at the centre. Past the cap a level is
-     CLAMPED to the edge instead -- which is what a far-out order really is,
-     depth beyond the window -- and the axis says the edge is a bound. */
-  const mid = bids.length && asks.length
-    ? (bids[0].price + asks[0].price) / 2 : (minPrice + maxPrice) / 2;
-  const wanted = Math.max(maxPrice - mid, mid - minPrice, mid * DEPTH_MIN_HALF_WINDOW);
-  const half = Math.min(wanted, mid * DEPTH_MAX_HALF_WINDOW) || 1;
-  const clipped = wanted > half;
-  const lowPrice = Math.max(0, mid - half);
-  const highPrice = mid + half;
+  const twoSided = bids.length > 0 && asks.length > 0;
+  const reference = twoSided
+    ? (bids[0].price + asks[0].price) / 2
+    : bids.length ? bids[0].price : asks[0].price;
+  const wanted = Math.max(
+    maxPrice - reference, reference - minPrice,
+    reference * DEPTH_MIN_HALF_WINDOW, 1,
+  );
+  const half = Math.min(wanted, reference * DEPTH_MAX_HALF_WINDOW) || 1;
+  const lowPrice = Math.max(0, reference - half);
+  const highPrice = reference + half;
+  const clippedLow = minPrice < lowPrice;
+  const clippedHigh = maxPrice > highPrice;
   const priceSpan = highPrice - lowPrice || 1;
   const x = (price: number) =>
     Math.max(5, Math.min(95, 5 + ((price - lowPrice) / priceSpan) * 90));
@@ -1813,33 +2155,24 @@ function DepthMountain({ bids: rawBids, asks: rawAsks, unit, format, className }
   const askTotal = asks.reduce((sum, row) => sum + row.quantity, 0);
   const maxDepth = Math.max(1, bidTotal, askTotal);
   const y = (quantity: number) => 88 - (quantity / maxDepth) * 72;
-
-  /* One step per LEVEL, spanning the price band that level is the answer for.
-     `bids` runs best-price-first, so the cumulative at bids[i] is the depth
-     available at or above bids[i].price -- and that number holds from that
-     price up to the level in front of it, the innermost one running all the
-     way to the mid. Walking the levels the other way and drawing a step
-     between consecutive prices dropped the whole staircase one place: the best
-     bid's own size was never drawn at all, so the bid mountain fell to zero at
-     the exact price the eye goes to, and the ask mountain -- mirrored, so the
-     omission landed on its outermost level -- did not. That asymmetry was the
-     lopsided shape, not the book. */
-  const midX = x(mid);
+  const referenceX = x(reference);
   const steps = (levels: typeof bids, side: 'bid' | 'ask') => {
     let cumulative = 0;
     return levels.map((row, index) => {
       cumulative += row.quantity;
-      const inner = index === 0 ? midX : x(levels[index - 1].price);
-      const outer = x(row.price);
+      const here = x(row.price);
+      const next = levels[index + 1];
+      const outer = next ? x(next.price) : side === 'bid' ? 5 : 95;
       return {
-        from: Math.min(inner, outer), to: Math.max(inner, outer),
+        from: Math.min(here, outer), to: Math.max(here, outer),
         y: y(cumulative), side,
       };
     });
   };
   const steppedArea = (rows: ReturnType<typeof steps>) => {
-    if (!rows.length) return '';
-    const ordered = [...rows].sort((a, b) => a.from - b.from);
+    const ordered = rows.filter((row) => row.to - row.from > .01)
+      .sort((a, b) => a.from - b.from);
+    if (!ordered.length) return '';
     let path = `M${ordered[0].from.toFixed(2)} 88`;
     for (const row of ordered) {
       path += ` L${row.from.toFixed(2)} ${row.y.toFixed(2)} L${row.to.toFixed(2)} ${row.y.toFixed(2)}`;
@@ -1848,8 +2181,9 @@ function DepthMountain({ bids: rawBids, asks: rawAsks, unit, format, className }
   };
   const bidSteps = steps(bids, 'bid');
   const askSteps = steps(asks, 'ask');
-  const bestBidX = bids.length ? x(bids[0].price) : midX;
-  const bestAskX = asks.length ? x(asks[0].price) : midX;
+  const bestBidX = bids.length ? x(bids[0].price) : undefined;
+  const bestAskX = asks.length ? x(asks[0].price) : undefined;
+  const referenceLabel = twoSided ? 'mid' : bids.length ? 'best bid' : 'best ask';
 
   return (
     <div className={cx('market-depth-mountain relative overflow-hidden rounded-[3px]', className)}
@@ -1857,34 +2191,27 @@ function DepthMountain({ bids: rawBids, asks: rawAsks, unit, format, className }
       <div className="market-depth-caption"><span className="text-good">{formatInteger(bidTotal)} bid units</span><span>Cumulative depth</span><span className="text-bad">{formatInteger(askTotal)} ask units</span></div>
       <svg className="absolute inset-0 h-full w-full" viewBox="0 0 100 100" preserveAspectRatio="none" aria-hidden="true">
         {[28, 48, 68, 88].map((line) => <path key={line} d={`M5 ${line}H95`} stroke="rgb(var(--rune) / .07)" vectorEffect="non-scaling-stroke" />)}
-        {bestAskX > bestBidX && <rect x={bestBidX} y="10" width={bestAskX - bestBidX} height="78" fill="rgb(var(--arcane) / .055)" />}
+        {bestBidX !== undefined && bestAskX !== undefined && bestAskX > bestBidX && (
+          <rect x={bestBidX} y="10" width={bestAskX - bestBidX} height="78" fill="rgb(var(--arcane) / .055)" />
+        )}
         {bidSteps.length > 0 && <path d={steppedArea(bidSteps)} fill="rgb(var(--good) / .15)" stroke="rgb(var(--good) / .78)" strokeWidth="1.3" vectorEffect="non-scaling-stroke" />}
         {askSteps.length > 0 && <path d={steppedArea(askSteps)} fill="rgb(var(--bad) / .14)" stroke="rgb(var(--bad) / .78)" strokeWidth="1.3" vectorEffect="non-scaling-stroke" />}
-        <path d={`M${bestBidX} 10V88 M${bestAskX} 10V88`} stroke="rgb(var(--arcane) / .28)" strokeDasharray="2 3" vectorEffect="non-scaling-stroke" />
-        {/* The mid, solid, because it is the price both staircases are measured
-            out from and the only line on here that is not somebody's order. */}
-        <path d={`M${midX} 8V88`} stroke="rgb(var(--arcane) / .5)" vectorEffect="non-scaling-stroke" />
+        {bestBidX !== undefined && <path d={`M${bestBidX} 10V88`} stroke="rgb(var(--good) / .38)" strokeDasharray="2 3" vectorEffect="non-scaling-stroke" />}
+        {bestAskX !== undefined && <path d={`M${bestAskX} 10V88`} stroke="rgb(var(--bad) / .38)" strokeDasharray="2 3" vectorEffect="non-scaling-stroke" />}
+        {twoSided && <path d={`M${referenceX} 8V88`} stroke="rgb(var(--arcane) / .5)" vectorEffect="non-scaling-stroke" />}
       </svg>
       <div className="market-depth-axis">
-        <span>{clipped ? '≤ ' : ''}{format(lowPrice)} {unit}</span>
-        <span>mid {format(mid)} {unit}</span>
-        <span>{clipped ? '≥ ' : ''}{format(highPrice)} {unit}</span>
+        <span>{clippedLow ? '≤ ' : ''}{format(Math.round(lowPrice))} {unit}</span>
+        <span>{referenceLabel} {format(Math.round(reference))} {unit}</span>
+        <span>{clippedHigh ? '≥ ' : ''}{format(Math.round(highPrice))} {unit}</span>
       </div>
     </div>
   );
 }
 
-/** How many levels a ladder column shows. */
+/** How many levels each ladder wall shows. */
 const DEPTH_LADDER_ROWS = 8;
 
-/**
- * The tallest cumulative either side reaches, over the rows both will show.
- *
- * One scale for the pair, because the bars are read against each other. Each
- * column normalising to its own peak drew a five-unit bid and a five-hundred
- * unit ask as the same bar, which says the book is balanced when it is a
- * hundred to one.
- */
 function ladderScale(bids: MarketDepthRow[], asks: MarketDepthRow[]): number {
   const side = (rows: MarketDepthRow[], tone: 'good' | 'bad') =>
     aggregateDepth(rows, tone).slice(0, DEPTH_LADDER_ROWS)
@@ -1892,30 +2219,14 @@ function ladderScale(bids: MarketDepthRow[], asks: MarketDepthRow[]): number {
   return Math.max(1, side(bids, 'good'), side(asks, 'bad'));
 }
 
-/**
- * Price ladder beneath the cumulative depth view.
- *
- * The bar behind a row is CUMULATIVE depth to that price, not the level's own
- * size, and it is scaled against the other side as well as this one -- so the
- * two columns form one shape around the touch and a long bar means "a lot
- * rests between here and the top of the book", which is the reading everybody
- * takes off a ladder. A per-level bar normalised per column, which is what was
- * here, says nothing the size text does not already say, and says it in a unit
- * that changes between the two columns.
- */
+/** Mirrored cumulative price wall beneath the depth mountain. */
 function DepthList({ label, rows, tone, onPick, action, unit, format, formatSize, houseNote, scale }: {
   label: string; tone: 'good' | 'bad'; rows: MarketDepthRow[];
   onPick: (price: number) => void; action: string;
   unit: string; format: (value: number) => string; formatSize?: (value: number) => string;
-  /** The shared cumulative scale from `ladderScale`. */
   scale?: number;
-  /* The venue supplies the sentence for a level's size, so a ladder can say
-     what its own levels mean rather than assuming resting player orders. */
   houseNote?: (row: { quantity: number; orders: number; house: number }) => string;
 }) {
-  /* The deployed view may still publish one row per order. Collapse it here so
-     the ladder always reads as price levels while the process moves to the
-     smaller aggregated contract described in ORDERBOOK.md. */
   const levels = aggregateDepth(rows, tone).slice(0, DEPTH_LADDER_ROWS);
   let running = 0;
   const shown = levels.map((row) => ({ ...row, cumulative: running += row.quantity }));
@@ -1943,9 +2254,6 @@ function DepthList({ label, rows, tone, onPick, action, unit, format, formatSize
                 <span className={cx('relative', tone === 'good' ? 'text-good' : 'text-bad')}>{format(row.price)}</span>
                 <span className="relative text-faint" title={note(row)}>
                   &times; {size(row.quantity)}
-                  {/* The house is in the same ladder as everyone else, so the
-                      only honest way to show it is here, on the level it is
-                      quoting — not in a second tab the player has to compare. */}
                   {row.house > 0 && <b className="market-depth-house" aria-label="realm desk">&#9670;</b>}
                 </span>
               </button>
@@ -1978,18 +2286,30 @@ function RecentTrades({ trades, unit }: { trades: VenueTrade[]; unit: FloorUnit 
         <span className="market-tape-legend">taker side</span>
       </div>
       {rows.length ? (
-        <ol className="min-h-0 flex-1 space-y-px overflow-y-auto">
-          {rows.map(([at, price, quantity, takerBought], index) => (
-            <li key={`${at}-${index}`} className="market-tape-row">
-              <span className={takerBought ? 'text-good' : 'text-bad'}>{unit.format(price)}</span>
-              <span className="text-muted">{formatInteger(quantity)}</span>
-              <time dateTime={new Date(at * 1000).toISOString()} className="text-faint">
-                {new Date(at * 1000).toLocaleTimeString(undefined,
-                  { hour: '2-digit', minute: '2-digit' })}
-              </time>
-            </li>
-          ))}
-        </ol>
+        <>
+          <div className="market-tape-columns" aria-hidden="true">
+            <span>Side</span><span>Price</span><span>Qty</span><span>Total</span><span>Time</span>
+          </div>
+          <ol className="min-h-0 flex-1 space-y-px overflow-y-auto">
+            {rows.map(([at, price, quantity, takerBought], index) => (
+              <li key={`${at}-${price}-${quantity}-${index}`} className="market-tape-row">
+                <b className={takerBought ? 'text-good' : 'text-bad'}>
+                  {takerBought ? 'Buy' : 'Sell'}
+                </b>
+                <span className={takerBought ? 'text-good' : 'text-bad'}>{unit.format(price)}</span>
+                <span className="text-muted">{formatInteger(quantity)}</span>
+                <span className="text-muted">
+                  {Number.isSafeInteger(price * quantity) ? unit.format(price * quantity) : '—'}
+                </span>
+                <time dateTime={new Date(at * 1000).toISOString()} className="text-faint"
+                      title={new Date(at * 1000).toLocaleString()}>
+                  {new Date(at * 1000).toLocaleTimeString(undefined,
+                    { hour: '2-digit', minute: '2-digit', second: '2-digit' })}
+                </time>
+              </li>
+            ))}
+          </ol>
+        </>
       ) : (
         <p className="text-xs text-faint">Nothing has traded on this book yet.</p>
       )}
@@ -2299,6 +2619,102 @@ function ListMonsterDialog({ monsters, busy, onClose, onSubmit }: {
 // The external book ---------------------------------------------------------
 
 /**
+ * A client-only venue for judging the instrument instead of its liquidity.
+ *
+ * The live TEST books are intentionally honest and therefore thin: their
+ * chart can only show the trades people actually made. Chart Lab feeds the
+ * exact same `TradingFloor` four deterministic profiles that exercise dense
+ * candles, long idle gaps, violent ranges and flat doji bars. No process id,
+ * wallet method or write function is reachable from this component.
+ */
+function ChartLab() {
+  const [clock] = useState(() => Math.floor(Date.now() / 30_000) * 30_000);
+  const markets = useMemo(() => buildChartLab(clock), [clock]);
+  const [marketId, setMarketId] = useState(() => markets[0]?.id ?? '');
+  const market = markets.find((row) => row.id === marketId) ?? markets[0];
+
+  const [range, setRange] = useState<FloorRange>('3h');
+  const [chartMode, setChartMode] = useState<ChartMode>('candles');
+  const [candleInterval, setCandleInterval] = useState<CandleInterval>('5m');
+  const [side, setSide] = useState<GoldOrderSide>('buy');
+  const [tif, setTif] = useState<GoldOrderTif>('GTC');
+  const [price, setPrice] = useState('');
+  const [quantity, setQuantity] = useState('12');
+
+  if (!market) return null;
+
+  const totalVolume = market.points.reduce((sum, point) => sum + point.q, 0);
+  const ownOrders: EconomyOrder[] = [
+    {
+      id: 'LAB-BID', seq: 1, account: 'chart-lab', side: 'buy', item: market.item,
+      price: market.book.bestBid ?? 1, quantity: 24, remaining: 18,
+      createdAt: clock - 18 * 60_000, expiresAt: clock + 29 * 24 * 3600_000,
+      market: market.id, lot: 1,
+    },
+    {
+      id: 'LAB-ASK', seq: 2, account: 'chart-lab', side: 'sell', item: market.item,
+      price: market.book.bestAsk ?? 1, quantity: 16, remaining: 9,
+      createdAt: clock - 11 * 60_000, expiresAt: clock + 29 * 24 * 3600_000,
+      market: market.id, lot: 1,
+    },
+  ];
+  const recentFills: PlayerFill[] = [...market.trades].slice(-8).reverse()
+    .map(([at, value, count, takerBought], index) => ({
+      id: `LAB-F${index + 1}`, market: market.id, item: market.item,
+      side: takerBought ? 'buy' : 'sell', price: value, quantity: count,
+      gross: value * count, fee: 0, filledAt: at * 1000,
+      role: index % 3 === 0 ? 'maker' : 'taker',
+    }));
+
+  const reset = () => {
+    setRange('3h'); setChartMode('candles'); setCandleInterval('5m');
+    setSide('buy'); setTif('GTC'); setPrice(''); setQuantity('12');
+  };
+
+  return (
+    <div className="market-goods market-chart-lab">
+      <TradingFloor
+        demo book={market.book} candles={market.candles} points={market.points}
+        trades={market.trades} unit={GOLD_UNIT}
+        ticks={bookTicks(market.book, market.candles, market.points, GOLD_UNIT)}
+        config={{ minValue: 10, takerBps: 30, creationCost: 0 }}
+        lead={(
+          <MarketPicker value={market.id} onPick={setMarketId} format={GOLD_UNIT.format}
+                        glyph={(id) => (
+                          <ItemGlyph item={markets.find((row) => row.id === id)?.item ?? 'rune'}
+                                     className="h-4 w-4" />
+                        )}
+                        markets={markets.map((row) => ({
+                          id: row.id, label: row.label,
+                          bestBid: row.book.bestBid, bestAsk: row.book.bestAsk,
+                        }))} />
+        )}
+        actions={<>
+          <Badge tone="element">Synthetic · local only</Badge>
+          <Button size="sm" variant="quiet" icon={<Refresh className="h-3.5 w-3.5" />}
+                  onClick={reset}>Reset view</Button>
+        </>}
+        extraStats={[
+          { label: 'Synthetic fills', value: formatInteger(market.points.length), tone: 'text-good' },
+          { label: 'Traded volume', value: formatInteger(totalVolume), tone: 'text-arcane' },
+          { label: 'Source', value: 'LOCAL', tone: 'text-rune' },
+        ]}
+        address="chart-lab" quoteBalance={250_000} baseBalance={5_000} item={market.item}
+        range={range} onRange={setRange}
+        chartMode={chartMode} onChartMode={setChartMode}
+        candleInterval={candleInterval} onCandleInterval={setCandleInterval}
+        side={side} onSide={setSide} tif={tif} onTif={setTif}
+        price={price} onPrice={setPrice} quantity={quantity} onQuantity={setQuantity}
+        ownOrders={ownOrders} recentFills={recentFills}
+        connecting={false} onConnect={() => undefined}
+        isPending={() => false} onSubmit={() => undefined}
+        onCancel={() => undefined} onCancelAll={() => undefined}
+        onAmend={async () => undefined} />
+    </div>
+  );
+}
+
+/**
  * The trading floor, over a custody venue.
  *
  * One component for both deployments, because they run the same `venue.lua`
@@ -2320,14 +2736,17 @@ function VenueFloor({ mode, prefill }: {
 }) {
   const {
     address, player, connect, connecting, run: runGame,
-    isPending: gamePending, refresh,
+    isPending: gamePending, transaction, refresh,
   } = useGame();
-  const toast = useToast();
   const process = mode === 'internal' ? INTERNAL_VENUE_PROCESS : EXTERNAL_VENUE_PROCESS;
   const configured = mode === 'internal' ? internalVenueConfigured() : externalVenueConfigured();
 
   const [venueBook, setVenueBook] = useState<VenueBook | null>(null);
   const [venueTape, setVenueTape] = useState<VenueTape | null>(null);
+  /* `undefined` means the capability read has not answered; `null` means this
+     is an older venue and enables the one-time restore-state fallback. */
+  const [venueCandles, setVenueCandles] = useState<VenueIntradayCandles | null>();
+  const [venueHistory, setVenueHistory] = useState<VenueTape | null>(null);
   const [venueMarkets, setVenueMarkets] = useState<Record<string, VenueMarketConfig>>({});
   const [position, setPosition] = useState<VenuePosition | null>(null);
   const [quoteInfo, setQuoteInfo] = useState<TokenInfo | null>(null);
@@ -2336,13 +2755,10 @@ function VenueFloor({ mode, prefill }: {
   const [error, setError] = useState<unknown>(null);
 
   const [side, setSide] = useState<GoldOrderSide>('buy');
-  /* Five-minute candles over a day, which is what a book opens on everywhere
-     else. It is not free here: the venue publishes ONE bar a day and no public
-     fill tape at all, so every interval except `1d` is drawn from this
-     trader's own fills and a wallet that has not traded opens on an empty
-     plot. `PriceChart` says so in the empty state and offers the daily bars in
-     one tap rather than leaving the reader to guess the book is dead. */
-  const [range, setRange] = useState<FloorRange>('24h');
+  /* Open close enough to read a young market. New venues publish bounded
+     intraday bars; older ones fall back to the retained fill ring without
+     pretending that ring is a complete historical feed. */
+  const [range, setRange] = useState<FloorRange>('3h');
   const [chartMode, setChartMode] = useState<ChartMode>('candles');
   const [candleInterval, setCandleInterval] = useState<CandleInterval>('5m');
   const [price, setPrice] = useState('');
@@ -2352,6 +2768,7 @@ function VenueFloor({ mode, prefill }: {
   const [custodyPick, setCustodyPick] = useState('');
   const [bridgeAmount, setBridgeAmount] = useState('');
   const [busy, setBusy] = useState<ReadonlySet<string>>(new Set());
+  const [activeWrite, setActiveWrite] = useState<string | null>(null);
   /* Two write paths, one spinner: moving goods into the internal venue is a
      game action and everything else is a venue action. */
   const isPending = (key: string) => busy.has(key) || gamePending(key);
@@ -2360,7 +2777,7 @@ function VenueFloor({ mode, prefill }: {
     if (!configured) return;
     setError(null);
     try {
-      const [nextBook, nextPosition, nextTape] = await Promise.all([
+      const [nextBook, nextPosition, nextTape, nextCandles] = await Promise.all([
         readVenueBook(process),
         address ? readVenuePosition(process, address) : Promise.resolve(null),
         /* A venue deployed before `venuetape` existed publishes no such key,
@@ -2370,11 +2787,16 @@ function VenueFloor({ mode, prefill }: {
            failing the whole load over a missing chart would take the book down
            with it. */
         readVenueTape(process).catch(() => null),
+        /* This key was added after the first venues. Missing it must not take
+           down the book: the daily candles and fill-ring backfill below remain
+           a truthful compatibility path until those processes are replaced. */
+        readVenueCandles(process).catch(() => null),
       ]);
       if (signal?.aborted) return;
       setVenueBook(nextBook);
       setPosition(nextPosition);
       setVenueTape(nextTape);
+      setVenueCandles(nextCandles);
     } catch (caught) {
       if (isAbort(caught)) return;
       setError(caught);
@@ -2389,6 +2811,20 @@ function VenueFloor({ mode, prefill }: {
     const timer = window.setInterval(() => { void loadBook(controller.signal); }, 10_000);
     return () => { controller.abort(); window.clearInterval(timer); };
   }, [loadBook]);
+
+  /* One compatibility backfill for a venue that predates `venuecandles`. The
+     96-row public tape continues to refresh every ten seconds; the 500-fill
+     restore ring changes only what the chart can see before this tab opened,
+     so repeatedly pulling it would spend bandwidth without adding history. */
+  useEffect(() => {
+    let cancelled = false;
+    setVenueHistory(null);
+    if (!configured || venueCandles === undefined || venueCandles !== null) return undefined;
+    void readVenueHistoryTape(process)
+      .then((history) => { if (!cancelled) setVenueHistory(history); })
+      .catch(() => { if (!cancelled) setVenueHistory(null); });
+    return () => { cancelled = true; };
+  }, [configured, process, venueCandles]);
 
   /* On the external venue the wallet is the other half of the picture: what is
      in custody can be quoted, what is in the wallet has to be deposited first,
@@ -2452,19 +2888,45 @@ function VenueFloor({ mode, prefill }: {
 
   const book = useMemo(() => venueMarketStats(market), [market]);
   const candles = useMemo<EconomyCandle[]>(() => mergeCandles(market?.candles), [market]);
+  const oneMinuteRows = useMemo(() =>
+    marketVenueCandles(venueCandles ?? null, market?.id, 60),
+  [venueCandles, market?.id]);
+  const fiveMinuteRows = useMemo(() =>
+    marketVenueCandles(venueCandles ?? null, market?.id, 300),
+  [venueCandles, market?.id]);
+  const publishedCandles = useMemo<Partial<Record<CandleInterval, CandleBar[]>>>(() => {
+    return {
+      '1m': venueCandleBars(oneMinuteRows, CANDLE_MS['1m']),
+      '5m': venueCandleBars(fiveMinuteRows, CANDLE_MS['5m']),
+      '15m': venueCandleBars(fiveMinuteRows, CANDLE_MS['15m']),
+      '30m': venueCandleBars(fiveMinuteRows, CANDLE_MS['30m']),
+      '1h': venueCandleBars(fiveMinuteRows, CANDLE_MS['1h']),
+      '4h': venueCandleBars(fiveMinuteRows, CANDLE_MS['4h']),
+    };
+  }, [oneMinuteRows, fiveMinuteRows]);
   const tradeCount = candles.reduce((sum, row) => sum + Number(row.n || 0), 0);
   const tradedLots = candles.reduce((sum, row) => sum + Number(row.v || 0), 0);
   const ownOrders = useMemo(() => venueOwnOrders(position, market?.id), [position, market?.id]);
   const recentFills = useMemo(() => venueOwnFills(position, market?.id), [position, market?.id]);
-  /* The chart's points, and they are PUBLIC now.
-     `venuetape` is the venue's last ninety-six trades, four integers each,
-     grouped by market -- so an intraday candle is everybody's candle rather
-     than a redrawing of whatever this one wallet happened to do. The seconds
-     come back as seconds and the rest of the screen works in milliseconds. */
-  const trades = useMemo<VenueTrade[]>(() => marketTrades(venueTape, market?.id),
-    [venueTape, market?.id]);
-  const points = useMemo<PricePoint[]>(() => trades
-    .map(([at, price, quantity]) => ({ t: at * 1000, v: price, q: quantity })), [trades]);
+  /* The chart's points are a local address-free projection of the venue's
+     retained 500-fill restore ring plus its moving 96-row public tail. That is
+     everybody's market history rather than whatever this wallet happened to
+     do, while duplicate tuples remain duplicate fills. Seconds come back as
+     seconds and the rest of the screen works in milliseconds. */
+  const visibleTape = useMemo(() => mergeVenueTapes(venueHistory, venueTape),
+    [venueHistory, venueTape]);
+  const trades = useMemo<VenueTrade[]>(() => marketTrades(visibleTape, market?.id),
+    [visibleTape, market?.id]);
+  /* Five-minute closes extend Line mode to the same durable day as Candles.
+     Put a close at the end of its bucket, then overlay the exact recent tape;
+     the moving tail preserves every newest print without pretending a candle
+     reveals the path inside its five minutes. */
+  const points = useMemo<PricePoint[]>(() => [
+    ...fiveMinuteRows.map(([at, , , , close, baseVolume]) => ({
+      t: (at + 300) * 1000 - 1, v: close, q: baseVolume,
+    })),
+    ...trades.map(([at, price, quantity]) => ({ t: at * 1000, v: price, q: quantity })),
+  ].sort((a, b) => a.t - b.t), [fiveMinuteRows, trades]);
 
   const free = (asset: string | undefined) => Number(position?.free?.[asset ?? ''] ?? 0);
   /* The other side of the custody boundary: the satchel on the internal venue,
@@ -2478,28 +2940,29 @@ function VenueFloor({ mode, prefill }: {
   const quoteBalance = free(market?.quote);
   const baseBalance = free(market?.base);
 
-  /* The venue's own write path.
-     NOT the game's `run`: that one is typed to a `Player` reply and paints an
-     optimistic projection over the player record, and a venue reply is neither.
-     The one exception is moving goods INTO the internal venue, which really is
-     a game action that returns a player. */
+  /* The venue's own write path uses the same signature-aware harness as game
+     writes. `run` is generic: only a player-shaped reply updates the account,
+     while this venue reply still receives signing/settling/verdict state. */
   const runVenue = async <T,>(key: string, action: () => Promise<T>, message: string) => {
     setBusy((all) => new Set(all).add(key));
+    setActiveWrite(key);
     setError(null);
     try {
-      const out = await action();
-      toast.success(message);
+      const out = await runGame(key, action, message);
+      if (out === null) return null;
       // The read is of published state, and the publication is the tail of the
       // slot we just wrote. Give the node a beat before asking for it.
       await new Promise((resolve) => window.setTimeout(resolve, 700));
       await Promise.all([loadBook(), refresh()]);
       return out;
     } catch (caught) {
+      // The write itself is already handled by the shared runner. This branch
+      // is only a failed post-write refresh, which the market can retry safely.
       setError(caught);
-      toast.error(caught instanceof Error ? caught.message : String(caught));
       return null;
     } finally {
       setBusy((all) => { const next = new Set(all); next.delete(key); return next; });
+      setActiveWrite((current) => (current === key ? null : current));
     }
   };
 
@@ -2563,8 +3026,10 @@ function VenueFloor({ mode, prefill }: {
       direction === 'deposit' ? 'deposited' : 'withdrawn'}.`;
     if (direction === 'deposit' && mode === 'internal') {
       // A game action, returning a player: it leaves the satchel here.
+      setActiveWrite('venue-deposit');
       const moved = await runGame('venue-deposit',
         () => game.sendToVenue(custodyAsset as GoldMarketItemId | 'gold', amount), done);
+      setActiveWrite(null);
       if (moved) { setCustodyAmount(''); await loadBook(); }
       return;
     }
@@ -2589,8 +3054,10 @@ function VenueFloor({ mode, prefill }: {
     if (!Number.isSafeInteger(value) || value <= 0) {
       setError(new Error('Enter a positive whole Rune amount.')); return;
     }
+    setActiveWrite('rune-withdraw');
     const moved = await runGame('rune-withdraw', () => game.withdrawRune(value),
       `${formatInteger(value)} Rune is moving to your wallet.`);
+    setActiveWrite(null);
     if (moved) setBridgeAmount('');
   };
   const bridgeIn = async () => {
@@ -2644,9 +3111,15 @@ function VenueFloor({ mode, prefill }: {
 
   return (
     <div className="market-goods">
+      {activeWrite && transaction(activeWrite)?.stage === 'settling' && (
+        <TransactionHold className="mb-2">
+          {marketPendingCopy(activeWrite)}
+        </TransactionHold>
+      )}
       {error !== null && <ErrorNote error={error} onRetry={() => void loadBook()} />}
       <TradingFloor
-        book={book} candles={candles} points={points} trades={trades} unit={unit}
+        book={book} candles={candles} publishedCandles={publishedCandles}
+        points={points} trades={trades} unit={unit}
         ticks={bookTicks(book, candles, points, unit)}
         config={{
           minValue: venueMarkets[market.id]?.minValue ?? 1,
@@ -2743,6 +3216,14 @@ function VenueFloor({ mode, prefill }: {
       )}
     </div>
   );
+}
+
+function marketPendingCopy(key: string) {
+  if (key.includes('deposit') || key.includes('withdraw')) {
+    return 'The signed transfer is crossing the custody boundary. Balances wait for confirmation.';
+  }
+  if (key === 'faucet') return 'The faucet claim is signed and settling.';
+  return 'The signed order is settling at the venue. The book changes only on confirmation.';
 }
 
 /**

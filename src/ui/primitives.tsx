@@ -120,6 +120,31 @@ export function Spinner({ className }: { className?: string }) {
   );
 }
 
+/**
+ * A signed action waiting at its reversible hold point.
+ *
+ * Scenes with their own renderer use that instead (vault, altar, battle). This
+ * is the shared fallback for forms and panels: movement begins only after the
+ * signature, loops without claiming success, and disappears on either verdict.
+ */
+export function TransactionHold({
+  children, className,
+}: { children: ReactNode; className?: string }) {
+  return (
+    <div
+      role="status"
+      className={cx(
+        'transaction-hold flex items-center gap-2.5 border-l border-element/55',
+        'bg-element/[.045] px-3 py-2 text-[12px] text-muted',
+        className,
+      )}
+    >
+      <span aria-hidden className="transaction-hold-seal" />
+      <span>{children}</span>
+    </div>
+  );
+}
+
 // Numbers -------------------------------------------------------------------
 
 /**

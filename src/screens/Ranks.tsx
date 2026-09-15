@@ -20,7 +20,6 @@ import { useGame } from '../state/gameContext';
 import { Badge, Panel, SectionTitle, Skeleton, cx } from '../ui/primitives';
 import { ELEMENT_ICON, Sword, Trophy } from '../ui/icons';
 import { ELEMENT_LABEL, shortAddress } from '../lib/format';
-import { Sigil } from '../ui/Sigil';
 import { Element, LeaderboardRow } from '../lib/types';
 import { CardPreview } from '../ui/CardPreview';
 
@@ -170,7 +169,6 @@ function RankCard({
   row, rank, you, className,
 }: { row: LeaderboardRow; rank: number; you: boolean; className?: string }) {
   const medal = MEDAL[rank];
-  const Icon = ELEMENT_ICON[row.element];
 
   return (
     <Panel
@@ -187,34 +185,18 @@ function RankCard({
         />
       )}
 
-      <div className="relative mb-4 flex flex-wrap items-center gap-3">
-        <RankChip rank={rank} />
-        {/* The trainer's mark.
-            An address is 43 characters of base64 and nobody remembers one, so
-            the board used to be a column of `iQuZaC…6txQCk`. The sigil is drawn
-            from that same address and is unique to it — it is the closest thing
-            this game has to a face, and it belongs at the top of the row rather
-            than at 20px in a corner. */}
-        <Sigil
-          address={row.address}
-          size={30}
-          weight={1.9}
-          plate
-          title={`The mark of ${shortAddress(row.address, 6)}`}
-          className={you ? 'text-element' : 'text-rune/75'}
-        />
-        <div className="min-w-0 flex-1">
-          <div className="flex items-center gap-1.5">
-            <Icon className="h-3.5 w-3.5 shrink-0 text-element" />
-            <span className="truncate text-sm font-medium">{row.name}</span>
-            {you && <Badge tone="element">You</Badge>}
-          </div>
-          <div className="font-mono text-[11px] text-faint">{shortAddress(row.address, 6)}</div>
+      <div className="relative mb-3 flex items-center justify-between gap-2">
+        <div className="flex min-w-0 flex-1 items-center gap-2">
+          <RankChip rank={rank} />
+          {/* The card below already names the monster and its element. The
+              header identifies the trainer with one compact address instead. */}
+          <span className="truncate font-mono text-[11px] text-faint" title={row.address}>
+            {shortAddress(row.address, 6)}
+          </span>
+          {you && <Badge tone="element">You</Badge>}
         </div>
-        {/* One facts strip, once. The old generic companion summary repeated
-            the record, faction and address immediately below this row. Care
-            and quest totals are not part of the at-a-glance standing. */}
-        <div className="grid w-full grid-cols-3 gap-3 border-t border-rune/12 pt-3 text-[11px] text-faint">
+        {/* The standing shares one horizontal band with rank and identity. */}
+        <div className="grid w-[7.5rem] shrink-0 grid-cols-3 gap-1.5 text-[11px] text-faint">
           <Tally label="Level" value={row.level} />
           <Tally label="Wins" value={row.wins} tone="text-good" />
           <Tally label="Losses" value={row.losses} />
@@ -242,8 +224,8 @@ function RankChip({ rank }: { rank: number }) {
   if (!medal) {
     return (
       <span className={cx(
-        'flex h-9 w-9 shrink-0 items-center justify-center rounded-[3px]',
-        'border border-edge bg-void/40 font-mono text-sm tabular-nums text-muted',
+        'flex h-7 w-7 shrink-0 items-center justify-center rounded-[3px]',
+        'border border-edge bg-void/40 font-mono text-xs tabular-nums text-muted',
       )}>
         {rank}
       </span>
@@ -253,12 +235,12 @@ function RankChip({ rank }: { rank: number }) {
     <span
       title={`${medal.name} — ${rank === 1 ? 'first' : rank === 2 ? 'second' : 'third'}`}
       className={cx(
-        'flex h-9 shrink-0 items-center gap-1.5 rounded-[3px] border px-2.5',
-        'font-mono text-sm tabular-nums',
+        'flex h-7 shrink-0 items-center gap-1 rounded-[3px] border px-2',
+        'font-mono text-xs tabular-nums',
       )}
       style={{ borderColor: `${medal.hex}66`, background: `${medal.hex}14`, color: medal.hex }}
     >
-      <Trophy className="h-3.5 w-3.5" />
+      <Trophy className="h-3 w-3" />
       {rank}
     </span>
   );

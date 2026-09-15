@@ -248,12 +248,17 @@ export interface EconomyView {
     lootboxes: EconomyInvariant[];
     rune: {
       inGame: number;
+      /** Game-maintained withdrawals minus deposits/refunds. */
       outsideTokenSupply?: number;
+      /** Optional independent token-process observation. */
+      observedTokenSupply?: number;
       pendingWithdrawals: number;
       pendingDeposits: number;
       economic: number;
       accounted: number;
       difference?: number;
+      observedAccounted?: number;
+      observedDifference?: number;
       observedAt: number;
     };
   };
@@ -270,8 +275,12 @@ export interface EconomyView {
     rolling7d: EconomyRollingFlow; rolling30d: EconomyRollingFlow;
     sources: Record<string, number>;
   }>;
-  orders: EconomyOrder[];
-  fills: EconomyFill[];
+  /** Legacy authority-book arrays. New processes publish only aggregates. */
+  orders?: EconomyOrder[];
+  fills?: EconomyFill[];
+  openOrders?: number;
+  /** Address-free rows: [seconds, price, quantity, takerBought]. */
+  tape?: Record<string, Array<[number, number, number, number]>>;
   market: Record<GoldMarketItemId, EconomyMarketStats>;
   /* Daily OHLCV, oldest first, one array per market that has ever traded.
      `d` is a day index (epoch ms / 86_400_000), `v` base volume, `g` Gold
@@ -307,6 +316,8 @@ export interface EconomyView {
       unassignedPromiseSlots: number; promiseClaimDeadline: number;
       purchaseEnabled: boolean; foregoneRuneAcquisitionReference: number;
     };
+    bridgedRuneSupply?: number;
+    /** Latest independent observation, carried forward by confirmed bridge events. */
     externalRuneSupply?: number;
     externalRuneObservedAt: number;
     pending: Record<string, EconomyPolicyChange>;
@@ -662,6 +673,12 @@ export interface Player {
   arenaLast?: ArenaReceipt;
   wins: number;
   losses: number;
+  /** Player-level PvP Elo. Absent only on deployments predating rated duels. */
+  rating?: number;
+  /** Number of rated PvP results; the first configured set is provisional. */
+  ratedMatches?: number;
+  /** Fixed-size rated-search escrow. Cleared as soon as a match or refund lands. */
+  matchmaking?: MatchmakingSearch;
   sessionWins?: number;
   sessionLosses?: number;
   questsCompleted: number;
@@ -922,7 +939,7 @@ export interface Battle {
   accepter?: Combatant;
   challengerAddress?: string;
   accepterAddress?: string;
-  challengeType?: 'OPEN' | 'TARGETED';
+  challengeType?: 'OPEN' | 'TARGETED' | 'RATED';
   targetAccepter?: string | null;
   /** Which sides have committed a move this round. Never WHAT they committed. */
   waitingOn?: { challenger?: boolean; accepter?: boolean };
@@ -934,6 +951,8 @@ export interface Battle {
   /** Gold committed to this fight; PvE names a shared tier, PvP carries its pot. */
   arena?: {
     pvp?: boolean;
+    /** Only automatic matchmaking changes Elo; manual challenges are unranked. */
+    rated?: boolean;
     tier?: string;
     stake: number;
     pot?: number;
@@ -943,6 +962,15 @@ export interface Battle {
   workerId?: string;
   settlementStatus?: 'pending' | 'acknowledged' | string;
   cancellationStatus?: 'pending' | 'acknowledged' | string;
+}
+
+export interface MatchmakingSearch {
+  joinedAt: number;
+  expiresAt: number;
+  /** Snapshots taken when the stake was escrowed. */
+  rating: number;
+  level: number;
+  stake: number;
 }
 
 export interface BattleFleetRoute {
@@ -1009,9 +1037,9 @@ export interface LeaderboardRow {
    * A PROJECTION, not the record. Typed as `Monster` because that is what the
    * card renderer takes, but the process publishes only the fields the board
    * shows: `entryNo`, `entryKey`, `name`, `elementType`, `evolutionStage`,
-   * `faction`, `level`, `nextLevelExp` and the compact `moves`. Everything a
-   * stranger's row cannot act on has always been absent — `attack`, `energy`,
-   * `happiness`, `exp`, `background`, `border`, `id` — and `image` and `sprite`
+   * `faction`, `level`, all four combat stats, `nextLevelExp` and the compact
+   * `moves`. Everything a stranger's row cannot act on remains absent —
+   * `energy`, `happiness`, `exp`, `background`, `border`, `id` — and `image` and `sprite`
    * joined them: both are a function of `entryNo`, `portrait()` in `ui/art.ts`
    * already resolves the art from that, and neither is read off a board row
    * anywhere here. That was 110 bytes a row in a map the node marshals five
@@ -1025,11 +1053,14 @@ export interface LeaderboardRow {
 }
 
 export interface OpenChallenge {
+  /** Manual unranked challenge; rated searches are private and never join this board. */
   id: string;
   challenger: string;
   monsterName: string;
   level: number;
   element: Affinity;
+  /** Challenger's player-level PvP Elo. */
+  rating?: number;
   startedAt: number;
 }
 
@@ -1293,9 +1324,22 @@ export interface Catalog {
     /** `floor(pot * drainNum / drainDen)`. A rational so the payout stays integer. */
     drainNum: number;
     drainDen: number;
-    /** What a purse must hold to enter the arena at all: one battle's stake. */
+    /** What a purse must hold to enter the arena: every battle's stake. */
     minEntry: number;
     battlesPerSession: number;
+    /** Player-level, PvP-only Elo settings. */
+    ratingStart?: number;
+    ratingK?: number;
+    ratingScale?: number;
+    ratingProvisionalGames?: number;
+    ratingProvisionalK?: number;
+    matchmakingMaxWaitMs?: number;
+    matchmakingMaxEntries?: number;
+    matchmakingBands?: Array<{
+      afterMs: number;
+      rating: number;
+      level: number;
+    }>;
     /**
      * The four pots, and the DIFFICULTY each label was chosen with — so the
      * lobby sends the number the process buckets rather than a name it made up.
@@ -1328,6 +1372,8 @@ export type ArenaTiers = Record<string, { pot: number; wins: number; attempts: n
  * holds what players staked.
  */
 export interface ArenaReceipt {
+  /** The exact fight this receipt settled; prevents a previous result flashing during PvP refresh. */
+  battleId?: string;
   /** The tier key, or `'pvp'` for a duel. */
   tier: string;
   stake: number;
@@ -1338,6 +1384,10 @@ export interface ArenaReceipt {
   /** Paid by the capped gameplay allowance. */
   base: number;
   won: boolean;
+  /** Present only for rated PvP settlements. */
+  ratingBefore?: number;
+  ratingAfter?: number;
+  ratingChange?: number;
 }
 
 /**
@@ -1390,9 +1440,12 @@ export interface AdminPlayerSummary {
   lootboxes: number[];
   wins: number;
   losses: number;
+  rating?: number;
+  ratedMatches?: number;
   questsCompleted: number;
   battlesRemaining: number;
   activeBattleId?: string;
+  matchmaking?: boolean;
   dailyStreak: number;
   bestStreak: number;
   offerings: number;
@@ -1417,7 +1470,7 @@ export interface AdminBattleSummary {
   challengerName?: string;
   accepter?: string;
   accepterName?: string;
-  challengeType?: 'OPEN' | 'TARGETED';
+  challengeType?: 'OPEN' | 'TARGETED' | 'RATED';
 }
 
 export interface AdminFactionStats {
@@ -1510,7 +1563,7 @@ export interface AdminSnapshot {
 
 export interface AdminPlayerPatch {
   account?: Partial<Pick<Player,
-    'unlocked' | 'faction' | 'wins' | 'losses' | 'questsCompleted' |
+    'unlocked' | 'faction' | 'wins' | 'losses' | 'rating' | 'ratedMatches' | 'questsCompleted' |
     'battlesRemaining' | 'dailyStreak' | 'bestStreak' | 'offerings' |
     'lastDaily' | 'joinedAt'>>;
   inventory?: Partial<Record<ItemId, number>>;

@@ -26,7 +26,6 @@ import {
   type Facing, type Outfit,
 } from '../../lib/sprites';
 import { Button, ErrorNote, Panel, cx } from '../primitives';
-import { useToast } from '../toastContext';
 import { Portrait } from './Portrait';
 import { Roam } from './Roam';
 import { Wardrobe } from './Wardrobe';
@@ -93,15 +92,14 @@ export function CharacterEditor({
   /** Fired after a successful save, so a modal caller can close itself. */
   onSaved?: () => void;
 }) {
-  const { address, player, refresh } = useGame();
-  const toast = useToast();
+  const { address, player, run, isPending, writePhase, transaction } = useGame();
 
   const [outfit, setOutfit] = useState<Outfit>(() => loadDraft(address, player?.outfit));
   const [view, setView] = useState<'portrait' | 'roam'>('portrait');
   const [facing, setFacing] = useState<Facing>('down');
   const [walking, setWalking] = useState(true);
-  const [saving, setSaving] = useState(false);
   const [error, setError] = useState<unknown>(null);
+  const saveTransaction = transaction('character:save');
   const hydratedAddress = useRef<string | null>(player && address ? address : null);
   const skipDraftWrite = useRef(false);
 
@@ -143,22 +141,23 @@ export function CharacterEditor({
     } catch { /* private mode */ }
   }, [address, player, outfit]);
 
-  const save = async () => {
-    setSaving(true);
-    setError(null);
-    try {
-      await api.spriteUpdate(outfit);
-      await refresh();
-      toast.success('Your character is saved.');
-      onSaved?.();
-    } catch (e) {
-      setError(e);
-    } finally {
-      setSaving(false);
+  useEffect(() => {
+    if (saveTransaction?.stage === 'failed') {
+      setError(new Error(saveTransaction.error ?? 'Your character was not saved.'));
     }
+  }, [saveTransaction]);
+
+  const save = async () => {
+    setError(null);
+    const saved = await run(
+      'character:save', () => api.spriteUpdate(outfit), 'Your character is saved.',
+    );
+    if (saved) onSaved?.();
   };
 
   const dialog = variant === 'dialog';
+  const saving = isPending('character:save');
+  const savePhase = writePhase('character:save');
   const bare = isBare(outfit);
   const worn = CATEGORIES.filter((c) => !isNone(outfit[c.name]?.style ?? 'None')).length;
   const savedOutfit = player?.outfit ? normaliseOutfit(player.outfit) : null;
@@ -267,7 +266,11 @@ export function CharacterEditor({
               {dirty ? 'Save character' : 'Character saved'}
             </Button>
             <p className="min-w-0 flex-1 text-[12px] leading-snug text-faint">
-              {bare
+              {savePhase === 'settling'
+                ? 'Signature sent. Carving this outfit into your game recordâ€¦'
+                : savePhase === 'signing'
+                  ? 'Approve the outfit signature in your wallet.'
+                  : bare
                 ? 'Nothing on yet. A bare character is valid and can still be saved.'
                 : dirty
                   ? 'Your preview is local until you save its clothing and colour choices to the game.'

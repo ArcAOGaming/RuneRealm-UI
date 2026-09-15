@@ -604,7 +604,7 @@ export class BattleScene extends Phaser.Scene {
   /**
    * A buff, as layers rising off the caster.
    *
-   * There is no art for this — `assets/fx` has heal strips and the four
+   * There is no art for this — `assets/effects/battle` has heal strips and the four
    * elemental strikes and nothing else — so it is built from rings, and their
    * depths alternate so some pass BEHIND the creature and some in front. That
    * is what makes it read as something happening around the fighter rather than

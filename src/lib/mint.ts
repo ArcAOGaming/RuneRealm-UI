@@ -31,9 +31,9 @@ const env = (import.meta as { env?: Record<string, string> }).env ?? {};
  * Where to READ asset state.
  *
  * These processes are scheduled on Arweave itself, and a node can only serve
- * one if it indexes the chain. `schedule.forward.computer` — where the game
- * process lives — answers 500 for every one of them, which reads like the asset
- * is broken rather than like the wrong node was asked.
+ * one if it indexes the chain. The game node is not the ownership read surface
+ * for every asset and answers 500 for these, which reads like the asset is
+ * broken rather than like the wrong node was asked.
  */
 export const ASSET_NODE = env.VITE_ASSET_NODE || 'https://hb.arweave.net';
 export const GATEWAY = env.VITE_ARWEAVE_GATEWAY || 'https://arweave.net';

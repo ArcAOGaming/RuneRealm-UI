@@ -29,10 +29,10 @@ import { usePoll } from '../state/usePoll';
 import * as api from '../lib/game';
 import { Battle, BerryItemId } from '../lib/types';
 import {
-  Button, Panel, SectionTitle, Skeleton, Spinner, cx,
+  Button, Panel, SectionTitle, Skeleton, Spinner, TransactionHold, cx,
 } from '../ui/primitives';
 import {
-  Coin, Refresh, Sword, Trophy, Users, X,
+  Bolt, Check, Coin, Heart, Refresh, Shield, Sword, Trophy, Users, X,
 } from '../ui/icons';
 import {
   arenaTerms, arenaTierRows, countdown, formatInteger, ratePct,
@@ -51,17 +51,21 @@ import { useTourSteps, type TourStep } from '../ui/tourContext';
 const PVP_POLL_MS = 2500;
 
 export default function Arena() {
-  const { player, loadingPlayer } = useGame();
+  const { player, loadingPlayer, catalog } = useGame();
 
-  if (loadingPlayer && !player) return <Panel className="h-96 p-6"><Skeleton className="h-full" /></Panel>;
+  if ((loadingPlayer && !player) || !catalog) {
+    return <Panel className="h-96 p-6"><Skeleton className="h-full" /></Panel>;
+  }
   if (!player?.unlocked) return <Navigate to="/" replace />;
   if (!player.monster) return <Navigate to="/companion" replace />;
 
+  if (player.matchmaking) return <MatchmakingWait />;
   if (player.battle && player.battle.status !== 'pending') return <BattleView />;
   if (player.battle?.status === 'pending') return <AwaitingChallenger />;
   if (player.battleFleet && player.activeBattleId === player.battleFleet.battleId) {
     return <FleetBattleRecovery />;
   }
+  if (player.activeBattleId) return <MonolithBattleRecovery />;
   if (player.monster.status.type === 'Battle') return <Lobby />;
   return <Entrance />;
 }
@@ -86,36 +90,36 @@ export default function Arena() {
 const ENTRANCE_TOUR: TourStep[] = [
   {
     target: '[data-tour="arena-purse"]',
-    title: 'The arena is played for Gold',
-    body: 'Every battle stakes Gold into a pot, and winning is what draws from it. You need at least one battle’s stake to get through the door — a quest pays 15 Gold and costs the same energy and happiness, which is the way back if you are short.',
+    title: 'Step 1 — fund all four fights',
+    body: 'You must hold 40 Gold so the full run cannot strand you halfway through. The gate deducts nothing: each fight stakes its own 10 only when it starts, and unused fights are never charged.',
   },
   {
     target: '[data-tour="arena-cost"]',
-    title: 'What a session costs',
-    body: 'Entering is four battles and takes no Gold at all — 25 energy and 25 happiness, and happiness only comes back from a 15-minute play. The Gold is charged per battle, so leaving after one costs you nothing you were never charged.',
-  },
-  {
-    target: '[data-tour="arena-pays"]',
-    title: 'What a win pays',
-    body: 'Two halves. A fixed reward out of one 20-hour allowance shared with quests — which can pay nothing once the day’s is spent — and a share of the pot your stake went into. The pot half is other players’ stakes, so the arena hands back exactly what was put in.',
+    title: 'Step 1 — ready your companion',
+    body: 'Opening four battle slots costs 25 energy and 25 happiness once. The before-and-after bars show exactly what will remain. Happiness only comes back from a 15-minute play.',
   },
   {
     target: '[data-tour="arena-berries"]',
-    title: 'Berry maxing',
+    title: 'Step 2 — pick a boost',
     body: 'Optional, and spent now: three matching berries buy +5 to one stat for all four fights. It never touches your companion’s permanent build.',
   },
   {
     target: '[data-tour="arena-enter"]',
-    title: 'Then you are in',
-    body: 'The energy and happiness are taken here, once. A session lasts until its four battles are used or you leave the arena.',
+    title: 'Step 3 — choose the battle',
+    body: 'Continue to choose either a PvE trainer or a live PvP duel. The energy and happiness are taken here once; no Gold moves until you start or post a fight.',
   },
 ];
 
 const LOBBY_TOUR: TourStep[] = [
   {
     target: '[data-tour="arena-session"]',
-    title: 'Your session',
-    body: 'Battles left, this session’s record, and your purse. Leaving forfeits whatever is left of the session — the energy and happiness are not refunded, but no Gold is taken for a battle you did not fight.',
+    title: 'Step 3 — choose a battle',
+    body: 'Battles left, this session’s record, your purse, and your player-level PvP Elo. Leaving forfeits whatever is left of the session — the energy and happiness are not refunded, but no Gold is taken for a battle you did not fight.',
+  },
+  {
+    target: '[data-tour="arena-pays"]',
+    title: 'How Gold moves',
+    body: 'The 40-Gold entry check guaranteed all four fights, but it charged nothing. Each fight now stakes 10 when it starts. A win adds 0–5 Gold from the 20-hour allowance to its pot payout; a loss leaves the 10 in the pot.',
   },
   {
     target: '[data-tour="arena-tiers"]',
@@ -129,14 +133,14 @@ const LOBBY_TOUR: TourStep[] = [
   },
   {
     target: '[data-tour="arena-open"]',
-    title: 'Or another player',
-    body: 'A duel is one pot of exactly two stakes and the winner takes all of it, no rake. Both stakes are held from the moment the challenge is accepted; withdrawing one nobody took returns yours whole.',
+    title: 'Rated or practice',
+    body: 'Find Match pairs you by Elo and companion level, widening fairly for up to five minutes. Only those automatic matches change Elo. Open challenges are unranked duels. Both use one pot of two 10-Gold stakes, winner takes all, and cancelling a waiting search refunds the held stake.',
   },
 ];
 
 function Entrance() {
   useTourSteps('arena-entrance', ENTRANCE_TOUR);
-  const { player, catalog, arenaTiers, run, isPending } = useGame();
+  const { player, catalog, run, isPending, writePhase } = useGame();
   const [berry, setBerry] = useState<BerryItemId | undefined>();
   const monster = player!.monster!;
   const busy = monster.status.type !== 'Home';
@@ -148,218 +152,305 @@ function Entrance() {
   // the deployed contract by the time anyone checked.
   const terms = arenaTerms(catalog);
   const gold = player!.gold ?? 0;
+  const requiredGold = terms.sessionStake;
+  const ready = !busy
+    && monster.energy >= terms.energyCost
+    && monster.happiness >= terms.happinessCost
+    && (!terms.staked || gold >= requiredGold);
+  const boostComplete = !selectedBerry || selectedCount >= selectedBerry.cost;
 
   // The Gold gate is the PROCESS's — `Battle.Begin` refuses a purse that cannot
-  // cover one battle. This mirrors it so the button is honest, and it must keep
-  // mirroring it: a client-side gate that is stricter blocks a fight the
-  // process would have allowed, and a looser one signs a message that fails.
+  // cover every battle in the run. `sessionStake` is derived from the same
+  // published stake and battle count, so the client cannot drift to a looser
+  // gate and sign a session the process will refuse.
   const blocked =
     busy ? `Your companion is ${monster.status.type === 'Play' ? 'playing' : 'on a quest'}.`
       : monster.energy < terms.energyCost ? 'Not enough energy — feed your companion.'
         : monster.happiness < terms.happinessCost ? 'Not happy enough — send it out to play.'
-          : terms.staked && gold < terms.minEntry
-            ? `You need ${terms.minEntry} Gold to enter — a battle stakes ${terms.stake}. A quest pays 15 and costs the same energy and happiness.`
+          : terms.staked && gold < requiredGold
+            ? `You need ${requiredGold} Gold to fund all ${terms.battles} fights — ${requiredGold - gold} more. Each fight only charges ${terms.stake} when it starts.`
             : selectedBerry && selectedCount < selectedBerry.cost
               ? `You need ${selectedBerry.cost} ${ITEM_NAME[selectedBerry.id]}.`
               : null;
-
-  // What the four pots would pay a win right now, so the entrance can name a
-  // real range rather than a promise. The pot moves between reading this and
-  // settling, which is exactly why the result screen shows the pot AT settle.
-  const rows = arenaTierRows(terms, arenaTiers);
-  const payouts = rows.map((row) => row.payout).filter((n) => n > 0);
-  const bestPayout = payouts.length ? Math.max(...payouts) : 0;
-  const leanPayout = payouts.length ? Math.min(...payouts) : 0;
+  const blockedCta =
+    busy ? 'Companion is busy'
+      : monster.energy < terms.energyCost ? 'Need energy / Feed first'
+        : monster.happiness < terms.happinessCost ? 'Need happiness / Play first'
+          : terms.staked && gold < requiredGold ? `Need ${requiredGold - gold} more Gold`
+            : selectedBerry && selectedCount < selectedBerry.cost ? `Need ${selectedBerry.cost} ${ITEM_NAME[selectedBerry.id]}`
+              : null;
 
   return (
-    /* `my-auto` centres it in the fitted viewport. The arena owns the whole
-       screen height (see `fitted` in Shell), and a content-sized panel in a
-       flex column sits at the very top of it with a third of a screen of empty
-       void underneath — which reads as a page that failed to finish loading
-       rather than as one thing to decide. Inert below `lg`, where the page
-       scrolls like any other. */
-    <div className="mx-auto max-w-2xl animate-rise lg:my-auto">
-      <Panel className="p-8 text-center" glow>
-        <Sword className="mx-auto h-9 w-9 text-element" />
-        <h1 className="mt-4 text-xl font-semibold">Enter the arena</h1>
-        <p className="mx-auto mt-2 max-w-sm text-sm leading-relaxed text-muted">
-          {terms.staked
-            ? <>A session is {terms.battles} battles and each one stakes{' '}
-              {terms.stake} Gold. Win and you draw from the pot it went into.</>
-            : <>A session is {terms.battles} battles, and entering costs no Rune.
-              Fight a trainer, or challenge another player.</>}
-        </p>
+    <div className="arena-entry-screen mx-auto flex h-full min-h-0 w-full max-w-3xl items-center animate-rise">
+      <Panel className="arena-entry-panel flex min-h-0 w-full flex-col overflow-hidden p-3 sm:p-4 lg:p-5" glow>
+        <header className="arena-entry-hero flex min-w-0 items-center gap-3 border-b border-rune/12 pb-3">
+          <ArenaCrest />
+          <div className="min-w-0">
+            <div className="eyebrow text-element">Arena preparation</div>
+            <h1 className="mt-0.5 text-xl font-semibold sm:text-2xl">Prepare your arena run</h1>
+          </div>
+        </header>
 
-        {/* The purse first, because it is now the thing that decides whether
-            you are getting in at all. */}
-        {terms.staked && (
-          <div
-            data-tour="arena-purse"
-            className={cx(
-              'mx-auto mt-5 flex max-w-sm items-center justify-between gap-4 rounded-[3px] border px-4 py-3 text-left',
-              gold >= terms.minEntry ? 'border-edge/70 bg-void/25' : 'border-bad/40 bg-bad/5',
-            )}
-          >
-            <div className="flex items-center gap-2.5">
-              <Coin className={cx('h-6 w-6 shrink-0', gold >= terms.minEntry ? 'text-rune' : 'text-bad')} />
-              <div>
-                <div className="eyebrow">Your purse</div>
-                <div className={cx(
-                  'font-mono text-lg leading-tight tabular-nums',
-                  gold >= terms.minEntry ? 'text-ink' : 'text-bad',
-                )}>
-                  {formatInteger(gold)}
+        <section data-tour="arena-cost" className={cx(
+          'arena-entry-step arena-entry-ready min-w-0 border-b border-rune/12 py-3',
+          ready ? 'arena-entry-step--complete' : 'arena-entry-step--blocked',
+        )}>
+          <ArenaStepNumber value={1} complete={ready} blocked={!ready} />
+          <div className="arena-step-content min-w-0">
+          <div className="arena-step-heading flex items-center justify-between gap-3">
+            <h2 className="text-xs font-semibold">Ready</h2>
+            <span className="font-mono text-[9px] text-faint">
+              {terms.staked ? `${requiredGold} Gold required / ${terms.stake} charged each fight` : '0 Gold entry'}
+            </span>
+          </div>
+          <div className="arena-ready-grid mt-2 grid min-w-0 grid-cols-2 gap-2 sm:grid-cols-[1fr_1fr_auto]">
+            <ResourceCost icon={Bolt} label="Energy" have={monster.energy} need={terms.energyCost} tone="energy" />
+            <ResourceCost icon={Heart} label="Happiness" have={monster.happiness} need={terms.happinessCost} tone="happy" />
+            {terms.staked && (
+              <div
+                data-tour="arena-purse"
+                className={cx(
+                  'arena-purse col-span-2 flex min-w-[10.5rem] items-center gap-3 rounded-[3px] border bg-void/25 px-3 py-2 sm:col-span-1',
+                  gold >= requiredGold ? 'border-edge/70' : 'border-bad/40 bg-bad/5',
+                )}
+              >
+                <Coin className={cx('h-6 w-6 shrink-0', gold >= requiredGold ? 'text-rune' : 'text-bad')} />
+                <div className="min-w-0 flex-1">
+                  <div className="eyebrow">Purse</div>
+                  <div className={cx('font-mono text-xl font-medium leading-tight tabular-nums', gold >= requiredGold ? 'text-ink' : 'text-bad')}>
+                    {formatInteger(gold)}
+                  </div>
+                  <div className="mt-0.5 truncate font-mono text-[8px] text-faint">
+                    {gold >= requiredGold ? 'Full run funded' : `${requiredGold - gold} Gold short`}
+                  </div>
                 </div>
               </div>
-            </div>
-            <div className="text-right text-[11px] leading-relaxed text-faint">
-              {terms.stake} a battle
-              <br />
-              {gold >= terms.sessionStake
-                ? `${terms.battles} covered`
-                : `${Math.floor(gold / Math.max(1, terms.stake))} covered`}
-            </div>
-          </div>
-        )}
-
-        <div data-tour="arena-cost" className="mx-auto mt-4 grid max-w-sm grid-cols-2 gap-3 text-left">
-          <Cost label="Energy" have={monster.energy} need={terms.energyCost} />
-          <Cost label="Happiness" have={monster.happiness} need={terms.happinessCost} />
-        </div>
-
-        {/* What a session actually pays, as a ledger rather than a sentence.
-            Two of these lines are the two economic layers and they are kept
-            visibly apart on purpose: the top one is the only thing that ISSUES
-            Gold and it is capped, and the bottom one is other players' stakes
-            being handed back. Reading them as one number is how "the arena
-            pays" became a faucet every previous time. */}
-        <div data-tour="arena-pays" className="mt-6 border-t border-rune/12 pt-5 text-left">
-          <SectionTitle right={<span className="text-[11px] text-faint">per battle</span>}>
-            What it pays
-          </SectionTitle>
-          <dl className="-mt-1 divide-y divide-edge/40 text-[13px]">
-            <Line
-              term="A win"
-              value={terms.staked
-                ? <><span className="text-good">+{terms.winGold}</span> Gold, plus a share of the pot</>
-                : <><span className="text-good">+{terms.winGold}</span> Gold</>}
-              note="+2 experience"
-            />
-            <Line
-              term="A loss"
-              value={terms.staked
-                ? <span className="text-muted">Your stake stays in the pot</span>
-                : <span className="text-muted">Nothing</span>}
-              note="+1 experience"
-            />
-            {terms.staked && (
-              <Line
-                term="The pot right now"
-                value={bestPayout > 0
-                  ? <><span className="text-good">{leanPayout}–{bestPayout}</span> Gold, depending on the tier</>
-                  : <span className="text-faint">Empty — the first stakes fill it</span>}
-                note={`a win draws ${terms.drainNum}/${terms.drainDen} of it`}
-              />
             )}
-          </dl>
-          <p className="mt-2.5 text-[11px] leading-relaxed text-faint">
-            The fixed half comes out of one 20-hour allowance shared with quests,
-            so it pays nothing once the day’s is spent.
-            {terms.staked && ' The pot half is other players’ stakes — the arena hands back exactly what was put into it, and never more.'}
-          </p>
-        </div>
+          </div>
 
-        <div data-tour="arena-berries" className="mt-6 border-t border-rune/12 pt-5 text-left">
-          <SectionTitle right={<span className="text-[11px] text-faint">optional · eat 3</span>}>
-            Berry maxing
-          </SectionTitle>
-          <p className="-mt-1 text-[12px] leading-relaxed text-faint">
-            Eat three matching berries now for a strong +5 stat boost across all {terms.battles} fights.
-            Your companion's permanent build never changes.
-          </p>
-          <div className="mt-3 grid grid-cols-2 gap-2 sm:grid-cols-5">
+          </div>
+        </section>
+
+        <section data-tour="arena-berries" className={cx(
+          'arena-entry-step arena-entry-boost min-w-0 border-b border-rune/12 py-3',
+          boostComplete ? 'arena-entry-step--complete' : 'arena-entry-step--blocked',
+        )}>
+          <ArenaStepNumber value={2} complete={boostComplete} blocked={!boostComplete} />
+          <div className="arena-step-content min-w-0">
+          <div className="mb-2 flex items-baseline justify-between gap-3">
+            <h2 className="text-xs font-semibold">Pick a boost</h2>
+            <span className="font-mono text-[10px] text-faint">optional / 3 berries = +5</span>
+          </div>
+          <div className="grid grid-cols-5 gap-1.5">
             <button
               type="button" aria-pressed={!berry} onClick={() => setBerry(undefined)}
+              title="Enter without a temporary stat boost"
               className={cx(
-                'min-h-20 rounded-[3px] border px-2 py-2 text-center text-[12px] transition-colors',
+                'arena-berry-button relative grid min-h-14 place-items-center rounded-[3px] border px-1 py-1.5 transition-colors',
                 !berry ? 'border-element/60 bg-element/10 text-element' : 'border-edge/70 text-muted hover:text-ink',
               )}
             >
-              <span className="mx-auto grid h-9 w-9 place-items-center"><X className="h-4 w-4" /></span>
-              No berries
+              <X className="h-4 w-4" />
+              <span className="text-[9px] uppercase tracking-wide">None</span>
             </button>
             {BATTLE_BERRIES.map((entry) => {
               const held = player!.inventory[entry.id] ?? 0;
               const selected = berry === entry.id;
+              const Icon = BERRY_STAT_ICON[entry.stat];
+              const element = entry.id.replace('_berry', '');
               return (
                 <button
                   key={entry.id} type="button" aria-pressed={selected}
                   disabled={held < entry.cost} onClick={() => setBerry(entry.id)}
-                  title={entry.note}
+                  title={`${ITEM_NAME[entry.id]}: ${entry.note}. ${held} held.`}
+                  data-element={element}
                   className={cx(
-                    'relative min-h-20 rounded-[3px] border px-2 py-2 text-center transition-colors',
-                    'disabled:cursor-not-allowed disabled:opacity-35',
-                    selected ? 'border-element/60 bg-element/10 text-element' : 'border-edge/70 text-muted hover:text-ink',
+                    'arena-berry-button relative grid min-h-14 place-items-center rounded-[3px] border px-1 py-1.5 transition-colors',
+                    'disabled:cursor-not-allowed disabled:opacity-30',
+                    selected ? 'border-element/70 bg-element/10 text-element' : 'border-edge/70 text-muted hover:border-element/45 hover:text-ink',
                   )}
                 >
-                  <img src={ITEM_ART[entry.id]} alt="" className="mx-auto h-9 w-9 object-contain [image-rendering:pixelated]" />
-                  <span className="mt-1 block truncate text-[11px]">{ITEM_NAME[entry.id].replace(' Berry', '')}</span>
-                  <span className="absolute right-1.5 top-1 font-mono text-[9px] text-faint">×{held}</span>
+                  <img src={ITEM_ART[entry.id]} alt="" className="h-7 w-7 object-contain [image-rendering:pixelated]" />
+                  <span className="flex items-center gap-0.5 text-[9px] font-medium uppercase tracking-wide">
+                    <Icon className="h-2.5 w-2.5" />
+                    {STAT_SHORT[entry.stat]}
+                  </span>
+                  <span className="absolute right-1 top-0.5 font-mono text-[8px] text-faint">×{held}</span>
                 </button>
               );
             })}
           </div>
-          {selectedBerry && (
-            <p className={cx('mt-2 text-center text-[12px]', selectedCount >= selectedBerry.cost ? 'text-muted' : 'text-bad')}>
-              Eat {selectedBerry.cost}× {ITEM_NAME[selectedBerry.id]} · {selectedBerry.note}
-            </p>
+          <div className={cx(
+            'mt-2 min-h-4 text-center font-mono text-[10px]',
+            selectedBerry
+              ? selectedCount >= selectedBerry.cost ? 'text-element' : 'text-bad'
+              : 'text-faint',
+          )}>
+            {selectedBerry ? selectedBerry.note : 'No boost selected'}
+          </div>
+          </div>
+        </section>
+
+        <footer className={cx(
+          'arena-entry-step arena-entry-action min-w-0 pt-3',
+          blocked ? 'arena-entry-step--blocked' : 'arena-entry-step--active',
+        )}>
+          <ArenaStepNumber value={3} blocked={!!blocked} />
+          <div className="arena-step-content flex min-w-0 flex-col items-stretch gap-2">
+          <div className="arena-step-heading flex items-center justify-between gap-3">
+            <h2 className="text-xs font-semibold">Start battle</h2>
+            <span className="font-mono text-[9px] text-faint">PvE trainer or live PvP</span>
+          </div>
+          {blocked ? (
+            <div className="arena-entry-blocked flex min-w-0 flex-1 items-center gap-2 border-l border-warn/55 bg-warn/[.055] px-3 py-2 text-[11px] text-warn">
+              <X className="h-3.5 w-3.5 shrink-0" />
+              <span className="truncate sm:whitespace-normal">{blocked}</span>
+            </div>
+          ) : (
+            <span className="sr-only">Ready to continue.</span>
           )}
-        </div>
-
-        {blocked && <p className="mt-4 text-[13px] text-warn">{blocked}</p>}
-
-        <Button
-          data-tour="arena-enter"
-          className="mt-6" size="lg" variant="primary"
-          disabled={!!blocked} busy={isPending('enter')}
-          onClick={() => run('enter', () => api.enterArena(berry), 'Four battles are yours.')}
-        >
-          Enter the arena{selectedBerry ? ` + ${selectedBerry.cost}× ${ITEM_NAME[selectedBerry.id]}` : ''}
-        </Button>
-        {terms.staked && !blocked && (
-          <p className="mt-2 text-[11px] text-faint">
-            Entering takes no Gold. The {terms.stake} is charged when a battle starts.
-          </p>
-        )}
+          <Button
+            data-tour="arena-enter"
+            className="w-full shrink-0" size="lg" variant="primary"
+            disabled={!!blocked} busy={isPending('enter')}
+            onClick={() => run('enter', () => api.enterArena(berry), 'Four battles are yours.')}
+          >
+            {blockedCta ?? `Choose PvE or PvP${selectedBerry ? ` / +5 ${STAT_SHORT[selectedBerry.stat]}` : ''}`}
+          </Button>
+          {writePhase('enter') === 'settling' && (
+            <TransactionHold className="min-w-0 flex-1">
+              The gate is opening.
+            </TransactionHold>
+          )}
+          <div className="arena-run-count mt-0.5 flex items-center justify-center gap-3 border-t border-rune/10 pt-2">
+            <div className="w-24"><BattlePips total={terms.battles} lit={terms.battles} label={`${terms.battles} battles in this run`} /></div>
+            <span className="flex items-baseline gap-1.5">
+              <strong className="carve font-mono text-xl font-medium tabular-nums text-element">{terms.battles}</strong>
+              <span className="eyebrow">fights in this run</span>
+            </span>
+          </div>
+          </div>
+        </footer>
       </Panel>
     </div>
   );
 }
 
-/** One row of the payout ledger: what it is, what it pays, and the aside. */
-function Line({ term, value, note }: {
-  term: string; value: React.ReactNode; note?: string;
-}) {
+const STAT_SHORT = {
+  attack: 'ATK', defense: 'DEF', speed: 'SPD', health: 'HP',
+} as const;
+
+const BERRY_STAT_ICON = {
+  attack: Sword, defense: Shield, speed: Bolt, health: Heart,
+} as const;
+
+function ArenaCrest() {
   return (
-    <div className="flex items-baseline justify-between gap-3 py-1.5">
-      <dt className="shrink-0 text-muted">{term}</dt>
-      <dd className="min-w-0 text-right">
-        <span className="tabular-nums">{value}</span>
-        {note && <span className="ml-2 text-[11px] text-faint">{note}</span>}
-      </dd>
+    <div className="arena-crest relative grid h-14 w-14 shrink-0 place-items-center" aria-hidden>
+      <Sword className="relative z-[1] h-6 w-6 text-element" />
     </div>
   );
 }
 
-function Cost({ label, have, need }: { label: string; have: number; need: number }) {
-  const ok = have >= need;
+function ArenaStepNumber({
+  value, complete, blocked,
+}: { value: number; complete?: boolean; blocked?: boolean }) {
   return (
-    <div className={cx('rounded-[3px] border p-2.5', ok ? 'border-edge/70' : 'border-bad/40 bg-bad/5')}>
-      <div className="eyebrow">{label}</div>
-      <div className={cx('mt-0.5 font-mono text-sm tabular-nums', ok ? 'text-ink' : 'text-bad')}>
-        {have}<span className="text-faint">/{need}</span>
+    <div className="arena-step-number relative flex min-h-12 items-start justify-center self-stretch border-r border-rune/12 pr-3 pt-0.5" aria-hidden>
+      <span className={cx(
+        'carve font-mono text-5xl font-medium leading-none tabular-nums',
+        blocked ? 'text-bad' : complete ? 'text-good' : 'text-element',
+      )}>{value}</span>
+      {complete && <Check className="arena-step-check absolute h-8 w-8 text-good" />}
+    </div>
+  );
+}
+
+function ArenaGoldRules({ terms }: { terms: ArenaTerms }) {
+  return (
+    <div data-tour="arena-pays" className="arena-lobby-gold-rules mt-2 border-t border-rune/10 pt-2">
+      <div className="mb-1.5 flex items-baseline justify-between gap-3">
+        <h2 className="eyebrow">Gold rules</h2>
+        <span className="text-[9px] text-faint">{terms.stake} charged only when each fight starts</span>
+      </div>
+      <div className="arena-gold-rules grid grid-cols-4 gap-1.5">
+        <GoldRule icon={Coin} label="Entry" value="0" note="Gold charged" />
+        <GoldRule icon={Sword} label="Stake" value={`${terms.stake}`} note="Gold / battle" />
+        <GoldRule icon={Trophy} label="Win" value={`0–${terms.winGold}`} note="Gold + pot" good />
+        <GoldRule icon={Shield} label="Loss" value={terms.staked ? `−${terms.stake}` : '0'} note="to pot / +1 XP" />
       </div>
     </div>
+  );
+}
+
+function GoldRule({
+  icon: Icon, label, value, note, good,
+}: {
+  icon: (props: { className?: string }) => JSX.Element;
+  label: string; value: string; note: string; good?: boolean;
+}) {
+  return (
+    <div className={cx(
+      'arena-gold-rule min-w-0 rounded-[3px] border bg-void/25 px-2 py-2.5 text-center',
+      good ? 'border-good/30' : 'border-edge/60',
+    )}>
+      <Icon className={cx('mx-auto h-5 w-5', good ? 'text-good' : label === 'Entry' || label === 'Stake' ? 'text-rune' : 'text-muted')} />
+      <div className="mt-1 truncate font-mono text-[8px] uppercase tracking-wide text-faint">{label}</div>
+      <div className={cx('mt-0.5 truncate font-mono text-lg font-medium leading-tight tabular-nums', good ? 'text-good' : 'text-ink')}>{value}</div>
+      <div className="mt-0.5 truncate text-[9px] text-faint">{note}</div>
+    </div>
+  );
+}
+
+function ResourceCost({
+  icon: Icon, label, have, need, tone,
+}: {
+  icon: (props: { className?: string }) => JSX.Element;
+  label: string; have: number; need: number; tone: 'energy' | 'happy';
+}) {
+  const ok = have >= need;
+  const max = Math.max(100, have, need);
+  const after = Math.max(0, have - need);
+  const paid = Math.min(have, need);
+  const fill = tone === 'energy' ? 'bg-warn' : 'bg-[rgb(236,110,180)]';
+  return (
+    <div
+      className={cx('arena-resource-cost rounded-[3px] border bg-void/20 px-3 py-2.5', ok ? 'border-edge/70' : 'border-bad/40 bg-bad/5')}
+      aria-label={`${label}: ${have} available, ${need} spent on entry, ${after} remaining`}
+    >
+      <div className="flex items-center gap-2">
+        <Icon className={cx('h-5 w-5 shrink-0', ok ? tone === 'energy' ? 'text-warn' : 'text-[rgb(236,110,180)]' : 'text-bad')} />
+        <span className="eyebrow min-w-0 flex-1 truncate">{label}</span>
+        <span className={cx('font-mono text-base font-medium tabular-nums', ok ? 'text-ink' : 'text-bad')}>
+          {have}<span className="px-1 text-faint">→</span>{after}
+        </span>
+      </div>
+      <div className="relative mt-2 h-2 overflow-hidden rounded-[2px] bg-raised">
+        <span className={cx('absolute inset-y-0 left-0 opacity-45', fill)} style={{ width: `${(after / max) * 100}%` }} />
+        <span
+          className={cx('absolute inset-y-0 opacity-90', ok ? fill : 'bg-bad')}
+          style={{ left: `${(after / max) * 100}%`, width: `${(paid / max) * 100}%` }}
+        />
+      </div>
+    </div>
+  );
+}
+
+function BattlePips({ total, lit, label }: { total: number; lit: number; label: string }) {
+  const shown = Math.min(total, 8);
+  return (
+    <span className="flex items-center gap-1" role="img" aria-label={label} title={label}>
+      {Array.from({ length: shown }, (_, index) => (
+        <span
+          key={index}
+          aria-hidden
+          className={cx(
+            'h-1.5 min-w-2 flex-1 skew-x-[-18deg] border',
+            index < lit ? 'border-element/60 bg-element/65' : 'border-edge/70 bg-raised/60',
+          )}
+        />
+      ))}
+    </span>
   );
 }
 
@@ -369,7 +460,7 @@ function Lobby() {
   useTourSteps('arena-lobby', LOBBY_TOUR);
   const {
     player, catalog, arenaTiers, refreshArenaTiers,
-    run, isPending, busy, address, challenges, refreshChallenges,
+    run, isPending, writePhase, busy, address, challenges, refreshChallenges,
   } = useGame();
   const terms = arenaTerms(catalog);
   const rows = arenaTierRows(terms, arenaTiers);
@@ -377,6 +468,7 @@ function Lobby() {
   // client never invents a number the process would bucket somewhere else.
   const [tierKey, setTierKey] = useState(() => rows[1]?.key ?? rows[0]?.key ?? 'even');
   const [refreshing, setRefreshing] = useState(false);
+  const [pane, setPane] = useState<'trainers' | 'duels'>('trainers');
 
   // Free and unsigned, but not free of a CONNECTION: a bare interval issued a
   // new read every ten seconds whether or not the last one had answered, and
@@ -400,176 +492,241 @@ function Lobby() {
   const gold = player!.gold ?? 0;
   const chosen = rows.find((row) => row.key === tierKey) ?? rows[0];
   const canAfford = !terms.staked || gold >= terms.stake;
+  const rating = Math.round(player!.rating ?? terms.ratingStart);
+  const ratedMatches = Math.max(0, Math.round(player!.ratedMatches ?? 0));
+  const provisional = ratedMatches < terms.ratingProvisionalGames;
 
   return (
-    <div className="animate-rise space-y-4">
-      <Panel data-tour="arena-session" className="p-5">
-        <div className="flex flex-wrap items-center justify-between gap-3">
-          <div>
-            <h1 className="text-xl font-semibold tracking-tight">The arena</h1>
-            <p className="mt-1 text-sm text-muted">
-              {remaining} battle{remaining === 1 ? '' : 's'} left this session ·
-              {' '}<span className="text-good">{player!.sessionWins ?? 0}W</span>
-              {' '}<span className="text-muted">{player!.sessionLosses ?? 0}L</span>
-            </p>
-            {player!.arenaBoost && (
-              <p className="mt-1 flex items-center gap-1.5 text-[11px] text-faint">
-                <img src={ITEM_ART[player!.arenaBoost.item]} alt="" className="h-4 w-4 object-contain [image-rendering:pixelated]" />
-                {player!.arenaBoost.cost}× {ITEM_NAME[player!.arenaBoost.item]} · +{player!.arenaBoost.amount} {player!.arenaBoost.stat}
-              </p>
-            )}
+    <div className="arena-lobby-screen mx-auto flex h-full min-h-0 w-full max-w-6xl flex-col gap-2 animate-rise">
+      <Panel data-tour="arena-session" className="arena-session-hud shrink-0 px-3 py-2.5 sm:px-4">
+        <div className="grid grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-3">
+          <div
+            className="arena-rating-plate grid h-10 min-w-14 place-items-center border border-element/35 bg-element/[.07] px-1.5 text-element"
+            aria-label={`PvP rating ${rating}`}
+            title={`Player-level rated PvP Elo. ${provisional ? `${terms.ratingProvisionalGames - ratedMatches} provisional matches remain.` : 'Established rating.'}`}
+          >
+            <span className="font-mono text-[7px] uppercase tracking-[.16em] text-faint">{provisional ? 'PROV' : 'ELO'}</span>
+            <span className="flex items-center gap-1 font-mono text-base font-medium leading-none tabular-nums text-element">
+              <Trophy className="h-3 w-3" />{rating}
+            </span>
           </div>
-          <div className="flex items-center gap-4">
+          <div className="min-w-0">
+            <div className="flex items-center gap-2">
+              <h1 className="truncate text-lg font-semibold tracking-tight">3 / Battle</h1>
+              {player!.arenaBoost && (
+                <span className="arena-session-boost flex shrink-0 items-center gap-1 rounded-[2px] border border-element/35 bg-element/[.07] px-1.5 py-0.5 font-mono text-[9px] uppercase text-element"
+                      title={`${player!.arenaBoost.cost}× ${ITEM_NAME[player!.arenaBoost.item]} for this session`}>
+                  <img src={ITEM_ART[player!.arenaBoost.item]} alt="" className="h-3.5 w-3.5 object-contain [image-rendering:pixelated]" />
+                  <span className="arena-session-boost-label">+{player!.arenaBoost.amount} {STAT_SHORT[player!.arenaBoost.stat]}</span>
+                </span>
+              )}
+            </div>
+            <div className="mt-1 flex items-center gap-2 sm:gap-3">
+              <div className="w-16 sm:w-32">
+                <BattlePips total={terms.battles} lit={remaining} label={`${remaining} battles remaining`} />
+              </div>
+              <span className="arena-session-fraction font-mono text-[10px] text-faint">{remaining}/{terms.battles}</span>
+              <span
+                className="whitespace-nowrap font-mono text-[10px] tabular-nums"
+                aria-label={`This run: ${player!.sessionWins ?? 0} wins and ${player!.sessionLosses ?? 0} losses`}
+                title="This four-fight run's record. Stored on the player account."
+              >
+                <span className="text-good">{player!.sessionWins ?? 0}W</span>
+                <span className="mx-1 text-rune/30">/</span>
+                <span className="text-muted">{player!.sessionLosses ?? 0}L</span>
+              </span>
+            </div>
+          </div>
+          <div className="flex items-center gap-1 sm:gap-3">
             {terms.staked && (
               <div className="text-right">
                 <div className="eyebrow">Purse</div>
                 <div className={cx(
-                  'flex items-center justify-end gap-1.5 font-mono text-base leading-tight tabular-nums',
+                  'flex items-center justify-end gap-1 font-mono text-sm leading-tight tabular-nums',
                   canAfford ? 'text-ink' : 'text-bad',
                 )}>
-                  <Coin className={cx('h-4 w-4', canAfford ? 'text-rune' : 'text-bad')} />
+                  <Coin className={cx('h-3.5 w-3.5', canAfford ? 'text-rune' : 'text-bad')} />
                   {formatInteger(gold)}
                 </div>
-                <div className="text-[11px] text-faint">{terms.stake} a battle</div>
               </div>
             )}
             <Button
-              variant="quiet" busy={isPending('leave')}
-              onClick={() => run('leave', api.leaveArena)}
+              className="px-2 sm:px-3" size="sm" variant="quiet" busy={isPending('leave')}
+              onClick={() => run('leave', api.leaveArena)} title="Leave the arena and forfeit unused battles"
             >
-              Leave the arena
+              Leave
             </Button>
           </div>
         </div>
+        <ArenaGoldRules terms={terms} />
       </Panel>
 
-      <div className="arena-lobby-grid grid gap-4 lg:grid-cols-2">
-        <Panel data-tour="arena-tiers" className="p-5">
+      <div className="arena-lobby-tabs grid shrink-0 grid-cols-2 gap-1 lg:hidden" role="tablist" aria-label="Arena opponents">
+        <button
+          type="button" role="tab" aria-selected={pane === 'trainers'}
+          onClick={() => setPane('trainers')}
+          className={cx('rounded-[3px] border px-3 py-2 text-[12px]', pane === 'trainers' ? 'border-element/55 bg-element/10 text-element' : 'border-edge/70 text-muted')}
+        >
+          <span data-tour="arena-tiers" className="flex items-center justify-center gap-2">
+            <span data-tour="arena-breakeven" className="flex items-center gap-2">
+              <Sword className="h-3.5 w-3.5" /> PvE / Trainers
+            </span>
+          </span>
+        </button>
+        <button
+          type="button" role="tab" aria-selected={pane === 'duels'}
+          onClick={() => setPane('duels')} data-tour="arena-open"
+          className={cx('rounded-[3px] border px-3 py-2 text-[12px]', pane === 'duels' ? 'border-element/55 bg-element/10 text-element' : 'border-edge/70 text-muted')}
+        >
+          <span className="flex items-center justify-center gap-2">
+            <Users className="h-3.5 w-3.5" /> PvP / Rated
+            {open.length > 0 && <span className="font-mono text-[9px]">{open.length}</span>}
+          </span>
+        </button>
+      </div>
+
+      <div className="arena-lobby-grid grid min-h-0 flex-1 gap-2 lg:grid-cols-2">
+        <Panel data-tour="arena-tiers" className={cx(
+          'arena-lobby-panel min-h-0 flex-col overflow-hidden p-3 sm:p-4 lg:flex',
+          pane === 'trainers' ? 'flex' : 'hidden',
+        )}>
           <SectionTitle right={terms.staked
-            ? <span className="text-[11px] text-faint">{terms.stake} Gold a battle</span>
+            ? <span className="flex items-center gap-1 font-mono text-[10px] text-faint"><Coin className="h-3 w-3 text-rune" />{terms.stake} stake</span>
             : undefined}>
-            Fight a trainer
+            PvE trainer
           </SectionTitle>
-          <p className="text-[13px] leading-relaxed text-muted">
-            {terms.staked
-              ? <>An opponent built to match your level. Every tier stakes the same;
-                what differs is the pot, and a win draws {terms.drainNum}/{terms.drainDen} of
-                whichever one it staked into.</>
-              : <>An opponent is generated to match your level, from a random faction.
-                Harder opponents get a bigger stat budget.</>}
-          </p>
 
           {terms.staked ? (
             <TierTable rows={rows} value={tierKey} onPick={setTierKey} terms={terms} />
           ) : (
-            <div className="mt-4 flex gap-2">
-              {rows.map((row) => (
+            <div className="grid flex-1 grid-cols-2 gap-2">
+              {rows.map((row, index) => (
                 <button
-                  key={row.key}
-                  onClick={() => setTierKey(row.key)}
-                  aria-pressed={tierKey === row.key}
+                  key={row.key} onClick={() => setTierKey(row.key)} aria-pressed={tierKey === row.key}
                   className={cx(
-                    'difficulty-button min-h-11 flex-1 rounded-[3px] border px-2 py-2 text-[13px] transition-colors lg:min-h-0',
-                    tierKey === row.key
-                      ? 'border-element/60 bg-element/10 text-element'
-                      : 'border-edge/70 text-muted hover:text-ink',
+                    'difficulty-button grid min-h-11 place-items-center rounded-[3px] border px-2 py-2 text-[13px] transition-colors',
+                    tierKey === row.key ? 'border-element/60 bg-element/10 text-element' : 'border-edge/70 text-muted hover:text-ink',
                   )}
                 >
+                  <DifficultyMarks level={index + 1} />
                   {row.label}
                 </button>
               ))}
             </div>
           )}
 
+          {writePhase('bot') === 'settling' && (
+            <TransactionHold className="mb-2 mt-auto">Trainer incoming.</TransactionHold>
+          )}
           <Button
-            className="mt-4 w-full" variant="primary" size="lg"
-            disabled={remaining <= 0 || busy || !canAfford}
-            busy={isPending('bot')}
+            className="mt-2 w-full shrink-0" variant="primary" size="lg"
+            disabled={remaining <= 0 || busy || !canAfford} busy={isPending('bot')}
             onClick={() => run('bot', () => api.startBotBattle(chosen?.difficulty ?? 1))}
             icon={<Sword className="h-4 w-4" />}
           >
             {remaining <= 0 ? 'No battles left'
               : !canAfford ? `Need ${terms.stake} Gold`
-                : terms.staked
-                  ? `Stake ${terms.stake} on ${chosen?.label ?? 'Even'}`
-                  : 'Begin'}
+                : terms.staked ? `Fight ${chosen?.label ?? 'Even'} / stake ${terms.stake}` : 'Begin fight'}
           </Button>
-          {terms.staked && chosen && canAfford && remaining > 0 && (
-            <p className="mt-2 text-center text-[11px] text-faint">
-              A win here pays {chosen.payout} Gold from the pot, plus the {terms.winGold}
-              {' '}reward. A loss leaves your stake in it.
-            </p>
-          )}
         </Panel>
 
-        <Panel data-tour="arena-open" className="p-5">
+        <Panel data-tour="arena-open" className={cx(
+          'arena-lobby-panel min-h-0 flex-col overflow-hidden p-3 sm:p-4 lg:flex',
+          pane === 'duels' ? 'flex' : 'hidden',
+        )}>
           <SectionTitle right={
-            <Button
-              size="sm" variant="quiet" busy={refreshing}
-              onClick={async () => {
-                setRefreshing(true);
-                await Promise.all([refreshChallenges(), refreshArenaTiers()]);
-                setRefreshing(false);
-              }}
-              icon={<Refresh className="h-3.5 w-3.5" />}
-            >
-              Refresh
-            </Button>
+            <span className="flex items-center gap-1.5 font-mono text-[10px] tabular-nums text-element">
+              <Trophy className="h-3 w-3" /> {rating} Elo
+              {provisional && <span className="text-faint">/ provisional</span>}
+            </span>
           }>
-            Challenge a player
+            Rated duel
           </SectionTitle>
 
-          {terms.staked && (
-            <p className="-mt-1 mb-3 text-[12px] leading-relaxed text-faint">
-              A duel is one pot of exactly two stakes — {terms.stake} each — and the
-              winner takes all {terms.stake * 2}, no rake. Yours is held from the
-              moment you post; withdrawing a challenge nobody took returns it whole.
+          {terms.staked && <>
+            <DuelPot stake={terms.stake} />
+            <p className="duel-payout-note mt-1 text-center font-mono text-[9px] text-faint">
+              Winner: {terms.stake * 2} pot + 0–{terms.winGold} daily reward
             </p>
-          )}
+          </>}
 
           <Button
-            className="w-full" variant="ghost"
-            disabled={remaining <= 0 || busy || !canAfford}
-            busy={isPending('challenge')}
-            onClick={() => run('challenge', () => api.challenge('OPEN'),
-              'Challenge posted. Waiting for a taker.')}
-            icon={<Users className="h-4 w-4" />}
+            className="mt-2 w-full shrink-0" variant="primary"
+            disabled={remaining <= 0 || busy || !canAfford} busy={isPending('matchmake')}
+            onClick={() => run('matchmake', api.findRatedMatch)}
+            icon={<Trophy className="h-4 w-4" />}
           >
             {!canAfford ? `Need ${terms.stake} Gold`
-              : terms.staked ? `Post a challenge · ${terms.stake} Gold` : 'Post an open challenge'}
+              : terms.staked ? `Find rated match / stake ${terms.stake}` : 'Find rated match'}
           </Button>
+          <div className="arena-match-rules mt-1.5 grid grid-cols-3 gap-1 font-mono text-[8px] uppercase tracking-wide text-faint" aria-label="Rated matchmaking rules">
+            <span className="rounded-[2px] border border-element/20 bg-element/[.04] px-1.5 py-1 text-center">Elo + level</span>
+            <span className="rounded-[2px] border border-element/20 bg-element/[.04] px-1.5 py-1 text-center">widens fairly</span>
+            <span className="rounded-[2px] border border-element/20 bg-element/[.04] px-1.5 py-1 text-center">5 min max</span>
+          </div>
 
-          <div className="mt-4">
+          {writePhase('matchmake') === 'settling' && (
+            <TransactionHold className="mt-2 shrink-0">Searching the rated queue.</TransactionHold>
+          )}
+
+          <div className="mt-2 flex min-h-0 flex-1 flex-col border-t border-rune/12 pt-2">
+            <div className="mb-1.5 flex shrink-0 items-center justify-between">
+              <span className="eyebrow">Open duels / no Elo</span>
+              <span className="flex items-center gap-1">
+                <Button
+                  className="h-7 min-h-0 px-2 text-[9px]" size="sm" variant="ghost"
+                  disabled={remaining <= 0 || busy || !canAfford} busy={isPending('challenge')}
+                  onClick={() => run('challenge', () => api.challenge('OPEN'), 'Unranked challenge posted.')}
+                >
+                  Post / {terms.stake}
+                </Button>
+                <Button
+                  className="h-7 min-h-0 px-1.5" size="sm" variant="quiet" busy={refreshing}
+                  onClick={async () => {
+                    setRefreshing(true);
+                    await Promise.all([refreshChallenges(), refreshArenaTiers()]);
+                    setRefreshing(false);
+                  }}
+                  icon={<Refresh className="h-3 w-3" />} title="Refresh unranked challenges"
+                  aria-label="Refresh unranked challenges"
+                />
+                <span className="min-w-3 text-right font-mono text-[9px] text-faint">{challenges === null ? '…' : open.length}</span>
+              </span>
+            </div>
+            {writePhase('challenge') === 'settling' && (
+              <TransactionHold className="mb-1.5 shrink-0">Posting unranked challenge.</TransactionHold>
+            )}
             {challenges === null ? (
-              <div className="space-y-2 py-2">
-                <Skeleton className="h-12 w-full" />
-                <Skeleton className="h-12 w-full" />
+              <div className="space-y-1.5 py-1">
+                <Skeleton className="h-10 w-full" />
+                <Skeleton className="h-10 w-full" />
               </div>
             ) : open.length === 0 ? (
-              <p className="py-6 text-center text-[13px] text-faint">
-                Nobody is waiting. Post one and someone will find it.
-              </p>
+              <div className="grid min-h-0 flex-1 place-items-center text-center">
+                <div>
+                  <Users className="mx-auto h-6 w-6 text-faint" />
+                  <p className="mt-1 text-[11px] text-faint">The board is clear.</p>
+                </div>
+              </div>
             ) : (
-              <div className="space-y-2">
+              <div className="arena-challenge-list min-h-0 flex-1 space-y-1.5 overflow-y-auto pr-1">
                 {open.map((c) => (
                   <div key={c.id} data-element={c.element}
-                       className="flex items-center justify-between gap-3 rounded-[3px] border border-edge/60 bg-void/25 px-3 py-2.5">
+                       className="flex items-center justify-between gap-3 rounded-[3px] border border-edge/60 bg-void/25 px-2.5 py-1.5">
                     <div className="min-w-0">
-                      <div className="truncate text-sm">
+                      <div className="truncate text-[12px] font-medium">
                         {c.monsterName}{' '}
-                        <span className="font-mono text-xs text-faint">lvl {c.level}</span>
+                        <span className="font-mono text-[10px] text-faint">L{c.level}</span>{' '}
+                        <span className="font-mono text-[10px] text-element">{Math.round(c.rating ?? terms.ratingStart)} Elo</span>
                       </div>
-                      <div className="font-mono text-[11px] text-faint">
-                        {shortAddress(c.challenger, 5)}
-                      </div>
+                      <div className="font-mono text-[9px] text-faint">{shortAddress(c.challenger, 5)}</div>
                     </div>
                     <Button
-                      size="sm" variant="primary"
-                      disabled={remaining <= 0 || busy || !canAfford}
-                      busy={isPending(`accept:${c.id}`)}
+                      className="px-2.5" size="sm" variant="primary"
+                      disabled={remaining <= 0 || busy || !canAfford} busy={isPending(`accept:${c.id}`)}
                       onClick={() => run(`accept:${c.id}`, () => api.acceptChallenge(c.id))}
                     >
-                      {terms.staked ? `Take · ${terms.stake}` : 'Accept'}
+                      {terms.staked ? `Take / ${terms.stake}` : 'Accept'}
                     </Button>
                   </div>
                 ))}
@@ -583,28 +740,13 @@ function Lobby() {
 }
 
 /**
- * The four pots, as the thing you pick a fight out of.
+ * The four pots, drawn as selectable odds tracks rather than a data table.
  *
- * This replaced a row of four difficulty buttons, and the reason it is a table
- * rather than four prettier buttons is that a tier is no longer a preference —
- * it is a price, and the four numbers on each row are what makes it one.
- *
- * All four are DERIVED here from what the process published (`pot`, `wins`,
- * `attempts`) and none of them is published as a number. See the note on
- * `arenaTierMath`: a derived value read a slot late is a figure nobody could
- * have been paid, and a payout the contract advertised is a promise the design
- * deliberately does not make.
- *
- * The last column is the one worth reading and the one most easily
- * misunderstood, so it says both halves rather than a verdict: **break even**
- * is the win rate at which the pot returns your stake, and **players win** is
- * how often the tier is actually being won. At equilibrium the two converge, so
- * the GAP between them is the signal — a tier people have been losing has a
- * fat pot, a low break-even, and is worth attacking right now.
- *
- * Nothing here feeds a payout. A player who dumps games to drag "players win"
- * down gains nothing, because a win still draws from what is in the pot and a
- * pot only holds what somebody staked.
+ * The filled track is the realm's measured win rate. The bone notch is the
+ * break-even rate for the live pot. Fill past the notch means the pot is paying
+ * better than the realm has needed to win it; the signed percentage at the end
+ * makes the same comparison available without relying on colour or position.
+ * All values remain derived from one published tier snapshot.
  */
 function TierTable({ rows, value, onPick, terms }: {
   rows: ReturnType<typeof arenaTierRows>;
@@ -612,72 +754,94 @@ function TierTable({ rows, value, onPick, terms }: {
   onPick: (key: string) => void;
   terms: ArenaTerms;
 }) {
+  const maxPayout = Math.max(1, ...rows.map((row) => row.payout));
   return (
-    <div data-tour="arena-breakeven" className="mt-4 overflow-x-auto">
-      <table className="w-full min-w-[19rem] border-collapse text-[12px]">
-        <thead>
-          <tr className="text-faint">
-            <th className="pb-1.5 text-left font-normal">Tier</th>
-            <th className="pb-1.5 text-right font-normal">Pot</th>
-            <th className="pb-1.5 text-right font-normal">A win pays</th>
-            <th className="pb-1.5 text-right font-normal">Break even</th>
-            <th className="pb-1.5 text-right font-normal">Players win</th>
-          </tr>
-        </thead>
-        <tbody>
-          {rows.map((row) => {
-            const selected = row.key === value;
-            // Positive edge means the tier is currently being won MORE often
-            // than the pot needs to pay its stake back — the pot is fat. It is
-            // a fact about right now, not a prediction about this player.
-            const good = row.edge !== undefined && row.edge > 0;
-            return (
-              <tr
-                key={row.key}
-                onClick={() => onPick(row.key)}
-                aria-selected={selected}
-                className={cx(
-                  'cursor-pointer border-t border-edge/40 transition-colors',
-                  selected ? 'bg-element/10 text-element' : 'text-muted hover:text-ink',
-                )}
-              >
-                <td className="py-2 pr-2">
-                  <button
-                    type="button"
-                    aria-pressed={selected}
-                    onClick={(event) => { event.stopPropagation(); onPick(row.key); }}
-                    className="text-left text-[13px]"
-                  >
-                    {row.label}
-                  </button>
-                </td>
-                <td className="py-2 pl-2 text-right font-mono tabular-nums">
-                  {formatInteger(row.pot)}
-                </td>
-                <td className={cx('py-2 pl-2 text-right font-mono tabular-nums',
-                  row.payout > terms.stake && 'text-good')}>
-                  {formatInteger(row.payout)}
-                </td>
-                <td className="py-2 pl-2 text-right font-mono tabular-nums">
-                  {ratePct(row.breakEven)}
-                </td>
-                <td className={cx('py-2 pl-2 text-right font-mono tabular-nums',
-                  row.winRate === undefined ? 'text-faint' : good ? 'text-good' : 'text-warn')}>
-                  {ratePct(row.winRate)}
-                  {row.attempts > 0 && row.winRate === undefined && (
-                    <span className="ml-1 text-[9px] uppercase text-faint">new</span>
+    <div data-tour="arena-breakeven" className="arena-tier-board flex min-h-0 flex-1 flex-col">
+      <div className="mb-1.5 flex items-center justify-end gap-3 font-mono text-[8px] uppercase tracking-wide text-faint" aria-hidden>
+        <span className="flex items-center gap-1"><i className="block h-1.5 w-3 bg-good/60" /> Realm wins</span>
+        <span className="flex items-center gap-1"><i className="block h-3 w-px bg-rune" /> Break-even</span>
+      </div>
+      <div className="grid min-h-0 flex-1 grid-rows-4 gap-1.5" role="radiogroup" aria-label="Trainer difficulty and live pot odds">
+        {rows.map((row, index) => {
+          const selected = row.key === value;
+          const good = row.edge !== undefined && row.edge > 0;
+          const edgePoints = row.edge === undefined ? undefined : Math.round(row.edge * 100);
+          const breakEven = Math.max(0, Math.min(100, (row.breakEven ?? 0) * 100));
+          const realmWins = Math.max(0, Math.min(100, (row.winRate ?? 0) * 100));
+          const payoutScale = Math.max(4, (row.payout / maxPayout) * 100);
+          return (
+            <button
+              key={row.key} type="button" role="radio" aria-checked={selected}
+              onClick={() => onPick(row.key)}
+              title={`${row.label}: ${row.pot} Gold in the pot, a win currently draws ${row.payout} from it plus 0–${terms.winGold} from the daily reward allowance. Break-even ${ratePct(row.breakEven)}; realm win rate ${ratePct(row.winRate)}.`}
+              className={cx(
+                'arena-tier-option grid min-h-0 grid-cols-[4.4rem_minmax(0,1fr)_3.4rem] items-center gap-2 rounded-[3px] border px-2.5 py-1.5 text-left transition-colors',
+                selected ? 'border-element/60 bg-element/[.09]' : 'border-edge/60 bg-void/20 hover:border-element/35 hover:bg-raised/35',
+              )}
+            >
+              <span className="min-w-0">
+                <DifficultyMarks level={index + 1} />
+                <span className={cx('mt-0.5 block truncate text-[12px] font-medium', selected ? 'text-element' : 'text-ink')}>{row.label}</span>
+              </span>
+              <span className="min-w-0">
+                <span className="flex items-baseline justify-between gap-2 font-mono text-[9px] tabular-nums">
+                  <span className="text-faint">pot {formatInteger(row.pot)}</span>
+                  <span className={row.payout > terms.stake ? 'text-good' : 'text-muted'}>pot +{formatInteger(row.payout)}</span>
+                </span>
+                <span className="arena-tier-track relative mt-1 block h-2 overflow-visible rounded-[2px] bg-raised">
+                  <span className="absolute inset-y-0 left-0 bg-element/20" style={{ width: `${payoutScale}%` }} />
+                  {row.winRate !== undefined && (
+                    <span className={cx('absolute inset-y-0 left-0', good ? 'bg-good/65' : 'bg-warn/55')} style={{ width: `${realmWins}%` }} />
                   )}
-                </td>
-              </tr>
-            );
-          })}
-        </tbody>
-      </table>
-      <p className="mt-2 text-[11px] leading-relaxed text-faint">
-        Break even is the win rate at which the pot returns your {terms.stake}.
-        When more players are winning a tier than that, its pot is fat and the
-        tier is worth attacking. Your own record never changes what a win pays.
-      </p>
+                  {row.breakEven !== undefined && (
+                    <span className="absolute -inset-y-1 w-px bg-rune" style={{ left: `${breakEven}%` }} />
+                  )}
+                </span>
+                <span className="arena-tier-rates mt-1 flex justify-between font-mono text-[8px] tabular-nums text-faint">
+                  <span>BE {ratePct(row.breakEven)}</span>
+                  <span>Realm {ratePct(row.winRate)}</span>
+                </span>
+              </span>
+              <span className={cx(
+                'justify-self-end rounded-[2px] border px-1.5 py-0.5 font-mono text-[9px] tabular-nums',
+                edgePoints === undefined ? 'border-edge/60 text-faint'
+                  : good ? 'border-good/35 bg-good/[.07] text-good' : 'border-warn/35 bg-warn/[.07] text-warn',
+              )}>
+                {edgePoints === undefined ? 'NEW' : `${edgePoints > 0 ? '+' : ''}${edgePoints}%`}
+              </span>
+            </button>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+function DifficultyMarks({ level }: { level: number }) {
+  return (
+    <span className="difficulty-marks flex gap-0.5" aria-hidden>
+      {Array.from({ length: 4 }, (_, index) => (
+        <i key={index} className={cx('block h-1 w-2 skew-x-[-22deg]', index < level ? 'bg-element/75' : 'bg-edge/60')} />
+      ))}
+    </span>
+  );
+}
+
+function DuelPot({ stake }: { stake: number }) {
+  return (
+    <div className="duel-pot grid grid-cols-[1fr_auto_1fr] items-center gap-2 rounded-[3px] border border-edge/60 bg-void/25 px-3 py-2" aria-label={`Each player stakes ${stake} Gold. Winner takes ${stake * 2} Gold.`}>
+      <span className="text-center">
+        <span className="eyebrow block">You</span>
+        <span className="mt-0.5 flex items-center justify-center gap-1 font-mono text-sm tabular-nums"><Coin className="h-3.5 w-3.5 text-rune" />{stake}</span>
+      </span>
+      <span className="relative grid h-9 w-14 place-items-center border-x border-rune/15" aria-hidden>
+        <Sword className="h-5 w-5 rotate-45 text-element/70" />
+        <span className="absolute -bottom-1 bg-surface px-1 font-mono text-[8px] text-good">{stake * 2} POT</span>
+      </span>
+      <span className="text-center">
+        <span className="eyebrow block">Rival</span>
+        <span className="mt-0.5 flex items-center justify-center gap-1 font-mono text-sm tabular-nums"><Coin className="h-3.5 w-3.5 text-rune" />{stake}</span>
+      </span>
     </div>
   );
 }
@@ -730,6 +894,136 @@ function FleetBattleRecovery() {
 }
 
 /**
+ * The authority can publish the player's new battle id one read before that
+ * battle's dedicated cache row is available. Stay in recovery and keep reading
+ * the player; falling through to Lobby would stop the only poll that can attach
+ * the fight and strand a successfully matched player on the opponent picker.
+ */
+function MonolithBattleRecovery() {
+  const { player, refresh } = useGame();
+  usePoll(() => refresh(), { intervalMs: PVP_POLL_MS, maxIntervalMs: 20_000 });
+
+  return (
+    <div className="mx-auto max-w-lg animate-rise lg:my-auto">
+      <Panel className="p-8 text-center" glow>
+        <Spinner className="mx-auto h-8 w-8 text-element" />
+        <h1 className="mt-4 text-lg font-semibold">Restoring battle</h1>
+        <p className="mx-auto mt-2 max-w-sm text-sm leading-relaxed text-muted">
+          Your match is secured. Its battle cache is catching up; no second fight can start while this one is attached.
+        </p>
+        <div className="mt-6 flex justify-center">
+          <Button variant="quiet" onClick={() => void refresh()} icon={<Refresh className="h-3.5 w-3.5" />}>
+            Refresh
+          </Button>
+        </div>
+        <span className="sr-only">Battle {player!.activeBattleId}</span>
+      </Panel>
+    </div>
+  );
+}
+
+/**
+ * A compact, published-player wait state. No public queue or placeholder battle
+ * is polled: the opponent's Matchmake transaction updates this player's normal
+ * published record with the real battle, and the next free refresh opens it.
+ */
+function MatchmakingWait() {
+  const { player, catalog, refresh, run, isPending } = useGame();
+  const terms = arenaTerms(catalog);
+  const search = player!.matchmaking!;
+  const [now, setNow] = useState(Date.now());
+
+  useEffect(() => {
+    const timer = setInterval(() => setNow(Date.now()), 1000);
+    return () => clearInterval(timer);
+  }, []);
+  usePoll(() => refresh(), { intervalMs: PVP_POLL_MS, maxIntervalMs: 20_000 });
+
+  const elapsed = Math.max(0, now - search.joinedAt);
+  const remaining = Math.max(0, search.expiresAt - now);
+  const expired = remaining <= 0;
+  const bands = terms.matchmakingBands;
+  const band = bands.reduce(
+    (current, next) => elapsed >= next.afterMs ? next : current,
+    bands[0] ?? { afterMs: 0, rating: 100, level: 1 },
+  );
+  const progress = Math.min(100, (elapsed / terms.matchmakingMaxWaitMs) * 100);
+
+  return (
+    <div className="arena-matchmaking mx-auto flex h-full min-h-0 w-full max-w-lg items-center animate-rise">
+      <Panel className="w-full overflow-hidden p-5 text-center sm:p-7" glow>
+        <div className="arena-matchmaking-icon relative mx-auto grid h-16 w-16 place-items-center">
+          <span className={cx(
+            'absolute inset-0 border border-element/25 bg-element/[.05]',
+            !expired && 'matchmaking-radar',
+          )} aria-hidden />
+          {expired
+            ? <X className="relative h-7 w-7 text-muted" />
+            : <Trophy className="relative h-7 w-7 text-element" />}
+        </div>
+        <div className="mt-3 eyebrow text-element">Rated matchmaking</div>
+        <h1 className="mt-1 text-xl font-semibold">
+          {expired ? 'No fair match found' : 'Finding a fair fight'}
+        </h1>
+
+        <div className="mx-auto mt-3 grid max-w-sm grid-cols-[1fr_auto_1fr] items-stretch gap-2">
+          <MatchRange label="Elo" value={`±${band.rating}`} current={search.rating} />
+          <div className="grid place-items-center font-mono text-lg text-rune/35" aria-hidden>+</div>
+          <MatchRange label="Level" value={`±${band.level}`} current={search.level} />
+        </div>
+
+        <div className="mx-auto mt-4 max-w-sm">
+          <div className="flex items-baseline justify-between font-mono tabular-nums">
+            <span className="text-[9px] uppercase tracking-wider text-faint">Search window</span>
+            <strong className={cx('text-2xl font-medium', expired ? 'text-muted' : 'text-element')}>
+              {expired ? '0:00' : countdown(remaining)}
+            </strong>
+          </div>
+          <div className="relative mt-2 h-2 overflow-hidden rounded-[2px] bg-raised">
+            <span className="absolute inset-y-0 left-0 bg-element/75 transition-[width] duration-1000" style={{ width: `${progress}%` }} />
+            {bands.slice(1).map((step) => (
+              <i
+                key={step.afterMs} aria-hidden
+                className="absolute inset-y-0 w-px bg-rune/45"
+                style={{ left: `${(step.afterMs / terms.matchmakingMaxWaitMs) * 100}%` }}
+              />
+            ))}
+          </div>
+          <div className="mt-2 flex items-center justify-center gap-2 text-[10px] text-faint">
+            <span>Closest Elo</span><span className="text-rune/30">/</span>
+            <span>Closest level</span><span className="text-rune/30">/</span>
+            <span>Longest wait</span>
+          </div>
+        </div>
+
+        <p className="arena-matchmaking-copy mx-auto mt-4 max-w-sm text-[12px] leading-relaxed text-muted">
+          {expired
+            ? `Your search is no longer eligible. Refund the full ${search.stake} Gold stake, then try again or choose a trainer.`
+            : `${search.stake} Gold is safely held. The range widens each minute; only this automatic match changes Elo.`}
+        </p>
+        <Button
+          className="mt-5 w-full" variant={expired ? 'primary' : 'quiet'}
+          busy={isPending('cancel-matchmaking')}
+          onClick={() => run('cancel-matchmaking', api.cancelRatedMatch)}
+        >
+          {expired ? `Refund ${search.stake} Gold` : 'Cancel & refund'}
+        </Button>
+      </Panel>
+    </div>
+  );
+}
+
+function MatchRange({ label, value, current }: { label: string; value: string; current: number }) {
+  return (
+    <div className="rounded-[3px] border border-element/25 bg-element/[.055] px-3 py-2.5">
+      <span className="eyebrow block">{label}</span>
+      <strong className="mt-0.5 block font-mono text-xl font-medium tabular-nums text-element">{value}</strong>
+      <span className="mt-0.5 block font-mono text-[9px] tabular-nums text-faint">yours {current}</span>
+    </div>
+  );
+}
+
+/**
  * A posted challenge nobody has taken yet.
  *
  * This polls, because the thing it is waiting for is another player's message.
@@ -742,7 +1036,7 @@ function AwaitingChallenger() {
   const [taken, setTaken] = useState(false);
 
   usePoll(async (signal) => {
-    const published = await api.readBattle({ signal });
+    const published = await api.readBattle(battleId, { signal });
     if (signal.aborted || !published || published.id !== battleId) return;
     if (published.status !== 'pending') {
       setTaken(true);
@@ -755,20 +1049,20 @@ function AwaitingChallenger() {
       <Panel className="p-8 text-center" glow>
         <Spinner className="mx-auto h-8 w-8 text-element" />
         <h1 className="mt-4 text-lg font-semibold">
-          {taken ? 'Someone took it' : 'Waiting for a challenger'}
+          {taken ? 'Someone took it' : 'Waiting for a rival'}
         </h1>
         <p className="mx-auto mt-2 max-w-sm text-sm leading-relaxed text-muted">
           {taken
             ? 'Opening the fight…'
-            : 'Your challenge is posted. Anyone in the arena can take it — the fight begins the moment somebody does. Closing this page loses nothing; the challenge is on-chain.'}
+            : 'Your unranked challenge is posted. Anyone in the arena can take it. Elo will not change, but the Gold stake and battle rewards are real. Withdrawing refunds the full stake.'}
         </p>
         {!taken && (
           <Button
             className="mt-6" variant="quiet"
-            busy={isPending('leave')}
-            onClick={() => run('leave', api.leaveArena)}
+            busy={isPending('withdraw-challenge')}
+            onClick={() => run('withdraw-challenge', () => api.withdrawChallenge(battleId))}
           >
-            Withdraw
+            Withdraw & refund
           </Button>
         )}
       </Panel>
@@ -809,7 +1103,9 @@ const BATTLE_TOUR: TourStep[] = [
 // The fight -----------------------------------------------------------------
 
 function BattleView() {
-  const { player, address, tuning, catalog, refresh, run, isPending, busy } = useGame();
+  const {
+    player, address, tuning, catalog, refresh, run, isPending, writePhase, busy,
+  } = useGame();
   useTourSteps('arena-battle', BATTLE_TOUR);
 
   // Local, seeded from the player record. A PvP poll can advance this without a
@@ -863,6 +1159,11 @@ function BattleView() {
       </Panel>
     );
   }
+  const anticipatingMove = [
+    ...Object.keys(me.moves ?? {}),
+    ...Object.keys(catalog?.freeActions ?? {}),
+  ].find((name) => writePhase(`attack:${name}`) === 'settling')
+    ?? (writePhase('force') === 'settling' ? 'continue' : null);
 
   const iWon = over && (
     (iAmChallenger && battle.winner === 'challenger') ||
@@ -890,6 +1191,7 @@ function BattleView() {
       >
         <BattleStage
           battle={battle} me={me} them={them} fill
+          anticipatingMove={anticipatingMove}
           // Rally and Mend, on the floor under each fighter's readout rather
           // than in the move grid. They are not in `movePools` -- deliberately,
           // so one cannot be smuggled into a stored roster -- so the catalog is
@@ -1014,7 +1316,7 @@ function usePvpWatch(
   // where the node is busiest. The read is also aborted the moment the round
   // moves on or the screen unmounts.
   usePoll(async (signal) => {
-    const published = await api.readBattle({ signal });
+    const published = await api.readBattle(id, { signal });
     if (signal.aborted || !published || published.id !== id) return;
     if (published.round > round || published.status === 'ended') {
       setBattle(published);
@@ -1056,7 +1358,7 @@ function Outcome({
   // settle, so a stale one from the previous battle would otherwise be printed
   // against this result — and the reply that ends a fight lands before the
   // refresh that carries the receipt, so "not here yet" is a real state.
-  const fresh = receipt && receipt.won === won ? receipt : undefined;
+  const fresh = receipt?.battleId === battle.id ? receipt : undefined;
   const drew = fresh ? Math.max(0, fresh.paid) : 0;
   const base = fresh ? Math.max(0, fresh.base) : 0;
   const total = drew + base;
@@ -1093,13 +1395,31 @@ function Outcome({
                 ? drew > 0
                   ? `${drew} from the ${tierLabel(terms, fresh.tier)} pot, which held ${fresh.pot}`
                   : `the ${tierLabel(terms, fresh.tier)} pot was empty`
-                : `your ${fresh.stake} stays in the ${tierLabel(terms, fresh.tier)} pot`}
+                : fresh.tier === 'pvp'
+                  ? `your ${fresh.stake} Gold stake went to the winner`
+                  : `your ${fresh.stake} stays in the ${tierLabel(terms, fresh.tier)} pot`}
               {won && base === 0 && ' · the 20-hour reward allowance is spent'}
               {won && base > 0 && ` · ${base} from the reward allowance`}
             </span>
           </p>
         ) : (
           <p className="mt-1 text-[12px] text-faint">Settling the stake…</p>
+        )}
+        {fresh?.tier === 'pvp' && fresh.ratingAfter !== undefined && (
+          <p className="mt-0.5 flex items-center gap-1.5 font-mono text-[11px] tabular-nums text-faint">
+            <Trophy className="h-3 w-3 text-element" />
+            Elo <span className="text-ink">{fresh.ratingAfter}</span>
+            {fresh.ratingChange !== undefined && (
+              <span className={fresh.ratingChange >= 0 ? 'text-good' : 'text-bad'}>
+                {fresh.ratingChange >= 0 ? '+' : ''}{fresh.ratingChange}
+              </span>
+            )}
+          </p>
+        )}
+        {fresh?.tier === 'pvp' && battle.arena?.rated !== true && (
+          <p className="mt-0.5 flex items-center gap-1.5 font-mono text-[11px] text-faint">
+            <Shield className="h-3 w-3 text-muted" /> Unranked duel / Elo unchanged
+          </p>
         )}
         {terms.staked && (
           <p className="mt-0.5 font-mono text-[11px] tabular-nums text-faint">

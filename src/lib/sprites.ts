@@ -45,7 +45,7 @@ export type LayerCategory = {
  * a naming wart rather than a bug — but anything that reads these bytes
  * directly should not trust the extension.
  */
-import BASE_URL from '../assets/BASE.png?url';
+import BASE_URL from '../assets/character/base.png?url';
 
 /**
  * Draw order, bottom to top, and it is a different list from the picker order.
@@ -69,13 +69,13 @@ export type CategoryName = (typeof ORDER)[number];
 // picker with no options in it. A pattern that over-matches and is narrowed in
 // code cannot fail that way.
 const FILES = import.meta.glob<string>(
-  '../assets/*/*.png',
+  '../assets/character/layers/*/*.png',
   { eager: true, query: '?url', import: 'default' },
 );
 
-/** "../assets/Hair/Long.png" -> { category: "Hair", name: "Long" } */
+/** "../assets/character/layers/Hair/Long.png" -> { category: "Hair", name: "Long" } */
 function parse(path: string): { category: string; name: string } | null {
-  const m = path.match(/\/assets\/([^/]+)\/([^/]+)\.png$/);
+  const m = path.match(/\/assets\/character\/layers\/([^/]+)\/([^/]+)\.png$/);
   return m ? { category: m[1], name: m[2] } : null;
 }
 

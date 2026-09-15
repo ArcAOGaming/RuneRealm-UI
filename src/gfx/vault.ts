@@ -85,6 +85,11 @@ export type Spoil = { url: string; amount: number };
 
 export type Vault = {
   /**
+   * The signed item is away. Wind the lock up, but do not break it: this phase
+   * may loop forever and therefore cannot imply that the loot roll succeeded.
+   */
+  anticipate(): void;
+  /**
    * Break the seal, and throw these out of the chest. Safe to call once;
    * later calls are ignored.
    */
@@ -94,7 +99,7 @@ export type Vault = {
   dispose(): void;
 };
 
-type Phase = 'sealed' | 'crack' | 'burst' | 'open';
+type Phase = 'sealed' | 'waiting' | 'crack' | 'burst' | 'open';
 
 /**
  * The ceremony is slow on purpose.
@@ -929,6 +934,22 @@ export function createVault(
   const waveMat = wave.material as ShaderMaterial;
   const sealMat = seal.material as MeshStandardMaterial;
 
+  /**
+   * The authoritative reply is the release.  Gameplay reaches this from the
+   * looping `waiting` phase and therefore bursts immediately; exhibition
+   * callers that never anticipated still get the complete crack sequence.
+   */
+  const beginBurst = (now: number) => {
+    phase = 'burst';
+    mark = now;
+    burstAt = now;
+    brokenAt = now;
+    shackle.scale.y = 1;
+    lockGroup.rotation.z = 0;
+    lockGroup.position.y = 0.29;
+    launchSpoils(pending, now + 170);
+  };
+
   // A handle on the ceremony in dev, so it can be driven and inspected without
   // spending a real loot box to see one frame of it. Mirrors `__aether` and
   // `__monolith`.
@@ -996,6 +1017,39 @@ export function createVault(
       ringMat.uniforms.uPower.value = 0.35 + breath * 0.15;
     }
 
+    if (phase === 'waiting') {
+      /*
+        A bounded anticipation loop.
+
+        It climbs to roughly the middle of the old crack animation, then keeps
+        knocking against the intact lock.  No lid throw, broken shackle, flash
+        or spoil is reachable from here; all of those are confirmation facts.
+        The clock is periodic, so a congested write can wait here for forty
+        seconds without freezing on a suspiciously final frame.
+      */
+      const wound = Math.min(1, elapsed() / 720);
+      const beat = Math.max(0, Math.sin(t * Math.PI * 2.7)) ** 4;
+      const strain = 0.28 + wound * 0.34;
+      const shake = wound * (0.008 + beat * 0.045);
+
+      sealMat.emissiveIntensity = 0.75 + strain * 5 + beat * 4;
+      glowMat.emissiveIntensity = 0.25 + strain * 2.4 + beat * 2.1;
+      key.intensity = 3 + strain * 18 + beat * 22;
+      ringMat.uniforms.uPower.value = 0.42 + strain * 0.8 + beat * 0.24;
+      gloamMat.opacity = 0.04 + strain * 0.18 + beat * 0.18;
+
+      vault.position.x = (Math.random() - 0.5) * shake;
+      vault.position.y += (Math.random() - 0.5) * shake;
+      vault.rotation.z = (Math.random() - 0.5) * shake * 0.45;
+      hinge.rotation.x = -(0.02 + beat * 0.13);
+      shackle.scale.y = 1 + beat * 0.32;
+      lockGroup.position.y = 0.29 + beat * 0.014;
+      lockGroup.rotation.z = (Math.random() - 0.5) * beat * 0.09;
+      beam.visible = true;
+      beamMat.uniforms.uPower.value = strain * 0.2 + beat * 0.2;
+      beam.scale.set(0.2 + strain * 0.18, 0.28 + beat * 0.26, 0.2 + strain * 0.18);
+    }
+
     if (phase === 'crack') {
       const since = elapsed();
       const p = Math.min(1, since / CRACK_MS);
@@ -1035,19 +1089,9 @@ export function createVault(
       beam.scale.set(0.2 + p * 0.25, 0.3 + knock * 0.35, 0.2 + p * 0.25);
 
       if (p >= 1) {
-        phase = 'burst';
-        mark = now;
-        burstAt = now;
-        // The shackle gives at the same instant the hinge does, because it is
-        // the thing that was holding it.
-        brokenAt = now;
-        shackle.scale.y = 1;
-        lockGroup.rotation.z = 0;
-        lockGroup.position.y = 0.29;
-        // A beat after the lid gives, not with it: the spoils have to come out
-        // through an opening, and launching them on the same frame as the
-        // hinge has them passing through the lid.
-        launchSpoils(pending, now + 170);
+        // A beat after the lid gives, not with it: `beginBurst` launches the
+        // spoils after the opening exists, so they never pass through the lid.
+        beginBurst(now);
       }
     }
 
@@ -1127,11 +1171,20 @@ export function createVault(
   let disposed = false;
 
   const handle: Vault = {
-    open(list) {
+    anticipate() {
       if (phase !== 'sealed') return;
-      pending = list ?? [];
-      phase = 'crack';
+      phase = 'waiting';
       mark = performance.now();
+    },
+    open(list) {
+      if (phase !== 'sealed' && phase !== 'waiting') return;
+      pending = list ?? [];
+      const now = performance.now();
+      if (phase === 'waiting') beginBurst(now);
+      else {
+        phase = 'crack';
+        mark = now;
+      }
     },
     get opened() { return revealed; },
     dispose() {

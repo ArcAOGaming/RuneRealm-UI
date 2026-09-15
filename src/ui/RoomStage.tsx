@@ -15,17 +15,17 @@ import { cx } from './primitives';
 import { mountGame, type Mounted } from '../game/boot';
 import { RoomScene } from '../game/RoomScene';
 import { PlayScene } from '../game/PlayScene';
-import { QuestScene } from '../game/QuestScene';
 import {
-  homeUrl, playNames, playUrl, questLayerUrl, questRoutes,
-} from '../game/assets';
+  QuestScene, QUEST_RENDER_SCALE, QUEST_SNAP_TOLERANCE,
+} from '../game/QuestScene';
+import { homeUrl, questLayerUrl, questRoutes } from '../game/assets';
 import { ITEM_ART } from './art';
 import type { FeedFx } from '../game/FeedFx';
 import type { ActivityFx } from '../game/ActivityFx';
 
 const BASE_W = 384;
 const BASE_H = 192;
-const DEFAULT_HOME = 'house-cottage';
+const DEFAULT_HOME = 'cottage';
 
 const isActivity = (kind: Monster['status']['type']): kind is ActivityReceipt['kind'] =>
   kind === 'Play' || kind === 'Quest';
@@ -55,7 +55,6 @@ export default function RoomStage({
   playerSpriteUrl,
   activityReceipt,
   homeOverride,
-  playOverride,
   questOverride,
   className,
 }: {
@@ -69,7 +68,6 @@ export default function RoomStage({
   activityReceipt?: ActivityReceipt;
   /** Scene-lab overrides for reviewing every asset explicitly. */
   homeOverride?: string;
-  playOverride?: string;
   questOverride?: string;
   className?: string;
 }) {
@@ -85,17 +83,11 @@ export default function RoomStage({
   const previousFeeds = useRef<number | null>(null);
   const [ready, setReady] = useState(false);
   const [builtPlayerSprite, setBuiltPlayerSprite] = useState<string>();
-  const [randomPlay] = useState(() => {
-    const names = playNames();
-    return names[Math.floor(Math.random() * names.length)] ?? 'forest';
-  });
-
   const away = kind === 'Battle';
   const home = useMemo(() => {
     const wanted = homeOverride || DEFAULT_HOME;
     return homeUrl(wanted) ? wanted : DEFAULT_HOME;
   }, [homeOverride]);
-  const playBackdrop = playOverride && playUrl(playOverride) ? playOverride : randomPlay;
   const questRoute = useMemo(() => {
     if (questOverride && questLayerUrl(questOverride, 'sky')) return questOverride;
     const routes = questRoutes();
@@ -143,8 +135,10 @@ export default function RoomStage({
     setReady(false);
 
     const Scene = kind === 'Quest' ? QuestScene : kind === 'Play' ? PlayScene : RoomScene;
-    const mounted = mountGame(host, BASE_W, BASE_H, [Scene], {
+    const renderScale = kind === 'Quest' ? QUEST_RENDER_SCALE : 1;
+    const mounted = mountGame(host, BASE_W * renderScale, BASE_H * renderScale, [Scene], {
       maxZoom: 4,
+      snapZoomWithin: kind === 'Quest' ? QUEST_SNAP_TOLERANCE : undefined,
       onScale: () => setReady(true),
     });
     mountedRef.current = mounted;
@@ -155,7 +149,7 @@ export default function RoomStage({
       });
     } else if (kind === 'Play') {
       mounted.game.scene.start(PlayScene.KEY, {
-        sprite: monster.sprite, entryNo: monster.entryNo, backdrop: playBackdrop, playerSprite, element: rgb,
+        sprite: monster.sprite, entryNo: monster.entryNo, backdrop: DEFAULT_HOME, playerSprite, element: rgb,
       });
     } else {
       mounted.game.scene.start(RoomScene.KEY, {
@@ -168,7 +162,7 @@ export default function RoomStage({
       mounted.destroy();
     };
   }, [kind, monster.sprite, monster.entryNo, monster.elementType, playerSprite,
-    home, playBackdrop, questRoute, away]);
+    home, questRoute, away]);
 
   // One transparent renderer stays above every room state. It is lazy like
   // the feed effect and completely parked between its short ceremonies.

@@ -35,7 +35,7 @@ const SpriteDebugger: React.FC<SpriteDebuggerProps> = ({ theme }) => {
   const [animationLog, setAnimationLog] = useState<string[]>([]);
   const [effectLog, setEffectLog] = useState<string[]>([]);
 
-  // Available sprites based on actual files in assets/sprites directory
+  // Legacy companion sheets now live under assets/companions/legacy-sprites.
   const availableSprites = [
     { name: 'Sprite 1', file: '0_gQ7rNpxD8S4wZBE_DZs3adWfZMsBIuo8fwvH3SwL0' },
     { name: 'Sprite 2', file: 'Zt8LmHGVIziXhzjqBhEAWLuGetcDitFKbfaJROkyZks' },

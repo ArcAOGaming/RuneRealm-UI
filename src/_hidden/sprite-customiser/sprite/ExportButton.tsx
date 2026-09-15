@@ -72,7 +72,7 @@ const ExportButton: React.FC<ExportButtonProps> = ({
       const processLayer = async (layerName: string, layerData: { style: string, color: string }) => {
         console.log(`Processing layer: ${layerName}, style: ${layerData.style}, color: ${layerData.color}`);
         // Load the sprite sheet image
-        const assetUrl = new URL(`../../assets/${layerName}/${layerData.style}.png`, import.meta.url).href;
+        const assetUrl = new URL(`../../../assets/character/layers/${layerName}/${layerData.style}.png`, import.meta.url).href;
         const img = new Image();
         img.src = assetUrl;
         
@@ -113,7 +113,7 @@ const ExportButton: React.FC<ExportButtonProps> = ({
 
       // Process BASE layer first
       console.log('Loading BASE layer...');
-      const baseUrl = new URL('../../assets/BASE.png', import.meta.url).href;
+      const baseUrl = new URL('../../../assets/character/base.png', import.meta.url).href;
       const baseImg = new Image();
       baseImg.src = baseUrl;
       await new Promise((resolve) => {

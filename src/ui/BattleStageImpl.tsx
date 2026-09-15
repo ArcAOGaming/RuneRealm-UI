@@ -62,7 +62,7 @@ const side = (c: Combatant) => ({
 type Box = { left: number; top: number; width: number; height: number };
 
 export default function BattleStageImpl({
-  battle, me, them, className, fill, bare, free, onSettled, onImpact,
+  battle, me, them, className, fill, bare, free, anticipatingMove, onSettled, onImpact,
 }: {
   battle: Battle; me: Combatant; them: Combatant; className?: string;
   /** Take height from the flex parent rather than the 16:9 aspect ratio. */
@@ -71,6 +71,8 @@ export default function BattleStageImpl({
   bare?: boolean;
   /** Rally and Mend, as studs under each readout. See `FreeStuds`. */
   free?: FreeActions;
+  /** Signed and settling; never an instruction to fabricate a turn. */
+  anticipatingMove?: string | null;
   /** Fires once the last round has finished PLAYING, not when it resolved. */
   onSettled?: () => void;
   /** Fires the instant a blow connects, for the page's own reaction to it. */
@@ -343,6 +345,14 @@ export default function BattleStageImpl({
             <HeadBar v={vits[c.side]} c={c} />
           </div>
         ))}
+        {anticipatingMove && (
+          <div className="battle-anticipation absolute bottom-[8%] left-1/2 -translate-x-1/2">
+            <span aria-hidden className="battle-anticipation-seal" />
+            <span className="font-mono text-[9px] uppercase tracking-[.15em] text-element">
+              {anticipatingMove} gathering
+            </span>
+          </div>
+        )}
       </div>
 
       {!ready && <div className="absolute inset-0 animate-pulse bg-raised/40" />}

@@ -48,21 +48,24 @@ export function economyPreview(): EconomyView {
     rock_berry: ledger(7150, 280, 6725, 55, 90),
     scroll: ledger(860, 93, 742, 25, 0),
     legendary_scroll: ledger(47, 3, 42, 2, 0),
-    rune: ledger(4350, 440, 3565, 95, 250),
+    rune: ledger(4652, 440, 3565, 95, 250),
   };
   const invariants = Object.fromEntries(items.map((item) => [item, {
     ok: true, expected: assets[item].issued - assets[item].consumed,
     accounted: assets[item].player + assets[item].escrow + assets[item].shop,
     difference: 0,
   }])) as EconomyView['invariants']['assets'];
+  invariants.rune = { ok: true, expected: 4212, accounted: 4212, difference: 0 };
   return {
     version: 1, mode: 'testing', generatedAt: Date.now(),
     invariants: {
       ok: true, gold: { ok: true, expected: 300000, accounted: 300000, difference: 0 },
       assets: invariants,
       lootboxes: Array.from({ length: 5 }, (_, index) => ({ ok: true, expected: 80 - index * 8, accounted: 80 - index * 8, difference: 0 })),
-      rune: { inGame: 3910, outsideTokenSupply: 290, pendingWithdrawals: 12,
-        pendingDeposits: 0, economic: 4212, accounted: 4212, difference: 0, observedAt: Date.now() - 60000 },
+      rune: { inGame: 3985, outsideTokenSupply: 227, observedTokenSupply: 215,
+        pendingWithdrawals: 12, pendingDeposits: 0, economic: 4212,
+        accounted: 4212, difference: 0, observedAccounted: 4212,
+        observedDifference: 0, observedAt: Date.now() - 60000 },
     },
     gold: { issued: 300000, burned: 1840, outstanding: 298160, authorized: 300000,
       ceiling: 20000000, player: 48220, escrow: 8300, shop: 181640, locked: 60000,
@@ -87,7 +90,7 @@ export function economyPreview(): EconomyView {
       water_berry: desk('water_berry', 180, 352, 4800, 4, 9),
       fire_berry: desk('fire_berry', 140, 349, 5100, 4, 9),
       rock_berry: desk('rock_berry', 90, 358, 4900, 4, 9),
-      scroll: { ...desk('scroll', 0, 86, 20000, 225, 500), pause: { buy: 'Reliable Scroll supply unavailable', sell: 'Reliable Scroll supply unavailable' } },
+      scroll: desk('scroll', 25, 150, 8000, 32, 70),
       rune: desk('rune', 250, 250, 200000, 650, 1250),
     },
     rejected: { 'Self-trading is not allowed': 4, 'Global 20-hour quantity limit reached': 2 },
@@ -101,7 +104,8 @@ export function economyPreview(): EconomyView {
       passes: { genesisSealed: false, genesisPassCount: 168, lifetimePassCount: 168,
         legacyCount: 168, promisedCount: 0, unassignedPromiseSlots: 0,
         promiseClaimDeadline: 0, purchaseEnabled: false, foregoneRuneAcquisitionReference: 0 },
-      externalRuneSupply: 290, externalRuneObservedAt: Date.now() - 60000,
+      bridgedRuneSupply: 227, externalRuneSupply: 215,
+      externalRuneObservedAt: Date.now() - 60000,
       pending: {}, history: [],
     },
     passQuote: { referenceUnit: 'USD cents until an on-chain payment asset is selected',

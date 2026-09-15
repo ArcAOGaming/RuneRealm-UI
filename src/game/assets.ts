@@ -17,7 +17,7 @@ import { Affinity, Element } from '../lib/types';
 
 const url = (m: Record<string, unknown>) => m as Record<string, string>;
 
-const SHEETS = url(import.meta.glob('../assets/sprites/*.png', {
+const SHEETS = url(import.meta.glob('../assets/companions/legacy-sprites/*.png', {
   eager: true, query: '?url', import: 'default',
 }));
 
@@ -29,15 +29,11 @@ const HOMES = url(import.meta.glob('../assets/scenes/home/*.png', {
   eager: true, query: '?url', import: 'default',
 }));
 
-const PLAY = url(import.meta.glob('../assets/scenes/play/*.png', {
-  eager: true, query: '?url', import: 'default',
-}));
-
 const QUEST = url(import.meta.glob('../assets/scenes/quest/*/*.png', {
   eager: true, query: '?url', import: 'default',
 }));
 
-const FX = url(import.meta.glob('../assets/fx/*.png', {
+const FX = url(import.meta.glob('../assets/effects/battle/*.png', {
   eager: true, query: '?url', import: 'default',
 }));
 
@@ -49,7 +45,6 @@ export const sheetUrl = (sprite: string) => pick(SHEETS, sprite);
 
 export const arenaUrl = (name: string) => pick(ARENAS, name);
 export const homeUrl = (name: string) => pick(HOMES, name);
-export const playUrl = (name: string) => pick(PLAY, name);
 
 /** One named layer inside one quest route folder. */
 export const questLayerUrl = (route: string, layer: string) =>
@@ -61,9 +56,6 @@ export const arenaNames = () =>
 
 export const homeNames = () =>
   Object.keys(HOMES).map((k) => k.split('/').pop()!.replace(/\.png$/, '')).sort();
-
-export const playNames = () =>
-  Object.keys(PLAY).map((k) => k.split('/').pop()!.replace(/\.png$/, '')).sort();
 
 export const questRoutes = () => [...new Set(
   Object.keys(QUEST).map((k) => k.match(/\/quest\/([^/]+)\//)?.[1]).filter(Boolean) as string[],
@@ -99,26 +91,14 @@ export const HEAL_FRAME = { w: 64, h: 64, count: 8 } as const;
  * Which arena a fight is staged in.
  *
  * Deterministic on the battle id so both players see the same room, and so a
- * reload does not teleport a fight somewhere else mid-round. Element-matched
- * temples come first — a fire companion fights in the fire temple — with the
- * neutral rooms as the pool for everything else.
+ * reload does not teleport a fight somewhere else mid-round. The runtime
+ * directory is the curated pool: rejected plates never enter it.
  */
-const NEUTRAL = [
-  'moonlit-ruins', 'crystal-cave', 'canyon-floor', 'quarry', 'mushroom-grove',
-  'sakura-court', 'night-market', 'throne-hall', 'dojo', 'catacombs',
-  'bamboo-grove', 'zen-garden', 'pagoda-court', 'koi-pond', 'autumn-glade',
-  'ruined-street', 'swamp-walk', 'ice-cavern', 'badlands', 'waterfall-basin',
-  'castle-keep', 'shrine-steps', 'onsen', 'torii-shore', 'snow-village',
-  'sunken-temple', 'forge-hall', 'ember-shrine', 'moonlit-ruins',
-];
-
-export function arenaFor(battleId: string, element?: Affinity): string {
-  if (element && element !== 'normal' && Math.abs(hash(battleId)) % 3 === 0) {
-    const temple = `temple-${element}`;
-    if (arenaUrl(temple)) return temple;
-  }
-  const pool = NEUTRAL.filter((n) => arenaUrl(n));
-  if (!pool.length) return arenaNames()[0] ?? '';
+export function arenaFor(battleId: string, _element?: Affinity): string {
+  // The local scene lab names its fabricated battle after the selected plate.
+  if (arenaUrl(battleId)) return battleId;
+  const pool = arenaNames();
+  if (!pool.length) return '';
   return pool[Math.abs(hash(battleId)) % pool.length];
 }
 

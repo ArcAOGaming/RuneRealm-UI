@@ -29,7 +29,7 @@ export async function layerToImage(
   // Process BASE layer if included
   if (options.includeBase !== false) {
     console.log('Loading BASE layer...');
-    const baseUrl = new URL('../assets/BASE.png', import.meta.url).href;
+    const baseUrl = new URL('../../assets/character/base.png', import.meta.url).href;
     const baseImg = new Image();
     baseImg.src = baseUrl;
     await new Promise((resolve) => {
@@ -47,7 +47,7 @@ export async function layerToImage(
     console.log(`Processing layer: ${layerName}`, layerData);
     
     // Load the sprite sheet image
-    const assetUrl = new URL(`../assets/${layerName}/${layerData.style}.png`, import.meta.url).href;
+    const assetUrl = new URL(`../../assets/character/layers/${layerName}/${layerData.style}.png`, import.meta.url).href;
     const img = new Image();
     img.src = assetUrl;
     console.log(`Loading assetUrl: ${assetUrl}`);

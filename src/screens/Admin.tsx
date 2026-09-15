@@ -600,8 +600,8 @@ function PlayerWorkspace({ summary, onChanged }: {
             <Button size="sm" variant={editing ? 'primary' : 'ghost'} onClick={() => setEditing((v) => !v)}>{editing ? 'Close editor' : 'Edit full record'}</Button>
           </div>
         </div>
-        <div className="grid gap-px border-y border-edge/60 bg-edge/60 sm:grid-cols-4">
-          <WorkspaceFact label="Rune" value={fmt(player.inventory.rune)} /><WorkspaceFact label="Record" value={`${player.wins}–${player.losses}`} />
+        <div className="grid gap-px border-y border-edge/60 bg-edge/60 sm:grid-cols-5">
+          <WorkspaceFact label="Rune" value={fmt(player.inventory.rune)} /><WorkspaceFact label="Record" value={`${player.wins}–${player.losses}`} /><WorkspaceFact label="PvP Elo" value={fmt(player.rating ?? 1000)} />
           <WorkspaceFact label="Streak" value={`${player.dailyStreak ?? 0}d`} /><WorkspaceFact label="Last action" value={summary.lastAction?.replace(/^[^.]+\./, '') ?? 'None'} />
         </div>
         {player.monster && <div className="border-b border-edge/60 bg-void/20 p-4"><MonsterCard player={player} bare /></div>}
@@ -687,7 +687,8 @@ function draftFrom(player: Player): EditDraft {
   return {
     faction: player.faction ?? '',
     account: {
-      wins: String(player.wins ?? 0), losses: String(player.losses ?? 0), questsCompleted: String(player.questsCompleted ?? 0),
+      wins: String(player.wins ?? 0), losses: String(player.losses ?? 0), rating: String(player.rating ?? 1000),
+      ratedMatches: String(player.ratedMatches ?? 0), questsCompleted: String(player.questsCompleted ?? 0),
       battlesRemaining: String(player.battlesRemaining ?? 0), dailyStreak: String(player.dailyStreak ?? 0),
       bestStreak: String(player.bestStreak ?? 0), offerings: String(player.offerings ?? 0),
       lastDaily: String(player.lastDaily ?? 0), joinedAt: String(player.joinedAt ?? 0),
@@ -716,7 +717,8 @@ function RecordEditor({ player, busy, onSave }: {
   const save = () => {
     const account = {
       faction: draft.faction,
-      wins: asNumber(draft.account.wins), losses: asNumber(draft.account.losses),
+      wins: asNumber(draft.account.wins), losses: asNumber(draft.account.losses), rating: asNumber(draft.account.rating, 1000),
+      ratedMatches: asNumber(draft.account.ratedMatches),
       questsCompleted: asNumber(draft.account.questsCompleted), battlesRemaining: asNumber(draft.account.battlesRemaining),
       dailyStreak: asNumber(draft.account.dailyStreak), bestStreak: asNumber(draft.account.bestStreak),
       offerings: asNumber(draft.account.offerings), lastDaily: asNumber(draft.account.lastDaily), joinedAt: asNumber(draft.account.joinedAt),
@@ -743,7 +745,7 @@ function RecordEditor({ player, busy, onSave }: {
       <p className="text-xs leading-relaxed text-faint">Saving replaces the values shown below. Use the balance control above for a quick auditable delta.</p>
       <EditorSection title="Account">
         <Field label="Faction"><select value={draft.faction} onChange={(e) => setDraft((d) => ({ ...d, faction: e.target.value }))} className={inputClass}>{!player.monster && <option value="">No faction</option>}{FACTIONS.map((f) => <option key={f} value={f}>{f}</option>)}</select></Field>
-        {Object.entries({ wins: 'Wins', losses: 'Losses', questsCompleted: 'Quests', battlesRemaining: 'Battles left', dailyStreak: 'Daily streak', bestStreak: 'Best streak', offerings: 'Offerings', lastDaily: 'Last daily · ms', joinedAt: 'Joined · ms' }).map(([key, label]) => (
+        {Object.entries({ wins: 'Wins', losses: 'Losses', rating: 'PvP Elo', ratedMatches: 'Rated matches', questsCompleted: 'Quests', battlesRemaining: 'Battles left', dailyStreak: 'Daily streak', bestStreak: 'Best streak', offerings: 'Offerings', lastDaily: 'Last daily · ms', joinedAt: 'Joined · ms' }).map(([key, label]) => (
           <NumberField key={key} label={label} value={draft.account[key]} onChange={(v) => accountField(key, v)} />
         ))}
       </EditorSection>
@@ -892,7 +894,7 @@ function EconomyAdmin({ economy, onChanged }: {
     <section className="admin-kpi-grid">
       <Kpi icon={<Rune />} label="Gold issued" value={economy.gold.issued} note={`${fmt(economy.gold.burned)} burned`} />
       <Kpi icon={<Satchel />} label="Outstanding" value={economy.gold.outstanding} note={`target ${fmt(economy.gold.target)}`} />
-      <Kpi icon={<Lock />} label="P2P escrow" value={economy.gold.escrow} note={`${fmt(economy.orders.length)} open orders`} />
+      <Kpi icon={<Lock />} label="Gold escrow" value={economy.gold.escrow} note={`${fmt(economy.openOrders ?? economy.orders?.length ?? 0)} legacy orders`} />
       <Kpi icon={<Shield />} label="Shop reserves" value={economy.gold.shop} note={`${fmt(economy.gold.locked)} policy-locked`} />
       <Kpi icon={<Users />} label="Qualified" value={economy.gold.qualifiedActive} note={`${fmt(economy.gold.candidateQualifiedActive)} candidates`} />
       <Kpi icon={<Check />} label="Invariants" value={economy.invariants.ok ? 1 : 0} note={economy.invariants.ok ? 'All equations exact' : 'Affected desks paused'} />
@@ -915,11 +917,12 @@ function EconomyAdmin({ economy, onChanged }: {
         </tbody></table></div>
       </Panel>
       <Panel className="p-5">
-        <SectionTitle right={<Badge tone={rune.difference === undefined ? 'warn' : rune.difference === 0 ? 'good' : 'bad'}>{rune.difference === undefined ? 'awaiting token' : `diff ${fmt(rune.difference)}`}</Badge>}>Rune reconciliation</SectionTitle>
+        <SectionTitle right={<Badge tone={rune.difference === 0 && (rune.observedDifference === undefined || rune.observedDifference === 0) ? 'good' : 'bad'}>{rune.difference === 0 ? (rune.observedDifference === undefined ? 'self-tracked' : rune.observedDifference === 0 ? 'exact' : `token diff ${fmt(rune.observedDifference)}`) : `ledger diff ${fmt(rune.difference)}`}</Badge>}>Rune accounting</SectionTitle>
         <div className="mt-4 grid grid-cols-2 gap-px overflow-hidden rounded-[3px] border border-edge/60 bg-edge/60">
-          <MiniMetric label="Inside game" value={rune.inGame} /><MiniMetric label="Outside token" value={rune.outsideTokenSupply ?? 0} />
+          <MiniMetric label="Inside game" value={rune.inGame} /><MiniMetric label="Tracked outside" value={rune.outsideTokenSupply ?? 0} />
           <MiniMetric label="Pending out" value={rune.pendingWithdrawals} /><MiniMetric label="Pending in" value={rune.pendingDeposits} />
           <MiniMetric label="Economic" value={rune.economic} /><MiniMetric label="Accounted" value={rune.accounted} />
+          <MiniMetric label="Observed token" value={rune.observedTokenSupply ?? 0} /><MiniMetric label="Observation diff" value={rune.observedDifference ?? 0} />
         </div>
         <div className="mt-4 space-y-2"><input className={cx(inputClass, 'font-mono')} inputMode="numeric" value={runeSupply} onChange={(event) => setRuneSupply(event.target.value)} placeholder="Published token total supply" /><Button className="w-full" busy={busy === 'rune-observe'} onClick={() => void act('rune-observe', () => api.adminObserveRuneSupply(asNumber(runeSupply), reason || 'token reconciliation'), 'Rune supply observation recorded.')}>Record token observation</Button></div>
       </Panel>

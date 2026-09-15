@@ -35,7 +35,7 @@
  */
 import { FACES, glyphRects, lineHeight, measure, wrap } from './font.mjs';
 import { ICON_H, ICON_W, moveIcon } from './moves.mjs';
-import { label } from './naming.mjs';
+import { displayName } from './naming.mjs';
 
 export const CARD_W = 693;
 export const CARD_H = 968;
@@ -67,14 +67,11 @@ const PANEL = {
   pad: 18,
 };
 
-/** The art repo calls the rock element "Earth"; the process only ever says "rock". */
-const ART_ELEMENT = { fire: 'Fire', water: 'Water', air: 'Air', rock: 'Earth' };
-
 /**
  * The portrait family a card may show.
  *
- * `src/assets/Monsters/portraits/` holds five: doge, super, dragon, mix and
- * ledgendary. ONLY doge is a released monster. The other four are art for
+ * The authoring repository holds several legacy portrait families. ONLY doge
+ * is released. The others are art for
  * creatures this game does not have yet, and `src/ui/art.ts` reaches for two of
  * them by level — `ascended` is Super, `dragon` is the Dragon family — which is
  * survivable on a screen and is not survivable here. A minted card is a
@@ -85,13 +82,11 @@ const ART_ELEMENT = { fire: 'Fire', water: 'Water', air: 'Air', rock: 'Earth' };
  * So the card does not follow the screen's evolution tiers at all. Level is
  * shown on the coin, where it belongs. When a family ships, add it here.
  *
- * Unlike the 320x448 crops in `assets/art/`, these plates are full 648x1065
+ * Unlike the 320x448 numbered portraits, these fallbacks are full 648x1065
  * canvases already registered to the frame's window — they composite at the
  * origin like every other layer, and there is no placement to get wrong.
  */
-const PORTRAIT_FAMILY = 'doge';
-const portraitPlate = (art) =>
-  `Monsters/portraits/${PORTRAIT_FAMILY}/level-1/Doge ${art}.png`;
+const portraitPlate = (element) => `cards/portraits/${element}.png`;
 const monsterIndexPortrait = (entryNo) => {
   const number = Math.round(Number(entryNo) || 0);
   return number > 0 ? `monster-index/${String(number).padStart(3, '0')}/portrait.png` : null;
@@ -231,11 +226,11 @@ const PANEL_INK = {
  * screen happened to have loaded.
  */
 const ITEM_ART = {
-  air_berry: 'art/berry-air.png',
-  water_berry: 'art/berry-water.png',
-  fire_berry: 'art/berry-fire.png',
-  rock_berry: 'art/berry-rock.png',
-  scroll: 'art/scroll.png',
+  air_berry: 'items/berry-air.png',
+  water_berry: 'items/berry-water.png',
+  fire_berry: 'items/berry-fire.png',
+  rock_berry: 'items/berry-rock.png',
+  scroll: 'items/scroll.png',
 };
 
 /** The order the satchel reads in, so a card is not a hash-order lottery. */
@@ -527,7 +522,7 @@ function meter(ops, { x, y, w, label: name, value, max, color }) {
  * on pixel art that has to composite identically in a browser and in a worker.
  */
 function extendedOps(ops, monster, inventory, moveUses) {
-  ops.push({ op: 'image', asset: 'Monsters/cards/Side Background.png', dx: PANEL.dx, dy: 0 });
+  ops.push({ op: 'image', asset: 'cards/side-panel.png', dx: PANEL.dx, dy: 0 });
 
   const x = PANEL.x + PANEL.pad;
   const w = PANEL.w - PANEL.pad * 2;
@@ -640,7 +635,7 @@ export function cardSize(opts) {
  */
 export function cardPlan(monster, opts = {}) {
   const element = ELEMENTS.has(monster && monster.elementType) ? monster.elementType : 'fire';
-  const art = ART_ELEMENT[element];
+  const art = element;
   const level = Math.max(0, Math.round(Number(monster && monster.level) || 0));
   const ops = [];
 
@@ -648,7 +643,7 @@ export function cardPlan(monster, opts = {}) {
   // the full-height originals — so they are hung 15 higher, which crops the
   // sky rather than the ground the monster is standing on.
   ops.push({
-    ...plate(opts.backgroundAsset || `Monsters/cards/1-backgrounds/Background ${art}.png`),
+    ...plate(opts.backgroundAsset || `cards/backgrounds/${art}.png`),
     dy: WINDOW_LIFT,
   });
   const numberedPortrait = monsterIndexPortrait(monster && monster.entryNo);
@@ -665,9 +660,11 @@ export function cardPlan(monster, opts = {}) {
   } else {
     ops.push({ ...plate(portraitPlate(art)), dy: PORTRAIT_LIFT });
   }
-  ops.push(plate(`Monsters/cards/2-cards-frame/Frame ${art}.png`, 0));
-  ops.push(plate(`Monsters/cards/3-elements-type/${art} Type.png`));
-  ops.push(plate(`Monsters/cards/4-levels/Lvl ${art}.png`));
+  // Finalized static art. The repaired medallion centres and modified frame
+  // are one shell PNG; the element badge and empty level coin are one seals
+  // PNG. Runtime never reconstructs either from source-era templates.
+  ops.push(plate(`cards/shells/${art}.png`, 0));
+  ops.push(plate(`cards/seals/${art}.png`, 0));
 
   // As large as the coin's clear middle takes: two digits at 5, three at 4.
   const levelText = String(level);
@@ -678,7 +675,7 @@ export function cardPlan(monster, opts = {}) {
 
   // The nameplate PNGs are skipped on purpose: they bake ZEPHOUND / AQUANINE /
   // IGNISFANG / TERRABARK, and the process names its monsters otherwise.
-  const name = label((monster && monster.name) || '');
+  const name = displayName((monster && monster.name) || '');
   const nameScale = measure(name, 5) <= NAME_BAND.maxWidth ? 5 : 4;
   text(ops, name, { x: NAME_BAND.cx, y: NAME_BAND.cy, scale: nameScale, color: INK.light });
 
@@ -707,10 +704,6 @@ export function cardPlan(monster, opts = {}) {
     ops.push({
       op: 'image',
       asset: icon.asset,
-      sx: icon.sx,
-      sy: icon.sy,
-      sw: icon.sw,
-      sh: icon.sh,
       dx: slot.iconX,
       dy: slot.iconY,
     });

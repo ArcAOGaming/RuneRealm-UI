@@ -62,3 +62,8 @@ backend/native/battle-fleet/hblab/soak-*.json
 
 # Harness scratch output (ramp JSON, generated probe clients)
 .test-tmp/
+
+# One-off local handoffs and captured protocol replies
+/NEXT_AGENT_PROMPT.md
+/ack-*.json
+/nul

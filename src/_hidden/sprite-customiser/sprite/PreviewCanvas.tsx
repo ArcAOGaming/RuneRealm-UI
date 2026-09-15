@@ -42,11 +42,11 @@ class SpritePreviewScene extends Phaser.Scene {
     };
 
     // Load base sprite synchronously like WalkingPreview
-    this.load.spritesheet('BASE', new URL('../../assets/BASE.png', import.meta.url).href, spritesheetConfig);
+    this.load.spritesheet('BASE', new URL('../../../assets/character/base.png', import.meta.url).href, spritesheetConfig);
 
     // Load all layer variations synchronously
     Object.entries(this.layers).forEach(([layerName, layer]) => {
-      const assetPath = new URL(`../../assets/${layerName}/${layer.style}.png`, import.meta.url).href;
+      const assetPath = new URL(`../../../assets/character/layers/${layerName}/${layer.style}.png`, import.meta.url).href;
       console.log(`Loading asset: ${assetPath}`);
       this.load.spritesheet(`${layerName}.${layer.style}`, assetPath, spritesheetConfig);
     });

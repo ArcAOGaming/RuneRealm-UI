@@ -12,7 +12,8 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 
-import { orderedMoves } from './layout.mjs';
+import { cardPlan, orderedMoves } from './layout.mjs';
+import { displayName, label } from './naming.mjs';
 
 const monster = (moves) => ({ moves });
 
@@ -91,4 +92,20 @@ test('a companion with no moves at all is empty, not a crash', () => {
   assert.deepEqual(orderedMoves(undefined), []);
   assert.deepEqual(orderedMoves({}), []);
   assert.deepEqual(orderedMoves({ moves: {} }), []);
+});
+
+test('monster display names omit the deployment prefix', () => {
+  assert.equal(displayName('Rockpup'), 'Rockpup');
+  assert.equal(displayName('TEST-Rockpup'), 'Rockpup');
+  assert.equal(label('Rockpup'), 'TEST-Rockpup');
+
+  const card = (name) => cardPlan({ elementType: 'rock', name, moves: {} }).ops;
+  assert.deepEqual(card('TEST-Rockpup'), card('Rockpup'));
+});
+
+test('the finalized shell owns the frame and medallion repairs', () => {
+  const { ops } = cardPlan({ elementType: 'rock', name: 'Rockpup', moves: {} });
+  assert.ok(ops.some((op) => op.op === 'image' && op.asset === 'cards/shells/rock.png'));
+  assert.ok(ops.some((op) => op.op === 'image' && op.asset === 'cards/seals/rock.png'));
+  assert.ok(!ops.some((op) => op.op === 'image' && /cards\/(frames|elements|levels)\//.test(op.asset)));
 });

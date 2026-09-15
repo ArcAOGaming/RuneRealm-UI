@@ -10,7 +10,7 @@
  * unless it is named in rollupOptions.input, and it is not.
  */
 import { createRoot } from 'react-dom/client';
-import { useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import '../index.css';
 import {
   ActivityReceipt, Battle, Combatant, Element, HuntCaptureReceipt, LootResult, Monster,
@@ -24,12 +24,13 @@ import CompanionAcquisition, { AcquisitionKind } from '../ui/CompanionAcquisitio
 import { CaptureCeremony } from '../screens/Hunt';
 import { Shell } from '../ui/Shell';
 import { ToastProvider } from '../ui/Toast';
+import { TourProvider } from '../ui/Tour';
 import { MemoryRouter } from 'react-router-dom';
 import { GameContext } from '../state/gameContext';
-import { arenaNames, homeNames, playNames, questRoutes } from './assets';
+import { arenaNames, homeNames, questRoutes } from './assets';
 import { LootVault } from '../ui/LootVault';
 import { LOOTBOX_TIER } from '../lib/format';
-import PLAYER_SHEET from '../assets/BASE.png?url';
+import PLAYER_SHEET from '../assets/character/base.png?url';
 
 const SPRITES = [
   'wUo47CacsMRFFizJqUhSj75Rczg3f_MvHs4ytfPtCjQ',
@@ -68,10 +69,9 @@ const fighter = (side: 'challenger' | 'accepter', element: Element, sprite: stri
 } as unknown as Combatant);
 
 function App() {
-  const [home, setHome] = useState(homeNames()[0] ?? 'house-cottage');
-  const [playScene, setPlayScene] = useState(playNames()[0] ?? 'forest');
+  const [home, setHome] = useState(homeNames()[0] ?? 'cottage');
   const [questRoute, setQuestRoute] = useState('');
-  const [arena, setArena] = useState('temple-fire');
+  const [arena, setArena] = useState(arenaNames()[0] ?? '');
   const [element, setElement] = useState<Element>('fire');
   const [sprite, setSprite] = useState(SPRITES[0]);
   const [round, setRound] = useState(1);
@@ -80,6 +80,7 @@ function App() {
   const [questCount, setQuestCount] = useState(0);
   const [activityReceipt, setActivityReceipt] = useState<ActivityReceipt>();
   const [showPlayer, setShowPlayer] = useState(true);
+  const [anticipatingMove, setAnticipatingMove] = useState<string | null>(null);
 
   const me = fighter('challenger', element, sprite);
   const them = fighter('accepter', element === 'fire' ? 'water' : 'fire', SPRITES[1]);
@@ -119,9 +120,6 @@ function App() {
           <select className={sel} value={home} onChange={(e) => setHome(e.target.value)} title="Home scene">
             {homeNames().map((r) => <option key={r} value={r}>{r}</option>)}
           </select>
-          <select className={sel} value={playScene} onChange={(e) => setPlayScene(e.target.value)} title="Play scene">
-            {playNames().map((r) => <option key={r} value={r}>{r}</option>)}
-          </select>
           <select className={sel} value={questRoute} onChange={(e) => setQuestRoute(e.target.value)} title="Quest route">
             <option value="">auto rotation</option>
             {questRoutes().map((r) => <option key={r} value={r}>{r}</option>)}
@@ -137,6 +135,12 @@ function App() {
           </button>
           <button className={sel} onClick={() => setShowPlayer((on) => !on)}>
             {showPlayer ? 'hide player' : 'show player'}
+          </button>
+          <button
+            className={sel}
+            onClick={() => setAnticipatingMove((move) => (move ? null : 'Firenado'))}
+          >
+            {anticipatingMove ? 'stop move charge' : 'charge move'}
           </button>
           <button className={sel} onClick={() => setStatus('Play')}>enter play</button>
           <button className={sel} onClick={() => setStatus('Quest')}>enter quest</button>
@@ -177,7 +181,6 @@ function App() {
               playerSpriteUrl={showPlayer ? PLAYER_SHEET : undefined}
               activityReceipt={activityReceipt}
               homeOverride={home}
-              playOverride={playScene}
               questOverride={questRoute || undefined}
             />
           </div>
@@ -186,7 +189,9 @@ function App() {
         <section>
           <h2 className="eyebrow mb-2">Battle — {arena}</h2>
           <div className="max-w-2xl">
-            <BattleStageImpl battle={battle} me={me} them={them} />
+            <BattleStageImpl
+              battle={battle} me={me} them={them} anticipatingMove={anticipatingMove}
+            />
           </div>
         </section>
       </div>
@@ -195,24 +200,27 @@ function App() {
 }
 
 /**
- * The whole Arena screen, inside the real Shell, against a fabricated fight.
+ * The whole Arena screen, inside the real Shell, against fabricated state.
  *
- * The battle layout has to fit one viewport with nothing scrolling, and that is
- * a property of the assembled page -- the stage, the two fighter cards, the
- * move grid and the log all competing for the same height. It cannot be checked
- * on the pieces separately, and a real fight needs a wallet, a Rune and an
- * opponent. So the screen is mounted here with a battle handed straight to it.
+ * `?state=entrance`, `?state=lobby` and the default battle state cover all
+ * three steps without spending a real session. `&low=1` holds step one in its
+ * blocked state. The assembled page has to fit as one viewport, which cannot be
+ * checked from the pieces separately and should never require a live wallet.
  */
 function ArenaPage() {
+  const arenaQuery = new URLSearchParams(location.search);
+  const state = arenaQuery.get('state') ?? 'battle';
   const [round, setRound] = useState(3);
   // ?ended=1 shows the decided state, so the outcome swap can be checked
   // without playing a fight to the end.
   const [ended, setEnded] = useState(
-    new URLSearchParams(location.search).get('ended') === '1',
+    arenaQuery.get('ended') === '1',
   );
   const { me, them, turns } = fakeFight(round, ended);
+  const ratedPvp = arenaQuery.get('pvp') === '1';
+  const playerWon = ended && me.healthPoints > 0;
   const battle = {
-    id: 'sandbox', kind: 'house', status: ended ? 'ended' : 'active', round,
+    id: 'sandbox', kind: ratedPvp ? 'pvp' : 'house', status: ended ? 'ended' : 'active', round,
     challenger: me, accepter: them,
     // Whoever is still standing, so the outcome panel and the slumped fighter
     // agree — a fixture that declared a winner independently of the fight
@@ -221,46 +229,87 @@ function ArenaPage() {
     startedAt: 0,
     turns,
   };
+  const inBattle = state === 'battle';
+  const inLobby = state === 'lobby';
+  const arenaMonster = monster('fire', SPRITES[0], inBattle || inLobby ? 'Battle' : 'Home');
+  if (arenaQuery.get('low') === '1') arenaMonster.energy = 10;
+  const arenaGold = arenaQuery.get('funded') === '1' ? 58 : 38;
+  const arenaCatalog = {
+    activities: { battle: { energyCost: 25, happinessCost: 25, winGold: 5 } },
+    arena: {
+      battlesPerSession: 4, stake: 10, minEntry: 40, drainNum: 1, drainDen: 3,
+      ratingStart: 1000, ratingK: 32, ratingScale: 400,
+      tiers: [
+        { key: 'easy', label: 'Easy', difficulty: .75, below: .9 },
+        { key: 'even', label: 'Even', difficulty: 1, below: 1.2 },
+        { key: 'hard', label: 'Hard', difficulty: 1.4, below: 1.7 },
+        { key: 'brutal', label: 'Brutal', difficulty: 2, below: 99 },
+      ],
+    },
+  };
   const value = {
-    address: 'challenger', connecting: false,
+    address: 'challenger', connecting: false, member: true, sworn: true,
     connect: async () => {}, disconnect: async () => {}, hasWallet: true,
+    walletProviderName: 'sandbox',
     player: {
       address: 'challenger', exists: true, unlocked: true, faction: 'Sky Nomads',
-      monster: monster('fire', SPRITES[0], 'Battle'),
-      inventory: { rune: 9 }, lootboxes: [], battlesRemaining: 3,
+      monster: arenaMonster,
+      inventory: { rune: 9, fire_berry: 8, water_berry: 2, air_berry: 5, rock_berry: 12 },
+      gold: arenaGold, lootboxes: [], battlesRemaining: 3,
       wins: 2, losses: 1, questsCompleted: 0, joinedAt: 0, dailyReadyAt: 0,
-      assets: {}, battle, sessionWins: 1, sessionLosses: 0,
+      assets: {}, rating: 1024, ...(inBattle ? { battle } : {}), sessionWins: 1, sessionLosses: 0,
+      ...(inBattle && ended && ratedPvp ? { arenaLast: {
+        tier: 'pvp', stake: 10, pot: 20, paid: playerWon ? 20 : 0,
+        base: playerWon ? 5 : 0, won: playerWon,
+        ratingBefore: playerWon ? 1008 : 1040,
+        ratingAfter: 1024, ratingChange: playerWon ? 16 : -16,
+      } } : {}),
+      ...(inLobby ? { arenaBoost: { item: 'fire_berry', cost: 3, stat: 'attack', amount: 5 } } : {}),
     },
     loadingPlayer: false, loginError: null, refresh: async () => {},
-    factions: [], leaderboard: [], catalog: null,
+    factions: [], leaderboard: [], catalog: arenaCatalog,
     tuning: {
       attackBase: 1, variance: 0.15, hpPerHealth: 12, shieldPerDefense: 4,
       healPerPoint: 0.04, shieldRegenShare: 0.2, moveUses: 3, struggleDamage: 2,
       baseHitChance: 0.7, minHitChance: 0.3, maxHitChance: 0.95,
       criticalChance: 0.09, criticalMultiplier: 1.6,
     },
-    challenges: [], refreshChallenges: async () => {},
-    busy: false, isPending: () => false, run: async () => null,
+    arenaTiers: {
+      easy: { pot: 20, wins: 18, attempts: 30 },
+      even: { pot: 47, wins: 18, attempts: 40 },
+      hard: { pot: 91, wins: 12, attempts: 35 },
+      brutal: { pot: 155, wins: 3, attempts: 16 },
+    },
+    refreshArenaTiers: async () => {},
+    challenges: [
+      { id: 'open-1', challenger: 'rival_one', element: 'water', monsterName: 'Riptide', level: 6, rating: 1088 },
+      { id: 'open-2', challenger: 'rival_two', element: 'rock', monsterName: 'Flint', level: 4, rating: 972 },
+    ],
+    refreshChallenges: async () => {},
+    busy: false, isPending: () => false, writePhase: () => null,
+    transaction: () => null, run: async () => null,
     processId: 'sandbox', node: 'sandbox',
   };
   return (
     <GameContext.Provider value={value as never}>
-      <button
-        className="fixed bottom-3 right-3 z-50 rounded border border-edge bg-raised px-3 py-1 text-sm"
-        onClick={() => setRound((r) => r + 1)}
-      >
-        round {round + 1}
-      </button>
-      <button
-        className="fixed bottom-3 right-28 z-50 rounded border border-edge bg-raised px-3 py-1 text-sm"
-        onClick={() => setEnded((e) => !e)}
-      >
-        {ended ? 'un-end' : 'end it'}
-      </button>
+      {inBattle && <>
+        <button
+          className="fixed bottom-3 right-3 z-50 rounded border border-edge bg-raised px-3 py-1 text-sm"
+          onClick={() => setRound((r) => r + 1)}
+        >
+          round {round + 1}
+        </button>
+        <button
+          className="fixed bottom-3 right-28 z-50 rounded border border-edge bg-raised px-3 py-1 text-sm"
+          onClick={() => setEnded((e) => !e)}
+        >
+          {ended ? 'un-end' : 'end it'}
+        </button>
+      </>}
       {/* The route matters: Shell reads the path to decide whether this page
           owns the viewport, and /arena is one that now does. */}
       <MemoryRouter initialEntries={['/arena']}>
-        <Shell><Arena /></Shell>
+        <TourProvider><Shell><Arena /></Shell></TourProvider>
       </MemoryRouter>
     </GameContext.Provider>
   );
@@ -368,14 +417,15 @@ function CompanionPage() {
     loadingPlayer: false, loginError: null, refresh: async () => {},
     factions: [], leaderboard: [], catalog: null, tuning: {},
     challenges: [], refreshChallenges: async () => {},
-    busy: false, isPending: () => false, run: async () => null,
+    busy: false, isPending: () => false, writePhase: () => null,
+    transaction: () => null, run: async () => null,
     processId: 'sandbox', node: 'sandbox',
   };
   return (
     <GameContext.Provider value={value as never}>
       <ToastProvider>
         <MemoryRouter initialEntries={['/companion']}>
-          <Shell><Companion /></Shell>
+          <TourProvider><Shell><Companion /></Shell></TourProvider>
         </MemoryRouter>
       </ToastProvider>
     </GameContext.Provider>
@@ -458,7 +508,8 @@ function CollectionPage() {
       },
     }, tuning: {},
     challenges: [], refreshChallenges: async () => {},
-    busy: false, isPending: () => false, run,
+    busy: false, isPending: () => false, writePhase: () => null,
+    transaction: () => null, run,
     processId: 'sandbox', node: 'sandbox',
   };
   return (
@@ -519,7 +570,8 @@ function CapturePage() {
     loadingPlayer: false, loginError: null, refresh: async () => {},
     factions: [], leaderboard: [], catalog: { hunt: tuning }, tuning: {},
     challenges: [], refreshChallenges: async () => {},
-    busy: false, isPending: () => false, run: async () => null,
+    busy: false, isPending: () => false, writePhase: () => null,
+    transaction: () => null, run: async () => null,
     processId: 'sandbox', node: 'sandbox',
   };
   return (
@@ -571,14 +623,25 @@ function CapturePage() {
  * against fabricated spoils, and `?tier=` picks which.
  */
 function VaultPage() {
-  const [run, setRun] = useState<{ id: number; tier: number } | null>(null);
+  const confirmDelay = Math.max(
+    0, Number(new URLSearchParams(location.search).get('delay') ?? 1400),
+  );
+  const [run, setRun] = useState<{
+    id: number; tier: number; anticipating: boolean;
+  } | null>(null);
   const [result, setResult] = useState<LootResult | null>(null);
   const next = useRef(0);
 
   const openTier = (tier: number) => {
     next.current += 1;
     setResult(null);
-    setRun({ id: next.current, tier });
+    const id = next.current;
+    setRun({ id, tier, anticipating: false });
+    // Click -> wallet signing -> signature sent. The gameplay overlay follows
+    // the same three distinct moments without touching a live loot box.
+    window.setTimeout(() => setRun((current) => (
+      current?.id === id ? { ...current, anticipating: true } : current
+    )), 320);
     // The real screen opens the chest first and answers second; so does this.
     window.setTimeout(() => setResult({
       rarity: tier,
@@ -587,7 +650,7 @@ function VaultPage() {
         { item: 'rune', name: 'Rune', amount: tier * 2 },
         { item: 'water_berry', name: 'Water Berry', amount: 1 },
       ],
-    } as never), 1400);
+    } as never), confirmDelay);
   };
 
   return (
@@ -616,6 +679,7 @@ function VaultPage() {
           key={run.id}
           rarity={run.tier}
           result={result}
+          anticipating={run.anticipating}
           onClose={() => { setRun(null); setResult(null); }}
         />
       )}
@@ -628,7 +692,8 @@ function VaultPage() {
  *
  * `?page=acquisition&element=water&kind=capture` lets every elemental variant
  * and both pieces of reusable copy be reviewed without issuing companions just
- * to reach the reveal. Production still mounts it only from a finished reply.
+ * to reach the reveal. Add `&pending=5000` to hold the pre-confirmation field
+ * for five seconds before supplying the fabricated authoritative record.
  */
 function AcquisitionPage() {
   const query = new URLSearchParams(location.search);
@@ -646,20 +711,36 @@ function AcquisitionPage() {
     elementType: element,
     moves: fighter('challenger', element, sprite).moves,
   };
+  const pendingMs = Math.max(0, Number(query.get('pending')) || 0);
   const [show, setShow] = useState(true);
+  const [confirmed, setConfirmed] = useState(pendingMs === 0);
+
+  useEffect(() => {
+    if (!show || confirmed || pendingMs === 0) return undefined;
+    const timer = window.setTimeout(() => setConfirmed(true), pendingMs);
+    return () => window.clearTimeout(timer);
+  }, [confirmed, pendingMs, show]);
 
   return (
     <div className="grid min-h-screen place-items-center bg-void" data-element={element}>
       {!show && (
         <button
           className="rounded border border-element/50 bg-raised px-4 py-2 text-sm text-ink"
-          onClick={() => setShow(true)}
+          onClick={() => {
+            setConfirmed(pendingMs === 0);
+            setShow(true);
+          }}
         >
           Replay {kind}
         </button>
       )}
       {show && (
-        <CompanionAcquisition monster={creature} kind={kind} onComplete={() => setShow(false)} />
+        <CompanionAcquisition
+          monster={confirmed ? creature : null}
+          pendingElement={element}
+          kind={kind}
+          onComplete={() => setShow(false)}
+        />
       )}
     </div>
   );

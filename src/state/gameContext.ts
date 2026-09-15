@@ -21,6 +21,25 @@ import {
 import { type WalletProviderId } from '../lib/wallet';
 import { type WritePhase } from '../lib/hyperbeam';
 
+/**
+ * The complete UI lifetime of one signed action.
+ *
+ * `WritePhase` stops at the transport boundary: it can say when the wallet is
+ * signing and when the signed item is settling.  A renderer also needs the
+ * verdict, though, or it has no honest way to choose between its climax and
+ * its unwind.  Terminal states are retained for a short beat by the provider
+ * so an effect can observe them before the keyed record is cleared.
+ */
+export type TransactionStage = WritePhase | 'confirmed' | 'failed';
+
+export type TransactionState = {
+  /** Monotonic per tab. A late result from an older attempt cannot win. */
+  attempt: number;
+  stage: TransactionStage;
+  /** Human-readable failure, present only for `failed`. */
+  error?: string;
+};
+
 export type Ctx = {
   /** Connected wallet address, or null. */
   address: string | null;
@@ -101,13 +120,20 @@ export type Ctx = {
    */
   writePhase: (key: string) => WritePhase | null;
   /**
+   * Full lifecycle for animation and terminal feedback.
+   *
+   * Use `writePhase` when a control only cares whether the signature is still
+   * settling. Use this when a scene needs to climax or unwind on the verdict.
+   */
+  transaction: (key: string) => TransactionState | null;
+  /**
    * Run a write. Returns the reply, or null if it failed.
    *
    * `optimistic` projects the expected result onto the record immediately and
    * is rolled back if the write is rejected. Only for actions that qualify —
    * see `state/optimistic.ts`, which is also where the projections live.
    */
-  run: <T extends Player>(
+  run: <T>(
     key: string, fn: () => Promise<T>, success?: string,
     optimistic?: (player: Player) => Player,
   ) => Promise<T | null>;

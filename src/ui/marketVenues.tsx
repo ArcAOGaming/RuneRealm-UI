@@ -1,5 +1,5 @@
 /**
- * The market's four counters, and the one control that picks between them.
+ * The market's five counters, and the one control that picks between them.
  *
  * They live here rather than in `screens/Marketplace.tsx` because the chooser
  * is in the header, next to Arena, and the screen is not: a player switching
@@ -14,9 +14,9 @@
 import { useEffect, useRef, useState } from 'react';
 
 import { cx } from './primitives';
-import { Arrow, Check, Exchange, Rune, Satchel, Sparkle } from './icons';
+import { Arrow, Check, Cog, Exchange, Rune, Satchel, Sparkle } from './icons';
 
-export type MarketVenue = 'shop' | 'internal' | 'external' | 'monster';
+export type MarketVenue = 'shop' | 'internal' | 'external' | 'lab' | 'monster';
 
 export const VENUES: Array<{
   id: MarketVenue;
@@ -38,6 +38,10 @@ export const VENUES: Array<{
   {
     id: 'external', short: 'External', title: 'External book',
     note: 'Rune for a wallet token · player to player', accent: 'arcane', Icon: Rune,
+  },
+  {
+    id: 'lab', short: 'Lab', title: 'Chart lab',
+    note: 'Synthetic markets · no wallet or contract', accent: 'arcane', Icon: Cog,
   },
   {
     id: 'monster', short: 'Monsters', title: 'Monster market',

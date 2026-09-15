@@ -1,11 +1,11 @@
 /**
  * The loot box ceremony, wired to the chain.
  *
- * The order matters and it is the whole point: the overlay opens the instant
- * the player clicks, with the chest already sealed and straining, and the write
- * is only then in flight. When the process answers, the seal breaks. The player
- * never waits at a spinner — they wait at a chest that is about to open, which
- * is the same number of seconds spent very differently.
+ * The order matters and it is the whole point: the overlay opens on the click
+ * with a sealed chest; the lock starts straining once the wallet has signed.
+ * When the process answers, the seal breaks immediately. A wallet rejection
+ * never animates a transaction that was not sent, and a failed write never
+ * reaches the burst.
  *
  * Two things were wrong with the first cut, and both were the frame around it.
  *
@@ -75,11 +75,13 @@ function glyphArt(colour: string): string {
 const FADE_MS = 420;
 
 export function LootVault({
-  rarity, result, onClose,
+  rarity, result, anticipating = false, onClose,
 }: {
   rarity: number;
   /** Null while the write is still in flight. */
   result: LootResult | null;
+  /** The wallet signed; the process has not returned the loot roll yet. */
+  anticipating?: boolean;
   onClose: () => void;
 }) {
   const stageRef = useRef<HTMLDivElement>(null);
@@ -120,6 +122,12 @@ export function LootVault({
     // the ceremony from a cold chest.
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
+  // The signature is away. Wind up against the intact lock for as long as the
+  // process needs; the renderer cannot reach its burst from this phase.
+  useEffect(() => {
+    if (anticipating) vaultRef.current?.anticipate();
+  }, [anticipating]);
+
   // The reply. The chest breaks its seal and throws exactly what the process
   // said was in it — art and counts, straight from the reward list.
   useEffect(() => {
@@ -130,6 +138,9 @@ export function LootVault({
       url: ITEM_ART[r.item] ?? glyphArt('#d6c8a2'),
       amount: r.amount,
     }));
+    // A very fast reply may batch past the settling render. Entering the
+    // anticipation state first still makes this an immediate confirmed burst.
+    vaultRef.current?.anticipate();
     vaultRef.current?.open(spoils);
   }, [result]);
 

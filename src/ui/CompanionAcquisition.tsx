@@ -1,11 +1,10 @@
 /**
  * The moment a companion becomes yours.
  *
- * This sequence deliberately accepts a finished Monster rather than knowing
- * how it was acquired. Faction.Join can use it today and a capture reply can
- * hand over the same shape later. The animation is only a reader of that
- * authoritative result: its walk sheet, advanced strike, portrait and card
- * plan all come from the record the transaction returned.
+ * The ceremony may mount before the finished Monster exists, but it does not
+ * invent one. In that pending state only the elemental field moves. The
+ * creature entrance and every card layer still come from the authoritative
+ * result supplied after confirmation.
  */
 import {
   CSSProperties, useEffect, useRef, useState,
@@ -15,7 +14,7 @@ import { CardObject, createCardObject } from '../gfx/cardObject';
 import {
   BrowserCardOptions, CardAssembly, CardAssemblyLayer, drawCardAssembly,
 } from '../lib/card/browser';
-import { Monster } from '../lib/types';
+import { Element, Monster } from '../lib/types';
 import { isElement } from '../lib/monster-index';
 import { MonsterRig, monsterRig } from '../game/MonsterRig';
 import {
@@ -25,7 +24,7 @@ import { portrait } from './art';
 import { Arrow } from './icons';
 import { Button, Spinner, cx } from './primitives';
 
-type Phase = 'loading' | 'entrance' | 'attack' | 'swirl' | 'forge' | 'burst' | 'reveal';
+type Phase = 'waiting' | 'loading' | 'entrance' | 'attack' | 'swirl' | 'forge' | 'burst' | 'reveal';
 export type AcquisitionKind = 'adoption' | 'capture';
 
 type PerformanceArt = {
@@ -68,9 +67,12 @@ function loadImage(src: string): Promise<HTMLImageElement | null> {
 }
 
 export function CompanionAcquisition({
-  monster, kind = 'adoption', cardOptions, performancePortraitUrl, onComplete,
+  monster, pendingElement, kind = 'adoption', cardOptions, performancePortraitUrl, onComplete,
 }: {
-  monster: Monster;
+  /** Null only while a signed acquisition is awaiting its authoritative reply. */
+  monster: Monster | null;
+  /** Supplies the ceremony colour before `monster` exists. */
+  pendingElement?: Element;
   kind?: AcquisitionKind;
   /** Admin/studio overrides. Production acquisition uses the canonical art. */
   cardOptions?: BrowserCardOptions;
@@ -78,7 +80,12 @@ export function CompanionAcquisition({
   performancePortraitUrl?: string;
   onComplete: () => void;
 }) {
-  const [phase, setPhase] = useState<Phase>('loading');
+  const element = monster?.elementType ?? pendingElement;
+  if (!element) {
+    throw new Error('CompanionAcquisition needs a monster or pending element');
+  }
+
+  const [phase, setPhase] = useState<Phase>(() => (monster ? 'loading' : 'waiting'));
   const [assembly, setAssembly] = useState<CardAssembly | null>(null);
   const [performance, setPerformance] = useState<PerformanceArt | null>(null);
   const [failed, setFailed] = useState(false);
@@ -97,6 +104,7 @@ export function CompanionAcquisition({
   }, []);
 
   useEffect(() => {
+    if (!monster) return undefined;
     let cancelled = false;
     const rig = monsterRig(monster);
     const walk = rig.textureUrl ?? sheetUrl(monster.sprite);
@@ -136,7 +144,7 @@ export function CompanionAcquisition({
   }, [phase]);
 
   useEffect(() => {
-    if (phase !== 'reveal' || !assembly || !objectCanvas.current) return undefined;
+    if (phase !== 'reveal' || !monster || !assembly || !objectCanvas.current) return undefined;
     object.current = createCardObject(objectCanvas.current, {
       face: assembly.face,
       element: monster.elementType,
@@ -147,7 +155,7 @@ export function CompanionAcquisition({
       object.current?.dispose();
       object.current = null;
     };
-  }, [assembly, monster.elementType, phase]);
+  }, [assembly, monster, phase]);
 
   useEffect(() => {
     if (phase !== 'reveal') return undefined;
@@ -170,7 +178,7 @@ export function CompanionAcquisition({
     const onKey = (event: KeyboardEvent) => {
       if (event.key !== 'Escape') return;
       if (phase === 'reveal') finish();
-      else skip();
+      else if (monster) skip();
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
@@ -180,26 +188,25 @@ export function CompanionAcquisition({
     <div
       role="dialog"
       aria-modal="true"
-      aria-label={`${monster.name} ${kind} reveal`}
-      data-element={monster.elementType}
+      aria-label={monster ? `${monster.name} ${kind} reveal` : `${kind} awaiting confirmation`}
+      data-element={element}
       className={cx('acquisition-reveal', `acquisition-phase-${phase}`)}
     >
+      {!monster && <p className="sr-only" aria-live="polite">Your oath is awaiting confirmation.</p>}
       {/*
         The ground the ceremony stands on, and nothing while it is still being
         built.
 
-        `loading` is the wait between the signature landing and the art being
-        decoded, and it used to be this screen with EVERYTHING on it except the
-        ceremony: a 58rem square turned forty-five degrees, a circle of grid
-        lines masked out of the dark, and a spinner. A big grey box and a big
-        grey circle, neither of them full screen, on a page whose whole job at
-        that moment is to say "waiting". They fade in with the entrance now, so
-        the wait is the same flat ground the reveal lands on.
+        `waiting` is the signed transaction's hold: the field is alive, but no
+        creature or card exists on screen until the reply supplies it. A direct
+        reveal still uses `loading` while its already-confirmed art decodes; its
+        decoration fades in with the entrance rather than presenting a partly
+        assembled ceremony.
       */}
       <div aria-hidden className="acquisition-grid" />
       <div aria-hidden className="acquisition-glow" />
 
-      {phase !== 'reveal' && (
+      {monster && phase !== 'reveal' && (
         <button type="button" className="acquisition-skip" onClick={skip}>
           Skip<span className="hidden sm:inline"> animation</span>
         </button>
@@ -218,7 +225,7 @@ export function CompanionAcquisition({
         that explains a companion arriving without its card art.
       */}
       <header className="acquisition-copy">
-        <h1>{monster.name}</h1>
+        {monster && <h1>{monster.name}</h1>}
         {failed && <p>Your companion arrived, but the card art could not be rendered.</p>}
       </header>
 
@@ -288,7 +295,7 @@ export function CompanionAcquisition({
           ))}
         </div>
 
-        {phase === 'reveal' && (
+        {monster && phase === 'reveal' && (
           <div className="acquisition-card-space acquisition-card-object">
             <canvas
               ref={objectCanvas}
@@ -315,7 +322,7 @@ export function CompanionAcquisition({
       </div>
 
       <footer className="acquisition-footer">
-        {phase === 'reveal' && (
+        {monster && phase === 'reveal' && (
           <div className="acquisition-finish animate-rise">
             <p className="text-[13px] text-faint">
               {objectState === 'held' ? 'Drag the card to catch the foil and turn it over.' : 'Your living record is complete.'}

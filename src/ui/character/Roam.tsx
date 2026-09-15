@@ -21,7 +21,7 @@
  * up re-rendering the entire page mid-stride.
  */
 import { useEffect, useRef, useState } from 'react';
-import MAP_URL from '../../assets/Map.png?url';
+import MAP_URL from '../../assets/character/map.png?url';
 import { animationFrames, blitFrame, type Facing } from '../../lib/sprites';
 import { cx } from '../primitives';
 

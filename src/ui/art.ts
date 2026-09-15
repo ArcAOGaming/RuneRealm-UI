@@ -6,16 +6,15 @@
  * one in a 64px box shows a tiny character in the top-left corner and empty
  * space everywhere else, which is exactly how the old faction cards looked.
  *
- * The real portrait art is in the `Monsters` submodule. The files this build
- * uses are copied into `src/assets/art/` under names that say what they are, so
- * the build does not depend on a submodule being checked out — and so the two
- * files whose names carry a trailing space stop being a trap.
+ * Authored portraits live in RuneRealm-Assets. The files this build uses are
+ * vendored under stable runtime names, so source filenames and old submodules
+ * cannot leak into application lookups.
  *
  * Bundling them also means no gateway round trip and no broken image when
  * arweave.net is slow.
  *
- * ONE FAMILY, on purpose. `src/assets/Monsters/portraits/` holds five — doge,
- * super, dragon, mix and ledgendary — and only doge has shipped. This file used
+ * ONE FAMILY, on purpose. Several legacy families exist, and only doge has
+ * shipped. This file used
  * to pick between three of them by level, under the names hatchling / ascended
  * / dragon, which is how creatures that do not exist in the game ended up on
  * the companion screen, the leaderboard and the arena. `ascended` was the Super
@@ -24,28 +23,26 @@
  * So `portrait()` ignores level. When a family ships, this is where it goes
  * back — and `lib/card/layout.mjs` is where the minted card learns about it.
  *
- * To refresh them, re-copy from `src/assets/Monsters/` — `doge-<element>.png`
- * is `portraits/doge/level-1/Doge <Element>.png`, cropped to 320x448.
+ * Numbered entries resolve through the Monster Index; these four plates are the
+ * fallback for records from before numbered entries.
  */
 import { Affinity, Element, ItemId } from '../lib/types';
 import { monsterIndexArt } from '../lib/monster-index';
 
-// `hatchling-*.png` IS the doge family, cropped. The other eight files in that
-// directory are the unreleased Super and Dragon art and are deliberately not
-// imported: an unused import here is one `portrait()` call away from putting a
-// creature that does not exist back on screen.
-import dogeAir from '../assets/art/hatchling-air.png';
-import dogeWater from '../assets/art/hatchling-water.png';
-import dogeFire from '../assets/art/hatchling-fire.png';
-import dogeRock from '../assets/art/hatchling-rock.png';
+// These are the four released dog plates only. Unreleased families stay in the
+// authoring repository instead of sharing the runtime directory.
+import dogeAir from '../assets/cards/portraits/air.png';
+import dogeWater from '../assets/cards/portraits/water.png';
+import dogeFire from '../assets/cards/portraits/fire.png';
+import dogeRock from '../assets/cards/portraits/rock.png';
 
-import berryAir from '../assets/art/berry-air.png';
-import berryWater from '../assets/art/berry-water.png';
-import berryFire from '../assets/art/berry-fire.png';
-import berryRock from '../assets/art/berry-rock.png';
+import berryAir from '../assets/items/berry-air.png';
+import berryWater from '../assets/items/berry-water.png';
+import berryFire from '../assets/items/berry-fire.png';
+import berryRock from '../assets/items/berry-rock.png';
 
-import runeArt from '../assets/art/rune.png';
-import scrollArt from '../assets/art/scroll.png';
+import runeArt from '../assets/items/rune.png';
+import scrollArt from '../assets/items/scroll.png';
 
 const PORTRAITS: Record<Element, string> = {
   air: dogeAir, water: dogeWater, fire: dogeFire, rock: dogeRock,

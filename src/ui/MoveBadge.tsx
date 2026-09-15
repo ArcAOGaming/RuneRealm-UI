@@ -1,5 +1,5 @@
 /**
- * A move's own badge, cropped out of the card art.
+ * A move's finalized badge.
  *
  * The move icons were already in the repo and already mapped. `5-moves/` holds
  * forty plates, each a full 648x1065 card layer carrying ONE 78x75 badge at one
@@ -10,11 +10,10 @@
  *
  * So this shows the real badge rather than a generic element glyph.
  *
- * It crops with CSS, not a canvas: `background-position` walks the plate to the
- * badge and `background-size` scales it, which keeps one bundled image serving
- * every badge on it and costs no draw call. `image-rendering: pixelated` keeps
- * the upscale honest — these are small hand-drawn badges, and smoothing them is
- * the same mistake as smoothing the sprites.
+ * The old renderer cropped it from a 648×1065 source plate on every use. Each
+ * badge is now a committed 78×75 PNG, so this component only scales the exact
+ * image the mint worker uses. `image-rendering: pixelated` keeps the upscale
+ * honest.
  *
  * Falls back to a tinted type glyph when a move has no plate: `moveIcon`
  * returns null for anything not in the map, and a missing badge must not leave
@@ -31,7 +30,7 @@ import { cx } from './primitives';
  */
 const PLATES: Record<string, string> = Object.fromEntries(
   Object.entries(
-    import.meta.glob('../assets/Monsters/cards/5-moves/*/*.png', {
+    import.meta.glob('../assets/cards/move-icons/*.png', {
       eager: true, query: '?url', import: 'default',
     }) as Record<string, string>,
   ).map(([key, url]) => [key.replace('../assets/', ''), url]),
@@ -49,21 +48,17 @@ export function MoveBadge({
   const url = icon ? PLATES[icon.asset] : null;
   if (!icon || !url) return null;
 
-  // The badge is `size` tall; the whole plate is scaled by the same factor so
-  // the crop lands on it.
   const scale = size / ICON_H;
 
   return (
-    <span
+    <img
       aria-hidden
+      alt=""
+      src={url}
       className={cx('block shrink-0 [image-rendering:pixelated]', className)}
       style={{
         width: ICON_W * scale,
         height: ICON_H * scale,
-        backgroundImage: `url(${url})`,
-        backgroundSize: `${648 * scale}px ${1065 * scale}px`,
-        backgroundPosition: `-${icon.sx * scale}px -${icon.sy * scale}px`,
-        backgroundRepeat: 'no-repeat',
       }}
     />
   );

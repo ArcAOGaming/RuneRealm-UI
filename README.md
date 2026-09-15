@@ -117,7 +117,7 @@ See HANDOFF.md §6 before changing any of it.
 | `src/lib/card/` | The card builder. Browser-active; its minter consumer is parked. |
 | `src/lib/mint.ts` | Parked source for the old companion-asset chain path. |
 | `src/lib/marketplace.ts` | Rune bridge, token reads, and the quote faucet. |
-| `src/screens/Marketplace.tsx` | Gold goods order book, finite NPC shop, companion market, and Rune exchange. |
+| `src/screens/Marketplace.tsx` | Gold goods order book, finite NPC shop, companion market, Rune exchange, and the client-only Chart Lab. |
 | `src/_hidden/` | Parked features — see the README in there. |
 | `backend/native/` | The process, its tests, and the deploy tooling. |
 | `backend/native/card/` | The minter's painter: PNG in, PNG out, no dependencies. |
@@ -182,11 +182,11 @@ workflow runs it before any site bundle can be uploaded.
 process with a throwaway wallet that produces real ANS-104 signatures. It is the
 browser's code path, not a re-implementation of it.
 
-### Fifty-wallet swarm
+### One-hundred-wallet swarm
 
-The multi-account soak harness keeps fifty gitignored burner wallets in
+The multi-account soak harness keeps one hundred gitignored burner wallets in
 independent worker threads, assigns each a documented role, and drives quests,
-care, loot, level-ups, bot battles, and five coordinated PvP pairings through
+care, loot, level-ups, bot battles, and seeded-random PvP matchmaking through
 the app's own client code:
 
 ```bash
@@ -194,12 +194,14 @@ npm run swarm:wallets                         # local key generation only
 npm run swarm:plan                            # all names, roles, descriptions
 npm run swarm:config                          # prove every process link live
 HB_WALLET=owner.json npm run fleet:prepare    # test funding + companions
+npm run swarm:internal-thirty                 # 30m focused seven-pair liquidity
 npm run swarm:lived-in                        # one hour, directed + gated
-npm run swarm:three-hour                      # 50 bots, 10 in flight, 10 starts/s,
+npm run swarm:three-hour                      # 100 wallets, 10 in flight, 10 starts/s,
                                               # admin seed at five minutes
+npm run swarm:funded-soak -- --hours 6        # numeric hours; fund after 10 minutes
 ```
 
-The lived-in profile keeps all fifty wallet workers online, safely gates write
+The lived-in profile keeps all one hundred wallet workers online, safely gates write
 starts at the measured node limit, and uses progression-aware randomized play
 while directing different actors toward missing features. Its receipt fails unless
 worship, loot, care, progression, PvE, PvP, Hunt, character customization,
@@ -223,12 +225,12 @@ bot smoke checks are accepted. The contract commands use
 copy the key:
 
 ```bash
-# Phase 1: free/open contracts with the local 50-wallet bot roster prepared.
+# Phase 1: free/open contracts only. Test wallets are a later harness step.
 npm run deploy:contracts:plan          # inspect only; creates nothing
 npm run deploy:contracts:check         # all preflight checks; no chain writes
 npm run deploy:contracts               # contracts + linked client build; no site publish
 npm run deploy:contracts:resume        # resume an interrupted contract deployment
-npm run deploy:contracts:soak          # blank graph; defer bot resources to the soak
+npm run deploy:contracts:soak          # blank free graph for a later soak
 ```
 
 **Every deployment is blank.** No migration from the process being replaced, no
@@ -251,8 +253,8 @@ process recorded as having been born the same way — `seeded` in
 process, or the reverse. `deploy.mjs` on its own takes the same decision through
 `--seed-legacy [file]` and `--paid-list`, both off unless asked for.
 
-The fixed `deploy:contracts*` scripts always enable `--free --with-bots`, never
-pass `--seed`, and never pass `--site`. They deploy the integrated game/economy, Rune bridge,
+The fixed `deploy:contracts*` scripts always enable `--free`, never enroll or
+fund test wallets, never pass `--seed`, and never pass `--site`. They deploy the integrated game/economy, Rune bridge,
 test quote token, internal and external order-book venues, battle workers, and hunt workers;
 verify the graph; rewrite the frontend
 process ids; and create the linked `dist/` bundle. Review
@@ -273,12 +275,13 @@ Access and the paid allow-list are separate decisions: `--paid-access` says who
 may join, `--seed` (via `deploy.mjs --paid-list`) mints the wallets that already
 bought a pass into the new process.
 
-`--with-bots` validates all 50 gitignored swarm wallets before the first live
-write. In free mode they are admitted normally on their first signed action. In
-closed mode the redeploy grants those exact wallets access after the new game
-process is verified. It does not start the swarm. In TEST mode it batch-funds
-those exact burners to the published 25 Rune / 5 Scroll test minimum; that
-action is unavailable after economy activation.
+Test wallets are prepared after deployment with `npm run swarm:wallets`. The
+swarm sends each wallet's normal signed `User.Info`/`Faction.Join` flow; the
+deployment script has no wallet roster and creates no player accounts. When an
+accelerated performance fixture needs resources, `npm run swarm:fund` loops
+outside the contract and sends one generic owner-only `Admin.Economy.Fund`
+message per already-sworn account. Its bounded minimums include six Legendary
+Scrolls so the otherwise P2P-only seventh internal book has real test supply.
 
 ### Open-access deployments
 
@@ -307,8 +310,9 @@ fuzz, and swarm suites, then runs the game, Rune, quote, and venue suites unsign
 `~lua@5.3a`, followed by the app build. Override that free test host with
 `--live-test-node <url>` or `LUA_TEST_NODE`.
 
-It migrates from the process currently recorded in `live-process.txt`, deploys
-the new game and zero-supply Rune token on the same node, wires both directions,
+By default it carries no process state forward. Migration happens only with
+`--seed` or an explicit `--from <pid>`. It deploys the new game and zero-supply
+Rune token on the selected node, wires both directions,
 deploys `TEST-RELIC` plus both order-book venues, verifies every recorded
 relationship, rewrites all frontend process ids, and only then creates `dist`.
 The final public process graph is saved in
@@ -424,7 +428,11 @@ else.
 - **A mint is permanent.** The asset id is the image id, so there is no way to
   change a card after it is signed and no update path in the standard. Prefix
   everything `TEST-` until that is the intended outcome.
-- **Only released art goes on a card.** `src/assets/Monsters/portraits/` holds
-  five families and only `doge` has shipped; the card uses that one and ignores
-  the evolution tiers `src/ui/art.ts` shows on screen.
+- **Only released art goes on a card.** Legacy families remain in the authoring
+  repository; the runtime fallback contains only the four released dog plates,
+  while numbered forms resolve through the Monster Index.
+- **The customized card frame is frozen art.** Runtime uses the committed
+  shells, seals and cropped move icons under `src/assets/cards`; build checks
+  compare them to `RuneRealm-Assets/approved/cards`. Regeneration is an explicit
+  `npm run card-art:freeze`, never part of rendering or an ordinary build.
 - **Never point a test at a real player's wallet.** Use `burners.mjs`.

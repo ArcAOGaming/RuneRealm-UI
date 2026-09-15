@@ -113,6 +113,33 @@ export type VenueTrade = [at: number, price: number, quantity: number, takerBoug
 /** The tape, grouped by market id. Bounded venue-wide, newest last. */
 export type VenueTape = Record<string, VenueTrade[]>;
 
+/**
+ * One durable intraday OHLCV row published by `venue.lua`.
+ *
+ * The bucket timestamp is in seconds and the remaining values are integer
+ * atomic units. Tuples keep the hot published key compact: each venue retains
+ * three hours of one-minute bars and one day of five-minute bars per market.
+ */
+export type VenueIntradayCandle = [
+  bucketStart: number,
+  open: number,
+  high: number,
+  low: number,
+  close: number,
+  baseVolume: number,
+  quoteVolume: number,
+  fillCount: number,
+];
+
+export type VenueIntradayCandles = Record<string, {
+  '60'?: VenueIntradayCandle[];
+  '300'?: VenueIntradayCandle[];
+}>;
+
+interface VenueBookHistoryState {
+  fills?: Array<Partial<VenueFill> & { filledAt?: number; taker?: string; maker?: string }>;
+}
+
 export interface VenueInfo {
   Name: string;
   Mode: 'internal' | 'external' | '';
@@ -157,6 +184,86 @@ export const readVenueBook = (process: string) => readVenueJSON<VenueBook>(proce
  * with no tape is still a book.
  */
 export const readVenueTape = (process: string) => readVenueJSON<VenueTape>(process, 'venuetape');
+export const readVenueCandles = (process: string) =>
+  readVenueJSON<VenueIntradayCandles>(process, 'venuecandles');
+
+/** Read one interval defensively; older deployments simply return no rows. */
+export function marketVenueCandles(
+  candles: VenueIntradayCandles | null,
+  marketId: string | undefined,
+  interval: 60 | 300,
+): VenueIntradayCandle[] {
+  if (!candles || !marketId || Array.isArray(candles)) return [];
+  const rows = candles[marketId]?.[interval === 60 ? '60' : '300'];
+  if (!Array.isArray(rows)) return [];
+  return rows
+    .filter((row): row is VenueIntradayCandle => Array.isArray(row) && row.length >= 8)
+    .map((row) => row.slice(0, 8).map(Number) as VenueIntradayCandle)
+    .filter(([at, open, high, low, close, baseVolume, quoteVolume, count]) =>
+      [at, open, high, low, close, baseVolume, quoteVolume, count]
+        .every((value) => Number.isFinite(value))
+      && at > 0 && open > 0 && high > 0 && low > 0 && close > 0
+      && baseVolume >= 0 && quoteVolume >= 0 && count > 0)
+    .sort((a, b) => a[0] - b[0]);
+}
+
+/**
+ * Backfill the chart from the venue's already-published restore state.
+ *
+ * `venuetape` is intentionally only 96 rows venue-wide. At the internal test
+ * target that is barely two minutes across seven pairs, even though the venue
+ * still retains 500 fills in `venuebookstate` so it can restore its median and
+ * account histories after a cold slot. Reading that existing key adds no
+ * contract bytes or write work. The browser immediately projects it to the
+ * same address-free four-number tuples and never exposes its account fields.
+ */
+export async function readVenueHistoryTape(process: string): Promise<VenueTape> {
+  const state = await readVenueJSON<VenueBookHistoryState>(process, 'venuebookstate');
+  const out: VenueTape = {};
+  for (const fill of Array.isArray(state?.fills) ? state.fills : []) {
+    const market = typeof fill.market === 'string' && fill.market
+      ? fill.market : typeof fill.item === 'string' ? `${fill.item}/gold` : '';
+    const at = Math.floor(Number(fill.filledAt ?? 0) / 1000);
+    const price = Number(fill.price ?? 0);
+    const quantity = Number(fill.quantity ?? 0);
+    const takerSide = fill.takerSide === 'buy' || fill.takerSide === 'sell'
+      ? fill.takerSide
+      : fill.taker && fill.buyer && fill.taker === fill.buyer ? 'buy' : 'sell';
+    if (!market || !(at > 0) || !(price > 0) || !(quantity > 0)) continue;
+    (out[market] ??= []).push([at, price, quantity, takerSide === 'buy' ? 1 : 0]);
+  }
+  return out;
+}
+
+/** Join a durable backfill to the moving public tail without double prints. */
+export function mergeVenueTapes(...tapes: Array<VenueTape | null | undefined>): VenueTape {
+  const out: VenueTape = {};
+  const covered = new Map<string, number>();
+  for (const tape of tapes) {
+    if (!tape || Array.isArray(tape)) continue;
+    const occurrences = new Map<string, number>();
+    for (const [market, rows] of Object.entries(tape)) {
+      if (!Array.isArray(rows)) continue;
+      for (const row of rows) {
+        if (!Array.isArray(row) || row.length < 4) continue;
+        const normalized = row.map(Number) as VenueTrade;
+        const key = `${market}:${normalized.join(':')}`;
+        const occurrence = (occurrences.get(key) ?? 0) + 1;
+        occurrences.set(key, occurrence);
+        /* Equal fills in the same second are still separate fills. Skip only
+           the N occurrences the earlier source already supplied, not every
+           row with the same public tuple. */
+        if (occurrence <= (covered.get(key) ?? 0)) continue;
+        (out[market] ??= []).push(normalized);
+      }
+    }
+    for (const [key, count] of occurrences) {
+      covered.set(key, Math.max(covered.get(key) ?? 0, count));
+    }
+  }
+  for (const rows of Object.values(out)) rows.sort((a, b) => a[0] - b[0]);
+  return out;
+}
 
 /** The tape for one market, oldest first, tolerant of every absent shape. */
 export function marketTrades(tape: VenueTape | null, marketId: string | undefined): VenueTrade[] {

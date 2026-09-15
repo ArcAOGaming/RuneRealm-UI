@@ -10,6 +10,7 @@ import { CardPreview } from '../../ui/CardPreview';
 import CompanionAcquisition, { AcquisitionKind } from '../../ui/CompanionAcquisition';
 import { Badge, Button, Empty, ErrorNote, Panel, SectionTitle, cx } from '../../ui/primitives';
 import { GENERATED_MONSTER_INDEX } from '../../generated/monster-index';
+import QuestRouteLab, { QuestRouteCandidate, QuestLayer } from './QuestRouteLab';
 
 type StudioMode = 'visualize' | 'create';
 type AssetCategory = 'all' | 'background' | 'creature' | 'card' | 'move' | 'item' | 'ui' | 'legacy';
@@ -22,12 +23,12 @@ type StudioMove = Move & { name: string; pool: string };
 type StudioStatus = { localOnly: boolean; pixelLab: boolean; retroDiffusion: boolean };
 type StudioKind =
   | 'battle-background' | 'room-background'
-  | 'side-scroller-sky' | 'side-scroller-far' | 'side-scroller-mid' | 'side-scroller-ground'
+  | 'side-scroller-sky' | 'side-scroller-far' | 'side-scroller-mid'
   | 'creature-portrait' | 'creature-sheet' | 'creature-animation'
   | 'move-effect' | 'card-background' | 'card-layer';
 type StudioJob = {
   id: string; status: 'pending' | 'approved' | 'rejected';
-  provider: 'pixellab' | 'retro-diffusion'; kind: StudioKind;
+  provider: 'pixellab' | 'retro-diffusion' | 'openai-imagegen'; kind: StudioKind;
   name: string; prompt: string; width: number; height: number;
   transparent: boolean; seed: number; createdAt: string;
   stagedPath: string; sourcePath?: string; motionSourcePath?: string;
@@ -86,19 +87,19 @@ type MotionDraft = {
 const TEMPLATE_MOTIONS = [
   {
     key: 'walk-right', label: 'Walk right', direction: 'east', row: 1, seedOffset: 11,
-    action: 'Four-frame seamless quadruped walking cycle in the supplied east-facing pose; alternate paws clearly, subtle body bob, tail counter-sway, and return exactly to the first pose; preserve the supplied facing, silhouette, markings, palette, scale, and fixed camera; no turn toward the viewer, scenery, or new props',
+    action: 'Four-frame seamless quadruped walking cycle in the supplied east-facing pose; alternate paws clearly, subtle body bob inside the fixed canvas, tail counter-sway, and return exactly to the first pose; the lowest grounded paw pixel stays on the exact same baseline in every frame; preserve the supplied facing, silhouette, markings, palette, scale, canvas position, and fixed camera; no turn toward the viewer, scenery, or new props',
   },
   {
     key: 'walk-left', label: 'Walk left', direction: 'west', row: 2, seedOffset: 12,
-    action: 'Four-frame seamless quadruped walking cycle in the supplied west-facing pose; alternate paws clearly, subtle body bob, tail counter-sway, and return exactly to the first pose; preserve the supplied facing, silhouette, markings, palette, scale, and fixed camera; no turn toward the viewer, scenery, or new props',
+    action: 'Four-frame seamless quadruped walking cycle in the supplied west-facing pose; alternate paws clearly, subtle body bob inside the fixed canvas, tail counter-sway, and return exactly to the first pose; the lowest grounded paw pixel stays on the exact same baseline in every frame; preserve the supplied facing, silhouette, markings, palette, scale, canvas position, and fixed camera; no turn toward the viewer, scenery, or new props',
   },
   {
     key: 'walk-up', label: 'Walk up', direction: 'north', row: 3, seedOffset: 13,
-    action: 'Four-frame seamless quadruped walking cycle in the supplied north-facing back pose; alternate paws clearly, ears and tail remain identifiable, and return exactly to the first pose; preserve the supplied back-facing silhouette, markings, palette, scale, and fixed camera; no turn toward the viewer, scenery, or new props',
+    action: 'Four-frame seamless quadruped walking cycle in the supplied north-facing back pose; alternate paws clearly, ears and tail remain identifiable, and return exactly to the first pose; the lowest grounded paw pixel stays on the exact same baseline in every frame; preserve the supplied back-facing silhouette, markings, palette, scale, canvas position, and fixed camera; no turn toward the viewer, scenery, or new props',
   },
   {
     key: 'walk-down', label: 'Walk down', direction: 'south', row: 4, seedOffset: 14,
-    action: 'Four-frame seamless quadruped walking cycle in the supplied south-facing front pose; alternate paws clearly, subtle body bob, and return exactly to the first pose; preserve the supplied front-facing silhouette, markings, palette, scale, and fixed camera; no sideways turn, scenery, or new props',
+    action: 'Four-frame seamless quadruped walking cycle in the supplied south-facing front pose; alternate paws clearly, subtle body bob inside the fixed canvas, and return exactly to the first pose; the lowest grounded paw pixel stays on the exact same baseline in every frame; preserve the supplied front-facing silhouette, markings, palette, scale, canvas position, and fixed camera; no sideways turn, scenery, or new props',
   },
   {
     key: 'attack-basic', label: 'Basic attack', direction: 'east', row: 5, seedOffset: 15,
@@ -204,10 +205,50 @@ export default function Studio({ mode }: { mode: StudioMode }) {
     <div className="space-y-4">
       <StudioIntro assets={assets} moves={moves} jobs={jobs} status={status} />
       <AssetLibrary assets={assets} loading={loading} onReload={reload} />
+      <QuestRouteLab routes={questRouteCandidates(assets, jobs)} />
       <CardLab moves={moves} jobs={jobs} />
       <BattleLab moves={moves} />
     </div>
   );
+}
+
+function questRouteCandidates(assets: AssetRow[], jobs: StudioJob[]): QuestRouteCandidate[] {
+  const routes = new Map<string, QuestRouteCandidate>();
+  const accepted = /^RuneRealm-Assets\/approved\/scenes\/quest\/([^/]+)\/(sky|far|mid)\.png$/;
+  for (const asset of assets) {
+    const match = accepted.exec(asset.path);
+    if (!match) continue;
+    const [, name, layer] = match;
+    const id = `in-use:${name}`;
+    const route = routes.get(id) ?? { id, name, state: 'in-use' as const, layers: {} };
+    route.layers[layer as QuestLayer] = asset.url;
+    routes.set(id, route);
+  }
+
+  for (const job of jobs) {
+    if (job.status !== 'pending' || !job.kind.startsWith('side-scroller-')) continue;
+    const layer = job.kind.replace('side-scroller-', '') as QuestLayer;
+    if (!['sky', 'far', 'mid'].includes(layer)) continue;
+    const id = `pending:${job.name}`;
+    const route = routes.get(id) ?? {
+      id, name: job.name, state: 'incomplete' as const, layers: {},
+    };
+    if (!route.layers[layer]) {
+      route.layers[layer] = fileUrl(
+        job.stagedPath,
+        job.providerMeta?.locallyReprocessedAt ?? job.createdAt,
+      );
+    }
+    routes.set(id, route);
+  }
+
+  return [...routes.values()].map((route) => {
+    const state: QuestRouteCandidate['state'] = route.state === 'in-use'
+      ? 'in-use'
+      : (['sky', 'far', 'mid'] as QuestLayer[]).every((layer) => route.layers[layer])
+        ? 'pending' : 'incomplete';
+    return { ...route, state };
+  }).sort((a, b) => a.state.localeCompare(b.state) || a.name.localeCompare(b.name));
 }
 
 function StudioIntro({ assets, moves, jobs, status }: {
@@ -610,6 +651,7 @@ function CreateStudio({ status, jobs, moves, loading, onReload }: {
     ? { entryNo: Number(assignment.entryNo), assetSlot: assignment.assetSlot }
     : {};
   const [form, setForm] = useState({ provider: 'retro-diffusion' as 'pixellab' | 'retro-diffusion', kind: 'card-background' as StudioKind, name: 'light-observatory-rd', theme: 'light', prompt: CARD_BACKGROUND_PROMPT, width: 216, height: 355, transparent: false, seed: 1101, guidance: 9, variations: 1, redoOf: '', revision: 1 });
+  const [questRoute, setQuestRoute] = useState<QuestRouteDraft>({ ...QUEST_ROUTE_PRESETS[0] });
   const [rig, setRig] = useState({
     name: 'lumen-lynx-rig-96', theme: 'light', prompt: LUMEN_RIG_PROMPT,
     nativeSize: 96, seed: 3111, templateId: 'dog',
@@ -644,6 +686,17 @@ function CreateStudio({ status, jobs, moves, loading, onReload }: {
       await onReload();
     }
     catch (caught) { setError(caught); }
+    finally { setBusy(null); }
+  };
+  const generateQuestRoute = async () => {
+    setBusy('generate-quest-route'); setError(null);
+    try {
+      await Promise.all(questLayerRequests(questRoute).map((layer) => postJson('/__studio/generate', {
+        provider: 'pixellab', name: questRoute.name, theme: questRoute.theme,
+        guidance: 10, variations: 1, revision: 1, redoOf: '', ...layer,
+      })));
+      await onReload();
+    } catch (caught) { setError(caught); }
     finally { setBusy(null); }
   };
   const animate = async (recoverOnly = false) => {
@@ -684,7 +737,8 @@ function CreateStudio({ status, jobs, moves, loading, onReload }: {
   };
   const revise = (job: StudioJob) => {
     patch({
-      provider: job.provider, kind: job.kind, name: job.name, theme: job.theme ?? '',
+      provider: job.provider === 'openai-imagegen' ? 'pixellab' : job.provider,
+      kind: job.kind, name: job.name, theme: job.theme ?? '',
       prompt: job.prompt, width: job.sourceWidth ?? job.width,
       height: job.sourceHeight ?? job.height, transparent: job.transparent,
       seed: job.seed + 1, variations: 1, redoOf: job.id, revision: (job.revision ?? 1) + 1,
@@ -809,6 +863,36 @@ function CreateStudio({ status, jobs, moves, loading, onReload }: {
       </div>
     </Panel>
     <PipelineBoard jobs={jobs} />
+    <Panel className="p-5">
+      <SectionTitle right={<div className="flex gap-2"><Badge tone={status?.pixelLab ? 'good' : 'warn'}>PixelLab</Badge><Badge tone="plain">3 matched layers</Badge></div>}>Quest route generator</SectionTitle>
+      <p className="mb-4 max-w-3xl text-sm leading-relaxed text-muted">
+        One route request stages the exact production contract: a 256Ã—216 opaque sky,
+        256Ã—104 transparent distance, and 256Ã—176 transparent scenery-and-ground layer.
+        The server hardens alpha and repairs the horizontal wrap before review.
+      </p>
+      {error !== null && <div className="mb-4"><ErrorNote error={error} /></div>}
+      <div className="grid gap-4 xl:grid-cols-[.72fr_1.28fr]">
+        <div className="space-y-3">
+          <div className="grid grid-cols-2 gap-3">
+            <Field label="Route name"><input className={inputClass} value={questRoute.name} onChange={(event) => setQuestRoute((current) => ({ ...current, name: event.target.value }))} /></Field>
+            <Field label="Theme / region"><input className={inputClass} value={questRoute.theme} onChange={(event) => setQuestRoute((current) => ({ ...current, theme: event.target.value }))} /></Field>
+          </div>
+          <NumberField label="base seed" value={questRoute.seed} min={0} max={2147483645} onChange={(seed) => setQuestRoute((current) => ({ ...current, seed }))} />
+          <Field label="Shared palette"><textarea className={cx(inputClass, 'min-h-20 resize-y leading-relaxed')} value={questRoute.palette} onChange={(event) => setQuestRoute((current) => ({ ...current, palette: event.target.value }))} /></Field>
+        </div>
+        <div className="space-y-3">
+          <Field label="Sky"><textarea className={cx(inputClass, 'min-h-16 resize-y leading-relaxed')} value={questRoute.sky} onChange={(event) => setQuestRoute((current) => ({ ...current, sky: event.target.value }))} /></Field>
+          <Field label="Far distance"><textarea className={cx(inputClass, 'min-h-16 resize-y leading-relaxed')} value={questRoute.far} onChange={(event) => setQuestRoute((current) => ({ ...current, far: event.target.value }))} /></Field>
+          <Field label="Scenery + walking ground"><textarea className={cx(inputClass, 'min-h-16 resize-y leading-relaxed')} value={questRoute.mid} onChange={(event) => setQuestRoute((current) => ({ ...current, mid: event.target.value }))} /></Field>
+        </div>
+      </div>
+      <div className="mt-4 flex flex-wrap gap-2">
+        {QUEST_ROUTE_PRESETS.map((preset) => <Button key={preset.name} size="sm" variant="quiet" onClick={() => setQuestRoute({ ...preset })}>{preset.label}</Button>)}
+      </div>
+      <Button className="mt-3" variant="primary" busy={busy === 'generate-quest-route'} disabled={!status?.pixelLab || !questRoute.name.trim()} onClick={() => void generateQuestRoute()}>
+        Generate complete route
+      </Button>
+    </Panel>
     <Panel className="p-5">
       <SectionTitle right={<div className="flex gap-2"><Badge tone="good">server-side keys</Badge><Badge tone="warn">paid generation</Badge></div>}>1 · Create a staged still</SectionTitle>
       <p className="mb-4 max-w-3xl text-sm leading-relaxed text-muted">Every request creates a recoverable draft under <code className="text-ink">RuneRealm-Assets/_studio/pending</code>. Card backgrounds are generated at 216×355 and enlarged exactly 3× with nearest-neighbor pixels; creature sources remain available for motion generation.</p>
@@ -949,9 +1033,10 @@ function PipelineBoard({ jobs }: { jobs: StudioJob[] }) {
     { label: 'Monster portraits', kinds: ['creature-portrait'], target: 2 },
     { label: 'Motion clips', kinds: ['creature-animation'], target: 12 },
     { label: 'Animation templates', kinds: ['creature-sheet'], target: 2 },
+    { label: 'Quest layers', kinds: ['side-scroller-sky', 'side-scroller-far', 'side-scroller-mid'], target: 9 },
     { label: 'Approved assets', kinds: [], target: 0 },
   ];
-  return <Panel className="p-5"><SectionTitle right={<Badge tone="element">draft → inspect → revise → approve</Badge>}>Content production pipeline</SectionTitle><div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-5">{groups.map((group) => { const rows = group.kinds.length ? jobs.filter((job) => group.kinds.includes(job.kind) && job.status !== 'rejected') : jobs.filter((job) => job.status === 'approved'); const pending = rows.filter((job) => job.status === 'pending').length; const approved = rows.filter((job) => job.status === 'approved').length; return <div key={group.label} className="rounded-[3px] border border-edge bg-void/40 p-3"><div className="text-xs font-medium text-ink">{group.label}</div><div className="mt-2 flex items-baseline gap-2"><span className="font-mono text-2xl text-ink">{rows.length}</span>{group.target > 0 && <span className="text-[10px] uppercase tracking-wide text-faint">/ {group.target} session target</span>}</div><div className="mt-1 text-[10px] text-faint">{pending} pending · {approved} approved</div></div>; })}</div></Panel>;
+  return <Panel className="p-5"><SectionTitle right={<Badge tone="element">draft → inspect → revise → approve</Badge>}>Content production pipeline</SectionTitle><div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-6">{groups.map((group) => { const rows = group.kinds.length ? jobs.filter((job) => group.kinds.includes(job.kind) && job.status !== 'rejected') : jobs.filter((job) => job.status === 'approved'); const pending = rows.filter((job) => job.status === 'pending').length; const approved = rows.filter((job) => job.status === 'approved').length; return <div key={group.label} className="rounded-[3px] border border-edge bg-void/40 p-3"><div className="text-xs font-medium text-ink">{group.label}</div><div className="mt-2 flex items-baseline gap-2"><span className="font-mono text-2xl text-ink">{rows.length}</span>{group.target > 0 && <span className="text-[10px] uppercase tracking-wide text-faint">/ {group.target} session target</span>}</div><div className="mt-1 text-[10px] text-faint">{pending} pending · {approved} approved</div></div>; })}</div></Panel>;
 }
 
 function JobThumb({ job, className = 'h-full w-full' }: { job: StudioJob; className?: string }) {
@@ -968,7 +1053,7 @@ function JobThumb({ job, className = 'h-full w-full' }: { job: StudioJob; classN
 
 const CONTEXT_KINDS = new Set<StudioKind>([
   'battle-background', 'room-background',
-  'side-scroller-sky', 'side-scroller-far', 'side-scroller-mid', 'side-scroller-ground',
+  'side-scroller-sky', 'side-scroller-far', 'side-scroller-mid',
   'creature-portrait', 'creature-animation', 'creature-sheet',
   'move-effect', 'card-background', 'card-layer',
 ]);
@@ -982,7 +1067,7 @@ function ReleasedSprite({ element, flip = false, size = 80, className }: {
 }) {
   return <div aria-label={`${element} monster`} className={cx('absolute [image-rendering:pixelated]', className)} style={{
     width: size, height: size,
-    backgroundImage: `url(${fileUrl(`src/assets/sprites/${SPRITE[element]}.png`)})`,
+    backgroundImage: `url(${fileUrl(`src/assets/companions/legacy-sprites/${SPRITE[element]}.png`)})`,
     backgroundPosition: `0 -${size * 4}px`, backgroundRepeat: 'no-repeat',
     backgroundSize: `${size * 4}px ${size * 6}px`,
     transform: flip ? 'scaleX(-1)' : undefined,
@@ -1050,7 +1135,7 @@ function WideDraftContext({ job }: { job: StudioJob }) {
   const combatMotion = isMotion && /attack|strike|recoil|impact|hit/i.test(job.action ?? job.prompt);
   const fallback = combatMotion
     ? fileUrl('src/assets/scenes/arena/moonlit-ruins.png')
-    : fileUrl('src/assets/scenes/home/house-cottage.png');
+    : fileUrl('src/assets/scenes/home/cottage.png');
   const ratio = isRoom || (isMotion && !combatMotion) ? '384 / 192' : '384 / 216';
   const backdrop = isBattle || isRoom ? url : fallback;
   const pathLayer = job.kind.startsWith('side-scroller-');
@@ -1173,7 +1258,7 @@ const KIND_OPTIONS: Array<[StudioKind, string]> = [
   ['creature-portrait', 'Monster · portrait source'],
   ['battle-background', 'Battle background'], ['room-background', 'Home / room'],
   ['side-scroller-sky', 'Side-scroller · sky'], ['side-scroller-far', 'Side-scroller · far'],
-  ['side-scroller-mid', 'Side-scroller · middle'], ['side-scroller-ground', 'Side-scroller · ground'],
+  ['side-scroller-mid', 'Side-scroller · middle + ground'],
   ['creature-sheet', 'Legacy sprite sheet'], ['move-effect', 'Move effect / logo'],
 ];
 
@@ -1181,10 +1266,9 @@ function kindPreset(kind: StudioKind) {
   const sizes: Record<StudioKind, { width: number; height: number; transparent: boolean }> = {
     'battle-background': { width: 384, height: 216, transparent: false },
     'room-background': { width: 384, height: 192, transparent: false },
-    'side-scroller-sky': { width: 384, height: 216, transparent: true },
-    'side-scroller-far': { width: 384, height: 216, transparent: true },
-    'side-scroller-mid': { width: 384, height: 216, transparent: true },
-    'side-scroller-ground': { width: 384, height: 216, transparent: true },
+    'side-scroller-sky': { width: 256, height: 216, transparent: false },
+    'side-scroller-far': { width: 256, height: 104, transparent: true },
+    'side-scroller-mid': { width: 256, height: 176, transparent: true },
     'creature-portrait': { width: 256, height: 256, transparent: true },
     'creature-sheet': { width: 384, height: 384, transparent: true },
     'creature-animation': { width: 256, height: 256, transparent: true },
@@ -1360,12 +1444,100 @@ const DARK_MOVE_PROMPT = promptSpec(
 
 const PATH_PROMPT = promptSpec(
   'Use case: stylized-concept',
-  'Asset type: seamless transparent pixel-art far parallax layer, 384x216 landscape',
+  'Asset type: seamless transparent pixel-art far parallax layer, 256x104 landscape',
   'Scene: distant crystal-pass ridgeline with sparse angular crystal silhouettes',
   'Composition: horizontal band concentrated below the middle; transparent sky; left and right edges tile seamlessly; no central focal object',
   'Style: native-resolution RPG pixel art, limited clusters, hard edges, no smoothing',
   'Constraints: transparent background; scenery layer only; no character, UI, text, watermark',
 );
+
+type QuestRouteDraft = {
+  label: string;
+  name: string;
+  theme: string;
+  seed: number;
+  palette: string;
+  sky: string;
+  far: string;
+  mid: string;
+};
+
+const QUEST_ROUTE_PRESETS: QuestRouteDraft[] = [
+  {
+    label: 'Inferno · Emberwood Road', name: 'emberwood-road', theme: 'fire', seed: 7101,
+    palette: 'charcoal bark, ember orange, muted crimson, smoke violet, warm bone highlights',
+    sky: 'smoky late-afternoon sky with a restrained orange horizon and two thin ash clouds',
+    far: 'distant burned ridges, ruined turbine silhouettes, and a few faint smoke columns',
+    mid: 'blackened tree trunks, red ferns, low resistance marker stones, and a packed dark-earth road',
+  },
+  {
+    label: 'Aqua · Flooded Archive', name: 'flooded-archive', theme: 'water', seed: 7201,
+    palette: 'deep teal, weathered blue stone, reed green, pale cyan reflections, muted brass',
+    sky: 'cool overcast morning sky reflected in a narrow calm waterline with sparse flat clouds',
+    far: 'half-submerged archive arches, distant canal walls, and low roof silhouettes in blue mist',
+    mid: 'reeds, broken catalog pillars, brass water gauges, and a continuous shallow stone causeway',
+  },
+  {
+    label: 'Nomad · Highbridge Route', name: 'highbridge-route', theme: 'air', seed: 7301,
+    palette: 'storm blue, pale stone, weathered copper, muted turquoise cloth, bone-white cloud',
+    sky: 'wide high-altitude blue sky with long wind-stretched clouds and a distant storm shelf',
+    far: 'suspended bridge spans, abandoned lift rails, and signal towers fading into cloud',
+    mid: 'stone bridge posts, torn route ribbons, copper rail mechanisms, and a continuous pale walkway',
+  },
+  {
+    label: 'Titan · Old Quarry Road', name: 'old-quarry-road', theme: 'rock', seed: 7401,
+    palette: 'slate gray, ochre stone, moss green, rusted iron, warm amber crystal',
+    sky: 'quiet pale dawn sky above quarry dust with a few small horizontal clouds',
+    far: 'stepped quarry walls, old hoist silhouettes, and distant seed-vault doors cut into rock',
+    mid: 'cut stone blocks, timber braces, amber marker crystals, and a continuous compacted gravel road',
+  },
+];
+
+function questLayerRequests(route: QuestRouteDraft) {
+  const shared = [
+    `Palette: ${route.palette}`,
+    'Scale: use native 1x pixels aligned exactly with a 64x64 companion sprite in the same scene buffer; keep readable forms, but do not fake a lower resolution with enlarged 2x2 blocks; no isolated one-pixel fragments or fine-grain dithering',
+    'Style: native-resolution 16-bit RPG pixel art, crisp hard-edged clusters, one dark outline where forms overlap, two-step shading, no smoothing or antialiasing',
+    'Camera: perfectly flat side elevation, no perspective, no vanishing point, no central focal object',
+    'Constraints: deserted scenery only; no creature, person, character-shaped silhouette, UI, text, letters, numbers, or watermark',
+  ];
+  return [
+    {
+      kind: 'side-scroller-sky' as const, width: 256, height: 216, transparent: false,
+      seed: route.seed,
+      prompt: promptSpec(
+        'Use case: stylized-concept',
+        'Asset type: horizontally seamless opaque sky layer for a side-scrolling quest, 256x216',
+        `Scene: ${route.sky}`,
+        'Composition: sky fills the entire canvas; no ground, plants, buildings, poles, or horizon obstruction',
+        ...shared,
+      ),
+    },
+    {
+      kind: 'side-scroller-far' as const, width: 256, height: 104, transparent: true,
+      seed: route.seed + 1,
+      prompt: promptSpec(
+        'Use case: stylized-concept',
+        'Asset type: horizontally seamless transparent far parallax layer for a side-scrolling quest, 256x104',
+        `Scene: ${route.far}`,
+        'Composition: one distant silhouette band anchored to the bottom edge; top 55% genuinely transparent; every visible fragment belongs to that band; no detached pixels or foreground ground strip',
+        ...shared,
+      ),
+    },
+    {
+      kind: 'side-scroller-mid' as const, width: 256, height: 176, transparent: true,
+      seed: route.seed + 2,
+      prompt: promptSpec(
+        'Use case: stylized-concept',
+        'Asset type: horizontally seamless transparent middle-and-ground layer for a side-scrolling quest, 256x176',
+        `Scene: ${route.mid}`,
+        'Composition: spaced scenery above one flat walkable ground whose top surface is exactly row 152 of 176 (24 pixels above the bottom); rows 152 through 159 are solid across the full width; keep the top 8 rows genuinely transparent; every tree, branch, leaf cluster, plant, and prop is visibly connected to the ground or to a connected parent form; the ground height is identical at both edges',
+        'Framing: contain every full tree canopy below row 8 with no crop at the top edge; no floating leaves, detached foliage, isolated pixels, or transparent holes in the eight-row walk strip',
+        ...shared,
+      ),
+    },
+  ];
+}
 
 type PromptPreset = {
   label: string; provider: 'pixellab' | 'retro-diffusion'; kind: StudioKind;

@@ -94,6 +94,10 @@
 
   /* Pixel art must never be smoothed. */
   img[data-pixel] { image-rendering: pixelated; }
+  canvas.game-canvas-snapped {
+    width: var(--game-snapped-width) !important;
+    height: var(--game-snapped-height) !important;
+  }
 
   ::selection { background: rgb(var(--element) / 0.32); }
 
@@ -416,10 +420,10 @@ html { scroll-behavior: smooth; }
   max-width: 12ch;
   font-family: 'Bricolage Grotesque', ui-sans-serif, system-ui, sans-serif;
   font-size: clamp(3.25rem, 7vw, 7rem);
-  font-variation-settings: 'wdth' 78;
+  font-variation-settings: 'wdth' 88;
   font-weight: 600;
   line-height: 0.89;
-  letter-spacing: -0.065em;
+  letter-spacing: -0.015em;
   text-wrap: balance;
 }
 
@@ -1631,6 +1635,465 @@ html[data-hall-only] .faction-hall-offset {
 .arena-lobby-grid > *,
 .battle-screen > * { min-width: 0; }
 
+/* Arena command boards ----------------------------------------------------
+   Entry and matchmaking are one-screen game states, not long-form rules
+   pages. The carved crest, spend bars, battle pips and live odds tracks carry
+   the information visually; the walkthrough keeps the full explanation. */
+.arena-main > * { min-height: 0; }
+
+.arena-entry-panel {
+  background:
+    linear-gradient(90deg, rgb(var(--element) / .045) 1px, transparent 1px),
+    linear-gradient(rgb(var(--element) / .035) 1px, transparent 1px),
+    radial-gradient(circle at 18% 44%, rgb(var(--element) / .11), transparent 30%),
+    rgb(var(--surface) / .82);
+  background-size: 42px 42px, 42px 42px, auto, auto;
+}
+
+.arena-crest {
+  overflow: hidden;
+  background:
+    linear-gradient(135deg, rgb(var(--raised) / .96), rgb(var(--void) / .88));
+  clip-path: polygon(0 0, calc(100% - 10px) 0, 100% 10px, 100% 100%, 10px 100%, 0 calc(100% - 10px));
+  box-shadow:
+    0 0 0 1px rgb(var(--rune) / .2) inset,
+    0 0 22px -8px rgb(var(--element) / .65);
+}
+
+.arena-crest::before,
+.arena-crest::after {
+  content: '';
+  position: absolute;
+  pointer-events: none;
+}
+
+.arena-crest::before {
+  inset: 7px;
+  border: 1px solid rgb(var(--element) / .38);
+  transform: rotate(45deg);
+}
+
+.arena-crest::after {
+  top: 50%;
+  left: 7px;
+  width: calc(100% - 14px);
+  height: 1px;
+  background: rgb(var(--rune) / .24);
+}
+
+.arena-entry-step {
+  position: relative;
+  display: grid;
+  grid-template-columns: 4rem minmax(0, 1fr);
+  column-gap: .9rem;
+}
+
+.arena-step-number > span {
+  transition: opacity .2s ease, color .2s ease;
+}
+
+.arena-entry-step--complete .arena-step-number > span { opacity: .36; }
+
+.arena-step-check {
+  top: .35rem;
+  left: calc(50% - .35rem);
+  z-index: 1;
+  stroke-width: 2.4;
+  transform: translateX(-50%) rotate(-8deg);
+  filter: drop-shadow(0 0 8px rgb(var(--good) / .65));
+}
+
+.arena-entry-step--complete {
+  background: linear-gradient(90deg, rgb(var(--good) / .045), transparent 34%);
+}
+
+.arena-entry-step--blocked {
+  background: linear-gradient(90deg, rgb(var(--bad) / .09), transparent 48%);
+  box-shadow: 3px 0 0 rgb(var(--bad) / .72) inset;
+  animation: arena-step-blocked 1.6s ease-in-out infinite alternate;
+}
+
+.arena-entry-step--active .arena-step-number {
+  filter: drop-shadow(0 0 10px rgb(var(--element) / .38));
+}
+
+@keyframes arena-step-blocked {
+  from { box-shadow: 3px 0 0 rgb(var(--bad) / .48) inset, 0 0 12px rgb(var(--bad) / .03) inset; }
+  to { box-shadow: 3px 0 0 rgb(var(--bad) / .9) inset, 0 0 28px rgb(var(--bad) / .12) inset; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .arena-entry-step--blocked { animation: none; }
+  .matchmaking-radar { animation: none; }
+}
+
+.arena-gold-rule {
+  box-shadow: 0 1px 0 rgb(255 255 255 / .025) inset;
+}
+
+.arena-lobby-gold-rules .arena-gold-rule {
+  padding-block: .4rem;
+}
+
+.arena-tier-option {
+  box-shadow: 0 1px 0 rgb(255 255 255 / .025) inset;
+}
+
+.arena-tier-option[aria-checked='true'] {
+  box-shadow:
+    3px 0 0 rgb(var(--element) / .7) inset,
+    0 1px 0 rgb(255 255 255 / .035) inset;
+}
+
+.duel-pot {
+  background:
+    linear-gradient(90deg, rgb(var(--element) / .04), transparent 36%, transparent 64%, rgb(var(--element) / .04)),
+    rgb(var(--void) / .25);
+}
+
+.matchmaking-radar {
+  clip-path: polygon(0 0, calc(100% - 10px) 0, 100% 10px, 100% 100%, 10px 100%, 0 calc(100% - 10px));
+  animation: matchmaking-radar 1.8s ease-in-out infinite;
+}
+
+@keyframes matchmaking-radar {
+  0%, 100% { opacity: .4; transform: scale(.78) rotate(0); }
+  50% { opacity: 1; transform: scale(1) rotate(90deg); }
+}
+
+@media (max-height: 600px) {
+  .arena-match-rules,
+  .arena-matchmaking-icon,
+  .arena-matchmaking-copy { display: none; }
+  .arena-matchmaking > .panel { padding: .65rem; }
+  .arena-matchmaking .button-control { margin-top: .6rem; }
+}
+
+@media (min-width: 1024px) {
+  .arena-entry-panel {
+    height: min(36rem, 100%);
+  }
+
+  .arena-entry-boost { width: 100%; }
+
+  .arena-lobby-screen {
+    align-self: center;
+    height: min(36rem, 100%);
+    margin-block: auto;
+  }
+}
+
+@media (max-width: 1023px) {
+  .arena-main {
+    padding-top: .5rem;
+    padding-right: max(.5rem, env(safe-area-inset-right));
+    padding-bottom: calc(var(--mobile-tabbar-height) + env(safe-area-inset-bottom) + .5rem);
+    padding-left: max(.5rem, env(safe-area-inset-left));
+  }
+
+  .arena-lobby-panel > .mb-3 { margin-bottom: .4rem; }
+}
+
+@media (max-width: 639px) {
+  .arena-entry-step {
+    grid-template-columns: 2.75rem minmax(0, 1fr);
+    column-gap: .5rem;
+  }
+  .arena-step-number { padding-right: .45rem; }
+  .arena-step-number > span { font-size: 2.25rem; }
+  .arena-step-check { width: 1.65rem; height: 1.65rem; left: calc(50% - .2rem); }
+  .arena-ready-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  .arena-ready-grid .eyebrow,
+  .arena-purse .eyebrow { display: none; }
+  .app-shell--arena .arena-purse {
+    grid-column: auto;
+    min-width: 0;
+    padding-inline: .5rem;
+  }
+  .app-shell--arena .arena-resource-cost { padding-inline: .35rem; }
+  .app-shell--arena .arena-resource-cost .px-1 { padding-inline: .1rem; }
+
+  .app-shell--arena .app-tab {
+    white-space: nowrap;
+    font-size: 9px;
+  }
+
+  .arena-gold-rule { padding-inline: .35rem; }
+}
+
+@media (max-width: 639px) and (max-height: 600px) {
+  .arena-ready-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  .arena-ready-grid .eyebrow,
+  .arena-purse .eyebrow,
+  .arena-step-heading > span { display: none; }
+  .app-shell--arena .arena-purse {
+    grid-column: auto;
+    min-width: 0;
+    padding-inline: .4rem;
+  }
+  .arena-purse > svg { display: none; }
+  .arena-entry-boost .arena-step-content > :last-child { display: none; }
+  .app-shell--arena .arena-berry-button { min-height: 3rem; }
+  .app-shell--arena .arena-resource-cost,
+  .app-shell--arena .arena-gold-rule { padding: .3rem; }
+  .app-shell--arena .arena-resource-cost svg,
+  .app-shell--arena .arena-gold-rule svg { width: .9rem; height: .9rem; }
+  .app-shell--arena .arena-resource-cost .text-base { font-size: .72rem; }
+  .app-shell--arena .arena-resource-cost > :last-child { height: .3rem; margin-top: .2rem; }
+  .app-shell--arena .arena-gold-rule .text-lg { font-size: .78rem; }
+  .app-shell--arena .arena-gold-rule > :last-child { margin-top: 0; font-size: .45rem; }
+  .app-shell--arena .arena-entry-action { gap: .25rem; padding-top: .2rem; }
+  .app-shell--arena .arena-entry-blocked { display: none; }
+  .app-shell--arena .arena-entry-hero { padding-bottom: .2rem; }
+  .app-shell--arena .arena-lobby-panel { padding: .4rem; }
+  .arena-tier-board > :first-child,
+  .arena-tier-rates,
+  .difficulty-marks { display: none; }
+  .arena-tier-option { padding-block: .1rem; }
+  .arena-tier-track { height: 3px; margin-top: 1px; }
+  .duel-payout-note { display: none; }
+}
+
+@media (max-width: 350px) {
+  .app-shell--arena .app-header [data-tour='wallet'] {
+    width: 2.75rem;
+    padding-inline: 0;
+  }
+  .app-shell--arena .app-header [data-tour='wallet'] > span { display: none; }
+  .arena-session-boost {
+    width: 1.5rem;
+    padding-inline: .2rem;
+    overflow: hidden;
+  }
+  .arena-session-boost-label { display: none; }
+  .arena-session-fraction { display: none; }
+  .app-shell--arena .arena-rating-plate {
+    min-width: 2.75rem;
+    padding-inline: .2rem;
+  }
+  .arena-rating-plate svg { display: none; }
+}
+
+@media (max-width: 350px) and (max-height: 600px) {
+  .app-shell--arena .arena-entry-panel { padding: .375rem; }
+  .arena-entry-hero > .arena-crest,
+  .arena-entry-hero .eyebrow,
+  [data-tour='arena-pays'] > :first-child,
+  .arena-gold-rule > :last-child { display: none; }
+  .arena-entry-hero { padding-bottom: .15rem; }
+  .arena-entry-step {
+    grid-template-columns: 2.1rem minmax(0, 1fr);
+    column-gap: .35rem;
+  }
+  .arena-step-number { padding-right: .3rem; }
+  .arena-step-number > span { font-size: 1.75rem; }
+  .arena-step-check { width: 1.25rem; height: 1.25rem; }
+  .arena-entry-boost .arena-step-content > :last-child { margin-top: 0; }
+  .app-shell--arena .arena-entry-action .button-control {
+    height: 2.75rem;
+    min-height: 2.75rem;
+  }
+  .arena-run-count strong { line-height: 1; }
+}
+
+@media (max-width: 1023px) and (max-height: 720px) {
+  .arena-entry-panel { padding: .5rem; }
+  .arena-entry-hero { padding-bottom: .4rem; }
+  .arena-entry-ready,
+  .arena-entry-boost { padding-block: .4rem; }
+  .arena-entry-action { padding-top: .4rem; }
+  .app-shell--arena .arena-entry-blocked { display: none; }
+  .arena-crest { width: 2.25rem; height: 2.25rem; }
+  .arena-entry-boost .arena-step-content > :last-child { display: none; }
+  .arena-gold-rule { padding-block: .4rem; }
+  .arena-lobby-gold-rules {
+    margin-top: .35rem;
+    padding-top: .35rem;
+  }
+  .arena-lobby-gold-rules > :first-child { margin-bottom: .25rem; }
+  .arena-lobby-gold-rules .arena-gold-rule {
+    display: flex;
+    align-items: baseline;
+    justify-content: center;
+    gap: .2rem;
+    padding: .2rem;
+  }
+  .arena-lobby-gold-rules .arena-gold-rule svg,
+  .arena-lobby-gold-rules .arena-gold-rule > :last-child { display: none; }
+  .arena-lobby-gold-rules .arena-gold-rule > div { margin-top: 0; }
+  .arena-lobby-gold-rules .arena-gold-rule .text-lg { font-size: .8rem; }
+  .arena-run-count { padding-top: .125rem; }
+  .arena-lobby-panel { padding: .6rem; }
+  .arena-tier-board > :first-child { margin-bottom: .2rem; }
+  .arena-tier-board > :last-child { gap: .2rem; }
+  .arena-tier-option { padding-block: .2rem; }
+}
+
+@media (min-width: 700px) and (max-width: 1023px) and (max-height: 600px) and (orientation: landscape) {
+  .app-shell--game .arena-main {
+    padding-top: .4rem;
+    padding-right: max(.5rem, env(safe-area-inset-right));
+    padding-bottom: max(.4rem, env(safe-area-inset-bottom));
+    padding-left: .5rem;
+  }
+
+  .arena-entry-panel {
+    height: 100%;
+    padding: .4rem;
+  }
+
+  .arena-ready-grid { grid-template-columns: 1fr 1fr auto; }
+  .arena-ready-grid .eyebrow { display: none; }
+  .arena-entry-hero { padding-bottom: .15rem; }
+  .arena-entry-hero > .arena-crest { display: none; }
+  .arena-entry-hero .eyebrow { display: none; }
+  .arena-entry-hero h1 { font-size: 1.15rem; }
+  .arena-entry-hero .arena-crest { width: 2.25rem; height: 2.25rem; }
+  .arena-entry-ready,
+  .arena-entry-boost { padding-block: .2rem; }
+  .arena-entry-step {
+    grid-template-columns: 2rem minmax(0, 1fr);
+    column-gap: .35rem;
+  }
+  .arena-step-heading h2 { font-size: .68rem; }
+  .arena-step-number {
+    min-height: 0;
+    padding-right: .3rem;
+  }
+  .arena-step-number > span { font-size: 1.55rem; }
+  .arena-step-check {
+    top: .1rem;
+    width: 1.1rem;
+    height: 1.1rem;
+    left: calc(50% - .05rem);
+  }
+  .arena-ready-grid { margin-top: .25rem; gap: .35rem; }
+  .app-shell--arena .arena-resource-cost {
+    padding: .25rem .5rem;
+  }
+  .app-shell--arena .arena-resource-cost svg { width: 1rem; height: 1rem; }
+  .app-shell--arena .arena-resource-cost .text-base { font-size: .8rem; }
+  .app-shell--arena .arena-resource-cost > :last-child { height: .125rem; margin-top: .1rem; }
+  .app-shell--arena .arena-purse {
+    gap: .45rem;
+    padding: .25rem .5rem;
+  }
+  .app-shell--arena .arena-purse > svg { width: 1.1rem; height: 1.1rem; }
+  .app-shell--arena .arena-purse .text-xl { font-size: .9rem; }
+  .app-shell--arena .arena-purse > div > :last-child { display: none; }
+  [data-tour='arena-pays'] { margin-top: .25rem; padding-top: .25rem; }
+  [data-tour='arena-pays'] > :first-child,
+  .arena-gold-rule > :last-child { display: none; }
+  .app-shell--arena .arena-gold-rule {
+    display: flex;
+    align-items: baseline;
+    justify-content: center;
+    gap: .25rem;
+    padding: .15rem;
+  }
+  .app-shell--arena .arena-gold-rule svg { display: none; }
+  .app-shell--arena .arena-gold-rule > div { margin-top: 0; }
+  .app-shell--arena .arena-gold-rule .text-lg { font-size: .8rem; }
+  .arena-entry-boost .arena-step-content > :first-child { margin-bottom: .25rem; }
+  .arena-entry-boost .arena-step-content > :last-child { display: none; margin-top: 0; }
+  .app-shell--arena .arena-berry-button {
+    min-height: 1.75rem;
+    padding-block: .1rem;
+  }
+  .app-shell--arena .arena-berry-button img { width: 1.1rem; height: 1.1rem; }
+  .app-shell--arena .arena-berry-button > span:not(.absolute) { display: none; }
+  .app-shell--arena .arena-entry-action {
+    gap: .15rem;
+    padding-top: .2rem;
+  }
+  .app-shell--arena .arena-entry-action .button-control {
+    height: 2rem;
+    min-height: 2rem;
+  }
+  .arena-run-count { height: .85rem; padding-top: 0; }
+  .arena-run-count strong { font-size: .875rem; line-height: 1; }
+  .arena-lobby-tabs { display: grid; }
+  .app-shell--game .arena-lobby-grid { display: grid; grid-template-columns: 1fr; }
+  .app-shell--game .arena-lobby-panel { padding: .4rem; }
+  .app-shell--game .arena-lobby-panel > .button-control { height: 2.5rem; margin-top: .25rem; }
+  .app-shell--game .arena-lobby-panel > .mb-3 .button-control {
+    height: 2rem;
+    min-height: 0;
+  }
+  .app-shell--game .arena-lobby-panel > .duel-pot { padding-block: .125rem; }
+  .app-shell--game .arena-lobby-panel > .mt-2 {
+    margin-top: .25rem;
+    padding-top: .25rem;
+  }
+  .app-shell--game .arena-challenge-list > div { padding-block: 0; }
+  .app-shell--game .arena-challenge-list .button-control {
+    height: 2rem;
+    min-height: 0;
+  }
+  .arena-tier-board > :first-child,
+  .arena-tier-rates,
+  .difficulty-marks { display: none; }
+  .arena-tier-option { padding-block: .1rem; }
+  .arena-tier-track { height: 3px; margin-top: 1px; }
+  .duel-payout-note { display: none; }
+  .arena-session-hud { padding-block: .125rem; }
+  .arena-session-hud .arena-rating-plate { width: 3rem; min-width: 3rem; height: 2rem; }
+  .arena-rating-plate svg { display: none; }
+  .arena-lobby-tabs > button { padding-block: .25rem; }
+}
+
+/* A move whose signature is away, before the process has authored a turn.
+   This is deliberately a charge with no travel, strike, impact or number: all
+   four of those would claim an outcome the reply has not supplied yet. */
+.battle-anticipation {
+  display: flex;
+  align-items: center;
+  gap: .38rem;
+  color: rgb(var(--element));
+  filter: drop-shadow(0 0 10px rgb(var(--element) / .32));
+}
+.battle-anticipation-seal {
+  position: relative;
+  display: block;
+  width: 1.05rem;
+  height: 1.05rem;
+  border: 1px solid rgb(var(--element) / .72);
+  clip-path: polygon(29% 0, 71% 0, 100% 29%, 100% 71%, 71% 100%, 29% 100%, 0 71%, 0 29%);
+  animation: battle-anticipation-charge 880ms ease-in-out infinite alternate;
+}
+.battle-anticipation-seal::after {
+  content: '';
+  position: absolute;
+  inset: 3px;
+  border: 1px solid rgb(var(--element) / .55);
+  transform: rotate(45deg);
+}
+@keyframes battle-anticipation-charge {
+  from { opacity: .42; transform: rotate(0deg) scale(.84); }
+  to { opacity: 1; transform: rotate(90deg) scale(1.08); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .battle-anticipation-seal { animation: none; }
+}
+
+.transaction-hold-seal {
+  display: block;
+  width: .82rem;
+  height: .82rem;
+  flex: none;
+  border: 1px solid rgb(var(--element) / .78);
+  clip-path: polygon(29% 0, 71% 0, 100% 29%, 100% 71%, 71% 100%, 29% 100%, 0 71%, 0 29%);
+  filter: drop-shadow(0 0 7px rgb(var(--element) / .48));
+  animation: transaction-hold-turn 900ms ease-in-out infinite alternate;
+}
+@keyframes transaction-hold-turn {
+  from { opacity: .38; transform: rotate(0deg) scale(.78); }
+  to { opacity: 1; transform: rotate(90deg) scale(1.08); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .transaction-hold-seal { animation: none; }
+}
+
 @media (max-width: 1023px) {
   /* lg is the desktop contract. Below it, navigation is always out of the
      content flow and every game route reserves exactly the same amount. */
@@ -2568,8 +3031,7 @@ html[data-hall-only] .faction-hall-offset {
 }
 .market-depth-row:hover { background: rgb(var(--raised) / .8); }
 /* The bid column reads outward from the spread, so its price sits against the
-   gap and its depth bar grows away from it. The two columns are then one
-   butterfly around the middle instead of two lists pointing the same way. */
+   gap and its depth bar grows away from it. */
 .market-depth-row.is-bid { flex-direction: row-reverse; }
 
 .market-depth-mountain {
@@ -2594,9 +3056,9 @@ html[data-hall-only] .faction-hall-offset {
 .market-depth-caption { top: .45rem; color: rgb(var(--faint)); text-transform: uppercase; }
 .market-depth-axis { bottom: .35rem; color: rgb(var(--faint)); }
 .market-depth-axis span:nth-child(2) { color: rgb(var(--arcane)); text-transform: uppercase; }
-/* The tape. Three columns on one baseline -- price, size, when -- so a run of
-   trades reads as three vertical rules rather than twenty-four separate rows,
-   and the taker's colour is the only thing that varies down the price column. */
+/* The tape. The contract publishes four facts; the total is derived here.
+   Side is written as well as coloured, and seconds stay visible so a burst of
+   fills does not collapse into several apparently identical rows. */
 .market-tape { scrollbar-width: thin; scrollbar-color: rgb(var(--arcane) / .35) transparent; }
 .market-tape-legend {
   color: rgb(var(--faint) / .7);
@@ -2605,49 +3067,75 @@ html[data-hall-only] .faction-hall-offset {
   letter-spacing: 0;
   text-transform: none;
 }
+.market-tape-columns,
 .market-tape-row {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(0, auto) minmax(0, auto);
-  gap: .75rem;
+  grid-template-columns: 2.4rem minmax(3.5rem, 1fr) minmax(1.5rem, auto) minmax(3.5rem, auto) minmax(4.8rem, auto);
+  gap: .6rem;
+  padding-inline: .5rem;
+  white-space: nowrap;
+}
+.market-tape-columns {
+  padding-block: .08rem .24rem;
+  color: rgb(var(--faint) / .72);
+  font-family: 'JetBrains Mono', ui-monospace, monospace;
+  font-size: 7px;
+  letter-spacing: .08em;
+  text-transform: uppercase;
+}
+.market-tape-row {
   border-radius: 2px;
-  padding: .12rem .5rem;
+  padding-block: .12rem;
   font-family: 'JetBrains Mono', ui-monospace, monospace;
   font-size: 11px;
   font-variant-numeric: tabular-nums;
 }
+.market-tape-row b { font-size: 8px; font-weight: 600; letter-spacing: .04em; text-transform: uppercase; }
 .market-tape-row:nth-child(odd) { background: rgb(var(--void) / .3); }
-.market-tape-row > :nth-child(2),
-.market-tape-row > :nth-child(3) { text-align: right; }
+.market-tape-columns > :not(:first-child),
+.market-tape-row > :not(:first-child) { min-width: 0; overflow: hidden; text-align: right; text-overflow: ellipsis; }
 
 /* Balance now, then what the trade leaves it at. The arrow is the separator,
    so it is spaced and dimmed rather than sitting in the number's colour. */
 .market-ticket-arrow { margin-inline: .3rem; color: rgb(var(--faint) / .7); }
 
-.market-depth-ladders { scrollbar-width: thin; scrollbar-color: rgb(var(--arcane) / .35) transparent; }
-
-
-/* Top of book: bid, the gap, ask. The middle cell is narrower than the two it
-   separates -- it is the relationship between them, not a third price. */
+/* The exact gap between the best ask above and best bid below. */
 .market-spread-cell {
-  display: flex;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
   min-width: 0;
-  flex-direction: column;
-  justify-content: center;
-  gap: .1rem;
-  background: rgb(var(--void) / .45);
-  padding: .5rem .7rem;
-  text-align: center;
+  align-items: baseline;
+  gap: .45rem;
+  border-block: 1px solid rgb(var(--arcane) / .22);
+  background:
+    linear-gradient(90deg, rgb(var(--good) / .035), transparent 40%, transparent 60%, rgb(var(--bad) / .035)),
+    rgb(var(--arcane) / .045);
+  padding: .42rem .58rem;
+}
+.market-spread-label {
+  color: rgb(var(--faint));
+  font-family: 'JetBrains Mono', ui-monospace, monospace;
+  font-size: 7px;
+  letter-spacing: .09em;
+  text-transform: uppercase;
 }
 .market-spread-value {
   color: rgb(var(--arcane));
   font-family: 'JetBrains Mono', ui-monospace, monospace;
-  font-size: 13px;
+  font-size: 10px;
+  font-weight: 600;
   line-height: 1;
+  text-align: center;
+  white-space: nowrap;
 }
 .market-spread-bps {
+  overflow: hidden;
   color: rgb(var(--faint));
   font-family: 'JetBrains Mono', ui-monospace, monospace;
-  font-size: 8px;
+  font-size: 7px;
+  text-align: right;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 /* Floor tiles ------------------------------------------------------------ */
@@ -2703,6 +3191,14 @@ html[data-hall-only] .faction-hall-offset {
 .market-chart-control:disabled { opacity: .3; pointer-events: none; }
 .market-chart-control.is-active { color: rgb(var(--arcane)); border-color: rgb(var(--arcane) / .62); background: rgb(var(--arcane) / .1); }
 .market-chart-divider { width: 1px; min-height: 1.4rem; margin-inline: .15rem; background: rgb(var(--edge)); }
+.market-chart-group-label {
+  align-self: center;
+  color: rgb(var(--faint) / .7);
+  font-family: 'JetBrains Mono', ui-monospace, monospace;
+  font-size: 7px;
+  letter-spacing: .08em;
+  text-transform: uppercase;
+}
 
 /* Time in force.
    Four chips, because the choice is genuinely four-way and a dropdown would
@@ -2795,14 +3291,30 @@ html[data-hall-only] .faction-hall-offset {
 .market-candle-readout {
   position: absolute;
   top: .45rem;
+  right: 3.75rem;
   left: .55rem;
   z-index: 2;
   display: flex;
+  flex-wrap: wrap;
   gap: .55rem;
   color: rgb(var(--muted));
   font-family: 'JetBrains Mono', ui-monospace, monospace;
   font-size: 8px;
+  line-height: 1.2;
   pointer-events: none;
+}
+
+.market-line-readout {
+  position: absolute;
+  top: .48rem;
+  left: .55rem;
+  z-index: 2;
+  color: rgb(var(--faint) / .82);
+  font-family: 'JetBrains Mono', ui-monospace, monospace;
+  font-size: 8px;
+  letter-spacing: .08em;
+  pointer-events: none;
+  text-transform: uppercase;
 }
 
 .market-monster-card:hover {
@@ -2901,7 +3413,8 @@ html[data-hall-only] .faction-hall-offset {
   .market-shop-showcase-metrics { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .market-chart-toolbar { justify-content: flex-start; }
   .market-chart-divider { display: none; }
-  .market-depth-caption { font-size: 7px; }
+  .market-book-row { min-height: 1.8rem; font-size: 10px; }
+  .market-book-heading { min-height: 2.8rem; }
 }
 
 @media (prefers-reduced-motion: reduce) {
@@ -3484,6 +3997,7 @@ html[data-hall-only] .faction-hall-offset {
 }
 
 .acquisition-phase-attack .acquisition-vortex,
+.acquisition-phase-waiting .acquisition-vortex,
 .acquisition-phase-swirl .acquisition-vortex,
 .acquisition-phase-forge .acquisition-vortex { opacity: 1; }
 

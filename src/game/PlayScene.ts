@@ -1,6 +1,6 @@
 /** A looping game of fetch in one of the dedicated play scenes. */
 import Phaser from 'phaser';
-import { playUrl } from './assets';
+import { homeUrl } from './assets';
 import { reducedMotion } from './boot';
 import { MonsterRig, monsterRig } from './MonsterRig';
 
@@ -43,7 +43,7 @@ export class PlayScene extends Phaser.Scene {
   }
 
   preload() {
-    this.load.image('play-backdrop', playUrl(this.init_.backdrop));
+    this.load.image('play-backdrop', homeUrl(this.init_.backdrop));
     this.rig.preload(this, 'play-pet');
     if (this.init_.playerSprite) {
       this.load.spritesheet('play-player', this.init_.playerSprite, {
@@ -60,13 +60,13 @@ export class PlayScene extends Phaser.Scene {
 
     if (this.textures.exists('play-player')) {
       this.anims.create({
-        key: 'play-player-right',
-        frames: this.anims.generateFrameNumbers('play-player', { frames: [6, 7, 8, 7] }),
+        key: 'play-player-left',
+        frames: this.anims.generateFrameNumbers('play-player', { frames: [3, 4, 5, 4] }),
         frameRate: 9,
         repeat: -1,
       });
       this.add.ellipse(292, FLOOR_Y + 1, 20, 5, 0x000000, 0.3);
-      this.player = this.add.sprite(292, FLOOR_Y, 'play-player', 7).setOrigin(0.5, 1);
+      this.player = this.add.sprite(292, FLOOR_Y, 'play-player', 4).setOrigin(0.5, 1);
     }
 
     this.petShadow = this.rig.createShadow(this, 216, FLOOR_Y);
@@ -110,7 +110,7 @@ export class PlayScene extends Phaser.Scene {
 
   private drawQuietPose() {
     this.pet.setPosition(216, FLOOR_Y).setFrame(this.standFrame());
-    this.player?.setPosition(292, FLOOR_Y).setFrame(7);
+    this.player?.setPosition(292, FLOOR_Y).setFrame(4);
     this.ball.setPosition(244, FLOOR_Y - 7).setVisible(true);
   }
 
@@ -170,12 +170,12 @@ export class PlayScene extends Phaser.Scene {
 
     if (this.player) {
       if (playerMoving) {
-        if (this.player.anims.currentAnim?.key !== 'play-player-right' || !this.player.anims.isPlaying) {
-          this.player.play('play-player-right');
+        if (this.player.anims.currentAnim?.key !== 'play-player-left' || !this.player.anims.isPlaying) {
+          this.player.play('play-player-left');
         }
       } else {
         this.player.anims.stop();
-        this.player.setFrame(7);
+        this.player.setFrame(4);
       }
     }
 

@@ -68,15 +68,15 @@ export const HB_NODE: string = env.VITE_HB_NODE || 'https://hyperbeam.tylerw.ai'
  */
 export const HB_NODES: string[] = [
   HB_NODE,
-  'https://schedule.forward.computer',
+  'https://hyperbeam.tylerw.ai',
 ].filter((n, i, a) => a.indexOf(n) === i);
 
 /** The game process. Set VITE_GAME_PROCESS after a deploy. */
 export const GAME_PROCESS: string =
-  env.VITE_GAME_PROCESS || 'DnM_Uy7MbKQXk-EJONp4g-jAsLiHnXTa-KOuv1tffPU';
+  env.VITE_GAME_PROCESS || 'JMXV9lRFm1HRb7xJBMBwSFUQw3D-o4QdUCOmhePJZNs';
 
 /** Separate roaming/battle authority. Empty until `deploy-hunt.mjs` wires it. */
-export const HUNT_PROCESS: string = env.VITE_HUNT_PROCESS || 'G3iJTMNr_AtK78UNAWMAFs96p6JRjzBs4vE1mfUrlms';
+export const HUNT_PROCESS: string = env.VITE_HUNT_PROCESS || 'nlhEZOkBY0HliMIwUw0Kh3tlIqF7jZmIj9YtFSmvsEE';
 export const HUNT_NODE: string = env.VITE_HUNT_NODE || 'https://hyperbeam.tylerw.ai';
 
 /**
@@ -187,7 +187,24 @@ export class AcceptedWriteError extends NetworkError {
 const clean = (node: string) => node.replace(/\/$/, '');
 
 async function getText(url: string, signal?: AbortSignal): Promise<string | null> {
-  const res = await fetch(url, { headers: { accept: 'text/plain' }, signal });
+  /* GETs are idempotent, so one transport-only retry is safe. Under a long
+     high-concurrency soak Windows can transiently exhaust a local socket and
+     make fetch throw ENOBUFS before any request exists. Writes deliberately do
+     not share this path: their acceptance can be ambiguous and they must never
+     be replayed automatically. */
+  let res: Response | undefined;
+  let transportError: unknown;
+  for (let attempt = 0; attempt < 2; attempt += 1) {
+    try {
+      res = await fetch(url, { headers: { accept: 'text/plain' }, signal });
+      break;
+    } catch (error) {
+      if ((error as { name?: string })?.name === 'AbortError' || signal?.aborted) throw error;
+      transportError = error;
+      if (attempt === 0) await new Promise((resolve) => setTimeout(resolve, 100));
+    }
+  }
+  if (!res) throw transportError;
   // 404 means the process has not published that key. That is a legitimate
   // "no value yet", not a failure.
   if (res.status === 404) return null;

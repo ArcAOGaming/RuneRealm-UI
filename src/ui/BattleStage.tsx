@@ -40,6 +40,11 @@ export function BattleStage(props: {
    * in it.
    */
   free?: FreeActions;
+  /**
+   * A signed move waiting on its authoritative round. The stage may charge a
+   * reversible tell, but it must not swing or touch vitals until turns arrive.
+   */
+  anticipatingMove?: string | null;
   /** Fires once the last round has finished PLAYING, not when it resolved. */
   onSettled?: () => void;
   /** Fires the instant a blow connects, for the page's own reaction to it. */

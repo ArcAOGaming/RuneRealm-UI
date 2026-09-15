@@ -434,6 +434,16 @@ function withActiveCompanion(player: Player | null): Player | null {
 const readAuthorityPlayer = async (address: string, opts: ReadOpts = {}) =>
   withActiveCompanion(await readGameJSON<Player>(`player-${address}`, opts));
 
+/** One monolithic battle, addressed rather than whichever battle moved last. */
+export const readBattle = (battleId: string, opts: ReadOpts = {}) =>
+  readGameJSON<Battle>(`battle-op-${battleId}`, opts);
+
+async function hydrateMonolithPlayer(player: Player, signal?: AbortSignal): Promise<Player> {
+  if (player.battle || player.battleFleet || !player.activeBattleId) return player;
+  const battle = await readBattle(player.activeBattleId, { signal }).catch(() => null);
+  return battle?.id === player.activeBattleId ? { ...player, battle } : player;
+}
+
 async function hydrateFleetPlayer(player: Player, signal?: AbortSignal): Promise<Player> {
   if (!player.battleFleet) {
     clearFleetRoutes(player.address);
@@ -483,7 +493,8 @@ async function hydrateFleetPlayer(player: Player, signal?: AbortSignal): Promise
 
 export const readPlayer = async (address: string, opts: ReadOpts = {}) => {
   const player = await readAuthorityPlayer(address, opts);
-  return player ? hydrateFleetPlayer(player, opts.signal) : null;
+  if (!player) return null;
+  return hydrateFleetPlayer(await hydrateMonolithPlayer(player, opts.signal), opts.signal);
 };
 
 /** Whether this deployment admits new wallets without an Eternal Pass. */
@@ -495,7 +506,6 @@ export const readAccess = (opts: ReadOpts = {}) => LEGACY_ADMIN_PROCESSES.has(GA
 export const readFactions = (opts: ReadOpts = {}) => readJSON<Faction[]>('factions', opts);
 export const readLeaderboard = (opts: ReadOpts = {}) =>
   readGameJSON<LeaderboardRow[]>('leaderboard', opts);
-export const readBattle = (opts: ReadOpts = {}) => readGameJSON<Battle>('battle', opts);
 /** Immutable fleet routes published by the game authority. */
 export const readBattleFleet = () => readJSON<BattleFleetConfig>('battlefleet');
 
@@ -663,9 +673,8 @@ export async function readPlayerCount(): Promise<number> {
  * write, so using it to answer "what do I own" put a wallet prompt in front of
  * merely looking at the game. `readPlayer` answers the same question for free.
  *
- * Kept because it is the only read that is authoritative as of *now* rather
- * than as of the last message that touched the wallet — worth having if a
- * screen ever needs to be certain it is not a scheduler-head behind.
+ * Kept for contract harnesses and explicit diagnostics. The browser bootstrap
+ * and refresh paths must use `readPlayer`; viewing an account never signs.
  */
 export const login = () => write<Player>({ Action: 'User.Login' });
 
@@ -972,11 +981,24 @@ export async function startBotBattle(difficulty = 1): Promise<Player> {
  * field holding the process id, and tag names become HTTP headers, so a tag
  * called `Target` is ambiguous by the time the process reads it.
  */
+/** Post a fixed-stake manual challenge. Manual opponents never affect Elo. */
 export const challenge = (target: string | 'OPEN' = 'OPEN') =>
   write<Player>({ Action: 'Battle.Challenge', Opponent: target });
 
 export const acceptChallenge = (battleId: string) =>
   write<Player>({ Action: 'Battle.Accept', BattleId: battleId });
+
+/** Join the fixed-stake rated queue, or atomically start the fairest waiting match. */
+export const findRatedMatch = () =>
+  write<Player>({ Action: 'Battle.Matchmake' });
+
+/** Cancel only a still-waiting rated search; never forfeits a match that won the race. */
+export const cancelRatedMatch = () =>
+  write<Player>({ Action: 'Battle.CancelMatchmaking' });
+
+/** Withdraw only this still-pending manual challenge; never forfeits an accepted duel. */
+export const withdrawChallenge = (battleId: string) =>
+  write<Player>({ Action: 'Battle.WithdrawChallenge', BattleId: battleId });
 
 /**
  * One signed message is one full round.
@@ -1269,12 +1291,12 @@ export const readMarketStats = (opts: ReadOpts = {}) =>
 // Gold goods economy --------------------------------------------------------
 
 /**
- * Exact ledgers, Gold order book, finite NPC desks and public policy state.
+ * Exact ledgers, finite NPC desks and public policy state.
  *
  * TWO KEYS, ONE OBJECT. The process publishes `economy` (the flow half:
  * ledgers, loot boxes, Gold, emission policy, invariants) and `economybook`
- * (the orderbook half: ladders, candles, desks, resting orders, the fill ring,
- * the market registry). They were one key, and the split is why a `Monster.Feed`
+ * (the market half: ladders, candles, a compact tape, desks and the registry).
+ * They were one key, and the split is why a `Monster.Feed`
  * no longer rebuilds seven price ladders and every desk quote in order to say a
  * berry was eaten — see `EconomyEngine.flowView` in `economy.lua`.
  *
@@ -1431,7 +1453,7 @@ export function ownOrders(
   if (player?.openOrders) return player.openOrders;
   if (!economy || !address) return [];
   const now = Date.now();
-  return economy.orders
+  return (economy.orders ?? [])
     .filter((order) => order.account === address && order.expiresAt > now)
     .slice()
     .sort((a, b) => b.createdAt - a.createdAt)
@@ -1474,7 +1496,7 @@ export function ownFills(
 ): OwnFill[] {
   if (player?.recentFills) return player.recentFills.slice(0, OWN_FILL_LIMIT);
   if (!economy || !address) return [];
-  return economy.fills
+  return (economy.fills ?? [])
     .filter((fill) => fill.buyer === address || fill.seller === address)
     .slice()
     .sort((a, b) => b.filledAt - a.filledAt)
@@ -1749,6 +1771,7 @@ function legacySnapshot(exported: LegacyAdminExport): AdminSnapshot {
       lootboxes: Array.isArray(player.lootboxes) ? player.lootboxes : [],
       wins: player.wins ?? 0,
       losses: player.losses ?? 0,
+      rating: player.rating ?? 1000,
       questsCompleted: player.questsCompleted ?? 0,
       battlesRemaining: player.battlesRemaining ?? 0,
       activeBattleId: player.activeBattleId,

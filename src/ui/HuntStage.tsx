@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import BASE_URL from '../assets/BASE.png?url';
+import BASE_URL from '../assets/character/base.png?url';
 import { Monster } from '../lib/types';
 import { HuntScene, HUNT_WORLD } from '../game/HuntScene';
 import { mountGame, Mounted } from '../game/boot';

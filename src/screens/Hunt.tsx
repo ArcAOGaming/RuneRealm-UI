@@ -16,7 +16,6 @@ import { useAether } from '../ui/aetherContext';
 import { Button, Panel, Spinner, cx } from '../ui/primitives';
 import { portrait } from '../ui/art';
 import { Map, Rune, Shield, Sparkle, X } from '../ui/icons';
-import { useToast } from '../ui/toastContext';
 import { useTourSteps, type TourStep } from '../ui/tourContext';
 import { SceneWipe, useSceneWipe } from '../ui/SceneWipe';
 import { BindingPhase, STRIKE_MS } from '../gfx/bindingPhase';
@@ -44,10 +43,6 @@ const FALLBACK_HUNT: HuntTuning = {
     runeScale: 220, runeHalf: 7, levelStep: 3,
   },
 };
-
-function errorMessage(error: unknown) {
-  return error instanceof Error ? error.message : String(error);
-}
 
 /**
  * The hunt's walkthrough.
@@ -90,10 +85,11 @@ const HUNT_TOUR: TourStep[] = [
 
 export default function Hunt() {
   useTourSteps('hunt', HUNT_TOUR);
-  const { player, loadingPlayer, catalog, refresh } = useGame();
+  const {
+    player, loadingPlayer, catalog, refresh, run: transact, writePhase,
+  } = useGame();
   const route = player?.hunt;
   const companion = route && (player?.monsters?.[route.monsterId] ?? player?.monster);
-  const toast = useToast();
   const navigate = useNavigate();
   const [run, setRun] = useState<HuntRun | null>(null);
   const [searching, setSearching] = useState(false);
@@ -266,42 +262,33 @@ export default function Hunt() {
     if (!route || searching || run?.status !== 'roaming') return;
     setSearching(true);
     setEncounterReady(false);
-    try {
-      const next = await huntApi.search(route);
-      setRun(next);
-    } catch (error) {
-      toast.error(errorMessage(error));
+    const next = await transact('hunt:search', () => huntApi.search(route));
+    if (next) setRun(next);
+    else {
       setSearchFailed((n) => n + 1);
-    } finally {
-      setSearching(false);
     }
-  }, [route, run?.status, searching, toast]);
+    setSearching(false);
+  }, [route, run?.status, searching, transact]);
 
   const endHunt = useCallback(async () => {
     if (!route || ending) return;
     setEnding(true);
-    try {
-      await huntApi.end(route);
+    const ended = await transact('hunt:end', () => huntApi.end(route));
+    if (ended) {
       await refresh();
       navigate('/companion', { replace: true });
-    } catch (error) {
-      toast.error(errorMessage(error));
-      setEnding(false);
     }
-  }, [ending, navigate, refresh, route, toast]);
+    setEnding(false);
+  }, [ending, navigate, refresh, route, transact]);
 
   const retryOpen = useCallback(async () => {
     if (!route || retrying) return;
     setRetrying('opening');
-    try {
-      await gameApi.beginHunt(route.monsterId);
-      toast.success('The trail is opening again.');
-    } catch (error) {
-      toast.error(errorMessage(error));
-    } finally {
-      setRetrying(null);
-    }
-  }, [retrying, route, toast]);
+    await transact(
+      'hunt:reopen', () => gameApi.beginHunt(route.monsterId), 'The trail is opening again.',
+    );
+    setRetrying(null);
+  }, [retrying, route, transact]);
 
 
   if (loadingPlayer && !player) {
@@ -375,7 +362,7 @@ export default function Hunt() {
               </div>
               <p className="mt-1.5 text-[11px] text-muted">WASD, arrows, or the field pad</p>
             </div>
-            {searching && (
+            {searching && writePhase('hunt:search') === 'settling' && (
               <div className="absolute inset-0 grid place-items-center bg-void/30 backdrop-blur-[1px]">
                 <div className="flex items-center gap-2 rounded-[3px] border border-element/30 bg-void/85 px-4 py-3 text-sm">
                   <Spinner className="h-4 w-4 text-element" /> Reading the tracks…
@@ -483,8 +470,7 @@ function HuntBattle({
   onRun: (run: HuntRun) => void;
   onSettled: () => void;
 }) {
-  const { tuning, catalog } = useGame();
-  const toast = useToast();
+  const { tuning, catalog, run: transact, writePhase } = useGame();
   const [attacking, setAttacking] = useState<string | null>(null);
   const battle = run.battle!;
   const me = battle.challenger;
@@ -501,17 +487,16 @@ function HuntBattle({
 
   const attack = async (name: string) => {
     setAttacking(name);
-    try {
-      // The round is sent so a click made for this round cannot land on the
-      // next one, exactly as the arena does.
-      onRun(await huntApi.attack(route, name, battle.round));
-    } catch (error) {
+    const key = `hunt:attack:${name}`;
+    // The round is sent so a click made for this round cannot land on the
+    // next one, exactly as the arena does.
+    const next = await transact(key, () => huntApi.attack(route, name, battle.round));
+    if (next) onRun(next);
+    else {
       const latest = await huntApi.readHunt(route).catch(() => null);
       if (latest) onRun(latest);
-      toast.error(errorMessage(error));
-    } finally {
-      setAttacking(null);
     }
+    setAttacking(null);
   };
 
   return (
@@ -522,6 +507,8 @@ function HuntBattle({
       >
         <BattleStage
           battle={battle} me={me} them={them} fill
+          anticipatingMove={attacking && writePhase(`hunt:attack:${attacking}`) === 'settling'
+            ? attacking : null}
           // Same fight, same free pair, same place: hunt runs the same
           // `battle.lua` and mounts the same stage.
           free={catalog?.freeActions ? {
@@ -585,8 +572,7 @@ export function CaptureCeremony({
   onRun: (run: HuntRun) => void;
   onFinish: (receipt: HuntCaptureReceipt) => void;
 }) {
-  const { player } = useGame();
-  const toast = useToast();
+  const { player, run: transact, transaction } = useGame();
   const route = player!.hunt!;
   const held = player!.inventory.rune ?? 0;
   const max = Math.max(tuning.capture.minRuneBid, Math.min(held, tuning.capture.maxRuneBid));
@@ -624,29 +610,34 @@ export function CaptureCeremony({
     return () => window.clearTimeout(timer);
   }, [receipt]);
 
-  const committed = busy === 'capture' || settling || !!receipt;
+  const captureState = transaction('hunt:capture');
+  const committed = captureState?.stage === 'settling'
+    || captureState?.stage === 'confirmed' || settling || !!receipt;
   const phase: BindingPhase = receipt
     ? (landed ? (receipt.success ? 'bound' : 'broken') : 'strike')
     : committed ? 'charging' : 'idle';
 
   const capture = async () => {
     setBusy('capture');
-    try { onRun(await huntApi.capture(route, runes)); }
-    catch (error) { toast.error(errorMessage(error)); setBusy(null); }
+    const next = await transact('hunt:capture', () => huntApi.capture(route, runes));
+    if (next) onRun(next);
+    setBusy(null);
   };
   const decline = async () => {
     setBusy('decline');
-    try { onRun(await huntApi.declineCapture(route)); }
-    catch (error) { toast.error(errorMessage(error)); setBusy(null); }
+    const next = await transact('hunt:decline', () => huntApi.declineCapture(route));
+    if (next) onRun(next);
+    setBusy(null);
   };
   const retry = async () => {
     setRetrying(true);
-    try { onRun(await huntApi.retrySettlement(route)); }
-    catch (error) {
+    const next = await transact('hunt:retry-settlement', () => huntApi.retrySettlement(route));
+    if (next) onRun(next);
+    else {
       const latest = await huntApi.readHunt(route).catch(() => null);
       if (latest) onRun(latest);
-      toast.error(errorMessage(error));
-    } finally { setRetrying(false); }
+    }
+    setRetrying(false);
   };
 
   // The bid the field is showing. Once the item is signed it is the bid that

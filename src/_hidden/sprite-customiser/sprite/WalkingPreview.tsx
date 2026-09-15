@@ -39,13 +39,13 @@ class WalkingScene extends Phaser.Scene {
 
   preload() {
     // Load base sprite
-    this.load.spritesheet('BASE', new URL('../../assets/BASE.png', import.meta.url).href, {
+    this.load.spritesheet('BASE', new URL('../../../assets/character/base.png', import.meta.url).href, {
       frameWidth: 48,
       frameHeight: 60
     });
     
     // Load map background
-    this.load.image('map', new URL('../../assets/Map.png', import.meta.url).href);
+    this.load.image('map', new URL('../../../assets/character/map.png', import.meta.url).href);
   }
 
   create() {
@@ -253,7 +253,7 @@ class WalkingScene extends Phaser.Scene {
         if (!this.textures.exists(baseKey)) {
           try {
             await new Promise<void>((resolve, reject) => {
-              const url = new URL(`../../assets/${layerName}/${layer.style}.png`, import.meta.url).href;
+              const url = new URL(`../../../assets/character/layers/${layerName}/${layer.style}.png`, import.meta.url).href;
               
               // Add error handler
               this.load.once('loaderror', () => {

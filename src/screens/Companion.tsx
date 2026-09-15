@@ -10,7 +10,7 @@
 import { lazy, Suspense, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { Link, Navigate, useNavigate } from 'react-router-dom';
 import { useGame } from '../state/gameContext';
-import { projectFeed, projectPlay } from '../state/optimistic';
+import { projectFeed, projectPlay, projectQuest } from '../state/optimistic';
 import * as api from '../lib/game';
 import {
   ActivityReceipt, BerryItemId, ItemId, levelUpCost, Monster, Move, Player,
@@ -18,7 +18,7 @@ import {
 import { monsterIndexEntry } from '../lib/monster-index';
 import { MoveButton } from '../ui/BattleMoves';
 import {
-  Bar, Button, Panel, SectionTitle, Skeleton, Spinner, cx,
+  Bar, Button, Panel, SectionTitle, Skeleton, Spinner, TransactionHold, cx,
 } from '../ui/primitives';
 import {
   Arrow, Berry, Bolt, Clock, Gift, GLYPH_PATH, Heart, Map, Rune, Shield, Sparkle, Sword,
@@ -247,7 +247,7 @@ export default function Companion() {
 // Adoption ------------------------------------------------------------------
 
 function Adopt() {
-  const { player, factions, run, isPending } = useGame();
+  const { player, factions, run, isPending, writePhase } = useGame();
   const faction = factions?.find((f) => f.name === player?.faction);
 
   return (
@@ -283,6 +283,11 @@ function Adopt() {
         >
           Adopt your companion
         </Button>
+        {writePhase('adopt') === 'settling' && (
+          <TransactionHold className="mx-auto mt-4 max-w-sm text-left">
+            The draw is signed. The realm is choosing stats and moves.
+          </TransactionHold>
+        )}
       </Panel>
     </div>
   );
@@ -392,6 +397,7 @@ function CompanionCard({ monster, player }: { monster: Monster; player: Player }
   const [allocating, setAllocating] = useState(false);
   const [holding, setHolding] = useState(false);
   const [editingCharacter, setEditingCharacter] = useState(false);
+  const hasCharacter = Boolean(player.outfit || player.spriteTxId);
   /*
     The extended card is 1044 pixels wide. In the two-column desktop layout it
     gets about half a screen and reads perfectly; stacked on a phone it gets
@@ -534,10 +540,15 @@ function CompanionCard({ monster, player }: { monster: Monster; player: Player }
           type="button"
           data-tour="character"
           onClick={() => setEditingCharacter(true)}
-          className="ml-auto inline-flex h-11 items-center gap-1.5 rounded-[3px] px-2 text-[11px] text-faint transition-colors hover:text-muted lg:h-8"
+          className={cx(
+            'ml-auto inline-flex h-11 items-center gap-1.5 rounded-[3px] px-2 text-[11px] transition-colors lg:h-8',
+            hasCharacter
+              ? 'text-faint hover:text-muted'
+              : 'border border-element/45 bg-element/10 text-element hover:bg-element/15',
+          )}
         >
           <Sparkle className="h-3 w-3" />
-          Edit character
+          {hasCharacter ? 'Edit character' : 'Create your character'}
         </button>
       </div>
 
@@ -940,7 +951,9 @@ function Activities({
           action="Send on a quest"
           busy={isPending('quest')}
           disabled={busy || away || monster.energy < 25 || monster.happiness < 25}
-          onClick={() => run('quest', api.startQuest, 'Your companion sets out.')}
+          onClick={() => run(
+            'quest', api.startQuest, 'Your companion sets out.', projectQuest(monster),
+          )}
         />
 
         <ActivityCard
@@ -1255,7 +1268,7 @@ function InProgress({
   monster: Monster;
   onClaim: (receipt: ActivityReceipt) => void;
 }) {
-  const { run, isPending } = useGame();
+  const { run, isPending, writePhase } = useGame();
   const [now, setNow] = useState(() => Date.now());
 
   useEffect(() => {
@@ -1268,10 +1281,11 @@ function InProgress({
   const done = remaining <= 0;
   const label = monster.status.type === 'Play' ? 'Playing' : 'On a quest';
   const activityKind = monster.status.type as ActivityReceipt['kind'];
+  const claimKey = `claim:${monster.id}`;
 
   const bringHome = async () => {
     const reply = await run(
-      `claim:${monster.id}`,
+      claimKey,
       () => api.claim(monster.id),
       activityKind === 'Play' ? 'Back home, and happier for it.'
         : 'Back from the quest with loot.',
@@ -1299,13 +1313,18 @@ function InProgress({
         <Button
           variant={done ? 'primary' : 'ghost'}
           disabled={!done}
-          busy={isPending(`claim:${monster.id}`)}
+          busy={isPending(claimKey)}
           onClick={() => { void bringHome(); }}
           icon={done ? <Gift className="h-4 w-4" /> : <Clock className="h-4 w-4" />}
         >
           {done ? 'Bring them home' : countdown(remaining)}
         </Button>
       </div>
+      {writePhase(claimKey) === 'settling' && (
+        <TransactionHold className="mt-3">
+          {monster.name} is on the way home. Rewards wait for the confirmed return.
+        </TransactionHold>
+      )}
       {!done && (
         <p className="mt-3 text-[13px] text-faint">
           <span className="text-muted">{monster.name}</span>{' '}
@@ -1360,7 +1379,7 @@ const FALLBACK_MAX_PER_STAT = 5;
  * unopened envelope, not an unfinished level.
  */
 function MoveOffer({ monster, offered }: { monster: Monster; offered: string }) {
-  const { tuning, catalog, run, isPending, busy } = useGame();
+  const { tuning, catalog, run, isPending, writePhase, busy } = useGame();
   const [replacing, setReplacing] = useState<string | null>(null);
 
   const definition = useMemo(() => {
@@ -1481,12 +1500,18 @@ function MoveOffer({ monster, offered }: { monster: Monster; offered: string }) 
           Not this time
         </Button>
       </div>
+      {(writePhase('learn-move') === 'settling'
+        || writePhase('decline-move') === 'settling') && (
+        <TransactionHold className="mt-3">
+          The answer is signed. The move roster will change only when it is confirmed.
+        </TransactionHold>
+      )}
     </Panel>
   );
 }
 
 function LevelUpDialog({ monster, onClose }: { monster: Monster; onClose: () => void }) {
-  const { run, isPending, catalog } = useGame();
+  const { run, isPending, writePhase, catalog } = useGame();
   const TOTAL_POINTS = catalog?.levelUp?.points ?? FALLBACK_TOTAL_POINTS;
   const MAX_PER_STAT = catalog?.levelUp?.maxPerStat ?? FALLBACK_MAX_PER_STAT;
   const [points, setPoints] = useState({ attack: 0, defense: 0, speed: 0, health: 0 });
@@ -1571,6 +1596,12 @@ function LevelUpDialog({ monster, onClose }: { monster: Monster; onClose: () => 
             Reset
           </Button>
         </div>
+
+        {writePhase('levelup') === 'settling' && (
+          <TransactionHold className="mt-4">
+            The allocation is signed. Holding the forge before the new level is revealed.
+          </TransactionHold>
+        )}
 
       <div className="mt-5 flex justify-end gap-2">
         <Button variant="quiet" onClick={onClose}>Cancel</Button>

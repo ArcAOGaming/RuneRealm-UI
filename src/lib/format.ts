@@ -73,6 +73,7 @@ export function arenaTerms(catalog: Catalog | null | undefined) {
   const winGold = Math.max(0, Math.round(battle?.winGold ?? 5));
   const battles = Math.max(1, Math.round(arena?.battlesPerSession ?? SESSION_BATTLES));
   const stake = Math.max(0, Math.round(arena?.stake ?? 0));
+  const sessionStake = stake * battles;
   return {
     energyCost: Math.max(0, Math.round(battle?.energyCost ?? 25)),
     happinessCost: Math.max(0, Math.round(battle?.happinessCost ?? 25)),
@@ -88,12 +89,32 @@ export function arenaTerms(catalog: Catalog | null | undefined) {
     /** Gold per BATTLE, into the tier's pot. 0 means this deployment is free. */
     stake,
     staked: stake > 0,
-    /** What a purse must hold to get through the door: one battle's stake. */
-    minEntry: Math.max(0, Math.round(arena?.minEntry ?? 0)),
+    /** What a purse must hold to get through the door: every battle's stake. */
+    minEntry: Math.max(sessionStake, Math.round(arena?.minEntry ?? 0)),
     /** A whole session's stakes, if every battle is used. */
-    sessionStake: stake * battles,
+    sessionStake,
     drainNum: Math.max(1, Math.round(arena?.drainNum ?? 1)),
     drainDen: Math.max(1, Math.round(arena?.drainDen ?? 3)),
+    ratingStart: Math.max(0, Math.round(arena?.ratingStart ?? 1000)),
+    ratingK: Math.max(0, Math.round(arena?.ratingK ?? 32)),
+    ratingScale: Math.max(1, Math.round(arena?.ratingScale ?? 400)),
+    ratingProvisionalGames: Math.max(0, Math.round(arena?.ratingProvisionalGames ?? 10)),
+    ratingProvisionalK: Math.max(0, Math.round(arena?.ratingProvisionalK ?? 64)),
+    matchmakingMaxWaitMs: Math.max(1, Math.round(arena?.matchmakingMaxWaitMs ?? 5 * 60 * 1000)),
+    matchmakingMaxEntries: Math.max(1, Math.round(arena?.matchmakingMaxEntries ?? 64)),
+    matchmakingBands: arena?.matchmakingBands?.length
+      ? arena.matchmakingBands.map((band) => ({
+        afterMs: Math.max(0, Math.round(band.afterMs)),
+        rating: Math.max(0, Math.round(band.rating)),
+        level: Math.max(0, Math.round(band.level)),
+      })).sort((a, b) => a.afterMs - b.afterMs)
+      : [
+        { afterMs: 0, rating: 100, level: 1 },
+        { afterMs: 60_000, rating: 150, level: 2 },
+        { afterMs: 120_000, rating: 225, level: 3 },
+        { afterMs: 180_000, rating: 325, level: 4 },
+        { afterMs: 240_000, rating: 450, level: 5 },
+      ],
     tiers: arena?.tiers?.length ? arena.tiers : FALLBACK_TIERS,
     /**
      * The Rune entry fee, if this deployment still charges one. v2 removed it:

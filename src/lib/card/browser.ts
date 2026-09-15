@@ -37,40 +37,36 @@ export type BrowserCardOptions = CardOptions & {
  * the only way to exclude them is to not ask for them.
  */
 const MODULES = {
-  // `Side Background.png` sits loose in `cards/`, not in a numbered folder,
-  // so the per-folder globs below all miss it — which failed the extended card
-  // with "card asset not bundled" and nothing else.
-  ...import.meta.glob('../../assets/Monsters/cards/*.png', {
+  // The finalized side panel sits at the cards root, while every other family
+  // has one narrow production directory.
+  ...import.meta.glob('../../assets/cards/*.png', {
     eager: true, query: '?url', import: 'default',
   }),
-  ...import.meta.glob('../../assets/Monsters/cards/1-backgrounds/Background *.png', {
+  ...import.meta.glob('../../assets/cards/backgrounds/*.png', {
     eager: true, query: '?url', import: 'default',
   }),
-  ...import.meta.glob('../../assets/Monsters/cards/2-cards-frame/*.png', {
+  ...import.meta.glob('../../assets/cards/shells/*.png', {
     eager: true, query: '?url', import: 'default',
   }),
-  ...import.meta.glob('../../assets/Monsters/cards/3-elements-type/*.png', {
+  ...import.meta.glob('../../assets/cards/seals/*.png', {
     eager: true, query: '?url', import: 'default',
   }),
-  ...import.meta.glob('../../assets/Monsters/cards/4-levels/*.png', {
+  ...import.meta.glob('../../assets/cards/move-icons/*.png', {
     eager: true, query: '?url', import: 'default',
   }),
-  ...import.meta.glob('../../assets/Monsters/cards/5-moves/*/*.png', {
-    eager: true, query: '?url', import: 'default',
-  }),
-  ...import.meta.glob('../../assets/Monsters/portraits/doge/level-1/*.png', {
+  ...import.meta.glob('../../assets/cards/portraits/*.png', {
     eager: true, query: '?url', import: 'default',
   }),
   ...import.meta.glob('../../assets/monster-index/*/portrait.png', {
     eager: true, query: '?url', import: 'default',
   }),
   // The satchel icons, for the extended card only.
-  ...import.meta.glob('../../assets/art/{berry,gem,scroll}*.png', {
+  ...import.meta.glob('../../assets/items/{berry,scroll}*.png', {
     eager: true, query: '?url', import: 'default',
   }),
 } as Record<string, string>;
 
-/** '../../assets/Monsters/cards/...' -> 'Monsters/cards/...' */
+/** '../../assets/cards/...' -> 'cards/...' */
 const URLS: Record<string, string> = Object.fromEntries(
   Object.entries(MODULES).map(([key, url]) => [key.replace('../../assets/', ''), url]),
 );
@@ -154,8 +150,7 @@ function paint(
  * land in the same cache `image()` reads, so the real draw finds them there.
  *
  * The move badges are not preloaded: which three a companion rolls is not
- * known until it exists, and the forty plates they could come from are far
- * more than this is worth. The five full-card plates are the weight.
+ * known until it exists. The four full-card plates are the weight.
  */
 export async function preloadCard(
   elementType: Monster['elementType'], opts?: BrowserCardOptions,
@@ -196,11 +191,12 @@ export type CardAssembly = {
 /**
  * Paint the real card once, plus transparent canvases for its assembly reveal.
  *
- * The first five operations are the five registered full-card plates emitted
- * by `cardPlan`: scenery, portrait, frame, element and level. Everything after
- * them is live record ink (name, stats and moves). Replaying these canvases in
- * this order therefore lands on the same pixels as `drawCard`; the animation
- * never maintains a second, approximate card layout of its own.
+ * The opening operations are four committed plates emitted by `cardPlan`:
+ * scenery, portrait, finalized shell, and finalized seals. The next operation
+ * is the live level number; everything after it is the remaining record ink.
+ * Replaying these
+ * canvases in this order therefore lands on the same pixels as `drawCard`; the
+ * animation never maintains a second, approximate card layout of its own.
  */
 export async function drawCardAssembly(
   monster: Partial<Monster>, opts?: BrowserCardOptions,
