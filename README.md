@@ -31,6 +31,8 @@ The first split freezes two temporary compatibility seams:
 Those files are not the long-term canonical copies. The super-repository pins
 the extraction candidates and will switch this app only after parity tests pass.
 Deployment also remains orchestrated by the super-repository during this phase.
+The asset-generation Studio is intentionally not mounted in this standalone
+clone because its local authoring server belongs to that orchestration repo.
 
 Configuration is browser-only and uses the `VITE_*` variables documented in
 `.env.example`. Never put a private key in a `VITE_*` variable.

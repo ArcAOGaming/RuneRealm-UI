@@ -30,9 +30,8 @@ import SwarmMonitor from './admin/SwarmMonitor';
 import { SWARM_ADDRESSES, SWARM_WALLETS } from '../data/swarm-wallets';
 import { economyPreview } from '../lib/economy-preview';
 
-type Tab = 'overview' | 'economy' | 'swarm' | 'players' | 'operations' | 'tracking' | 'monster-index' | 'visualize' | 'create';
+type Tab = 'overview' | 'economy' | 'swarm' | 'players' | 'operations' | 'tracking' | 'monster-index';
 
-const Studio = lazy(() => import('./admin/Studio'));
 const MonsterIndexAdmin = lazy(() => import('./admin/MonsterIndex'));
 
 const ITEMS: ItemId[] = [
@@ -115,17 +114,7 @@ export default function Admin() {
   const [snapshot, setSnapshot] = useState<AdminSnapshot | null>(null);
   const [error, setError] = useState<unknown>(null);
   const [loading, setLoading] = useState(true);
-  // The local studio never needs process authority. Starting there in dev
-  // means opening /admin to browse art or balance combat asks for no wallet
-  // signature at all; choosing a live-process tab performs the owner read.
-  const [tab, setTab] = useState<Tab>(() => {
-    if (import.meta.env.DEV) {
-      const saved = window.sessionStorage.getItem('runerealm-admin-tab');
-      if (saved === 'monster-index' || saved === 'visualize' || saved === 'create') return saved;
-      return 'visualize';
-    }
-    return 'overview';
-  });
+  const [tab, setTab] = useState<Tab>('overview');
   const [selected, setSelected] = useState<string | null>(null);
   const isSwarmPreview = import.meta.env.DEV
     && new URLSearchParams(window.location.search).has('swarm-preview');
@@ -134,13 +123,7 @@ export default function Admin() {
   const swarmPreview = useMemo(() => isSwarmPreview ? makeSwarmPreviewSnapshot() : null, [isSwarmPreview]);
 
   const isOwner = address === GAME_OWNER;
-  const isLocalStudio = import.meta.env.DEV && (tab === 'monster-index' || tab === 'visualize' || tab === 'create');
-
   const load = useCallback(async (force = false) => {
-    if (import.meta.env.DEV && (tab === 'monster-index' || tab === 'visualize' || tab === 'create')) {
-      setLoading(false);
-      return;
-    }
     if (!address || address !== GAME_OWNER) {
       setSnapshot(null);
       setError(null);
@@ -169,11 +152,6 @@ export default function Admin() {
   }, [address, tab]);
 
   useEffect(() => { void load(); }, [load]);
-  useEffect(() => {
-    if (import.meta.env.DEV && (tab === 'monster-index' || tab === 'visualize' || tab === 'create')) {
-      window.sessionStorage.setItem('runerealm-admin-tab', tab);
-    }
-  }, [tab]);
 
   if (swarmPreview) {
     return (
@@ -192,17 +170,6 @@ export default function Admin() {
 
   if (isEconomyPreview) {
     return <div className="admin-console animate-rise space-y-4" data-element="arcane"><CommandHeader processId={processId} node={node} loading={false} isOwner onRefresh={async () => undefined} /><EconomyAdmin economy={economyPreview()} onChanged={async () => undefined} /></div>;
-  }
-
-  if (isLocalStudio) {
-    return (
-      <div className="admin-console animate-rise space-y-4" data-element="arcane">
-        <LocalStudioTabs tab={tab as 'monster-index' | 'visualize' | 'create'} onChange={setTab} canOpenProcess={Boolean(address)} />
-        <Suspense fallback={<Panel className="p-6"><Skeleton className="h-72 w-full" /></Panel>}>
-          {tab === 'monster-index' ? <MonsterIndexAdmin /> : <Studio mode={tab as 'visualize' | 'create'} />}
-        </Suspense>
-      </div>
-    );
   }
 
   if (!address) {
@@ -251,35 +218,9 @@ export default function Admin() {
               <MonsterIndexAdmin />
             </Suspense>
           )}
-          {(tab === 'visualize' || tab === 'create') && import.meta.env.DEV && (
-            <Suspense fallback={<Panel className="p-6"><Skeleton className="h-72 w-full" /></Panel>}>
-              <Studio mode={tab} />
-            </Suspense>
-          )}
         </>
       ) : null}
     </div>
-  );
-}
-
-function LocalStudioTabs({ tab, onChange, canOpenProcess }: {
-  tab: 'monster-index' | 'visualize' | 'create'; onChange: (tab: Tab) => void; canOpenProcess: boolean;
-}) {
-  const tabs: Array<{ id: Tab; label: string; note: string }> = [
-    { id: 'monster-index', label: 'Monster Index', note: 'numbered entries' },
-    { id: 'visualize', label: 'Visualize', note: 'assets + balance' },
-    { id: 'create', label: 'Create', note: 'generate + approve' },
-  ];
-  if (canOpenProcess) tabs.unshift({ id: 'overview', label: 'Process', note: 'owner controls' });
-  return (
-    <nav className="admin-tabs" aria-label="Local admin studio sections">
-      {tabs.map((item) => (
-        <button key={item.id} className={cx('admin-tab', tab === item.id && 'is-active')}
-          aria-current={tab === item.id ? 'page' : undefined} onClick={() => onChange(item.id)}>
-          <span>{item.label}</span><small>{item.note}</small>
-        </button>
-      ))}
-    </nav>
   );
 }
 
@@ -344,10 +285,6 @@ function CommandTabs({ tab, onChange, snapshot }: {
     { id: 'tracking', label: 'Tracking', note: `${Object.keys(snapshot.metrics.daily).length} days` },
     { id: 'monster-index', label: 'Monster Index', note: 'entries + Hunt' },
   ];
-  if (import.meta.env.DEV) tabs.push(
-    { id: 'visualize', label: 'Visualize', note: 'assets + balance' },
-    { id: 'create', label: 'Create', note: 'generate + approve' },
-  );
   return (
     <nav className="admin-tabs" aria-label="Admin console sections">
       {tabs.map((item) => (

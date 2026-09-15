@@ -6,22 +6,18 @@ is **Monster Index**, its Admin tab is **Monster Index**, and a form is displaye
 
 ## Repository boundary
 
-The repositories stay separate:
+The repositories stay separate. In this frontend repository:
 
-- `RuneRealm-Assets/monster-index/catalog.json` is the authoring source of truth for
-  entry numbers, evolution lines, artist plans, availability, and asset slots.
-- `RuneRealm-Assets/monster-index/entries/` holds approved source art and generated
-  per-entry atlases. Legacy art is copied into an entry and never removed from
-  its original location.
-- RuneRealm-UI owns gameplay, the HyperBEAM contract, Phaser consumers, and the
-  Admin workspace.
-- `npm run monster-index:sync` validates and vendors a deterministic runtime
-  snapshot into `src/generated/`, `src/assets/monster-index/`, and
-  `backend/native/monster-index.generated.lua`.
-- `npm run monster-index:check` fails when the two repositories have drifted. Every
-  contract deployment command runs it before creating anything.
+- `ArcAOGaming/RuneRealm-Assets` remains the authoring source of truth for entry
+  numbers, evolution lines, artist plans, availability, source art, and
+  generated atlases. The super-repository pins the exact authoring revision.
+- RuneRealm-UI owns only the browser consumers and the checked-in runtime
+  snapshot under `src/generated/` and `src/assets/monster-index/`.
+- Syncing, approving, or regenerating Monster Index art is not available from
+  this standalone clone. That workflow stays in the super-repository, which
+  updates this repository only after its authoring checks pass.
 
-The Permaweb workflow intentionally checks out no art submodules. It builds
+The frontend workflow intentionally checks out no art submodules. It builds
 from the committed generated snapshot, which is why generated runtime files
 belong in RuneRealm-UI even though authored art does not.
 

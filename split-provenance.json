@@ -1,0 +1,30 @@
+{
+  "schemaVersion": 1,
+  "sourceRepositoryAtSplit": "ArcAOGaming/RuneRealm-UI",
+  "canonicalSourceRepository": "ArcAOGaming/rune-super-repo",
+  "sourceCommit": "e1dc6602f7603d6ca86f67ad1d30bd6fc5979630",
+  "filteredCheckpointCommit": "39365e33abcefe403a5841e4f9ca9dbd9488aba2",
+  "filterPaths": [
+    "src",
+    "public",
+    "index.html",
+    "sandbox.html",
+    "vite.config.ts",
+    "tsconfig.json",
+    "tsconfig.node.json",
+    "postcss.config.js",
+    "tailwind.config.js",
+    "package.json",
+    "package-lock.json",
+    ".npmrc",
+    ".env.example",
+    ".gitignore",
+    ".github/workflows/deploy.yml",
+    "AGENTS.md",
+    "CLAUDE.md",
+    "README.md",
+    "DESIGN.md",
+    "LORE.md",
+    "MONSTER_INDEX.md"
+  ]
+}
