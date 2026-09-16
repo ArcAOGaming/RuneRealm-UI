@@ -2749,13 +2749,13 @@ function VenueFloor({ mode, prefill }: {
 }
 
 function ExternalExchangeTools() {
-  const { address, player, connect, run, isPending } = useGame();
+  const { address, player, connect, run, isPending, refresh: refreshPlayer } = useGame();
   const [amount, setAmount] = useState('');
   const [walletRune, setWalletRune] = useState('0');
   const [quoteInfo, setQuoteInfo] = useState<TokenInfo | null>(null);
   const [error, setError] = useState('');
 
-  const refresh = useCallback(async () => {
+  const refreshTokens = useCallback(async () => {
     const [info, balance] = await Promise.all([
       readTokenInfo(QUOTE_PROCESS).catch(() => null),
       address ? readTokenBalance(RUNE_PROCESS, address).catch(() => '0') : Promise.resolve('0'),
@@ -2764,7 +2764,7 @@ function ExternalExchangeTools() {
     setWalletRune(balance);
   }, [address]);
 
-  useEffect(() => { void refresh(); }, [refresh]);
+  useEffect(() => { void refreshTokens(); }, [refreshTokens]);
 
   const toWallet = async () => {
     if (!address) { await connect(); return; }
@@ -2779,7 +2779,7 @@ function ExternalExchangeTools() {
       () => game.withdrawRune(value),
       `${formatInteger(value)} Rune is moving to your wallet.`,
     );
-    if (result) { setAmount(''); await refresh(); }
+    if (result) { setAmount(''); await refreshTokens(); }
   };
 
   const intoGame = async () => {
@@ -2796,14 +2796,17 @@ function ExternalExchangeTools() {
       () => depositRuneToGame(atoms),
       `${amount} Rune burned into your game balance.`,
     );
-    if (result) { setAmount(''); await refresh(); }
+    if (result) {
+      setAmount('');
+      await Promise.all([refreshTokens(), refreshPlayer()]);
+    }
   };
 
   const claimQuote = async () => {
     if (!address) { await connect(); return; }
     setError('');
     const result = await run('quote-faucet', claimQuoteFaucet, 'Test quote tokens claimed.');
-    if (result) await refresh();
+    if (result) await refreshTokens();
   };
 
   const quoteDenomination = Number(quoteInfo?.Denomination ?? 6);
