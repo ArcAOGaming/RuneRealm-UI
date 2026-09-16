@@ -8,7 +8,11 @@ import { isAbort } from '../state/usePoll';
 import * as game from '../lib/game';
 import { send as sendAo } from '../lib/hyperbeam';
 import {
-  EXTERNAL_VENUE_PROCESS, INTERNAL_VENUE_PROCESS, VenueBook, VenueMarketBook,
+  QUOTE_PROCESS, RUNE_PROCESS, type TokenInfo, claimQuoteFaucet, depositRuneToGame,
+  formatUnits, parseUnits, readTokenBalance, readTokenInfo,
+} from '../lib/marketplace';
+import {
+  EXTERNAL_VENUE_PROCESS, INTERNAL_VENUE_PROCESS, VENUE_NODE, VenueBook, VenueMarketBook,
   VenueTrade, internalVenueConfigured, readVenueBook,
 } from '../lib/venue';
 import {
@@ -2682,6 +2686,7 @@ function VenueFloor({ mode, prefill }: {
   prefill?: FloorPrefill;
 }) {
   const { address, player, connect, run: runGame, node } = useGame();
+  const venueNode = VENUE_NODE || node;
   const process = mode === 'internal' ? INTERNAL_VENUE_PROCESS : EXTERNAL_VENUE_PROCESS;
   const outsideBalances = useMemo<Record<string, string | number> | undefined>(() => {
     if (mode !== 'internal') return undefined;
@@ -2701,7 +2706,7 @@ function VenueFloor({ mode, prefill }: {
     },
     send: (target, tags, options = {}) => sendAo(tags, {
       process: target,
-      node,
+      node: venueNode,
       data: options.data,
       requiredOutbox: options.requiredOutbox,
     }),
@@ -2722,13 +2727,13 @@ function VenueFloor({ mode, prefill }: {
           return game.sendToVenue(assetId, amount);
         }
       : undefined,
-  }), [address, connect, mode, node, outsideBalances, runGame]);
+  }), [address, connect, mode, outsideBalances, runGame, venueNode]);
 
   return (
     <div className={`market-goods ${mode === 'external' ? 'market-external' : ''}`}>
       <div data-tour="market-book" className="min-h-0 flex-1">
         <OrderbookTerminal
-          node={node}
+          node={venueNode}
           process={process}
           embedded
           host={host}
@@ -2738,7 +2743,105 @@ function VenueFloor({ mode, prefill }: {
           initialQuantity={prefill ? String(prefill.count) : undefined}
         />
       </div>
+      {mode === 'external' && <ExternalExchangeTools />}
     </div>
+  );
+}
+
+function ExternalExchangeTools() {
+  const { address, player, connect, run, isPending } = useGame();
+  const [amount, setAmount] = useState('');
+  const [walletRune, setWalletRune] = useState('0');
+  const [quoteInfo, setQuoteInfo] = useState<TokenInfo | null>(null);
+  const [error, setError] = useState('');
+
+  const refresh = useCallback(async () => {
+    const [info, balance] = await Promise.all([
+      readTokenInfo(QUOTE_PROCESS).catch(() => null),
+      address ? readTokenBalance(RUNE_PROCESS, address).catch(() => '0') : Promise.resolve('0'),
+    ]);
+    setQuoteInfo(info);
+    setWalletRune(balance);
+  }, [address]);
+
+  useEffect(() => { void refresh(); }, [refresh]);
+
+  const toWallet = async () => {
+    if (!address) { await connect(); return; }
+    const value = Math.floor(Number(amount));
+    if (!Number.isSafeInteger(value) || value <= 0) {
+      setError('Enter a positive whole Rune amount.');
+      return;
+    }
+    setError('');
+    const result = await run(
+      'rune-bridge-out',
+      () => game.withdrawRune(value),
+      `${formatInteger(value)} Rune is moving to your wallet.`,
+    );
+    if (result) { setAmount(''); await refresh(); }
+  };
+
+  const intoGame = async () => {
+    if (!address) { await connect(); return; }
+    let atoms: string;
+    try { atoms = parseUnits(amount, 6); }
+    catch (reason) {
+      setError(reason instanceof Error ? reason.message : String(reason));
+      return;
+    }
+    setError('');
+    const result = await run(
+      'rune-bridge-in',
+      () => depositRuneToGame(atoms),
+      `${amount} Rune burned into your game balance.`,
+    );
+    if (result) { setAmount(''); await refresh(); }
+  };
+
+  const claimQuote = async () => {
+    if (!address) { await connect(); return; }
+    setError('');
+    const result = await run('quote-faucet', claimQuoteFaucet, 'Test quote tokens claimed.');
+    if (result) await refresh();
+  };
+
+  const quoteDenomination = Number(quoteInfo?.Denomination ?? 6);
+  const faucetAmount = quoteInfo?.FaucetAmount
+    ? formatUnits(quoteInfo.FaucetAmount, quoteDenomination, 4)
+    : '';
+
+  return (
+    <Panel className="mt-3 grid gap-4 p-4 md:grid-cols-[1fr_auto] md:items-end">
+      <div>
+        <div className="eyebrow">Rune Realm bridge</div>
+        <p className="mt-1 text-xs leading-relaxed text-faint">
+          Game {formatInteger(player?.inventory?.rune ?? 0)} Rune &middot; wallet {formatUnits(walletRune, 6, 4)} Rune.
+          Moving Rune mints or burns; it is not a trade.
+        </p>
+        <input
+          className={cx(inputClass, 'mt-2 max-w-xs')}
+          inputMode="decimal"
+          value={amount}
+          placeholder="Rune amount"
+          onChange={(event) => setAmount(event.target.value)}
+        />
+        {error && <p className="mt-2 text-xs text-bad" role="alert">{error}</p>}
+      </div>
+      <div className="grid gap-2 sm:grid-cols-3 md:grid-cols-1 lg:grid-cols-3">
+        <Button size="sm" busy={isPending('rune-bridge-out')} onClick={() => void toWallet()}>
+          Rune to wallet
+        </Button>
+        <Button size="sm" variant="quiet" busy={isPending('rune-bridge-in')} onClick={() => void intoGame()}>
+          Rune into game
+        </Button>
+        {quoteInfo?.FaucetAmount && (
+          <Button size="sm" variant="quiet" busy={isPending('quote-faucet')} onClick={() => void claimQuote()}>
+            Claim {faucetAmount} {quoteInfo.Ticker}
+          </Button>
+        )}
+      </div>
+    </Panel>
   );
 }
 
