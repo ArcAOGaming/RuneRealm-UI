@@ -130,6 +130,7 @@ export default function Marketplace() {
 const GOLD_ITEMS: GoldMarketItemId[] = [
   'fire_berry', 'water_berry', 'air_berry', 'rock_berry', 'scroll', 'rune',
 ];
+const VENUE_GAME_ASSETS: GoldMarketItemId[] = [...GOLD_ITEMS, 'legendary_scroll'];
 
 /** Which element tints a good. Scroll and Rune keep the page's own colour. */
 const ITEM_ELEMENT: Partial<Record<GoldMarketItemId, Element>> = {
@@ -2715,16 +2716,10 @@ function VenueFloor({ mode, prefill }: {
           if (!Number.isSafeInteger(amount) || amount <= 0) {
             throw new Error('Enter a positive whole amount.');
           }
-          if (assetId !== 'gold' && !GOLD_ITEMS.includes(assetId)) {
+          if (assetId !== 'gold' && !VENUE_GAME_ASSETS.includes(assetId)) {
             throw new Error('Rune Realm does not hold that asset.');
           }
-          const result = await runGame(
-            'venue-deposit',
-            () => game.sendToVenue(assetId, amount),
-            `${amount.toLocaleString()} ${asset.name || asset.id} moved to the orderbook.`,
-          );
-          if (result === null) throw new Error('The deposit did not settle.');
-          return result;
+          return game.sendToVenue(assetId, amount);
         }
       : undefined,
   }), [address, connect, mode, node, outsideBalances, runGame]);
