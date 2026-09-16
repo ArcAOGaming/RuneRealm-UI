@@ -13,7 +13,7 @@ import { GAME_OWNER } from '../lib/hyperbeam';
 import {
   ActivityType, AdminAuditEntry, AdminBattleSummary, AdminFactionStats,
   AdminMetricDay, AdminMetrics, AdminPlayerPatch, AdminPlayerSummary,
-  AdminSnapshot, EconomyPolicyChange, EconomyView, Element, GoldMarketItemId,
+  AdminSnapshot, EconomyPolicyChange, EconomyView, GoldMarketItemId,
   GoldOrderSide, ItemId, Player,
 } from '../lib/types';
 import {
@@ -27,7 +27,6 @@ import { MonsterCard } from '../ui/MonsterCard';
 import { extractAddresses, ITEM_NAME, shortAddress } from '../lib/format';
 import { useToast } from '../ui/toastContext';
 import SwarmMonitor from './admin/SwarmMonitor';
-import { SWARM_ADDRESSES, SWARM_WALLETS } from '../data/swarm-wallets';
 import { economyPreview } from '../lib/economy-preview';
 
 type Tab = 'overview' | 'economy' | 'swarm' | 'players' | 'operations' | 'tracking' | 'monster-index';
@@ -60,55 +59,6 @@ const when = (timestamp?: number) => timestamp
   ? new Date(timestamp).toLocaleString([], { dateStyle: 'medium', timeStyle: 'short' })
   : 'Never';
 
-function makeSwarmPreviewSnapshot(): AdminSnapshot {
-  const generatedAt = Date.now();
-  const elementByFaction: Record<string, Element> = {
-    'Inferno Blades': 'fire', 'Aqua Guardians': 'water',
-    'Sky Nomads': 'air', 'Stone Titans': 'rock',
-  };
-  const states: ActivityType[] = ['Home', 'Home', 'Quest', 'Play', 'Battle'];
-  const players: AdminPlayerSummary[] = SWARM_WALLETS.map((profile, index) => {
-    const status = states[index % states.length];
-    return {
-      address: profile.address,
-      unlocked: index !== 49,
-      faction: index === 48 ? 'Stone Titans' : profile.faction,
-      name: profile.callSign,
-      element: elementByFaction[profile.faction],
-      level: 1 + (index % 9), exp: (index * 37) % 500,
-      energy: 42 + (index % 58), happiness: 51 + (index % 49), status,
-      inventory: { rune: 4 + (index % 13), fire_berry: index % 4 },
-      gold: 25 + index * 3,
-      lootboxes: [index % 3, index % 2, 0, 0, 0],
-      wins: index % 8, losses: index % 4, questsCompleted: index % 11,
-      battlesRemaining: status === 'Battle' ? 2 : 0,
-      activeBattleId: status === 'Battle' ? `TEST-preview-${index}` : undefined,
-      dailyStreak: index % 7, bestStreak: index % 12, offerings: index % 5,
-      lastDaily: generatedAt - 3_600_000, joinedAt: generatedAt - 86_400_000,
-      lastActiveAt: generatedAt - index * 21_000,
-      lastAction: status === 'Home' ? 'Daily.Claim' : `Monster.${status}`,
-      assets: 0,
-      passOrigin: 'test', accountId: profile.address,
-      recoveryCooldownUntil: 0, runeBond: 0,
-    };
-  });
-  const runes = players.reduce((sum, player) => sum + Number(player.inventory.rune ?? 0), 0);
-  const lootboxes = players.reduce((sum, player) => sum + player.lootboxes.reduce((a, b) => a + b, 0), 0);
-  const wins = players.reduce((sum, player) => sum + player.wins, 0);
-  const losses = players.reduce((sum, player) => sum + player.losses, 0);
-  const quests = players.reduce((sum, player) => sum + player.questsCompleted, 0);
-  return {
-    generatedAt, players, battles: [], factions: [], audit: [],
-    stats: {
-      players: players.length, unlocked: players.filter((player) => player.unlocked).length,
-      monsters: players.length, activeBattles: players.filter((player) => player.activeBattleId).length,
-      completedBattles: wins + losses, wins, losses, quests, runes, lootboxes,
-      offerings: 0, activeToday: players.length, items: { rune: runes }, mintedAssets: 0,
-    },
-    metrics: { since: generatedAt - 60_000, totals: { 'TEST.Preview': 24 }, daily: {} },
-  };
-}
-
 export default function Admin() {
   const { address, processId, node } = useGame();
   const [snapshot, setSnapshot] = useState<AdminSnapshot | null>(null);
@@ -116,11 +66,12 @@ export default function Admin() {
   const [loading, setLoading] = useState(true);
   const [tab, setTab] = useState<Tab>('overview');
   const [selected, setSelected] = useState<string | null>(null);
-  const isSwarmPreview = import.meta.env.DEV
-    && new URLSearchParams(window.location.search).has('swarm-preview');
+  const isSwarmView = import.meta.env.DEV && (() => {
+    const params = new URLSearchParams(window.location.search);
+    return params.has('swarm') || params.has('swarm-preview');
+  })();
   const isEconomyPreview = import.meta.env.DEV
     && new URLSearchParams(window.location.search).has('economy-preview');
-  const swarmPreview = useMemo(() => isSwarmPreview ? makeSwarmPreviewSnapshot() : null, [isSwarmPreview]);
 
   const isOwner = address === GAME_OWNER;
   const load = useCallback(async (force = false) => {
@@ -153,17 +104,17 @@ export default function Admin() {
 
   useEffect(() => { void load(); }, [load]);
 
-  if (swarmPreview) {
+  if (isSwarmView) {
     return (
       <div className="admin-console animate-rise space-y-4" data-element="arcane">
         <CommandHeader processId={processId} node={node} loading={false}
           isOwner={false} onRefresh={async () => undefined} />
         <nav className="admin-tabs" aria-label="Admin console preview">
           <button className="admin-tab is-active" aria-current="page">
-            <span>Test swarm</span><small>50 preview agents</small>
+            <span>Test swarm</span><small>local event stream</small>
           </button>
         </nav>
-        <SwarmMonitor snapshot={swarmPreview} />
+        <SwarmMonitor />
       </div>
     );
   }
@@ -206,7 +157,7 @@ export default function Admin() {
           <CommandTabs tab={tab} onChange={setTab} snapshot={snapshot} />
           {tab === 'overview' && <Overview snapshot={snapshot} />}
           {tab === 'economy' && <EconomyAdmin economy={snapshot.economy} onChanged={() => load(true)} />}
-          {tab === 'swarm' && <SwarmMonitor snapshot={snapshot} />}
+          {tab === 'swarm' && <SwarmMonitor />}
           {tab === 'players' && (
             <PlayersView snapshot={snapshot} selected={selected}
               onSelect={setSelected} onChanged={load} />
@@ -279,7 +230,7 @@ function CommandTabs({ tab, onChange, snapshot }: {
   const tabs: Array<{ id: Tab; label: string; note: string }> = [
     { id: 'overview', label: 'Overview', note: `${snapshot.stats.activeToday} active` },
     { id: 'economy', label: 'Economy', note: snapshot.economy?.invariants.ok ? 'exact' : 'attention' },
-    { id: 'swarm', label: 'Test swarm', note: `${snapshot.players.filter(({ address }) => SWARM_ADDRESSES.has(address)).length}/50 live` },
+    { id: 'swarm', label: 'Test swarm', note: 'event stream' },
     { id: 'players', label: 'Players', note: fmt(snapshot.players.length) },
     { id: 'operations', label: 'Operations', note: `${snapshot.battles.length} live` },
     { id: 'tracking', label: 'Tracking', note: `${Object.keys(snapshot.metrics.daily).length} days` },
