@@ -73,10 +73,10 @@ export const HB_NODES: string[] = [
 
 /** The game process. Set VITE_GAME_PROCESS after a deploy. */
 export const GAME_PROCESS: string =
-  env.VITE_GAME_PROCESS || 'JMXV9lRFm1HRb7xJBMBwSFUQw3D-o4QdUCOmhePJZNs';
+  env.VITE_GAME_PROCESS || 'WFIMHw-TaRv8cuSlQAtgRQ5gj-Qm71zFNcxHRVWcmIU';
 
 /** Separate roaming/battle authority. Empty until `deploy-hunt.mjs` wires it. */
-export const HUNT_PROCESS: string = env.VITE_HUNT_PROCESS || 'nlhEZOkBY0HliMIwUw0Kh3tlIqF7jZmIj9YtFSmvsEE';
+export const HUNT_PROCESS: string = env.VITE_HUNT_PROCESS || 'Sj71f3Nb0wfXl4hw7xAyByU-22orvD8-qQPKPJg8pAc';
 export const HUNT_NODE: string = env.VITE_HUNT_NODE || 'https://hyperbeam.tylerw.ai';
 
 /**

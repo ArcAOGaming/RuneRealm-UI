@@ -13,6 +13,7 @@
   "dependencies": {
     "@ardrive/turbo-sdk": "^1.42.0",
     "@dha-team/arbundles": "^1.0.4",
+    "@runerealm/orderbook": "git+https://github.com/ArcAOGaming/rune-orderbook.git#583c0ec4390d433bdb6254b34ab95d49ca285602",
     "@types/three": "^0.185.4",
     "arweave": "^1.15.7",
     "phaser": "^3.90.0",
