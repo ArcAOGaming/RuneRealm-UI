@@ -5,19 +5,17 @@
  * expose the same order verbs. Only custody differs: game assets enter through
  * `Venue.Send`; tokens enter through `Transfer` and its Credit-Notice.
  */
+import { isVault, ShardedVenue, type ShardedTransport } from '@runerealm/orderbook/sharded';
 import { readJSON, send } from './hyperbeam';
-import { MARKET_DEFAULTS } from './marketplace-config';
+import graph from './graph.json';
 import { Reply } from './types';
+import { activeAddress } from './wallet';
 
-const env = (import.meta as { env?: Record<string, string> }).env ?? {};
 const ID = /^[A-Za-z0-9_-]{43}$/;
 
-export const INTERNAL_VENUE_PROCESS = env.VITE_INTERNAL_VENUE_PROCESS
-  || MARKET_DEFAULTS.internalVenue;
-export const EXTERNAL_VENUE_PROCESS = env.VITE_EXTERNAL_VENUE_PROCESS
-  || MARKET_DEFAULTS.externalVenue;
-export const VENUE_NODE = env.VITE_VENUE_NODE || env.VITE_MARKET_NODE
-  || MARKET_DEFAULTS.node || undefined;
+export const INTERNAL_VENUE_PROCESS = graph.processes.internalVenue;
+export const EXTERNAL_VENUE_PROCESS = graph.processes.externalVenue;
+export const VENUE_NODE = graph.venueNode || graph.marketNode || undefined;
 
 export const internalVenueConfigured = () => ID.test(INTERNAL_VENUE_PROCESS);
 export const externalVenueConfigured = () => ID.test(EXTERNAL_VENUE_PROCESS);
@@ -166,8 +164,76 @@ function requireProcess(process: string): string {
 const readVenueJSON = <T>(process: string, key: string) =>
   readJSON<T>(key, { process: requireProcess(process), node: VENUE_NODE });
 
-export const readVenueInfo = (process: string) => readVenueJSON<VenueInfo>(process, 'venueinfo');
-export const readVenueBook = (process: string) => readVenueJSON<VenueBook>(process, 'venuebook');
+/**
+ * A graph entry that names a VAULT is the sharded venue (one process per
+ * market; rune-orderbook ORDERBOOK.md §16). Every function below hands it to
+ * rune-orderbook's router, which reads across the pairs and turns an order
+ * whose funds are elsewhere into one signed batch. The shim only delegates.
+ */
+const shardTransport: ShardedTransport = {
+  read: <T>(process: string, key: string) => readJSON<T>(key, { process, node: VENUE_NODE }),
+  send: <T>(process: string, tags: Array<{ name: string; value: string }>,
+    options?: { requiredOutbox?: boolean }) =>
+    send<T>(tags, { process, node: VENUE_NODE, requiredOutbox: options?.requiredOutbox }),
+};
+const shards = new Map<string, Promise<ShardedVenue | null>>();
+function shard(process: string): Promise<ShardedVenue | null> {
+  let found = shards.get(process);
+  if (!found) {
+    found = isVault(shardTransport, requireProcess(process))
+      .then((vault) => (vault ? new ShardedVenue(shardTransport, process) : null));
+    shards.set(process, found);
+  }
+  return found;
+}
+async function signer(): Promise<string> {
+  const address = await activeAddress();
+  if (!address || !ID.test(address)) throw new Error('Connect a wallet first.');
+  return address;
+}
+
+interface VenuePairPublication {
+  id: string;
+  base: string;
+  quote: string;
+  book: string;
+  candles: string;
+  tape: string;
+}
+
+/** Prefer 5.3b pair keys; absence of the index identifies a legacy venue. */
+async function readVenuePairs<T>(
+  process: string,
+  field: 'book' | 'candles' | 'tape',
+): Promise<Record<string, T> | null> {
+  let index: Record<string, VenuePairPublication> | null;
+  try {
+    index = await readVenueJSON<Record<string, VenuePairPublication>>(process, 'venuepairs');
+  } catch {
+    return null;
+  }
+  if (!index || Array.isArray(index) || typeof index !== 'object') return null;
+  const out: Record<string, T> = {};
+  await Promise.all(Object.entries(index).map(async ([id, pair]) => {
+    if (!pair || typeof pair[field] !== 'string') return;
+    try {
+      const value = await readVenueJSON<T>(process, pair[field]);
+      if (value !== null) out[id] = value;
+    } catch { /* A newly configured pair has no projection until its first write. */ }
+  }));
+  return out;
+}
+
+export const readVenueInfo = async (process: string): Promise<VenueInfo | null> => {
+  const s = await shard(process);
+  return s ? s.info() : readVenueJSON<VenueInfo>(process, 'venueinfo');
+};
+export const readVenueBook = async (process: string): Promise<VenueBook | null> => {
+  const s = await shard(process);
+  if (s) return s.book<VenueMarketBook>();
+  return (await readVenuePairs<VenueMarketBook>(process, 'book'))
+    ?? readVenueJSON<VenueBook>(process, 'venuebook');
+};
 
 /**
  * The public trade tape.
@@ -183,9 +249,18 @@ export const readVenueBook = (process: string) => readVenueJSON<VenueBook>(proce
  * treats a rejection as an empty tape rather than an error, because a book
  * with no tape is still a book.
  */
-export const readVenueTape = (process: string) => readVenueJSON<VenueTape>(process, 'venuetape');
-export const readVenueCandles = (process: string) =>
-  readVenueJSON<VenueIntradayCandles>(process, 'venuecandles');
+export const readVenueTape = async (process: string): Promise<VenueTape | null> => {
+  const s = await shard(process);
+  if (s) return s.tape<VenueTrade[]>();
+  return (await readVenuePairs<VenueTrade[]>(process, 'tape'))
+    ?? readVenueJSON<VenueTape>(process, 'venuetape');
+};
+export const readVenueCandles = async (process: string): Promise<VenueIntradayCandles | null> => {
+  const s = await shard(process);
+  if (s) return s.candles<VenueIntradayCandles[string]>();
+  return (await readVenuePairs<VenueIntradayCandles[string]>(process, 'candles'))
+    ?? readVenueJSON<VenueIntradayCandles>(process, 'venuecandles');
+};
 
 /** Read one interval defensively; older deployments simply return no rows. */
 export function marketVenueCandles(
@@ -218,9 +293,11 @@ export function marketVenueCandles(
  * same address-free four-number tuples and never exposes its account fields.
  */
 export async function readVenueHistoryTape(process: string): Promise<VenueTape> {
-  const state = await readVenueJSON<VenueBookHistoryState>(process, 'venuebookstate');
+  const s = await shard(process);
+  const fills = s ? await s.historyFills() as VenueBookHistoryState['fills']
+    : (await readVenueJSON<VenueBookHistoryState>(process, 'venuebookstate'))?.fills;
   const out: VenueTape = {};
-  for (const fill of Array.isArray(state?.fills) ? state.fills : []) {
+  for (const fill of Array.isArray(fills) ? fills : []) {
     const market = typeof fill.market === 'string' && fill.market
       ? fill.market : typeof fill.item === 'string' ? `${fill.item}/gold` : '';
     const at = Math.floor(Number(fill.filledAt ?? 0) / 1000);
@@ -305,7 +382,9 @@ export interface VenueMarketConfig {
  * would put `NaN` through the order ticket's arithmetic.
  */
 export const readVenueMarkets = async (process: string) => {
-  const rows = await readVenueJSON<Record<string, VenueMarketConfig>>(process, 'markets');
+  const s = await shard(process);
+  const rows = s ? await s.markets()
+    : await readVenueJSON<Record<string, VenueMarketConfig>>(process, 'markets');
   if (!rows || typeof rows !== 'object') return rows;
   const out: Record<string, VenueMarketConfig> = {};
   for (const [id, row] of Object.entries(rows)) {
@@ -317,6 +396,8 @@ export const readVenueMarkets = async (process: string) => {
 /** A new venue publishes the full bounded account view; accept its old free-only shape too. */
 export async function readVenuePosition(process: string, address: string): Promise<VenuePosition> {
   if (!ID.test(address)) return { account: address, free: {}, orders: [], fills: [] };
+  const s = await shard(process);
+  if (s) return s.position(address);
   const value = await readVenueJSON<VenuePosition | Record<string, string>>(
     process, `balance-${address}`,
   );
@@ -352,47 +433,75 @@ const orderTags = (options: VenueOrderOptions = {}) => ({
   ...(options.expiresIn ? { ExpiresIn: String(Math.floor(options.expiresIn)) } : {}),
 });
 
-export const placeVenueOrder = (
+type PlaceReply = { order: { order?: VenueOrder; fills?: VenueFill[]; open?: boolean };
+  account: VenuePosition };
+export const placeVenueOrder = async (
   process: string, side: VenueSide, item: string, price: string | number,
   quantity: string | number, options: VenueOrderOptions = {},
-) => write<{ order: { order?: VenueOrder; fills?: VenueFill[]; open?: boolean };
-  account: VenuePosition }>(process, {
-  Action: 'Order.Place', Side: side, Item: item, Price: String(price),
-  Quantity: String(quantity), ActionId: actionId('venue-order'), ...orderTags(options),
-});
+): Promise<PlaceReply> => {
+  const s = await shard(process);
+  if (s) return s.place<PlaceReply>(await signer(), side, item, price, quantity, options);
+  return write<PlaceReply>(process, {
+    Action: 'Order.Place', Side: side, Item: item, Price: String(price),
+    Quantity: String(quantity), ActionId: actionId('venue-order'), ...orderTags(options),
+  });
+};
 
-export const amendVenueOrder = (
+type AmendReply = { order: unknown; account: VenuePosition };
+export const amendVenueOrder = async (
   process: string, orderId: string,
   changes: { price?: string | number; quantity?: string | number },
   options: VenueOrderOptions = {},
-) => write<{ order: unknown; account: VenuePosition }>(process, {
-  Action: 'Order.Amend', OrderId: orderId, ActionId: actionId('venue-amend'),
-  ...(changes.price !== undefined ? { Price: String(changes.price) } : {}),
-  ...(changes.quantity !== undefined ? { Quantity: String(changes.quantity) } : {}),
-  ...orderTags(options),
-});
+): Promise<AmendReply> => {
+  const s = await shard(process);
+  if (s) return s.amend<AmendReply>(orderId, changes, options, await signer());
+  return write<AmendReply>(process, {
+    Action: 'Order.Amend', OrderId: orderId, ActionId: actionId('venue-amend'),
+    ...(changes.price !== undefined ? { Price: String(changes.price) } : {}),
+    ...(changes.quantity !== undefined ? { Quantity: String(changes.quantity) } : {}),
+    ...orderTags(options),
+  });
+};
 
-export const cancelVenueOrder = (process: string, orderId: string) =>
-  write<{ cancelled: VenueOrder; account: VenuePosition }>(process, {
+type CancelReply = { cancelled: VenueOrder; account: VenuePosition };
+export const cancelVenueOrder = async (process: string, orderId: string) => {
+  const s = await shard(process);
+  if (s) return s.cancel<CancelReply>(orderId, await signer());
+  return write<CancelReply>(process, {
     Action: 'Order.Cancel', OrderId: orderId, ActionId: actionId('venue-cancel'),
   });
+};
 
-export const cancelAllVenueOrders = (process: string, item?: string) =>
-  write<{ cancelled: { cancelledIds?: string[] }; account: VenuePosition }>(process, {
+type CancelAllReply = { cancelled: { cancelledIds?: string[] }; account: VenuePosition };
+export const cancelAllVenueOrders = async (process: string, item?: string) => {
+  const s = await shard(process);
+  if (s) {
+    return s.cancelAll<CancelAllReply>(await signer(), item);
+  }
+  return write<CancelAllReply>(process, {
     Action: 'Order.CancelAll', ActionId: actionId('venue-cancelall'),
     ...(item ? { Item: item } : {}),
   });
+};
 
-export const maintainVenueOrders = (process: string, limit = 25) =>
-  write<{ expired: string[] }>(process, {
+export const maintainVenueOrders = async (process: string, limit = 25) => {
+  const s = await shard(process);
+  if (s) return s.maintain<{ expired: number }>(limit);
+  return write<{ expired: number }>(process, {
     Action: 'Order.Maintain', Limit: String(Math.max(1, Math.floor(limit))),
   });
+};
 
-export const withdrawFromVenue = (
+type WithdrawReply = { withdrawal: { id: string; status: string }; account: VenuePosition };
+export const withdrawFromVenue = async (
   process: string, asset: string, quantity: string | number,
-) => write<{ withdrawal: { id: string; status: string }; account: VenuePosition }>(process, {
-  Action: 'Withdraw', Asset: asset, Quantity: String(quantity),
-}, true);
+): Promise<WithdrawReply> => {
+  const s = await shard(process);
+  if (s) return s.withdraw<WithdrawReply>(await signer(), asset, quantity);
+  return write<WithdrawReply>(process, {
+    Action: 'Withdraw', Asset: asset, Quantity: String(quantity),
+  }, true);
+};
 
 /** Token custody enters the external venue through the token's own Transfer outbox. */
 export const depositTokenToVenue = (

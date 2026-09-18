@@ -1,15 +1,11 @@
 /// <reference types="vite/client" />
 
+// Process ids, nodes and the owner are not env. They come from
+// `src/lib/graph.json`, generated from backend/native/deployment-state.json.
 interface ImportMetaEnv {
-  /** HyperBEAM node that hosts the game process. */
-  readonly VITE_HB_NODE?: string;
-  /** The game process id, from `live-process.txt` after a deploy. */
-  readonly VITE_GAME_PROCESS?: string;
-  /** Public wallet address that owns the game process. */
-  readonly VITE_GAME_OWNER?: string;
-  readonly VITE_RUNE_PROCESS?: string;
-  readonly VITE_QUOTE_PROCESS?: string;
-  readonly VITE_MARKET_NODE?: string;
+  readonly VITE_ASSET_NODE?: string;
+  readonly VITE_ARWEAVE_GATEWAY?: string;
+  readonly VITE_SWARM_STREAM_URL?: string;
 }
 
 interface ImportMeta {

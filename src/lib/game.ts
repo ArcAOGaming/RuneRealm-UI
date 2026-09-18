@@ -850,13 +850,20 @@ export const huntSettlementApplied = (runId: string) => async () => {
   const address = await activeAddress();
   if (!address) return false;
   const account = await readAuthorityPlayer(address).catch(() => null);
-  // The route on the account is this run's, and it now carries a settlement
-  // receipt. `settlementId` is `<runId>-capture-<n>`, so it also pins the run
-  // when a record predates the receipt carrying `runId` itself.
+  // The route on the account is this run's, and it now carries THIS capture's
+  // receipt. A run takes a capture per encounter and the route keeps the last
+  // receipt for the whole run, so one merely naming the run passes at once on
+  // the previous capture's. The worker's own run names the capture in flight:
+  // `<runId>-capture-<encounterCount>` (hunt.lua), and the count only moves on
+  // the next search.
   const route = account?.hunt;
   const capture = route?.lastCapture;
-  return !!route && route.runId === runId
-    && !!capture?.settlementId && capture.settlementId.startsWith(`${runId}-`);
+  if (!route || route.runId !== runId || !capture?.settlementId) return false;
+  const run = await readJSON<{ encounterCount?: number }>(`hunt-run-${runId}`, {
+    process: route.processId, node: route.node || HB_NODE,
+  }).catch(() => null);
+  const count = Number(run?.encounterCount);
+  return Number.isInteger(count) && capture.settlementId === `${runId}-capture-${count}`;
 };
 
 /** The authority released the frozen companion and dropped the route. */
@@ -1278,8 +1285,17 @@ export const transferMonster = (monsterId: string, recipient: string) =>
 // bought or cancelled, so it can never be sold twice or sold and kept.
 
 /** Every companion currently for sale, keyed by listing id. Free to read. */
-export const readMarket = (opts: ReadOpts = {}) =>
-  readGameJSON<Record<string, Listing>>('market', opts);
+export async function readMarket(opts: ReadOpts = {}): Promise<Record<string, Listing> | null> {
+  const index = await readGameJSON<string[]>('marketindex', opts).catch(() => null);
+  if (!Array.isArray(index)) return readGameJSON<Record<string, Listing>>('market', opts);
+  const out: Record<string, Listing> = {};
+  await Promise.all(index.map(async (id) => {
+    if (typeof id !== 'string') return;
+    const row = await readGameJSON<Listing>(`marketlisting-${id}`, opts).catch(() => null);
+    if (row) out[id] = row;
+  }));
+  return out;
+}
 
 /** What has actually sold, newest first. Free to read. */
 export const readMarketHistory = (opts: ReadOpts = {}) =>
@@ -1651,7 +1667,9 @@ async function tokenBalance(token: string, address: string): Promise<bigint | nu
     // confident zero. A false zero BASELINE is the dangerous direction --
     // goal becomes `0 + amount`, a wallet that already holds more clears it
     // instantly, and a withdrawal that minted nothing reports success.
-    text = await readState(`balance-${address}`, { process: token, node: HB_NODE });
+    // `htmlIsError`: the transport reads an HTML body at 200 as absent, which
+    // here would be that same false zero.
+    text = await readState(`balance-${address}`, { process: token, node: HB_NODE, htmlIsError: true });
   } catch {
     return null;
   }
@@ -1917,6 +1935,9 @@ export const adminReleaseBattle = (address: string) =>
   write<{ released: string[]; battleId?: string; player: Player }>({
     Action: 'Admin.ReleaseBattle', PlayerId: address,
   });
+
+/** The game republishes its `economy` readout only when the owner asks. */
+export const adminSyncEconomy = () => write<EconomyView>({ Action: 'Economy.View' });
 
 export const adminPreviewEconomyPolicy = (path: string, value: unknown) =>
   write<{ path: string; oldValue: unknown; newValue: unknown; effectiveAt: number; effect?: Record<string, unknown> }>(

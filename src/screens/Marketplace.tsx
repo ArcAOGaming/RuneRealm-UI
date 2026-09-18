@@ -1,19 +1,22 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
-import { OrderbookTerminal, type OrderbookHost } from '@runerealm/orderbook/ui';
-import '@runerealm/orderbook/style.css';
 
 import { useGame } from '../state/gameContext';
 import { isAbort } from '../state/usePoll';
 import * as game from '../lib/game';
-import { send as sendAo } from '../lib/hyperbeam';
 import {
   QUOTE_PROCESS, RUNE_PROCESS, type TokenInfo, claimQuoteFaucet, depositRuneToGame,
   formatUnits, parseUnits, readTokenBalance, readTokenInfo,
 } from '../lib/marketplace';
 import {
-  EXTERNAL_VENUE_PROCESS, INTERNAL_VENUE_PROCESS, VENUE_NODE, VenueBook, VenueMarketBook,
-  VenueTrade, internalVenueConfigured, readVenueBook,
+  EXTERNAL_VENUE_PROCESS, INTERNAL_VENUE_PROCESS, VenueBook, VenueMarketBook,
+  VenueIntradayCandle, VenueIntradayCandles, VenueLevel, VenueMarketConfig,
+  VenuePosition, VenueTape, VenueTrade,
+  amendVenueOrder, cancelAllVenueOrders, cancelVenueOrder, depositTokenToVenue,
+  externalVenueConfigured, internalVenueConfigured, marketTrades, marketVenueCandles,
+  mergeVenueTapes, placeVenueOrder, readVenueBook, readVenueCandles,
+  readVenueHistoryTape, readVenueMarkets, readVenuePosition, readVenueTape,
+  withdrawFromVenue,
 } from '../lib/venue';
 import {
   EconomyCandle, EconomyDesk, EconomyMarketStats, EconomyOrder, EconomyView, Element,
@@ -28,7 +31,7 @@ import { CardPreview } from '../ui/CardPreview';
 import { CardViewer } from '../ui/CardViewer';
 import { ITEM_ART } from '../ui/art';
 import { useTourSteps, type TourStep } from '../ui/tourContext';
-import { Arrow, ELEMENT_ICON, Refresh, Rune, Sparkle, Wallet } from '../ui/icons';
+import { Arrow, ELEMENT_ICON, Exchange, Refresh, Rune, Sparkle, Wallet } from '../ui/icons';
 import { MarketVenue, MarketVenuePicker, usePopover, venueFromSearch } from '../ui/marketVenues';
 import { MarketDiorama } from '../ui/MarketDiorama';
 import type { MarketDioramaStockItem } from '../gfx/marketDiorama';
@@ -134,7 +137,6 @@ export default function Marketplace() {
 const GOLD_ITEMS: GoldMarketItemId[] = [
   'fire_berry', 'water_berry', 'air_berry', 'rock_berry', 'scroll', 'rune',
 ];
-const VENUE_GAME_ASSETS: GoldMarketItemId[] = [...GOLD_ITEMS, 'legendary_scroll'];
 
 /** Which element tints a good. Scroll and Rune keep the page's own colour. */
 const ITEM_ELEMENT: Partial<Record<GoldMarketItemId, Element>> = {
@@ -209,6 +211,17 @@ const GOLD_UNIT: FloorUnit = {
   edit: (value) => String(value),
   placeholder: '0',
 };
+
+const tokenUnit = (ticker: string, denomination: number): FloorUnit => ({
+  quote: ticker, quoteShort: ticker.replace(/^TEST-/, '').toLowerCase(),
+  format: (value) => formatUnits(String(value), denomination, 4),
+  parse: (text) => {
+    const atoms = tryParseUnits(text, denomination).value;
+    return atoms === null ? NaN : Number(atoms);
+  },
+  edit: (value) => formatUnits(String(value), denomination, denomination),
+  placeholder: '0.000',
+});
 
 type FloorRange = '30m' | '1h' | '3h' | '12h' | '24h' | '7d' | '30d';
 type ChartMode = 'line' | 'candles';
@@ -330,7 +343,9 @@ function GoodsMarket({ onOpenFloor }: { onOpenFloor: (order: FloorPrefill) => vo
      over a counter that has one ticket on it, and both of them are things you
      read WHILE pricing a trade, not before deciding to. They are in the ticket
      now: the purse folded into the row that already said what it would be
-     afterwards, and the market's state as a badge on the ticket's own heading.
+     afterwards. The market-state badge is gone: the process refuses a trade
+     against a broken invariant itself, and the published flow view it read is
+     an admin readout refreshed only on request.
      The strip stays on the two books, where it also carries the pair, the
      custody popover and the refresh. */
   return (
@@ -575,7 +590,7 @@ function RealmShop({
                     onItem={onItem} />
 
       <ShopTradeTicket item={item} desk={desk} p2p={venueMarketStats(venueBook?.[`${item}/gold`])} plan={plan}
-                       held={held} gold={gold} stable={economy.invariants.ok}
+                       held={held} gold={gold}
                        count={count} onCount={onCount}
                        side={side} onSide={onSide} connected={connected}
                        connecting={connecting} onConnect={onConnect}
@@ -615,7 +630,7 @@ function ShopShowcase({ item, plan, side, count, sceneInventory, onItem }: {
 }
 
 function ShopTradeTicket({
-  item, desk, p2p, plan, held, gold, stable, count, onCount, side, onSide,
+  item, desk, p2p, plan, held, gold, count, onCount, side, onSide,
   connected, connecting, onConnect, busy, onTrade, onRefresh, onOpenFloor,
 }: {
   item: GoldMarketItemId; desk: EconomyDesk | undefined;
@@ -623,8 +638,6 @@ function ShopTradeTicket({
   p2p: EconomyMarketStats | undefined;
   plan: DeskFillPlan;
   held: number; gold: number;
-  /** `economy.invariants.ok` -- the whole market's state, not this desk's. */
-  stable: boolean;
   count: number; onCount: (value: number) => void; side: GoldOrderSide; onSide: (side: GoldOrderSide) => void;
   connected: boolean; connecting: boolean; onConnect: () => void; busy: boolean;
   onTrade: () => void; onRefresh: () => void; onOpenFloor: (order: FloorPrefill) => void;
@@ -672,10 +685,6 @@ function ShopTradeTicket({
           <h3 className="mt-1 text-sm font-semibold">Deal ticket</h3>
         </div>
         <div className="flex flex-wrap items-center justify-end gap-1.5">
-          {/* The whole market's state, which is a different thing from this
-              desk's pause below -- the desk closes one side of one good, this
-              says the process stopped honouring its own invariants. */}
-          <Badge tone={stable ? 'plain' : 'bad'}>{stable ? 'Market stable' : 'Market paused'}</Badge>
           <Button size="sm" variant="quiet" title="Refresh shop" onClick={onRefresh}
                   icon={<Refresh className="h-3.5 w-3.5" />}>Refresh</Button>
         </div>
@@ -834,6 +843,13 @@ const TIF_TERMS: Record<GoldOrderTif, string> = {
   IOC: 'Executes now · unfilled quantity cancels · nothing rests',
   FOK: 'Executes now · full quantity only · nothing rests',
   PostOnly: 'Good for 30 days · adds liquidity only · partial fills allowed',
+};
+
+const TIF_RECEIPT: Record<GoldOrderTif, (side: GoldOrderSide, count: number, item: GoldMarketItemId) => string> = {
+  GTC: (side, count, item) => `${side === 'buy' ? 'Bid' : 'Ask'} entered for ${formatInteger(count)} ${ITEM_NAME[item]}.`,
+  IOC: (_side, count, item) => `Took what the book offered, up to ${formatInteger(count)} ${ITEM_NAME[item]}.`,
+  FOK: (_side, count, item) => `Filled all ${formatInteger(count)} ${ITEM_NAME[item]} at once.`,
+  PostOnly: (side, count, item) => `${side === 'buy' ? 'Bid' : 'Ask'} added for ${formatInteger(count)} ${ITEM_NAME[item]} without crossing.`,
 };
 
 /**
@@ -1449,6 +1465,28 @@ function candleBars(points: PricePoint[], interval: number): CandleBar[] {
       row.close = point.v;
       row.volume += point.q;
       row.trades += 1;
+    }
+  }
+  return [...buckets.values()].sort((a, b) => a.t - b.t);
+}
+
+/** Fold the venue's durable tuple feed into any supported display interval. */
+function venueCandleBars(rows: VenueIntradayCandle[], interval: number): CandleBar[] {
+  const buckets = new Map<number, CandleBar>();
+  for (const [at, open, high, low, close, baseVolume, , fillCount] of rows) {
+    const start = Math.floor((at * 1000) / interval) * interval;
+    const row = buckets.get(start);
+    if (!row) {
+      buckets.set(start, {
+        t: start, open, high, low, close,
+        volume: baseVolume, trades: fillCount,
+      });
+    } else {
+      row.high = Math.max(row.high, high);
+      row.low = Math.min(row.low, low);
+      row.close = close;
+      row.volume += baseVolume;
+      row.trades += fillCount;
     }
   }
   return [...buckets.values()].sort((a, b) => a.t - b.t);
@@ -2070,6 +2108,14 @@ function aggregateDepth(rows: MarketDepthRow[], tone: 'good' | 'bad') {
   return [...levels.values()].sort((a, b) => tone === 'good' ? b.price - a.price : a.price - b.price);
 }
 
+function VenueUnavailable() {
+  return (
+    <div className="grid min-h-[60vh] flex-1 place-items-center px-6 text-center text-sm text-faint">
+      contract not deployed for this ui version or hyperbeam node non responsive
+    </div>
+  );
+}
+
 /** Half the depth chart's narrowest price window, as a fraction of mid. */
 const DEPTH_MIN_HALF_WINDOW = .15;
 /** And its widest. Past this a level is clamped to the edge, not drawn to. */
@@ -2683,170 +2729,692 @@ function ChartLab() {
  */
 function VenueFloor({ mode, prefill }: {
   mode: 'internal' | 'external';
+  /** An order handed over from the shop's comparison row. Applied once. */
   prefill?: FloorPrefill;
 }) {
-  const { address, player, connect, run: runGame, node } = useGame();
-  const venueNode = VENUE_NODE || node;
+  const {
+    address, player, connect, connecting, run: runGame,
+    isPending: gamePending, transaction, refresh,
+  } = useGame();
   const process = mode === 'internal' ? INTERNAL_VENUE_PROCESS : EXTERNAL_VENUE_PROCESS;
-  const outsideBalances = useMemo<Record<string, string | number> | undefined>(() => {
-    if (mode !== 'internal') return undefined;
-    return { gold: player?.gold ?? 0, ...(player?.inventory ?? {}) };
-  }, [mode, player?.gold, player?.inventory]);
+  const configured = mode === 'internal' ? internalVenueConfigured() : externalVenueConfigured();
 
-  const host = useMemo<OrderbookHost>(() => ({
-    account: address,
-    connect: async () => {
-      await connect();
-      return address;
-    },
-    execute: async (action, success) => {
-      const result = await runGame(`orderbook-${mode}`, action, success);
-      if (result === null) throw new Error('The orderbook action did not settle.');
-      return result;
-    },
-    send: (target, tags, options = {}) => sendAo(tags, {
-      process: target,
-      node: venueNode,
-      data: options.data,
-      requiredOutbox: options.requiredOutbox,
-    }),
-    outsideBalances,
-    deposit: mode === 'internal'
-      ? async (asset, backingAmount) => {
-          if (backingAmount > BigInt(Number.MAX_SAFE_INTEGER)) {
-            throw new Error('That deposit is too large for a game inventory.');
-          }
-          const amount = Number(backingAmount);
-          const assetId = asset.id as GoldMarketItemId | 'gold';
-          if (!Number.isSafeInteger(amount) || amount <= 0) {
-            throw new Error('Enter a positive whole amount.');
-          }
-          if (assetId !== 'gold' && !VENUE_GAME_ASSETS.includes(assetId)) {
-            throw new Error('Rune Realm does not hold that asset.');
-          }
-          return game.sendToVenue(assetId, amount);
-        }
-      : undefined,
-  }), [address, connect, mode, outsideBalances, runGame, venueNode]);
+  const [venueBook, setVenueBook] = useState<VenueBook | null>(null);
+  const [venueTape, setVenueTape] = useState<VenueTape | null>(null);
+  /* `undefined` means the capability read has not answered; `null` means this
+     is an older venue and enables the one-time restore-state fallback. */
+  const [venueCandles, setVenueCandles] = useState<VenueIntradayCandles | null>();
+  const [venueHistory, setVenueHistory] = useState<VenueTape | null>(null);
+  const [venueMarkets, setVenueMarkets] = useState<Record<string, VenueMarketConfig>>({});
+  const [position, setPosition] = useState<VenuePosition | null>(null);
+  const [quoteInfo, setQuoteInfo] = useState<TokenInfo | null>(null);
+  const [wallet, setWallet] = useState({ base: '0', quote: '0' });
+  const [marketId, setMarketId] = useState('');
+  const [error, setError] = useState<unknown>(null);
+
+  const [side, setSide] = useState<GoldOrderSide>('buy');
+  /* Open close enough to read a young market. New venues publish bounded
+     intraday bars; older ones fall back to the retained fill ring without
+     pretending that ring is a complete historical feed. */
+  const [range, setRange] = useState<FloorRange>('3h');
+  const [chartMode, setChartMode] = useState<ChartMode>('candles');
+  const [candleInterval, setCandleInterval] = useState<CandleInterval>('5m');
+  const [price, setPrice] = useState('');
+  const [quantity, setQuantity] = useState('5');
+  const [tif, setTif] = useState<GoldOrderTif>('GTC');
+  const [custodyAmount, setCustodyAmount] = useState('');
+  const [custodyPick, setCustodyPick] = useState('');
+  const [bridgeAmount, setBridgeAmount] = useState('');
+  const [busy, setBusy] = useState<ReadonlySet<string>>(new Set());
+  const [activeWrite, setActiveWrite] = useState<string | null>(null);
+  /* Two write paths, one spinner: moving goods into the internal venue is a
+     game action and everything else is a venue action. */
+  const isPending = (key: string) => busy.has(key) || gamePending(key);
+
+  const loadBook = useCallback(async (signal?: AbortSignal) => {
+    if (!configured) return;
+    setError(null);
+    try {
+      const [nextBook, nextPosition, nextTape, nextCandles] = await Promise.all([
+        readVenueBook(process),
+        address ? readVenuePosition(process, address) : Promise.resolve(null),
+        /* A venue deployed before `venuetape` existed publishes no such key,
+           and an absent key is answered with the node's HTML landing page at
+           status 200 (see CLAUDE.md). That is "no tape", not a failed read --
+           the ladder, the band and the daily candles are all still there, and
+           failing the whole load over a missing chart would take the book down
+           with it. */
+        readVenueTape(process).catch(() => null),
+        /* This key was added after the first venues. Missing it must not take
+           down the book: the daily candles and fill-ring backfill below remain
+           a truthful compatibility path until those processes are replaced. */
+        readVenueCandles(process).catch(() => null),
+      ]);
+      if (signal?.aborted) return;
+      setVenueBook(nextBook);
+      setPosition(nextPosition);
+      setVenueTape(nextTape);
+      setVenueCandles(nextCandles);
+    } catch (caught) {
+      if (isAbort(caught)) return;
+      setError(caught);
+    }
+  }, [address, configured, process]);
+
+  // Tied to the screen, and on a timer: a book that refreshes only after THIS
+  // wallet submits looks empty while every other wallet is trading.
+  useEffect(() => {
+    const controller = new AbortController();
+    void loadBook(controller.signal);
+    const timer = window.setInterval(() => { void loadBook(controller.signal); }, 10_000);
+    return () => { controller.abort(); window.clearInterval(timer); };
+  }, [loadBook]);
+
+  /* One compatibility backfill for a venue that predates `venuecandles`. The
+     96-row public tape continues to refresh every ten seconds; the 500-fill
+     restore ring changes only what the chart can see before this tab opened,
+     so repeatedly pulling it would spend bandwidth without adding history. */
+  useEffect(() => {
+    let cancelled = false;
+    setVenueHistory(null);
+    if (!configured || venueCandles === undefined || venueCandles !== null) return undefined;
+    void readVenueHistoryTape(process)
+      .then((history) => { if (!cancelled) setVenueHistory(history); })
+      .catch(() => { if (!cancelled) setVenueHistory(null); });
+    return () => { cancelled = true; };
+  }, [configured, process, venueCandles]);
+
+  /* On the external venue the wallet is the other half of the picture: what is
+     in custody can be quoted, what is in the wallet has to be deposited first,
+     and a trader needs both numbers on the same line to know which. */
+  useEffect(() => {
+    if (mode !== 'external') return;
+    void readTokenInfo(QUOTE_PROCESS).then(setQuoteInfo).catch(() => setQuoteInfo(null));
+  }, [mode]);
+
+  useEffect(() => {
+    if (mode !== 'external' || !address) return;
+    void Promise.all([
+      readTokenBalance(RUNE_PROCESS, address),
+      readTokenBalance(QUOTE_PROCESS, address),
+    ]).then(([base, quote]) => setWallet({ base, quote })).catch(() => undefined);
+  }, [mode, address, busy]);
+
+  /* The fee, the minimum and the tick, read once because none of them move.
+     Never assumed: the internal venue charges no taker fee and the external
+     one charges thirty basis points, and the ticket has to say which. */
+  useEffect(() => {
+    if (!configured) return;
+    void readVenueMarkets(process).then((rows) => setVenueMarkets(rows ?? {}))
+      .catch(() => setVenueMarkets({}));
+  }, [configured, process]);
+
+  /* Which markets there are to choose between. The venue publishes them; the
+     client does not decide, and an id it has no name or glyph for is still a
+     tradeable market, so it falls back to the id rather than disappearing. */
+  const markets = useMemo(() => Object.values(venueBook ?? {})
+    .filter((row) => row.status !== 'delisted')
+    .sort((a, b) => a.id.localeCompare(b.id)), [venueBook]);
+  const activeMarket = markets.find((row) =>
+    Boolean(row.candles?.length || row.depth?.bids?.length || row.depth?.asks?.length));
+  const market = markets.find((row) => row.id === marketId) ?? activeMarket ?? markets[0];
+  useEffect(() => {
+    if (market && market.id !== marketId) setMarketId(market.id);
+  }, [market, marketId]);
+
+  /* The order the shop handed over, laid into the ticket once.
+     Once, and keyed on the values themselves: re-applying it on every render
+     would overwrite the price the moment the trader started editing it, and
+     the point of arriving with a filled ticket is that it is then yours. */
+  const applied = useRef('');
+  useEffect(() => {
+    if (!prefill || !markets.length) return;
+    const key = `${prefill.item}/${prefill.side}/${prefill.count}/${prefill.price ?? ''}`;
+    if (applied.current === key) return;
+    applied.current = key;
+    const wanted = `${prefill.item}/gold`;
+    if (markets.some((row) => row.id === wanted)) setMarketId(wanted);
+    setSide(prefill.side);
+    setQuantity(String(prefill.count));
+    if (prefill.price) setPrice(String(prefill.price));
+  }, [prefill, markets]);
+
+  const item = (market?.base ?? 'rune') as GoldMarketItemId;
+  const unit = mode === 'internal'
+    ? GOLD_UNIT
+    : tokenUnit(quoteInfo?.Ticker ?? 'TEST-RELIC', Number(quoteInfo?.Denomination ?? 6));
+
+  const book = useMemo(() => venueMarketStats(market), [market]);
+  const candles = useMemo<EconomyCandle[]>(() => mergeCandles(market?.candles), [market]);
+  const oneMinuteRows = useMemo(() =>
+    marketVenueCandles(venueCandles ?? null, market?.id, 60),
+  [venueCandles, market?.id]);
+  const fiveMinuteRows = useMemo(() =>
+    marketVenueCandles(venueCandles ?? null, market?.id, 300),
+  [venueCandles, market?.id]);
+  const publishedCandles = useMemo<Partial<Record<CandleInterval, CandleBar[]>>>(() => {
+    return {
+      '1m': venueCandleBars(oneMinuteRows, CANDLE_MS['1m']),
+      '5m': venueCandleBars(fiveMinuteRows, CANDLE_MS['5m']),
+      '15m': venueCandleBars(fiveMinuteRows, CANDLE_MS['15m']),
+      '30m': venueCandleBars(fiveMinuteRows, CANDLE_MS['30m']),
+      '1h': venueCandleBars(fiveMinuteRows, CANDLE_MS['1h']),
+      '4h': venueCandleBars(fiveMinuteRows, CANDLE_MS['4h']),
+    };
+  }, [oneMinuteRows, fiveMinuteRows]);
+  const tradeCount = candles.reduce((sum, row) => sum + Number(row.n || 0), 0);
+  const tradedLots = candles.reduce((sum, row) => sum + Number(row.v || 0), 0);
+  const ownOrders = useMemo(() => venueOwnOrders(position, market?.id), [position, market?.id]);
+  const recentFills = useMemo(() => venueOwnFills(position, market?.id), [position, market?.id]);
+  /* The chart's points are a local address-free projection of the venue's
+     retained 500-fill restore ring plus its moving 96-row public tail. That is
+     everybody's market history rather than whatever this wallet happened to
+     do, while duplicate tuples remain duplicate fills. Seconds come back as
+     seconds and the rest of the screen works in milliseconds. */
+  const visibleTape = useMemo(() => mergeVenueTapes(venueHistory, venueTape),
+    [venueHistory, venueTape]);
+  const trades = useMemo<VenueTrade[]>(() => marketTrades(visibleTape, market?.id),
+    [visibleTape, market?.id]);
+  /* Five-minute closes extend Line mode to the same durable day as Candles.
+     Put a close at the end of its bucket, then overlay the exact recent tape;
+     the moving tail preserves every newest print without pretending a candle
+     reveals the path inside its five minutes. */
+  const points = useMemo<PricePoint[]>(() => [
+    ...fiveMinuteRows.map(([at, , , , close, baseVolume]) => ({
+      t: (at + 300) * 1000 - 1, v: close, q: baseVolume,
+    })),
+    ...trades.map(([at, price, quantity]) => ({ t: at * 1000, v: price, q: quantity })),
+  ].sort((a, b) => a.t - b.t), [fiveMinuteRows, trades]);
+
+  const free = (asset: string | undefined) => Number(position?.free?.[asset ?? ''] ?? 0);
+  /* The other side of the custody boundary: the satchel on the internal venue,
+     the wallet on the external one. Both are read somewhere else already --
+     the player record and the two token processes -- so this only picks. */
+  const held = (asset: string | undefined) => {
+    if (mode === 'external') return Number(asset === market?.quote ? wallet.quote : wallet.base);
+    if (asset === 'gold') return player?.gold ?? 0;
+    return player?.inventory?.[asset as GoldMarketItemId] ?? 0;
+  };
+  const quoteBalance = free(market?.quote);
+  const baseBalance = free(market?.base);
+
+  /* The venue's own write path uses the same signature-aware harness as game
+     writes. `run` is generic: only a player-shaped reply updates the account,
+     while this venue reply still receives signing/settling/verdict state. */
+  const runVenue = async <T,>(key: string, action: () => Promise<T>, message: string) => {
+    setBusy((all) => new Set(all).add(key));
+    setActiveWrite(key);
+    setError(null);
+    try {
+      const out = await runGame(key, action, message);
+      if (out === null) return null;
+      // The read is of published state, and the publication is the tail of the
+      // slot we just wrote. Give the node a beat before asking for it.
+      await new Promise((resolve) => window.setTimeout(resolve, 700));
+      await Promise.all([loadBook(), refresh()]);
+      return out;
+    } catch (caught) {
+      // The write itself is already handled by the shared runner. This branch
+      // is only a failed post-write refresh, which the market can retry safely.
+      setError(caught);
+      return null;
+    } finally {
+      setBusy((all) => { const next = new Set(all); next.delete(key); return next; });
+      setActiveWrite((current) => (current === key ? null : current));
+    }
+  };
+
+  const submitOrder = async () => {
+    if (!market) return;
+    const immediate = tif === 'IOC' || tif === 'FOK';
+    const unitPrice = immediate ? undefined : unit.parse(price);
+    const count = Math.floor(Number(quantity));
+    if (unitPrice !== undefined && (!Number.isSafeInteger(unitPrice) || unitPrice <= 0)) {
+      setError(new Error('Price must be a positive amount.')); return;
+    }
+    if (!Number.isSafeInteger(count) || count <= 0) {
+      setError(new Error('Quantity must be a positive whole number of lots.')); return;
+    }
+    const limit = unitPrice ?? sweepLimit(market, side, count);
+    if (!limit) { setError(new Error('Nothing is resting on that side to take.')); return; }
+    const result = await runVenue('gold-order',
+      () => placeVenueOrder(process, side, market.base, limit, count, { tif }),
+      TIF_RECEIPT[tif](side, count, item));
+    if (result) setPrice('');
+  };
+
+  const amend = (orderId: string, changes: { price?: number; quantity?: number }) =>
+    runVenue(`gold-amend-${orderId}`,
+      () => amendVenueOrder(process, orderId, changes), 'Quote moved.');
+
+  const cancel = (orderId: string) =>
+    runVenue(`gold-cancel-${orderId}`, () => cancelVenueOrder(process, orderId),
+      'Order cancelled and remaining escrow returned.');
+
+  const cancelAll = (only?: GoldMarketItemId) =>
+    runVenue('gold-cancel-all', () => cancelAllVenueOrders(process, only),
+      only ? `Every ${ITEM_NAME[only]} order withdrawn.` : 'Every order withdrawn.');
+
+  /* Custody. Which asset moves is the trader's choice in the popover, and it
+     defaults to whichever side of the pair the ticket is about to spend: a bid
+     spends the quote, an ask spends the base. */
+  const custodyAssets = market ? [market.quote, market.base] : [];
+  const custodyDefault = side === 'buy' ? market?.quote : market?.base;
+  const custodyAsset = custodyAssets.includes(custodyPick) ? custodyPick : custodyDefault;
+  /* The unit an amount is typed in follows the ASSET, not the market. Both
+     sides of the external pair carry six decimals; on the internal venue Gold
+     and every good are whole units. */
+  const unitForAsset = (id: string | undefined): FloorUnit => {
+    if (mode === 'internal') return GOLD_UNIT;
+    return id === market?.quote ? unit : tokenUnit('TEST-RUNE', 6);
+  };
+  const assetName = (id: string | undefined) =>
+    (id === market?.quote && mode === 'external' ? unit.quote
+      : ITEM_NAME[id as GoldMarketItemId] ?? (id === 'gold' ? 'Gold' : id ?? 'asset'));
+  const custodyUnit = unitForAsset(custodyAsset);
+  const custodyLabel = assetName(custodyAsset);
+
+  const moveCustody = async (direction: 'deposit' | 'withdraw') => {
+    if (!custodyAsset) return;
+    const amount = custodyUnit.parse(custodyAmount);
+    if (!Number.isSafeInteger(amount) || amount <= 0) {
+      setError(new Error('Enter a positive amount.')); return;
+    }
+    const done = `${custodyUnit.format(amount)} ${custodyLabel} ${
+      direction === 'deposit' ? 'deposited' : 'withdrawn'}.`;
+    if (direction === 'deposit' && mode === 'internal') {
+      // A game action, returning a player: it leaves the satchel here.
+      setActiveWrite('venue-deposit');
+      const moved = await runGame('venue-deposit',
+        () => game.sendToVenue(custodyAsset as GoldMarketItemId | 'gold', amount), done);
+      setActiveWrite(null);
+      if (moved) { setCustodyAmount(''); await loadBook(); }
+      return;
+    }
+    const action: () => Promise<unknown> = direction === 'withdraw'
+      ? () => withdrawFromVenue(process, custodyAsset, amount)
+      // Tokens enter through the token process's own transfer, not the venue.
+      : () => depositTokenToVenue(
+        custodyAsset === 'rune' ? RUNE_PROCESS : QUOTE_PROCESS, process, amount);
+    const result = await runVenue<unknown>(`venue-${direction}`, action, done);
+    if (result) setCustodyAmount('');
+  };
+
+  /* The Rune bridge. Not part of the book -- Rune moves between your game
+     balance and your wallet by minting and burning whether or not anything is
+     trading -- but it is the step before a deposit, so it opens from the same
+     popover. Wallet Rune carries six decimals and the bridge takes whole Rune;
+     parsing at denomination zero burned one atom for an input of "1" and the
+     token correctly refused it as fractional dust. */
+  const gameRune = player?.inventory?.rune ?? 0;
+  const bridgeOut = async () => {
+    const value = Math.floor(Number(bridgeAmount));
+    if (!Number.isSafeInteger(value) || value <= 0) {
+      setError(new Error('Enter a positive whole Rune amount.')); return;
+    }
+    setActiveWrite('rune-withdraw');
+    const moved = await runGame('rune-withdraw', () => game.withdrawRune(value),
+      `${formatInteger(value)} Rune is moving to your wallet.`);
+    setActiveWrite(null);
+    if (moved) setBridgeAmount('');
+  };
+  const bridgeIn = async () => {
+    const atoms = tryParseUnits(bridgeAmount, 6);
+    if (!atoms.value) {
+      setError(new Error(atoms.error || 'Enter a positive Rune amount.')); return;
+    }
+    const done = await runVenue('game-deposit', () => depositRuneToGame(atoms.value!),
+      `${bridgeAmount} Rune burned into your game balance.`);
+    if (done !== null) setBridgeAmount('');
+  };
+
+  if (!configured) return <VenueUnavailable />;
+
+  if (!venueBook && error === null) {
+    return (
+      <div className="market-goods">
+        <div className="market-desks grid gap-2 sm:grid-cols-2">
+          <Skeleton className="h-24" /><Skeleton className="h-24" />
+        </div>
+        <div className="market-goods-body mt-2.5 grid gap-2.5 sm:grid-cols-2 xl:grid-cols-3">
+          <Skeleton className="h-96" /><Skeleton className="h-96" /><Skeleton className="h-96" />
+        </div>
+      </div>
+    );
+  }
+
+  /* Past the skeleton with no book means the read failed outright: the node
+     did not answer, or it served its landing page for a key this process never
+     published. Same dead end as no process id at all -- a retry button over an
+     empty ladder implies the ladder is the truth and only the refresh failed. */
+  if (!venueBook) return <VenueUnavailable />;
+
+  if (!market) {
+    return (
+      <div className="market-goods">
+        {error !== null && <ErrorNote error={error} onRetry={() => void loadBook()} />}
+        <Panel className="mt-2.5">
+          <Empty icon={<Exchange />} title="This venue has no open market">
+            The process is deployed but nothing is listed on it yet, or every market is
+            still closed. An owner opens them with <code>Admin.LaunchAll</code>.
+          </Empty>
+        </Panel>
+      </div>
+    );
+  }
+
+  const marketLabel = (row: VenueMarketBook) =>
+    `${ITEM_NAME[row.base as GoldMarketItemId] ?? row.base} / ${
+      row.quote === 'gold' ? 'Gold' : quoteInfo?.Ticker ?? row.quote.toUpperCase()}`;
 
   return (
-    <div className={`market-goods ${mode === 'external' ? 'market-external' : ''}`}>
-      <div data-tour="market-book" className="min-h-0 flex-1">
-        <OrderbookTerminal
-          node={venueNode}
-          process={process}
-          embedded
-          host={host}
-          initialMarket={prefill ? `${prefill.item}/gold` : undefined}
-          initialSide={prefill?.side}
-          initialPrice={prefill?.price ? String(prefill.price) : undefined}
-          initialQuantity={prefill ? String(prefill.count) : undefined}
-        />
-      </div>
-      {mode === 'external' && <ExternalExchangeTools />}
+    <div className="market-goods">
+      {activeWrite && transaction(activeWrite)?.stage === 'settling' && (
+        <TransactionHold className="mb-2">
+          {marketPendingCopy(activeWrite)}
+        </TransactionHold>
+      )}
+      {error !== null && <ErrorNote error={error} onRetry={() => void loadBook()} />}
+      <TradingFloor
+        book={book} candles={candles} publishedCandles={publishedCandles}
+        points={points} trades={trades} unit={unit}
+        ticks={bookTicks(book, candles, points, unit)}
+        config={{
+          minValue: venueMarkets[market.id]?.minValue ?? 1,
+          takerBps: venueMarkets[market.id]?.takerBps ?? 0,
+          /* Read off the market like every other charge on the ticket. Zero on
+             both current deployments, but a venue that charges for an order
+             would otherwise quote a total the process refuses. `readVenueMarkets`
+             defaults it for a venue too old to publish the key. */
+          creationCost: venueMarkets[market.id]?.creationCost ?? 0,
+        }}
+        /* Always, even at one market. The picker is where the pair, its bid
+           and its ask are written down; hiding it on a one-market venue moved
+           that line off the screen and made the external book look like a
+           different product from the internal one. `MarketPicker` returns null
+           only when there is genuinely nothing listed. */
+        lead={(
+          <MarketPicker value={market.id} onPick={setMarketId} format={unit.format}
+                        glyph={(id) => (
+                          <ItemGlyph item={(venueBook?.[id]?.base ?? 'rune') as GoldMarketItemId}
+                                     className="h-4 w-4" />
+                        )}
+                        markets={markets.map((row) => ({
+                          id: row.id, label: marketLabel(row),
+                          bestBid: row.bestBid, bestAsk: row.bestAsk,
+                        }))} />
+        )}
+        /* Between the pair and the refresh, on both books. */
+        actions={<>
+          <CustodyMenu
+            title={mode === 'external' ? 'Move tokens' : 'Move assets'}
+            assets={custodyAssets.map((id) => ({ id, label: assetName(id) }))}
+            asset={custodyAsset ?? ''} onAsset={setCustodyPick}
+            unitFor={unitForAsset} free={free} held={held}
+            outsideLabel={mode === 'external' ? 'Wallet' : 'Satchel'}
+            amount={custodyAmount} onAmount={setCustodyAmount}
+            onMove={(direction) => address ? void moveCustody(direction) : connect()}
+            isPending={isPending}
+            note={mode === 'internal'
+              ? 'The venue holds what it matches, so goods and Gold move here from your satchel before they can be quoted. Withdraw returns only what no live order is holding.'
+              : 'Tokens arrive through the token process’s own transfer, so a deposit is one message on the token and a credit here. Withdraw returns only what no live order is holding.'}
+            extra={mode === 'external' ? (
+              <div className="mt-3 border-t border-edge/60 pt-3">
+                <div className="eyebrow">Rune bridge</div>
+                <p className="mt-1 text-[10px] leading-relaxed text-faint">
+                  Game balance {formatInteger(gameRune)} Rune &middot; wallet {formatToken(wallet.base, 6)}.
+                  Crossing mints or burns; it is not a trade.
+                </p>
+                <input className={cx(inputClass, 'mt-1.5')} inputMode="decimal" value={bridgeAmount}
+                       placeholder="Whole Rune"
+                       onChange={(event) => setBridgeAmount(event.target.value)} />
+                <div className="mt-2 grid grid-cols-2 gap-1.5">
+                  <Button size="sm" busy={isPending('rune-withdraw')}
+                          onClick={() => address ? void bridgeOut() : connect()}>To wallet</Button>
+                  <Button size="sm" variant="quiet" busy={isPending('game-deposit')}
+                          onClick={() => address ? void bridgeIn() : connect()}>Into game</Button>
+                </div>
+                {quoteInfo?.FaucetAmount && (
+                  <Button className="mt-2 w-full" size="sm" variant="quiet" busy={isPending('faucet')}
+                          onClick={() => address
+                            ? void runVenue('faucet', claimQuoteFaucet, `${unit.quote} claimed.`)
+                            : connect()}>
+                    {`Claim ${unit.quote} from the faucet`}
+                  </Button>
+                )}
+              </div>
+            ) : undefined} />
+          <Button size="sm" variant="quiet" onClick={() => void loadBook()}
+                  icon={<Refresh className="h-3.5 w-3.5" />}>Refresh</Button>
+        </>}
+        extraStats={[
+          { label: 'Completed trades', value: formatInteger(tradeCount), tone: 'text-good' },
+          { label: 'Traded volume',
+            value: `${formatInteger(tradedLots)} ${ITEM_NAME[item] ?? market.base}`, tone: 'text-arcane' },
+          ...(mode === 'external' ? [
+            { label: 'Wallet TEST-RUNE', value: formatToken(wallet.base, 6), tone: 'text-rune' },
+            { label: `Wallet ${unit.quote}`, value: formatToken(wallet.quote, Number(quoteInfo?.Denomination ?? 6)), tone: 'text-arcane' },
+          ] : []),
+        ]}
+        address={address} quoteBalance={quoteBalance} baseBalance={baseBalance} item={item}
+        range={range} onRange={setRange} chartMode={chartMode} onChartMode={setChartMode}
+        candleInterval={candleInterval} onCandleInterval={setCandleInterval}
+        side={side} onSide={setSide} tif={tif} onTif={setTif}
+        price={price} onPrice={setPrice} quantity={quantity} onQuantity={setQuantity}
+        ownOrders={ownOrders} recentFills={recentFills}
+        connecting={connecting} onConnect={connect}
+        isPending={isPending} onSubmit={() => void submitOrder()}
+        onCancel={(id) => void cancel(id)}
+        onCancelAll={(only) => void cancelAll(only)}
+        onAmend={amend} />
+      {mode === 'internal' && !player && (
+        <p className="mt-2 text-[11px] text-faint">
+          Connect and claim an account to move goods into this venue.
+        </p>
+      )}
     </div>
   );
 }
 
-function ExternalExchangeTools() {
-  const { address, player, connect, run, isPending, refresh: refreshPlayer } = useGame();
-  const [amount, setAmount] = useState('');
-  const [walletRune, setWalletRune] = useState('0');
-  const [quoteInfo, setQuoteInfo] = useState<TokenInfo | null>(null);
-  const [error, setError] = useState('');
+function marketPendingCopy(key: string) {
+  if (key.includes('deposit') || key.includes('withdraw')) {
+    return 'The signed transfer is crossing the custody boundary. Balances wait for confirmation.';
+  }
+  if (key === 'faucet') return 'The faucet claim is signed and settling.';
+  return 'The signed order is settling at the venue. The book changes only on confirmation.';
+}
 
-  const refreshTokens = useCallback(async () => {
-    const [info, balance] = await Promise.all([
-      readTokenInfo(QUOTE_PROCESS).catch(() => null),
-      address ? readTokenBalance(RUNE_PROCESS, address).catch(() => '0') : Promise.resolve('0'),
-    ]);
-    setQuoteInfo(info);
-    setWalletRune(balance);
-  }, [address]);
-
-  useEffect(() => { void refreshTokens(); }, [refreshTokens]);
-
-  const toWallet = async () => {
-    if (!address) { await connect(); return; }
-    const value = Math.floor(Number(amount));
-    if (!Number.isSafeInteger(value) || value <= 0) {
-      setError('Enter a positive whole Rune amount.');
-      return;
-    }
-    setError('');
-    const result = await run(
-      'rune-bridge-out',
-      () => game.withdrawRune(value),
-      `${formatInteger(value)} Rune is moving to your wallet.`,
-    );
-    if (result) { setAmount(''); await refreshTokens(); }
-  };
-
-  const intoGame = async () => {
-    if (!address) { await connect(); return; }
-    let atoms: string;
-    try { atoms = parseUnits(amount, 6); }
-    catch (reason) {
-      setError(reason instanceof Error ? reason.message : String(reason));
-      return;
-    }
-    setError('');
-    const result = await run(
-      'rune-bridge-in',
-      () => depositRuneToGame(atoms),
-      `${amount} Rune burned into your game balance.`,
-    );
-    if (result) {
-      setAmount('');
-      await Promise.all([refreshTokens(), refreshPlayer()]);
-    }
-  };
-
-  const claimQuote = async () => {
-    if (!address) { await connect(); return; }
-    setError('');
-    const result = await run('quote-faucet', claimQuoteFaucet, 'Test quote tokens claimed.');
-    if (result) await refreshTokens();
-  };
-
-  const quoteDenomination = Number(quoteInfo?.Denomination ?? 6);
-  const faucetAmount = quoteInfo?.FaucetAmount
-    ? formatUnits(quoteInfo.FaucetAmount, quoteDenomination, 4)
-    : '';
+/**
+ * Moving assets in and out, on the strip.
+ *
+ * Both books need the same thing in the same place: a venue holds what it
+ * matches, so before you can quote a berry you have to send the berry, and
+ * before you can quote a token you have to transfer the token. That is a
+ * two-way trip and it is not part of reading a ladder, so it opens from the
+ * health strip -- between the pair and the refresh, identically on both books
+ * -- rather than sitting under the depth chart taking room from it.
+ *
+ * On the external venue the Rune bridge rides in the same popover, because it
+ * is the same question one step earlier: game Rune and wallet Rune are the
+ * same asset either side of a mint, and a trader deciding what to deposit is
+ * already deciding whether to bring Rune across.
+ */
+function CustodyMenu({ title, assets, asset, onAsset, unitFor, free, held, amount, onAmount,
+                       onMove, isPending, outsideLabel, note, extra }: {
+  title: string;
+  assets: Array<{ id: string; label: string }>;
+  asset: string; onAsset: (id: string) => void;
+  unitFor: (id: string) => FloorUnit;
+  /** What the venue is holding for this trader, per asset. */
+  free: (id: string) => number;
+  /** What is on the other side of the boundary: the satchel, or the wallet. */
+  held: (id: string) => number;
+  amount: string; onAmount: (value: string) => void;
+  onMove: (direction: 'deposit' | 'withdraw') => void;
+  isPending: (key: string) => boolean;
+  outsideLabel: string;
+  note: string;
+  extra?: React.ReactNode;
+}) {
+  const [open, setOpen] = useState(false);
+  const { host } = usePopover(open, () => setOpen(false));
+  const unit = unitFor(asset);
+  const outside = held(asset);
+  const inside = free(asset);
 
   return (
-    <Panel className="mt-3 grid gap-4 p-4 md:grid-cols-[1fr_auto] md:items-end">
-      <div>
-        <div className="eyebrow">Rune Realm bridge</div>
-        <p className="mt-1 text-xs leading-relaxed text-faint">
-          Game {formatInteger(player?.inventory?.rune ?? 0)} Rune &middot; wallet {formatUnits(walletRune, 6, 4)} Rune.
-          Moving Rune mints or burns; it is not a trade.
-        </p>
-        <input
-          className={cx(inputClass, 'mt-2 max-w-xs')}
-          inputMode="decimal"
-          value={amount}
-          placeholder="Rune amount"
-          onChange={(event) => setAmount(event.target.value)}
-        />
-        {error && <p className="mt-2 text-xs text-bad" role="alert">{error}</p>}
-      </div>
-      <div className="grid gap-2 sm:grid-cols-3 md:grid-cols-1 lg:grid-cols-3">
-        <Button size="sm" busy={isPending('rune-bridge-out')} onClick={() => void toWallet()}>
-          Rune to wallet
-        </Button>
-        <Button size="sm" variant="quiet" busy={isPending('rune-bridge-in')} onClick={() => void intoGame()}>
-          Rune into game
-        </Button>
-        {quoteInfo?.FaucetAmount && (
-          <Button size="sm" variant="quiet" busy={isPending('quote-faucet')} onClick={() => void claimQuote()}>
-            Claim {faucetAmount} {quoteInfo.Ticker}
-          </Button>
-        )}
-      </div>
-    </Panel>
+    <div ref={host} className="market-custody relative">
+      <button type="button" className="market-custody-trigger" aria-haspopup="dialog"
+              aria-expanded={open} onClick={() => setOpen((was) => !was)}>
+        <Exchange className="h-3.5 w-3.5" />
+        <span>{title}</span>
+        <Arrow className={cx('market-venue-caret h-3.5 w-3.5', open && 'is-open')} />
+      </button>
+      {open && (
+        <div role="dialog" aria-label={title} className="market-venue-list market-custody-list">
+          <div className="market-panel-heading">
+            <div className="eyebrow">{outsideLabel} &harr; This venue</div>
+            <h3 className="mt-1 text-sm font-semibold">{title}</h3>
+          </div>
+
+          <div className="p-3.5">
+            {/* One row per asset the pair is made of, and both sides of the
+                boundary on it. Which number is short is the whole reason
+                somebody opened this. */}
+            <div className="grid gap-1">
+              {assets.map((row) => (
+                <button key={row.id} type="button" data-selected={row.id === asset}
+                        className="market-custody-asset" onClick={() => onAsset(row.id)}>
+                  <ItemGlyph item={row.id as GoldMarketItemId} className="h-4 w-4 flex-none" />
+                  <span className="min-w-0 flex-1 truncate">{row.label}</span>
+                  <span className="market-custody-split">
+                    <b>{unitFor(row.id).format(held(row.id))}</b>
+                    <Arrow className="h-3 w-3" />
+                    <b className="text-element">{unitFor(row.id).format(free(row.id))}</b>
+                  </span>
+                </button>
+              ))}
+            </div>
+
+            <label className="mt-3 block">
+              <span className="eyebrow mb-1 flex items-center justify-between gap-2">
+                <span>Amount</span>
+                <span className="market-custody-hint">
+                  {outsideLabel.toLowerCase()} {unit.format(outside)} &middot; here {unit.format(inside)}
+                </span>
+              </span>
+              <input className={inputClass} inputMode="decimal" value={amount}
+                     placeholder={unit.placeholder}
+                     onChange={(event) => onAmount(event.target.value)} />
+            </label>
+            <div className="mt-2 grid grid-cols-2 gap-1.5">
+              <Button size="sm" busy={isPending('venue-deposit')} disabled={outside <= 0}
+                      onClick={() => onMove('deposit')}>Deposit</Button>
+              <Button size="sm" variant="quiet" busy={isPending('venue-withdraw')} disabled={inside <= 0}
+                      onClick={() => onMove('withdraw')}>Withdraw</Button>
+            </div>
+            <p className="mt-2 text-[10px] leading-relaxed text-faint">{note}</p>
+            {extra}
+          </div>
+        </div>
+      )}
+    </div>
   );
 }
+
+/**
+ * The limit an immediate order carries, taken from the ladder.
+ *
+ * The process never accepts an unpriced order, so a "market" order is a limit
+ * at the worst price the sweep actually needs. It is computed twice on purpose:
+ * the ticket shows it, this sends it, and the book may have moved between the
+ * two -- in which case the order simply fills less.
+ */
+function sweepLimit(market: VenueMarketBook, side: GoldOrderSide, units: number): number {
+  const rows = depthRows(side === 'buy' ? market.depth?.asks : market.depth?.bids);
+  return sweepLadder(rows, side === 'buy' ? 'bad' : 'good', { units }).limit;
+}
+
+/**
+ * One bar per day, whatever the process sent.
+ *
+ * `candleView` builds its list out of a Lua table keyed by day, and a day that
+ * has been written under both the string and the number spelling of its key
+ * comes back as two rows with the same `d` -- which draws two bars on the same
+ * date and counts every trade in it twice. Merging here is one line and makes
+ * the chart right against either shape.
+ */
+function mergeCandles(rows: EconomyCandle[] | undefined): EconomyCandle[] {
+  const byDay = new Map<number, EconomyCandle>();
+  for (const row of rows ?? []) {
+    const seen = byDay.get(row.d);
+    if (!seen) { byDay.set(row.d, { ...row }); continue; }
+    seen.h = Math.max(seen.h, row.h);
+    seen.l = Math.min(seen.l, row.l);
+    seen.c = row.c;
+    seen.v += row.v; seen.g += row.g; seen.n += row.n;
+  }
+  return [...byDay.values()].sort((a, b) => a.d - b.d);
+}
+
+/* A venue level is `{ price, quantity, orders }`. It carries no house units --
+   nothing quotes into a venue ladder that is not somebody's resting order --
+   so the field the in-game ladder counted is simply not set here. */
+const depthRows = (levels: VenueLevel[] | undefined): MarketDepthRow[] =>
+  (levels ?? []).map((level) => ({ price: level.price, quantity: level.quantity, orders: level.orders }));
+
+/** This trader's resting orders in one market. */
+function venueOwnOrders(position: VenuePosition | null, marketId: string | undefined): EconomyOrder[] {
+  return (position?.orders ?? [])
+    .filter((order) => !marketId || order.market === marketId)
+    .map((order, index) => ({
+      id: order.id, seq: index, account: position?.account ?? '',
+      side: order.side, item: order.item as GoldMarketItemId,
+      price: order.price, quantity: order.quantity, remaining: order.remaining,
+      createdAt: order.createdAt, expiresAt: order.expiresAt,
+      market: order.market, lot: order.lot,
+    }));
+}
+
+/**
+ * This trader's own fills, with the side read from which end they were on.
+ *
+ * `takerSide` says who crossed, not what this account did -- so the side is
+ * whether this address is the buyer, and the role is whether that side took.
+ */
+function venueOwnFills(position: VenuePosition | null, marketId: string | undefined): PlayerFill[] {
+  const me = position?.account ?? '';
+  return (position?.fills ?? [])
+    .filter((fill) => !marketId || fill.market === marketId)
+    .map((fill) => {
+      const side: GoldOrderSide = fill.buyer === me ? 'buy' : 'sell';
+      return {
+        id: fill.id, market: fill.market, item: fill.item as GoldMarketItemId, side,
+        price: fill.price, quantity: fill.quantity, gross: fill.price * fill.quantity,
+        fee: fill.fee, filledAt: fill.filledAt,
+        role: (fill.takerSide === side ? 'taker' : 'maker') as 'taker' | 'maker',
+      };
+    })
+    .sort((a, b) => b.filledAt - a.filledAt);
+}
+
+/**
+ * The external book.
+ *
+ * The same instrument as the trading floor, funded differently: Gold the realm
+ * issues on the internal one, tokens out of your wallet here. When its process
+ * is deployed this becomes the same three panels drawn by the same components,
+ * because it IS the same book -- resting bids and asks, price then time.
+ *
+ * What it is not, and never was in any honest sense, is a pool. The
+ * constant-product AMM that used to sit here has been deleted: it held no
+ * value, it was never configured, and a curve is not what this game trades on.
+ * Nothing fills until somebody is on the other side, which is the correct
+ * behaviour for a book rather than a gap in one.
+ *
+ * Moving Rune across the bridge is not trading, so it stays on this screen only
+ * because it has nowhere better to live yet.
+ */
 
 function MonsterStat({ label, value, title }: { label: string; value: string; title: string }) {
   return (
@@ -2916,6 +3484,16 @@ function LineChart({ values, empty, suffix, className }: { values: number[]; emp
       </> : <div className="grid h-full place-items-center px-6 text-center text-xs text-faint">{empty}</div>}
     </div>
   );
+}
+
+function tryParseUnits(value: string, denomination: number): { value: string | null; error: string } {
+  if (!value.trim()) return { value: null, error: '' };
+  try { return { value: parseUnits(value, denomination), error: '' }; }
+  catch (caught) { return { value: null, error: caught instanceof Error ? caught.message : String(caught) }; }
+}
+
+function formatToken(value: string | bigint, denomination: number): string {
+  return formatUnits(value, denomination, 4);
 }
 
 function compactNumber(value: number): string {

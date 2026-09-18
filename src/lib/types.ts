@@ -996,9 +996,6 @@ export interface FactionMember {
   id: string;
   level: number;
   wins: number;
-  timesFed: number;
-  timesPlay: number;
-  timesQuest: number;
 }
 
 export interface Faction {
@@ -1014,9 +1011,6 @@ export interface Faction {
   monsterCount: number;
   members: FactionMember[];
   averageLevel: number;
-  totalTimesFed: number;
-  totalTimesPlay: number;
-  totalTimesQuest: number;
 }
 
 export interface LeaderboardRow {
@@ -1025,10 +1019,8 @@ export interface LeaderboardRow {
   name: string;
   element: Affinity;
   level: number;
-  exp: number;
   wins: number;
   losses: number;
-  quests: number;
   /**
    * The companion the standings DRAW, so the board renders from one blob
    * instead of a request per trainer. Optional only because a process deployed

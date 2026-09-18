@@ -23,7 +23,7 @@ import { ELEMENT_LABEL, shortAddress } from '../lib/format';
 import { Element, LeaderboardRow } from '../lib/types';
 import { CardPreview } from '../ui/CardPreview';
 
-type Sort = 'level' | 'wins' | 'quests';
+type Sort = 'level' | 'wins';
 
 /**
  * The three metals, and nothing else in the palette moves for them.
@@ -51,7 +51,6 @@ export default function Ranks({ embedded = false }: { embedded?: boolean }) {
       : leaderboard.filter((r) => r.element === filter);
     return [...filtered].sort((a, b) => {
       if (sort === 'wins') return b.wins - a.wins || b.level - a.level;
-      if (sort === 'quests') return b.quests - a.quests || b.level - a.level;
       return b.level - a.level || b.wins - a.wins;
     });
   }, [leaderboard, sort, filter]);
@@ -84,7 +83,7 @@ export default function Ranks({ embedded = false }: { embedded?: boolean }) {
                 <span className="text-xs text-faint">companions</span>
               </div>
               <div className="mt-1 text-[11px] text-faint">
-                avg level {f.averageLevel.toFixed(1)} · {f.totalTimesQuest} quests
+                avg level {f.averageLevel.toFixed(1)}
               </div>
             </Panel>
           ))}
@@ -102,7 +101,7 @@ export default function Ranks({ embedded = false }: { embedded?: boolean }) {
         </div>
         <div className="flex items-center gap-1">
           <span className="eyebrow mr-1">Rank by</span>
-          {(['level', 'wins', 'quests'] as Sort[]).map((s) => (
+          {(['level', 'wins'] as Sort[]).map((s) => (
             <button
               key={s} onClick={() => setSort(s)}
               className={cx(

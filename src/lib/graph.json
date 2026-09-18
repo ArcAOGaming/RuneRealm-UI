@@ -1,0 +1,26 @@
+{
+  "node": "https://hyperbeam.tylerw.ai",
+  "owner": "DA9qhP25ZPz6MHIhO-7aNHDN3LsTAL7yCKYIkqr13Z8",
+  "deployedAt": "2026-09-18T02:30:25.071Z",
+  "processes": {
+    "game": "lBzpORzGeK6ynZVjcvgq1Y_s6Iz6YneRoa8IXj-J3L4",
+    "rune": "rvc9r-fh6hfSA2QDhfM5Co_p0CvzAp707naJCxWfRfY",
+    "quote": "oqiiIk0b1-NmClHXcBzyNutC3RUWS0q2_uSf3MMN6BA",
+    "internalVenue": "I301XUmhGAD8wi3EhSZSmTF4yrLLe0YmIquVACOG4UA",
+    "externalVenue": "Kd25Uaeggg_m5OIpKtMiF1ZRgRjhYw62dY9kBqeuPbQ",
+    "hunt": "e5hlZEOcrJwDwFqQYPAc4LsMdRS0tRnoX-DCZU7t64A",
+    "huntWorkers": [
+      "e5hlZEOcrJwDwFqQYPAc4LsMdRS0tRnoX-DCZU7t64A",
+      "Ov1kGc6csWwyZWwZYWz5gaweBHY7RxPQYuY_Wzy2_zA",
+      "d-YSfLZedymS4bW8QjiaSSHy1qRnmX5a5OUnwansiAE"
+    ],
+    "battleWorkers": [
+      "gBdSAATAghI3TmmrnJv8DcTFyXT2yDdmZBtSY6CWUcA",
+      "GEIlDaccJEvURqbW0eE8n3nMCcvRl8OQL80e6a4Sll8",
+      "-bNXGVoHERNx4OZqR6EpZqC3JZd2L8xqr5sllmQJa7E"
+    ]
+  },
+  "huntNode": "https://hyperbeam.tylerw.ai",
+  "marketNode": "https://hyperbeam.tylerw.ai",
+  "venueNode": "https://hyperbeam.tylerw.ai"
+}

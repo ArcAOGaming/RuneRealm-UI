@@ -7,6 +7,7 @@
  * factions, history and exact player edits — instead of a pile of blind forms.
  */
 import { Suspense, lazy, useCallback, useEffect, useMemo, useState } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import { useGame } from '../state/gameContext';
 import * as api from '../lib/game';
 import { GAME_OWNER } from '../lib/hyperbeam';
@@ -32,6 +33,8 @@ import { economyPreview } from '../lib/economy-preview';
 type Tab = 'overview' | 'economy' | 'swarm' | 'players' | 'operations' | 'tracking' | 'monster-index';
 
 const MonsterIndexAdmin = lazy(() => import('./admin/MonsterIndex'));
+// Dev only, so the 1.5 MB recorded fixture is dropped from a production build.
+const SwarmPreview = import.meta.env.DEV ? lazy(() => import('./admin/swarm/Preview')) : null;
 
 const ITEMS: ItemId[] = [
   'rune', 'fire_berry', 'water_berry', 'air_berry', 'rock_berry',
@@ -66,16 +69,18 @@ export default function Admin() {
   const [loading, setLoading] = useState(true);
   const [tab, setTab] = useState<Tab>('overview');
   const [selected, setSelected] = useState<string | null>(null);
-  const isSwarmView = import.meta.env.DEV && (() => {
-    const params = new URLSearchParams(window.location.search);
-    return params.has('swarm') || params.has('swarm-preview');
-  })();
+  const [params, setParams] = useSearchParams();
+  // `/admin?swarm` is the swarm monitor on its own. It reads only the local
+  // event stream, so it never loads the owner snapshot, which is a signed read:
+  // refreshing the page must not ask the wallet for anything.
+  const isSwarmPreview = import.meta.env.DEV && params.has('swarm-preview');
+  const isSwarmView = params.has('swarm') || isSwarmPreview;
   const isEconomyPreview = import.meta.env.DEV
     && new URLSearchParams(window.location.search).has('economy-preview');
 
   const isOwner = address === GAME_OWNER;
   const load = useCallback(async (force = false) => {
-    if (!address || address !== GAME_OWNER) {
+    if (isSwarmView || !address || address !== GAME_OWNER) {
       setSnapshot(null);
       setError(null);
       setLoading(false);
@@ -100,21 +105,28 @@ export default function Admin() {
     } finally {
       setLoading(false);
     }
-  }, [address, tab]);
+  }, [address, tab, isSwarmView]);
 
   useEffect(() => { void load(); }, [load]);
 
   if (isSwarmView) {
     return (
-      <div className="admin-console animate-rise space-y-4" data-element="arcane">
+      <div className="admin-console admin-console--wide animate-rise space-y-4" data-element="arcane">
         <CommandHeader processId={processId} node={node} loading={false}
           isOwner={false} onRefresh={async () => undefined} />
-        <nav className="admin-tabs" aria-label="Admin console preview">
+        <nav className="admin-tabs" aria-label="Admin console sections">
+          <button className="admin-tab" onClick={() => setParams({})}>
+            <span>Console</span><small>owner signature</small>
+          </button>
           <button className="admin-tab is-active" aria-current="page">
-            <span>Test swarm</span><small>local event stream</small>
+            <span>Test swarm</span><small>{isSwarmPreview ? 'recorded fixture' : 'local event stream'}</small>
           </button>
         </nav>
-        <SwarmMonitor />
+        {isSwarmPreview && SwarmPreview ? (
+          <Suspense fallback={<Panel className="p-6"><Skeleton className="h-72 w-full" /></Panel>}>
+            <SwarmPreview />
+          </Suspense>
+        ) : <SwarmMonitor />}
       </div>
     );
   }
@@ -154,10 +166,10 @@ export default function Admin() {
         <ReadOnly owner={GAME_OWNER} />
       ) : snapshot ? (
         <>
-          <CommandTabs tab={tab} onChange={setTab} snapshot={snapshot} />
+          <CommandTabs tab={tab} snapshot={snapshot}
+            onChange={(next) => (next === 'swarm' ? setParams({ swarm: '' }) : setTab(next))} />
           {tab === 'overview' && <Overview snapshot={snapshot} />}
           {tab === 'economy' && <EconomyAdmin economy={snapshot.economy} onChanged={() => load(true)} />}
-          {tab === 'swarm' && <SwarmMonitor />}
           {tab === 'players' && (
             <PlayersView snapshot={snapshot} selected={selected}
               onSelect={setSelected} onChanged={load} />
@@ -779,6 +791,12 @@ function EconomyAdmin({ economy, onChanged }: {
   const promisedAddresses = extractAddresses(promisedText);
 
   return <div className="space-y-4">
+    {/* The game republishes this readout only on request, never on gameplay. */}
+    <div className="flex items-center justify-end gap-2 text-xs text-muted">
+      <span>Readout as of {when(economy.generatedAt)}</span>
+      <Button size="sm" variant="ghost" busy={busy === 'sync'} icon={<Refresh className="h-3.5 w-3.5" />}
+        onClick={() => void act('sync', api.adminSyncEconomy, 'Economy readout refreshed.')}>Sync now</Button>
+    </div>
     <section className="admin-kpi-grid">
       <Kpi icon={<Rune />} label="Gold issued" value={economy.gold.issued} note={`${fmt(economy.gold.burned)} burned`} />
       <Kpi icon={<Satchel />} label="Outstanding" value={economy.gold.outstanding} note={`target ${fmt(economy.gold.target)}`} />

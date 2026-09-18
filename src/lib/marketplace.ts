@@ -10,15 +10,14 @@
  * through `lib/game.ts`, not from here.
  */
 import { readJSON, readState, send } from './hyperbeam';
-import { MARKET_DEFAULTS } from './marketplace-config';
+import graph from './graph.json';
 import { Reply } from './types';
 
-const env = (import.meta as { env?: Record<string, string> }).env ?? {};
 const ID = /^[A-Za-z0-9_-]{43}$/;
 
-export const RUNE_PROCESS = env.VITE_RUNE_PROCESS || MARKET_DEFAULTS.rune;
-export const QUOTE_PROCESS = env.VITE_QUOTE_PROCESS || MARKET_DEFAULTS.quote;
-export const MARKET_NODE = env.VITE_MARKET_NODE || MARKET_DEFAULTS.node || undefined;
+export const RUNE_PROCESS = graph.processes.rune;
+export const QUOTE_PROCESS = graph.processes.quote;
+export const MARKET_NODE = graph.marketNode || undefined;
 
 /** Both sides of the pair have to exist for the external venue to mean anything. */
 export const exchangeConfigured = () => [RUNE_PROCESS, QUOTE_PROCESS]
@@ -84,11 +83,20 @@ const readMarketJSON = <T>(process: string, key: string) => {
 
 export const readTokenInfo = (token: string) => readMarketJSON<TokenInfo>(token, 'tokeninfo');
 
-export async function readTokenBalance(token: string, address: string): Promise<string> {
+/**
+ * `htmlIsError` is for a caller comparing against this number (a confirmation
+ * baseline): a landing page or an unreadable `balances` throws instead of
+ * reading as a confident zero.
+ */
+export async function readTokenBalance(
+  token: string, address: string, opts: { htmlIsError?: boolean } = {},
+): Promise<string> {
   if (!ID.test(token) || !ID.test(address)) return '0';
-  const direct = await readState(`balance-${address}`, { process: token, node: MARKET_NODE });
+  const read = { process: token, node: MARKET_NODE, htmlIsError: opts.htmlIsError };
+  const direct = await readState(`balance-${address}`, read);
   if (direct !== null && /^\d+$/.test(direct)) return direct;
-  const balances = await readMarketJSON<Record<string, string>>(token, 'balances');
+  const balances = await readJSON<Record<string, string>>('balances', read);
+  if (balances === null && opts.htmlIsError) throw new Error('token balances unreadable');
   return balances?.[address] ?? '0';
 }
 

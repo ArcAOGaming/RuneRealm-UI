@@ -1355,13 +1355,11 @@ html[data-hall-only] .faction-hall-offset {
 
    30rem does not fit a phone, and the box it sits in scrolls sideways — so on a
    narrow screen the last two columns were simply not on screen, in a container
-   with no visible affordance saying to drag it. Quests is the one that goes:
-   a roster is names, levels and wins, and the fifth number is the one nobody
-   is scanning the list for.
+   with no visible affordance saying to drag it. A roster is names, levels and
+   wins, and that fits once the minimum width is dropped.
 */
 @media (max-width: 40rem) {
   .faction-roster-table { min-width: 0; }
-  .faction-roster-table .roster-quests { display: none; }
 }
 
 /* Realm command -----------------------------------------------------------
@@ -1369,6 +1367,18 @@ html[data-hall-only] .faction-hall-offset {
    stone and elemental light. A faint process grid makes it read as an
    instrument panel without introducing a second visual system. */
 .admin-console { --element: var(--arcane); }
+
+/* The Test swarm tab is a wall of 100 wallet tiles and a row of charts, so it
+   leaves the page's max-w-6xl behind: up to 1600 px, centred on the page, with
+   24 px to either edge (the scrollbar takes part of it). A margin, not a
+   transform, so nothing inside gains a containing block. Below lg the page
+   already spans the screen inside its 16 px gutter. */
+@media (min-width: 1024px) {
+  .admin-console--wide {
+    width: min(1600px, calc(100vw - 48px));
+    margin-left: calc(50% - min(800px, calc(50vw - 24px)));
+  }
+}
 
 .admin-hero {
   position: relative;

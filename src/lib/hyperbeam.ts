@@ -42,6 +42,9 @@ import {
 // night of deploys; there is exactly one copy of it. See the file for the
 // measurement behind it.
 import { settleHeadIfUseful } from './slot-settle.mjs';
+// Every process id, node and the owner come from this one generated file,
+// written from backend/native/deployment-state.json by `npm run graph:sync`.
+import graph from './graph.json';
 
 export {
   getWallet, type ArweaveWallet, activeAddress, connectWallet, disconnectWallet,
@@ -50,10 +53,8 @@ export {
 
 export type Tag = { name: string; value: string };
 
-const env = (import.meta as any).env ?? {};
-
-/** Node to talk to. Override with VITE_HB_NODE. */
-export const HB_NODE: string = env.VITE_HB_NODE || 'https://hyperbeam.tylerw.ai';
+/** Node to talk to. From `graph.json`, generated from the deployment record. */
+export const HB_NODE: string = graph.node;
 
 /**
  * Fallback nodes.
@@ -66,18 +67,14 @@ export const HB_NODE: string = env.VITE_HB_NODE || 'https://hyperbeam.tylerw.ai'
  * responses classified below; ambiguous writes stop immediately and must be
  * reconciled rather than retried.
  */
-export const HB_NODES: string[] = [
-  HB_NODE,
-  'https://hyperbeam.tylerw.ai',
-].filter((n, i, a) => a.indexOf(n) === i);
+export const HB_NODES: string[] = [HB_NODE];
 
-/** The game process. Set VITE_GAME_PROCESS after a deploy. */
-export const GAME_PROCESS: string =
-  env.VITE_GAME_PROCESS || '6UKJbGKk2_Yskaq75YhofoUjTZVhXnmp3yXZgzs25pA';
+/** The game process. */
+export const GAME_PROCESS: string = graph.processes.game;
 
 /** Separate roaming/battle authority. Empty until `deploy-hunt.mjs` wires it. */
-export const HUNT_PROCESS: string = env.VITE_HUNT_PROCESS || 'IeV7uRdD4HxDTgKewhNLmhWb7t9PuZPHJqbs_42cJU4';
-export const HUNT_NODE: string = env.VITE_HUNT_NODE || 'https://hyperbeam.tylerw.ai';
+export const HUNT_PROCESS: string = graph.processes.hunt;
+export const HUNT_NODE: string = graph.huntNode;
 
 /**
  * Public address that owns `GAME_PROCESS`.
@@ -87,8 +84,7 @@ export const HUNT_NODE: string = env.VITE_HUNT_NODE || 'https://hyperbeam.tylerw
  * avoid signing a throwaway `Stats` message merely to decide whether the
  * connected address should see the owner console.
  */
-export const GAME_OWNER: string =
-  env.VITE_GAME_OWNER || 'DA9qhP25ZPz6MHIhO-7aNHDN3LsTAL7yCKYIkqr13Z8';
+export const GAME_OWNER: string = graph.owner;
 
 const AO_TAGS: Tag[] = [
   { name: 'data-protocol', value: 'ao' },
@@ -186,7 +182,89 @@ export class AcceptedWriteError extends NetworkError {
 
 const clean = (node: string) => node.replace(/\/$/, '');
 
-async function getText(url: string, signal?: AbortSignal): Promise<string | null> {
+/**
+ * Which contract a process id is, for telemetry only.
+ *
+ * The transport knows ids, not roles, and the ids of the venues, tokens and
+ * workers live in files that import this one. So a harness registers the graph
+ * it is running against; the app registers nothing and only the game is known.
+ * An `Admin.*` write is `admin` whatever it targets, so funding is never
+ * mistaken for player traffic on the authority.
+ */
+export type PidRole = 'game' | 'rune' | 'quote' | 'venue.internal' | 'venue.external'
+  | 'pair.internal' | 'pair.external' | 'hunt.worker' | 'battle.worker' | 'admin';
+
+const pidRoles = new Map<string, PidRole>();
+
+export function setPidRoles(roles: Record<string, PidRole> | null): void {
+  pidRoles.clear();
+  for (const [pid, role] of Object.entries(roles ?? {})) pidRoles.set(pid, role);
+}
+
+function roleOf(pid: string | null, action?: string | null): PidRole | null {
+  if (action && action.toLowerCase().startsWith('admin.')) return 'admin';
+  if (!pid) return null;
+  return pidRoles.get(pid) ?? (pid === GAME_PROCESS ? 'game' : null);
+}
+
+/**
+ * One unsigned GET, as the node answered it.
+ *
+ * `status` is what the read MEANT, not the HTTP code: an HTML body at 200 is
+ * the node's own landing page for a key the process never published, so it is
+ * `html200` and the caller gets "absent". `error` is a read that never got an
+ * answer, or one outside the classes a harness acts on (a 400, say); the raw
+ * code is in `httpStatus`.
+ */
+export type ReadTiming = {
+  /** Wall clock (ms since epoch) when the read started. */
+  at: number;
+  node: string;
+  pid: string | null;
+  pidRole: PidRole | null;
+  /** `now/<key>` gives the key; any other path is reported whole. */
+  key: string;
+  ms: number;
+  status: 'ok' | 'absent' | 'html200' | '5xx' | '429' | 'error';
+  httpStatus: number | null;
+};
+
+let readObserver: ((timing: ReadTiming) => void) | null = null;
+
+export function setReadObserver(fn: ((timing: ReadTiming) => void) | null): void {
+  readObserver = fn;
+}
+
+const READ_PATH = /^(https?:\/\/[^/]+(?:\/.*?)?)\/([A-Za-z0-9_-]{43})~process@1\.0\/(.*)$/;
+const HTML_BODY = /^<!DOCTYPE html|^<html/i;
+
+function observeRead(
+  url: string, started: number, startedAt: number,
+  status: ReadTiming['status'], httpStatus: number | null,
+): void {
+  if (!readObserver) return;
+  const m = url.match(READ_PATH);
+  const path = m ? m[3] : url;
+  const pid = m ? m[2] : null;
+  try {
+    readObserver({
+      at: startedAt,
+      node: m ? m[1] : url,
+      pid,
+      pidRole: roleOf(pid),
+      key: path.startsWith('now/') ? path.slice(4) : path,
+      ms: performance.now() - started,
+      status,
+      httpStatus,
+    });
+  } catch { /* observers never throw */ }
+}
+
+async function getText(
+  url: string, signal?: AbortSignal, htmlIsError = false,
+): Promise<string | null> {
+  const started = performance.now();
+  const startedAt = Date.now();
   /* GETs are idempotent, so one transport-only retry is safe. Under a long
      high-concurrency soak Windows can transiently exhaust a local socket and
      make fetch throw ENOBUFS before any request exists. Writes deliberately do
@@ -204,25 +282,47 @@ async function getText(url: string, signal?: AbortSignal): Promise<string | null
       if (attempt === 0) await new Promise((resolve) => setTimeout(resolve, 100));
     }
   }
-  if (!res) throw transportError;
+  if (!res) {
+    observeRead(url, started, startedAt, 'error', null);
+    throw transportError;
+  }
   // 404 means the process has not published that key. That is a legitimate
   // "no value yet", not a failure.
-  if (res.status === 404) return null;
-  if (!res.ok) throw new NetworkError(`read failed: ${res.status}`, res.status);
-  return (await res.text()).trim();
+  if (res.status === 404) {
+    observeRead(url, started, startedAt, 'absent', 404);
+    return null;
+  }
+  if (!res.ok) {
+    observeRead(url, started, startedAt,
+      res.status === 429 ? '429' : res.status >= 500 ? '5xx' : 'error', res.status);
+    throw new NetworkError(`read failed: ${res.status}`, res.status);
+  }
+  const text = (await res.text()).trim();
+  // An HTML body at 200 is the node answering for a key the process never
+  // published (its landing page, or a device's own `info`). It is "absent",
+  // never a value to hand to JSON.parse.
+  if (HTML_BODY.test(text)) {
+    observeRead(url, started, startedAt, 'html200', res.status);
+    // A caller that must tell "never published" (404) from "not reached" asks
+    // for the landing page as a failure. See `tokenBalance` in `game.ts`.
+    if (htmlIsError) throw new NetworkError('read returned HTML at 200', res.status);
+    return null;
+  }
+  observeRead(url, started, startedAt, text === '' ? 'absent' : 'ok', res.status);
+  return text;
 }
 
 /** Unsigned GET of a published state key. Free, and never prompts the wallet. */
 export async function readState(
   key: string,
-  opts: { process?: string; node?: string; signal?: AbortSignal } = {},
+  opts: { process?: string; node?: string; signal?: AbortSignal; htmlIsError?: boolean } = {},
 ): Promise<string | null> {
   const pid = opts.process ?? GAME_PROCESS;
   const nodes = opts.node ? [opts.node] : HB_NODES;
   let first: unknown;
   for (const node of nodes) {
     try {
-      return await getText(`${clean(node)}/${pid}~process@1.0/now/${key}`, opts.signal);
+      return await getText(`${clean(node)}/${pid}~process@1.0/now/${key}`, opts.signal, opts.htmlIsError);
     } catch (err) {
       if ((err as any)?.name === 'AbortError') throw err;
       first = first ?? err;
@@ -233,7 +333,7 @@ export async function readState(
 
 export async function readJSON<T>(
   key: string,
-  opts: { process?: string; node?: string; signal?: AbortSignal } = {},
+  opts: { process?: string; node?: string; signal?: AbortSignal; htmlIsError?: boolean } = {},
 ): Promise<T | null> {
   const text = await readState(key, opts);
   if (text === null || text === '') return null;
@@ -264,6 +364,21 @@ export type TransportTiming = {
   action: string | null;
   slot: number | null;
   node: string;
+  /** The process the write was addressed to. */
+  pid: string;
+  /** See `setPidRoles`; null for a process no harness has named. */
+  pidRole: PidRole | null;
+  /** Wall clock (ms since epoch) before the item was built or signed. */
+  t0: number;
+  /** Wall clock (ms since epoch) when `send` returned or threw. */
+  t1: number;
+  /** The outbox push and its confirmation read, when this write had one. */
+  pushMs?: number;
+  /**
+   * What happened, and the only field latency percentiles may filter on. `ok`
+   * above stays "the transport returned a reply", which a refusal also is.
+   */
+  outcome: WriteOutcome;
   /** Folding tags and choosing a node, before the wallet is touched. */
   buildMs: number;
   /** `wallet.signDataItem` — building the ANS-104 item and signing it. */
@@ -281,6 +396,39 @@ export type TransportTiming = {
   ok: boolean;
   error?: string;
 };
+
+/** The Action a write carries, last one winning, as `sendMessage` folds it. */
+function actionOf(tags: Tag[]): string | null {
+  let action: string | null = null;
+  for (const t of tags) if (t.name.toLowerCase() === 'action') action = String(t.value).toLowerCase();
+  return action;
+}
+
+export type WriteOutcome ='ok' | 'rejected' | 'accepted-unread' | 'delivery-failed'
+  | 'post-failed' | 'rate-limited' | 'timeout';
+
+/**
+ * Classify how one write ended.
+ *
+ * A reply carrying `error` is the handler refusing the action: it arrived, and
+ * it is not a round trip anyone waited for. Everything after an accepted slot
+ * has its own error class; everything before one never reached the process.
+ */
+function writeOutcome(reply: unknown, error: unknown): WriteOutcome {
+  if (error === undefined) {
+    return reply !== null && typeof reply === 'object' && 'error' in reply
+      && Boolean((reply as { error?: unknown }).error) ? 'rejected' : 'ok';
+  }
+  if (error instanceof OutboxDeliveryError) return 'delivery-failed';
+  if (error instanceof AcceptedWriteError) return 'accepted-unread';
+  const name = (error as { name?: string } | null)?.name;
+  const cause = (error as { cause?: { name?: string } } | null)?.cause?.name;
+  const status = (error as { status?: number } | null)?.status;
+  if (name === 'AbortError' || name === 'TimeoutError' || cause === 'AbortError'
+    || cause === 'TimeoutError' || status === 408) return 'timeout';
+  if (status === 429) return 'rate-limited';
+  return 'post-failed';
+}
 
 /**
  * Where phase timings go. Null by default, so the shipped app measures nothing
@@ -1088,7 +1236,7 @@ async function sendProbed<T>(
   tags: Tag[],
   { data = '', process: pid = GAME_PROCESS, node, signal, readOptions, deliveryOptions,
     requiredOutbox }: SendOptions<T> = {},
-  probe: { sent?: Sent; attempts: number; readMs?: number },
+  probe: { sent?: Sent; attempts: number; readMs?: number; pushMs?: number; reply?: T },
 ): Promise<T> {
   // Captured HERE, synchronously, before the first await. `send` is called
   // synchronously out of the caller's own verb, so this is the sink that was
@@ -1160,9 +1308,11 @@ async function sendProbed<T>(
   if (sent.action && (OUTBOX_ACTIONS.has(sent.action) || explicitlyRequired) && !handlerRejected) {
     // Delivery is independent of reading the local reply. In particular, a
     // cached-read timeout must not silently strand a withdrawal's mint request.
+    const tPush = performance.now();
     const delivery = await deliverSlot(sent.slot, {
       process: pid, node: sent.node, ...deliveryOptions,
     });
+    probe.pushMs = performance.now() - tPush;
     if (!delivery.delivered) {
       throw new OutboxDeliveryError({
         slot: sent.slot, action: sent.action, completed: readError === undefined,
@@ -1174,6 +1324,7 @@ async function sendProbed<T>(
   if (readError !== undefined) {
     throw new AcceptedWriteError({ slot: sent.slot, action: sent.action, cause: readError });
   }
+  probe.reply = reply;
   return reply as T;
 }
 
@@ -1181,17 +1332,28 @@ export async function send<T>(tags: Tag[], options: SendOptions<T> = {}): Promis
   if (!transportObserver) return sendProbed<T>(tags, options, { attempts: 0 });
 
   const started = performance.now();
-  const probe: { sent?: Sent; attempts: number; readMs?: number } = { attempts: 0 };
+  const t0 = Date.now();
+  const probe: { sent?: Sent; attempts: number; readMs?: number; pushMs?: number; reply?: T } = {
+    attempts: 0,
+  };
   // A write that failed is the measurement that matters most during a node
   // outage: it is the only record that the node was unreachable at that
   // moment, and dropping it would make an outage look like a gap in the data
   // rather than a run of failures.
   const report = (ok: boolean, error?: unknown) => {
     const t = probe.sent?.timing;
+    const pid = options.process ?? GAME_PROCESS;
+    const action = probe.sent?.action ?? null;
     observeTransport({
-      action: probe.sent?.action ?? null,
+      action,
       slot: probe.sent?.slot ?? null,
       node: probe.sent?.node ?? options.node ?? HB_NODE,
+      pid,
+      pidRole: roleOf(pid, action ?? actionOf(tags)),
+      t0,
+      t1: Date.now(),
+      ...(probe.pushMs === undefined ? {} : { pushMs: probe.pushMs }),
+      outcome: writeOutcome(probe.reply, error),
       buildMs: t?.buildMs ?? 0,
       signMs: t?.signMs ?? 0,
       // With no accepted response there is no phase split to report, so the

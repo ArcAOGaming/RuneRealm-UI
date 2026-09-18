@@ -509,7 +509,6 @@ function FactionDetail({
                   <th className="px-3 py-2 text-left font-medium" colSpan={2}>Member</th>
                   <th className="px-3 py-2 text-right font-medium">Lvl</th>
                   <th className="px-3 py-2 text-right font-medium">Wins</th>
-                  <th className="roster-quests px-3 py-2 text-right font-medium">Quests</th>
                 </tr>
               </thead>
               <tbody>
@@ -523,7 +522,6 @@ function FactionDetail({
                     <td className="px-2 py-1.5 font-mono text-xs text-muted">{shortAddress(m.id, 5)}</td>
                     <td className="px-3 py-1.5 text-right font-mono tabular-nums">{m.level}</td>
                     <td className="px-3 py-1.5 text-right font-mono tabular-nums text-muted">{m.wins}</td>
-                    <td className="roster-quests px-3 py-1.5 text-right font-mono tabular-nums text-muted">{m.timesQuest}</td>
                   </tr>
                 ))}
               </tbody>
