@@ -67,12 +67,12 @@ function Legend<Row>({ series, shape, reference }: {
 }) {
   if (series.length < 2 && !reference) return null;
   return (
-    <div className="mb-1 flex flex-wrap gap-x-3 gap-y-1 text-[10px] text-muted">
+    <div className="mb-1.5 flex flex-wrap gap-x-4 gap-y-1 text-[11px] text-muted">
       {series.map((entry) => (
         <span key={entry.key} className="inline-flex items-center gap-1.5">
           {shape === 'line'
-            ? <span className="inline-block h-[2px] w-3 rounded" style={{ background: entry.color }} />
-            : <span className="inline-block h-2 w-2 rounded-[2px]" style={{ background: entry.color }} />}
+            ? <span className="inline-block h-[3px] w-3.5 rounded" style={{ background: entry.color }} />
+            : <span className="inline-block h-2.5 w-2.5 rounded-[2px]" style={{ background: entry.color }} />}
           {entry.label}
         </span>
       ))}
@@ -133,7 +133,7 @@ function Axes({ width, height, max, format, start, end }: {
 }
 
 export function LineChart<Row extends { t: number }>({
-  rows, series, height = 150, format, reference, title,
+  rows, series, height = 150, format, reference, title, legend = true,
 }: {
   rows: Row[];
   series: Series<Row>[];
@@ -142,6 +142,8 @@ export function LineChart<Row extends { t: number }>({
   /** A limit drawn as a dashed threshold, labelled. */
   reference?: { value: number; label: string };
   title: string;
+  /** False when the page draws one shared legend for several charts. */
+  legend?: boolean;
 }) {
   const { ref, width } = useWidth();
   const [hover, setHover] = useState<number | null>(null);
@@ -185,7 +187,7 @@ export function LineChart<Row extends { t: number }>({
   const active = hover !== null ? points[hover] : null;
   return (
     <div ref={ref} className="relative min-w-0" data-chart="line">
-      <Legend series={series.length > 1 ? series : []} shape="line" reference={reference} />
+      {legend && <Legend series={series.length > 1 ? series : []} shape="line" reference={reference} />}
       <svg width="100%" height={height} viewBox={`0 0 ${width} ${height}`} role="img" aria-label={title}
         onPointerMove={onMove} onPointerLeave={() => setHover(null)} className="block touch-pan-y">
         <Axes width={width} height={height} max={max} format={format}
@@ -250,8 +252,18 @@ export function LineChart<Row extends { t: number }>({
   );
 }
 
+/**
+ * A bar group's rate: the mean of the buckets that HAVE a value. A sampled
+ * series (received slots/s every 10 s) leaves buckets null between samples,
+ * and counting those as zero would halve it.
+ */
+export function presentMean<Row>(members: Row[], value: (row: Row) => number | null): number | null {
+  const values = members.map(value).filter((entry): entry is number => entry !== null && Number.isFinite(entry));
+  return values.length ? values.reduce((a, b) => a + b, 0) / values.length : null;
+}
+
 export function BarChart<Row extends { t: number }>({
-  rows, series, stacked = false, height = 110, format, title,
+  rows, series, stacked = false, height = 110, format, title, reference, legend = true,
 }: {
   rows: Row[];
   series: Series<Row>[];
@@ -259,6 +271,10 @@ export function BarChart<Row extends { t: number }>({
   height?: number;
   format: (value: number) => string;
   title: string;
+  /** A target drawn as a dashed line, labelled. */
+  reference?: { value: number; label: string };
+  /** False when the page draws one shared legend for several charts. */
+  legend?: boolean;
 }) {
   const { ref, width } = useWidth();
   const [hover, setHover] = useState<number | null>(null);
@@ -269,12 +285,9 @@ export function BarChart<Row extends { t: number }>({
   const points = groups.map((members) => ({
     t: members[0].t,
     end: members[members.length - 1].t,
-    values: Object.fromEntries(series.map((entry) => {
-      const values = members.map(entry.value).filter((value): value is number => value !== null && Number.isFinite(value));
-      return [entry.key, values.length ? values.reduce((a, b) => a + b, 0) / members.length : null];
-    })) as Record<string, number | null>,
+    values: Object.fromEntries(series.map((entry) => [entry.key, presentMean(members, entry.value)])) as Record<string, number | null>,
   }));
-  const peak = Math.max(0, ...points.map((point) => (stacked
+  const peak = Math.max(reference?.value ?? 0, ...points.map((point) => (stacked
     ? series.reduce((sum, entry) => sum + (point.values[entry.key] ?? 0), 0)
     : Math.max(0, ...series.map((entry) => point.values[entry.key] ?? 0)))));
   const max = niceMax(peak);
@@ -294,7 +307,7 @@ export function BarChart<Row extends { t: number }>({
   const active = hover !== null ? points[hover] : null;
   return (
     <div ref={ref} className="relative min-w-0" data-chart="bar">
-      <Legend series={series} shape="rect" />
+      {legend && <Legend series={series} shape="rect" reference={reference} />}
       <svg width="100%" height={height} viewBox={`0 0 ${width} ${height}`} role="img" aria-label={title}
         onPointerMove={onMove} onPointerLeave={() => setHover(null)} className="block touch-pan-y">
         <Axes width={width} height={height} max={max} format={format}
@@ -320,6 +333,10 @@ export function BarChart<Row extends { t: number }>({
             <g key={point.t} opacity={hover === null || hover === index ? 1 : 0.55}>{marks}</g>
           );
         })}
+        {reference && (
+          <line x1={PAD.left} x2={width - PAD.right} y1={baseline - scale(reference.value)} y2={baseline - scale(reference.value)}
+            stroke="rgb(var(--ink) / 0.7)" strokeWidth={1} strokeDasharray="4 3" />
+        )}
       </svg>
       {active && hover !== null && (
         <Tooltip x={PAD.left + slot * hover} width={width} title={clock(active.t)} rows={series.map((entry) => ({
@@ -333,14 +350,17 @@ export function BarChart<Row extends { t: number }>({
   );
 }
 
-/** A 12-to-60 point trend with no axes, for table cells. */
-export function Sparkline({ values, color, label, width = 64, height = 18 }: {
-  values: Array<number | null>; color: string; label: string; width?: number; height?: number;
+/**
+ * A trend with no axes, for table cells. With `max`, the scale runs from zero
+ * to it, so sparklines sharing one `max` can be compared by eye.
+ */
+export function Sparkline({ values, color, label, width = 64, height = 18, max }: {
+  values: Array<number | null>; color: string; label: string; width?: number; height?: number; max?: number;
 }) {
   const finite = values.filter((value): value is number => value !== null && Number.isFinite(value));
   if (finite.length < 2) return <span className="inline-block text-[10px] text-faint" style={{ width }}>—</span>;
-  const lo = Math.min(...finite);
-  const hi = Math.max(...finite);
+  const lo = max === undefined ? Math.min(...finite) : 0;
+  const hi = max === undefined ? Math.max(...finite) : Math.max(max, ...finite);
   const span = hi - lo || 1;
   let path = '';
   let pen = false;
@@ -358,4 +378,3 @@ export function Sparkline({ values, color, label, width = 64, height = 18 }: {
     </svg>
   );
 }
-

@@ -2,17 +2,19 @@
  * The W8 stream contract, as the SwarmMonitor reads it.
  *
  * `GET /snapshot` answers `SwarmSnapshot`; `GET /events` pushes `tick`
- * (`SwarmTick`), `acct`/`trade`/`brake` (the schema v1 records themselves) and
+ * (`SwarmTick`), `acct`/`trade`/`halt`/`alert`/`msg`/`send`/`launch` (the schema v1 records themselves) and
  * `run`. The shapes mirror `backend/native/swarm/aggregate.mjs` field for field;
  * nothing here is computed by the browser that the aggregator already knows.
  */
 
 export type PidRole =
   | 'game' | 'rune' | 'quote' | 'venue.internal' | 'venue.external'
+  | 'pair.internal' | 'pair.external'
   | 'hunt.worker' | 'battle.worker' | 'admin' | 'unknown';
 
 export interface RoundTrip {
   avg: number | null;
+  avgCensored?: boolean;
   p50: number | null;
   p95: number | null;
   /** The figure is a lower bound: writes were still waiting at the bucket end. */
@@ -42,10 +44,32 @@ export interface WindowStats {
   wallets: number;
   fillsPerMin: number;
   tokensWastedPerMin: number;
+  /** Fleet only, and only once a custody write landed in the window. */
+  flows?: FlowCounts;
+  /** Fleet only, and only once a trade landed in the window. */
+  markets?: MarketCounts;
 }
 
+/** Where value moved (`aggregate.mjs` FLOWS). */
+export type FlowName =
+  | 'game->venue' | 'venue->game' | 'game->token' | 'token->game' | 'token->venue' | 'venue->token' | 'wallet->wallet';
+
+/**
+ * One flow's writes: `ok` of `msgs` landed, `derived` were read from a verb
+ * name (a log without flow fields, so no quantity), `qty` is whole units moved
+ * by asset, from `ok` writes that carried one.
+ */
+export interface FlowRow { msgs: number; ok: number; derived: number; qty: Record<string, number> }
+export type FlowCounts = Partial<Record<FlowName, FlowRow>>;
+
+/** One side of a market's `trade` records; `filled` is what filled at placement. */
+export interface MarketSide { orders: number; maker: number; taker: number; qty: number; filled: number; fills: number }
+export interface MarketCount { venue: string; market: string; buy: MarketSide; sell: MarketSide }
+/** Keyed `venue:market`. */
+export type MarketCounts = Record<string, MarketCount>;
+
 /** One closed 5 s bucket; `t` is its start. */
-export interface BucketRow extends WindowStats { t: number }
+export interface BucketRow extends WindowStats { t: number; publishedBytes: number | null }
 
 export interface Saturation {
   rtSlopeMsPerMin: number | null;
@@ -53,7 +77,19 @@ export interface Saturation {
   inFlight: number;
 }
 
-export interface Brake { at: number; mul: number | null; reason: string | null }
+/** A hard halt awareness latched (§10): node down, or battle-fleet pending >= 80%. */
+export interface Halt { at: number; reason: string | null; pid: string | null }
+
+/**
+ * The latest node alert awareness reported (display only: a run carries on
+ * through an outage). While down, `since` is when it started failing and
+ * `downMs` how long it has been down at the snapshot; once up again, `downMs`
+ * is how long the outage lasted.
+ */
+export interface NodeStatus { up: boolean; since: number | null; downMs: number | null; node: string | null }
+
+/** Event schema v1 `alert`, without `v`/`k`. */
+export interface AlertRecord { at: number; reason: string; node?: string | null; since?: number | null; downMs?: number | null }
 
 export interface FleetView {
   current: WindowStats;
@@ -62,7 +98,13 @@ export interface FleetView {
   accounts: number;
   activeAccounts: number;
   states: Record<string, number>;
-  brake: Brake | null;
+  halt?: Halt | null;
+  /** Absent from a stream started before the aggregator reported it. */
+  nodeStatus?: NodeStatus | null;
+  admin?: { msgs: number; outcomes?: Record<string, number> } | null;
+  /** Whole-log totals. Absent from a stream started before the aggregator counted them. */
+  flows?: FlowCounts;
+  markets?: MarketCounts;
   series: BucketRow[];
 }
 
@@ -71,6 +113,7 @@ export interface ProcessView {
   pidRole: string;
   current: WindowStats;
   saturation: Saturation;
+  published?: { at: number; bytes: number } | null;
   series: BucketRow[];
 }
 
@@ -82,34 +125,86 @@ export interface RoleView {
   series: BucketRow[];
 }
 
-/** Event schema v1 `acct`, without `v`/`k`. */
+/** Event schema v1 `acct`, without `v`/`k`. `acctEvent` writes null for a field the account lacks. */
 export interface AcctRecord {
   at: number;
   wallet: string;
-  state?: string;
-  level?: number;
-  exp?: number;
-  moves?: number;
+  state?: string | null;
+  level?: number | null;
+  exp?: number | null;
+  moves?: number | null;
   pendingMove?: string | null;
-  roster?: number;
-  collection?: number;
-  energy?: number;
-  happiness?: number;
-  gold?: number;
-  runes?: number;
-  scrolls?: number;
-  berries?: Record<string, number>;
-  lootboxes?: number;
-  wins?: number;
-  losses?: number;
-  rating?: number;
-  quests?: number;
-  captures?: number;
-  openOrders?: number;
-  pnlGold?: number;
+  roster?: number | null;
+  collection?: number | null;
+  energy?: number | null;
+  happiness?: number | null;
+  gold?: number | null;
+  runes?: number | null;
+  scrolls?: number | null;
+  berries?: Record<string, number> | null;
+  lootboxes?: number | null;
+  wins?: number | null;
+  losses?: number | null;
+  rating?: number | null;
+  quests?: number | null;
+  captures?: number | null;
+  openOrders?: number | null;
+  /**
+   * The active companion: its status (`Home`, `Play`, `Quest`, `Battle`,
+   * `Hunt`, `Minting`), when that status ends (ms), its name and element.
+   * Additive: rows from a swarm started before these existed lack them.
+   */
+  activity?: string | null;
+  activityUntil?: number | null;
+  monsterName?: string | null;
+  element?: string | null;
+  pnlGold?: number | null;
   msgs?: number;
   errs?: number;
   tokensWasted?: number;
+}
+
+/** Event schema v1 `msg`, the fields an account row is built from. */
+export interface MsgRecord {
+  /** The `send` row's id, when the write had one. */
+  id?: string | null;
+  t0: number;
+  t1?: number | null;
+  wallet: string;
+  profile?: string;
+  pid?: string;
+  pidRole?: string;
+  action?: string;
+  intent?: string;
+  rtMs?: number;
+  outcome?: string;
+  late?: boolean;
+  err?: unknown;
+  /** Custody writes only: where value moved, which asset, whole units. */
+  flow?: FlowName;
+  asset?: string;
+  qty?: number;
+  /** A peer send's recipient wallet label, when known. */
+  to?: string;
+}
+
+/** Event schema v1 `send`: a write handed to the node, open until its `msg` (same `id`) arrives. */
+export interface SendRecord {
+  at: number;
+  id: string;
+  acct: string;
+  pid?: string | null;
+  pidRole?: string | null;
+  verb?: string | null;
+}
+
+/** A write still waiting on a reply, as `aggregate.mjs` lists it per account. */
+export interface PendingWrite {
+  id: string;
+  t0: number;
+  pid: string | null;
+  pidRole: string | null;
+  verb: string | null;
 }
 
 /** Event schema v1 `trade`, without `v`/`k`. */
@@ -121,7 +216,9 @@ export interface TradeRecord {
   side?: string;
   tif?: string;
   liq?: string;
+  /** Whole units of the quote asset; `pxAtoms` is the venue's raw value. */
   px?: number;
+  pxAtoms?: number | null;
   qty?: number;
   filled?: number;
   fillPx?: number[];
@@ -163,11 +260,41 @@ export interface AccountView {
   timeline: TimelineEntry[];
   states: StateEntry[];
   trades: TradeRecord[];
+  /** Open sends, oldest first. Absent from a stream started before the aggregator listed them. */
+  pending?: PendingWrite[];
+  /** Peer token sends that landed, either way. Absent from an older stream. */
+  peer?: PeerSummary;
+  /** The last 50 peer sends and receipts, oldest first. Absent from an older stream. */
+  transfers?: PeerTransfer[];
 }
+
+export interface PeerSummary { sent: number; received: number; lastSentAt: number | null; lastReceivedAt: number | null }
+
+export interface PeerTransfer {
+  id: string;
+  /** When it resolved. */
+  at: number;
+  dir: 'sent' | 'received';
+  /** The other wallet, when the record named it. */
+  peer: string | null;
+  asset: string | null;
+  qty: number | null;
+  outcome: string;
+}
+
+/** Event schema v1 `launch`: a launch step or a wait for the node, written as it happens. */
+export interface LaunchRecord { at: number; run?: string | null; step: string; note?: string | null }
+
+/** The launch step in progress; `done` once the run's clock started or the run ended. */
+export interface LaunchState { step: string; note: string | null; at: number; done: boolean }
 
 export interface SwarmSnapshot {
   v: number;
   run: string | null;
+  /** The run's planned end (ms), its `run.start` `until`; null when the log has none, absent from an older stream. */
+  endsAt?: number | null;
+  /** Null when the log has no `launch` record; absent from a stream started before they existed. */
+  launch?: LaunchState | null;
   at: number;
   bucketMs: number;
   windowBuckets: number;
@@ -179,10 +306,9 @@ export interface SwarmSnapshot {
   processes: ProcessView[];
   roles: RoleView[];
   accounts: AccountView[];
-  /** Added by `stream.mjs`: the run it is tailing, and every run with a log. */
+  /** Added by `stream.mjs`: whether the run it tails is launching or still writing, and its id while it is. */
   active?: boolean;
   live?: string | null;
-  runs?: string[];
 }
 
 type TickEntity<T> = Omit<T, 'series'> & { buckets: BucketRow[] };
@@ -191,6 +317,8 @@ type TickEntity<T> = Omit<T, 'series'> & { buckets: BucketRow[] };
 export interface SwarmTick {
   v: number;
   run: string | null;
+  endsAt?: number | null;
+  launch?: LaunchState | null;
   at: number;
   bucketMs: number;
   lastEventAt: number | null;
