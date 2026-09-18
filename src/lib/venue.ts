@@ -181,7 +181,9 @@ function shard(process: string): Promise<ShardedVenue | null> {
   let found = shards.get(process);
   if (!found) {
     found = isVault(shardTransport, requireProcess(process))
-      .then((vault) => (vault ? new ShardedVenue(shardTransport, process) : null));
+      .then((vault) => (vault ? new ShardedVenue(shardTransport, process) : null))
+      // A failed check is retried on the next call, never remembered.
+      .catch((error) => { shards.delete(process); throw error; });
     shards.set(process, found);
   }
   return found;
