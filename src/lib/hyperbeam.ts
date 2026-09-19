@@ -747,6 +747,22 @@ const CONFIRM_TIMEOUT_MS = PUSH_TIMEOUT_MS;
 const CONFIRM_INTERVAL_MS = 750;
 
 /**
+ * How the gap between confirmation reads grows, for a HARNESS. The app never
+ * sets this and polls at a flat `confirmIntervalMs`, exactly as before.
+ *
+ * A single tab polling every 750 ms is nothing. A hundred load-test wallets
+ * doing it through every 30 s settlement are most of the node's read load, and
+ * those reads are not free on the game process: each copies its whole state.
+ * With a backoff the gap is multiplied by `factor` after every "not yet", up to
+ * `maxIntervalMs`. The verdict is unchanged; only how often it is asked.
+ */
+let confirmBackoff: { factor: number; maxIntervalMs: number } | null = null;
+
+export function setConfirmBackoff(next: { factor: number; maxIntervalMs: number } | null): void {
+  confirmBackoff = next && next.factor >= 1 && next.maxIntervalMs >= 0 ? { ...next } : null;
+}
+
+/**
  * One push. Never retried by anything in this file — see `deliverSlot`.
  *
  * Returns what the node did, not whether the delivery worked. The caller
@@ -886,8 +902,9 @@ export async function deliverSlot(
 
   const budget = Number.isFinite(confirmTimeoutMs) && confirmTimeoutMs > 0
     ? confirmTimeoutMs : CONFIRM_TIMEOUT_MS;
-  const gap = Number.isFinite(confirmIntervalMs) && confirmIntervalMs >= 0
+  let gap = Number.isFinite(confirmIntervalMs) && confirmIntervalMs >= 0
     ? confirmIntervalMs : CONFIRM_INTERVAL_MS;
+  const backoff = confirmBackoff;
   const deadline = Date.now() + budget;
   let confirmed = false;
   // The first read is immediate: the mint can already have landed while this
@@ -897,6 +914,7 @@ export async function deliverSlot(
     if (confirmed) break;
     if (Date.now() + gap >= deadline) break;
     if (gap > 0) await new Promise((resolve) => { setTimeout(resolve, gap); });
+    if (backoff) gap = Math.max(gap, Math.min(backoff.maxIntervalMs, gap * backoff.factor));
   }
 
   // Whatever the verdict, the push is left alone. Confirmed, it has already

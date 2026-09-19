@@ -1088,7 +1088,10 @@ export async function attack(
   const settledAtAuthority = async () => {
     const who = fleetPlayers.get(battleId)?.address ?? await activeAddress();
     if (!who) return false;
-    const settled = await readPlayer(who).catch(() => null);
+    // The account record alone answers this. `readPlayer` would also hydrate
+    // the worker's battle and, finding it ended, read the account a second
+    // time: three reads per poll for the same verdict.
+    const settled = await readAuthorityPlayer(who).catch(() => null);
     return !!settled && settled.activeBattleId !== battleId;
   };
 

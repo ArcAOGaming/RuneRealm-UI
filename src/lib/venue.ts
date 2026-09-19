@@ -511,3 +511,15 @@ export const depositTokenToVenue = (
 ) => write<{ Balance?: string; Reference?: string }>(tokenProcess, {
   Action: 'Transfer', Recipient: requireProcess(venueProcess), Quantity: String(quantity),
 }, true);
+
+/**
+ * A plain token Transfer to another WALLET. Not pushed: its notices are
+ * addressed to wallets, which run nothing, so a push only makes the node search
+ * for a process that does not exist (~2.5 s per notice). The transfer itself is
+ * final once the token computes it.
+ */
+export const transferToken = (
+  tokenProcess: string, recipient: string, quantity: string | number,
+) => write<{ Balance?: string; Reference?: string }>(tokenProcess, {
+  Action: 'Transfer', Recipient: recipient, Quantity: String(quantity),
+});
